@@ -17366,6 +17366,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
   }
+  /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
+  function jpLimpiarNombreEstacionSB(nm){
+    return String(nm || '').replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s*[x\\u00d7]\\s*$/i, '').trim();
+  }
+  function jpEsLineaFormatoSB(txt, hayPastilla){
+    var t = String(txt || '').trim();
+    if(!t || hayPastilla) return false;
+    return t.length > 48 || /^(?:\\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\\s+(?:rondas?|series?|vueltas?|intervalos?)\\b|^(?:amrap|emom|for\\s*time|hiit|tabata|chipper)\\b/i.test(t);
+  }
+  window.jpLimpiarNombreEstacion = jpLimpiarNombreEstacionSB; window.jpEsLineaFormato = jpEsLineaFormatoSB;
   window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
@@ -20513,11 +20523,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
-        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
+        /* nombre de estación limpio: sin el guion de viñeta ni la "x" que queda colgando cuando la cantidad pasó a la pastilla ("- Sled push / Trineo x" -> "Sled push / Trineo") */
+        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : jpLimpiarNombreEstacionSB(partesPlain.nm);
+        /* la línea de formato ("Cuatro rondas: ...", AMRAP, EMOM, For Time) es una consigna, no una estación: va en una banda sin número */
+        const esFormatoPlain = !esCalentamiento && jpEsLineaFormatoSB(nombrePlain, !!pillTxt);
+        if(esFormatoPlain){
+          filas += '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span></div>';
+          return;
+        }
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
             (!esCalentamiento ? '<span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span>' : '') +
-            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
+            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';
@@ -46984,6 +47001,20 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-s, html body:not(#_):not(#
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b{padding:2px 12px 12px; font-size:.82rem; line-height:1.5; color:var(--xc-txt); border-top:1px solid var(--xc-bd);}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row{padding-top:8px;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row b{color:var(--xc-tempo-c, var(--xc-acc)); font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt), html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt){display:grid !important; grid-template-columns:auto minmax(0,1fr) !important; align-items:center !important; gap:4px 10px !important; width:auto !important;
+  background:var(--xc-surface) !important; border:1px solid var(--xc-bd) !important; border-left:3px solid var(--xc-acc) !important; border-radius:var(--xc-r) !important;
+  padding:10px 12px !important; margin:8px 0 !important; box-shadow:var(--xc-sh) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-ex-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-ex-id{grid-row:1 / span 2; align-self:start;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-nombre{grid-column:2; min-width:0; font-family:var(--xc-font) !important; font-size:.95rem !important; font-weight:var(--xc-name-w) !important; letter-spacing:.03em !important; text-transform:uppercase !important;
+  line-height:1.25 !important; color:var(--xc-txt) !important; overflow-wrap:break-word !important; word-break:normal !important; padding:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-pill, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-pill{grid-column:2; justify-self:start; display:inline-flex !important; max-width:100%; white-space:normal !important; background:var(--xc-acc-bg) !important; border:1px solid var(--xc-bd-2) !important;
+  color:var(--xc-acc) !important; font-family:var(--xc-font) !important; font-size:.82rem !important; font-weight:800 !important; letter-spacing:.04em !important; padding:3px 10px !important; border-radius:999px !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-nota, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-nota{grid-column:1 / -1;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt{display:flex !important; align-items:flex-start !important; gap:10px !important; background:var(--xc-acc-bg) !important; border:1px solid var(--xc-bd) !important; border-left:3px solid var(--xc-acc) !important;
+  border-radius:var(--xc-r) !important; padding:10px 12px !important; margin:6px 0 !important; width:auto !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-fmt-ic, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-fmt-ic{flex:0 0 auto; color:var(--xc-acc); font-size:1rem; line-height:1.3;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-plain-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-plain-nombre{flex:1 1 0; min-width:0; font-family:var(--xc-font) !important; font-size:.82rem !important; font-weight:700 !important; letter-spacing:.01em !important; text-transform:none !important;
+  line-height:1.4 !important; color:var(--xc-txt) !important; overflow-wrap:break-word !important; word-break:normal !important; padding:0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex::before{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,#5CE1FF 0%,rgba(92,225,255,.15) 70%,transparent 100%); pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}
@@ -72164,11 +72195,28 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
          { ex:'Bird dog',      reps:'8 por lado',     tempo:'3011' }],
     tips:'Es el bloque que más se nota en la tercera hora de bici. No se saltea.' });
 
-  var DENSIDAD = LX('Cierre metabólico', '8 a 10 minutos · no más', [
-    'Empuje de trineo — 6 recorridos, 20 m, descanso al volver caminando',
-    'Alternativa sin trineo: Farmer carry 6 x 30 m',
-    'Alternativa sin espacio: Bicicleta / Assault bike 8 x 20 s fuerte / 40 s suave'
-  ], 'accessory', '🔥', 'Va al final y no compite con nada: si te deja sin la sesión de mañana, te pasaste.');
+  /* cierres metabólicos de competición (Hyrox / CrossFit / HIIT), uno por tipo de día: complementan sin interferir ni repetir */
+  var DENS_TIP = 'Va al final y no compite con nada: si te deja sin la sesión de mañana, te pasaste.';
+  var DENS_RODILLA = LX('Cierre metabólico · SkiErg, arrastre y slam ball (AMRAP)', '8 a 10 minutos · tren superior y core', [
+    'AMRAP 8 minutos: SkiErg 200 m a ritmo fuerte, arrastre de trineo (sled pull) 15 m y slam ball 10 repeticiones, sin pausa entre estaciones',
+    'Alternativa sin SkiErg: remo ergómetro 200 m con poca pierna',
+    'Alternativa sin trineo: remo con mancuerna 10 por lado'
+  ], 'accessory', '🔥', 'Hoy se cargó la rodilla: este cierre usa espalda, brazos y tronco y no repite trineo de empuje, escaladora ni zancadas. ' + DENS_TIP);
+  var DENS_EMPUJE = LX('Cierre metabólico · Remo, bici y arrastre (EMOM)', '10 minutos · piernas y tracción', [
+    'EMOM 10 minutos: minutos impares remo ergómetro 250 m, minutos pares Assault bike 12 calorías',
+    'Alternativa sin remo: SkiErg 200 m',
+    'Alternativa sin bici: escaladora 40 s fuerte'
+  ], 'accessory', '🔥', 'Hoy se empujó: este cierre usa piernas y tracción y no vuelve a cargar pecho, hombros ni tríceps. ' + DENS_TIP);
+  var DENS_BISAGRA = LX('Cierre metabólico · Intervalos 40:20 de SkiErg, bici y arrastre', '10 minutos · sin cadera cargada', [
+    'HIIT: 3 rondas de SkiErg 40 s, Assault bike 40 s a ritmo sostenible y arrastre de trineo (sled pull) 40 s, con 20 s de transición y 90 s de descanso entre rondas',
+    'Alternativa sin SkiErg: remo ergómetro 40 s con poca pierna',
+    'Alternativa sin trineo: remo con banda 40 s'
+  ], 'accessory', '🔥', 'Hoy se cargó la cadera: este cierre usa espalda, brazos y bici sostenible, sin trineo de empuje, escaladora ni burpees. ' + DENS_TIP);
+  var DENS_ESPALDA = LX('Cierre metabólico · Trineo, wall balls y bici (For Time)', '10 a 12 minutos · piernas y empuje ligero', [
+    'For Time, 3 rondas: sled push 20 m, wall balls 15 repeticiones (6 kg a 3 m) y Assault bike 12 calorías, con 10 s de transición y 90 s de descanso entre rondas',
+    'Alternativa sin trineo: zancadas caminando 20 m',
+    'Alternativa sin wall balls: thrusters livianos 12 repeticiones'
+  ], 'accessory', '🔥', 'Hoy se tiró: este cierre usa piernas y empuje liviano y no incluye remo, SkiErg ni arrastre ni agarre. ' + DENS_TIP);
 
   var PLANTILLAS_T1 = [
 
@@ -72280,7 +72328,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
               ex:'Curl femoral tumbado', ef:3, reps:'10-12', tempo:'3110', rest:75 }),
           B({ t:'Block C: Unilateral', s:'Por pierna · subir con la pierna de arriba, no empujar con la de abajo',
               ex:'Step up al cajón', ef:3, reps:'10-12', tempo:'2011', rest:75, cat:'accessory', ic:'⚡' }),
-          DENSIDAD ] },
+          DENS_RODILLA ] },
 
       { short:'DÍA 4', label:'Torso B', title:'Empuje y Cierre',
         chips:['🎯 Empuje','🔥 Con cierre metabólico'],
@@ -72294,7 +72342,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
               ef:3, rest:50,
               ejs:[{ ex:'Curl martillo',                   reps:'10-12', tempo:'2011' },
                    { ex:'Extensión de tríceps agarre en V', reps:'12-15', tempo:'2011' }] }),
-          DENSIDAD ] }
+          DENS_EMPUJE ] }
     ] },
 
   /* ---------- P3 · PÉRDIDA DE PESO · MASCULINO · 4 días ---------- */
@@ -72346,7 +72394,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
               ex:'Prensa 45°', ef:3, reps:'10-12', tempo:'3010', rest:90 }),
           B({ t:'Block C: Gemelo', s:'Pausa abajo, sin rebote',
               ex:'Elevación de talones sentado', ef:3, reps:'12-15', tempo:'2211', rest:45, cat:'accessory', ic:'⚡' }),
-          DENSIDAD ] },
+          DENS_BISAGRA ] },
 
       { short:'DÍA 4', label:'Torso B', title:'Tracción y Cierre',
         chips:['🎯 Espalda','🔥 Con cierre metabólico'],
@@ -72358,7 +72406,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
               ex:'Remo Pendlay', ef:3, reps:'8-10', tempo:'2011', rest:105 }),
           B({ t:'Block C: Bíceps', s:'Sin balanceo de tronco',
               ex:'Curl martillo', ef:3, reps:'10-12', tempo:'2011', rest:50, cat:'accessory', ic:'⚡' }),
-          DENSIDAD ] }
+          DENS_ESPALDA ] }
     ] },
 
   /* ---------- P4 · MTB · FUERZA EN TEMPORADA · 2 días ---------- */
@@ -81148,8 +81196,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 </script>
 <script>
 /* =========================================================
-   PLANTILLAS BASE COACH JP · cierres metabólicos y cardio
+   PLANTILLAS BASE COACH JP · cierres metabólicos y cardio (perfil Hyrox / CrossFit / HIIT)
    Cada uno es un bloque libre (fila.fin del motor): { tag, t, i: { min, l }, a: { min, l }, obj, tips }.
+   Los cierres NO son genéricos: usan estaciones y transiciones de competición (SkiErg, Sled Push / Pull, Wall Balls, Assault Bike, Remo, Burpee Broad Jump, Farmer Carry)
+   en formatos reales (EMOM, AMRAP, For Time, intervalos 40:20) y están ALINEADOS AL DÍA: el cierre trabaja lo que el día no trabajó, para complementar sin interferir.
+     · día de EMPUJE  -> piernas, tracción y cardio (remo, bici, arrastre): nada de press, flexiones ni slam
+     · día de TRACCIÓN -> piernas y empuje ligero (trineo, wall balls, bici): nada de remo, SkiErg ni arrastre ni agarre
+     · día de PIERNA  -> tren superior y core (SkiErg, arrastre de trineo, slam): ni trineo de empuje, ni escaladora ni zancadas
+     · día de GLÚTEO  -> intervalos de tracción y cardio sin cadera cargada (SkiErg, bici sostenible, arrastre)
+     · día de TORSO   -> piernas y cardio de competición (trineo de empuje, burpee broad jump, bici)
    Reglas de escritura (el importador las necesita para no convertirlos en series de fuerza):
      · las líneas no llevan "NxM" (se escribe "5 rondas", "20 m", "30 s");
      · los tips empiezan con una etiqueta en mayúsculas y nunca con un número.
@@ -81160,96 +81215,158 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   var PB = window.__jpPB; if(!PB) return;
   var FIN = {};
 
-  FIN.sledBike = { tag: 'FINISHER', t: 'Cierre metabólico · Trineo y bicicleta',
-    i: { min: 8, l: ['5 rondas: pasás de una estación a la otra sin pausa y descansás 90 segundos al cerrar cada ronda.',
-                     '- Sled push / Trineo x 20 m con una carga que te permita caminar firme',
-                     '- Bicicleta / Assault bike x 30 s a ritmo fuerte'] },
-    a: { min: 10, l: ['6 rondas: pasás de una estación a la otra sin pausa y descansás 75 segundos al cerrar cada ronda.',
+  /* ---------- día de EMPUJE (Push / hombro y pecho): piernas, tracción y cardio, sin empuje ---------- */
+  FIN.push = { tag: 'FINISHER', t: 'Cierre metabólico · Remo, bici y arrastre (EMOM)',
+    i: { min: 12, l: ['EMOM 12 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite cuatro veces.',
+                      '- Minuto 1: Remo ergómetro x 250 m a ritmo de carrera',
+                      '- Minuto 2: Assault bike x 12 calorías',
+                      '- Minuto 3: Arrastre de trineo (sled pull) x 20 m con una carga que te permita caminar firme'] },
+    a: { min: 12, l: ['EMOM 12 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite cuatro veces.',
+                      '- Minuto 1: Remo ergómetro x 300 m a ritmo de carrera',
+                      '- Minuto 2: Assault bike x 15 calorías',
+                      '- Minuto 3: Arrastre de trineo (sled pull) x 25 m con una carga exigente'] },
+    obj: 'Cerrás el día de empuje con piernas, espalda y cardio de competición: el remo, la bici y el arrastre suben las pulsaciones sin tocar pecho, hombros ni tríceps, que ya hicieron el trabajo y necesitan recuperar para el próximo empuje.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy se empujó con el torso. Este cierre trabaja lo que hoy quedó en reposo (piernas y tracción) y entrena el cambio rápido de estación típico de una carrera Hyrox.',
+           'INTERFERENCIA: acá no hay press, flexiones ni slam ball a propósito: el pecho, los hombros y los tríceps no se vuelven a cargar.',
+           'FORMATO: el EMOM te marca el ritmo. Si terminás la estación en 40 segundos, descansás 20; si la última vuelta te lleva el minuto entero, bajá la carga del arrastre.',
+           'TRANSICIÓN: cambiá de estación caminando rápido, sin correr: los segundos de pausa son parte del entrenamiento.',
+           'REMO: empujá primero con las piernas, después abrí el torso y al final tirá con los brazos.',
+           'ALTERNATIVA: sin remo, SkiErg x 200 m; sin trineo, remo con resistencia alta x 15 s; sin bici, remo x 250 m.',
+           'SENSACIÓN OBJETIVO: respiración agitada, piernas calientes y los hombros frescos. Si terminás destruido, la carga fue demasiada.'] };
+
+  /* ---------- día de TRACCIÓN (Pull / espalda y bíceps): piernas y empuje ligero, sin remo, SkiErg ni agarre ---------- */
+  FIN.pull = { tag: 'FINISHER', t: 'Cierre metabólico · Trineo, wall balls y bici (For Time)',
+    i: { min: 10, l: ['3 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 90 segundos de descanso al cerrar cada ronda.',
+                      '- Sled push / Trineo x 20 m con una carga que te permita caminar firme',
+                      '- Wall balls x 15 repeticiones (6 kg a 3 m)',
+                      '- Assault bike x 12 calorías'] },
+    a: { min: 12, l: ['4 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 75 segundos de descanso al cerrar cada ronda.',
                       '- Sled push / Trineo x 25 m con una carga exigente',
-                      '- Bicicleta / Assault bike x 30 s al máximo que puedas sostener las seis rondas'] },
-    obj: 'Subís las pulsaciones y el gasto energético de toda la sesión sin sumar daño muscular: el trineo y la bicicleta no tienen fase excéntrica, así que recuperás rápido y llegás bien al próximo entrenamiento.',
-    tips: ['POR QUÉ ESTÁ ACÁ: cerrar con trabajo metabólico mejora tu capacidad de recuperar entre series y suma gasto calórico sin comerle recuperación al tren inferior. Va al final para no restarle fuerza a nada de lo anterior.',
-           'RITMO: todas las rondas tienen que parecerse. Si la última es mucho más lenta que la primera, arrancaste demasiado fuerte.',
-           'TRINEO: torso inclinado, brazos estirados y pasos cortos y rápidos empujando el piso. No es fuerza máxima: es una carrera de piernas con carga.',
-           'BICICLETA: fuerte pero sostenible. Tenés que poder decir una palabra, no una frase.',
-           'ALTERNATIVA: sin trineo, farmer carry x 30 m o escaladora; sin bicicleta, remo ergómetro x 250 m.',
-           'SENSACIÓN OBJETIVO: piernas llenas, respiración agitada y la cabeza clara. Si te mareás o perdés la técnica, cortá y descansá: el objetivo es terminar mejor de lo que empezaste.'] };
+                      '- Wall balls x 20 repeticiones (9 kg a 3 m)',
+                      '- Assault bike x 15 calorías'] },
+    obj: 'Cerrás el día de tracción con piernas y cardio de competición: el trineo de empuje, los wall balls y la bici elevan el gasto de toda la sesión sin pedirle nada más a la espalda, los dorsales ni el agarre, que ya trabajaron.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy se tiró con la espalda y el bíceps. Este cierre usa piernas y empuje liviano y es un recorte de lo que vas a repetir en una carrera Hyrox.',
+           'INTERFERENCIA: no hay remo, SkiErg ni arrastre ni transporte a propósito: la espalda y el agarre llegan recuperados al próximo día de tracción.',
+           'FORMATO: anotá el tiempo total. La próxima semana el objetivo es repetirlo con la misma carga y bajar unos segundos.',
+           'TRINEO: torso inclinado, brazos estirados y pasos cortos y rápidos empujando el piso.',
+           'WALL BALLS: sentadilla completa y lanzamiento al blanco en un solo movimiento; la pelota sube con las piernas, no con los hombros.',
+           'ALTERNATIVA: sin trineo, zancadas caminando con mancuernas x 20 m; sin wall balls, thrusters livianos x 12; sin bici, escaladora x 40 s.',
+           'SENSACIÓN OBJETIVO: piernas llenas, respiración al límite pero controlada y la espalda fresca.'] };
 
-  FIN.push = { tag: 'FINISHER', t: 'Cierre metabólico · Bombeo de torso',
-    i: { min: 6, l: ['4 rondas: las tres estaciones sin pausa y 60 segundos de descanso al cerrar cada ronda.',
-                     '- Flexiones de brazos x 12 a 15 repeticiones',
-                     '- Face Pull con cuerda x 15 repeticiones',
+  /* ---------- día de PIERNA (cuádriceps / pierna completa): tren superior y core, sin trineo de empuje ni escaladora ---------- */
+  FIN.pierna = { tag: 'FINISHER', t: 'Cierre metabólico · SkiErg, arrastre y slam ball (AMRAP)',
+    i: { min: 8, l: ['AMRAP 8 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda y anotás cuántas hiciste.',
+                     '- SkiErg x 200 m a ritmo fuerte',
+                     '- Arrastre de trineo (sled pull) x 15 m con una carga que te permita caminar firme',
                      '- Slam ball (balón medicinal) x 10 repeticiones'] },
-    a: { min: 8, l: ['5 rondas: las tres estaciones sin pausa y 60 segundos de descanso al cerrar cada ronda.',
-                     '- Flexiones con manos elevadas / declinadas x 15 repeticiones',
-                     '- Face Pull con cuerda x 20 repeticiones',
-                     '- Slam ball (balón medicinal) x 12 repeticiones a máxima intensidad'] },
-    obj: 'Cerrás el torso con bombeo y trabajo cardiovascular sin cargas pesadas: la congestión sostenida mejora el riego del músculo y el gasto de la sesión sin exigirle nada a los tendones.',
-    tips: ['POR QUÉ ESTÁ ACÁ: es el cierre que deja el pecho, los hombros y la espalda alta llenos y las pulsaciones arriba. Se hace con técnica prolija: acá no se busca el récord, se busca el bombeo.',
-           'RITMO: las flexiones salen limpias desde la primera ronda; si en la tercera se te cae la cadera, apoyá las rodillas y seguí.',
-           'FACE PULL: tirá hacia la cara con los codos altos y apretá las escápulas un instante. Es lo que cuida tus hombros del trabajo de empuje.',
-           'SLAM BALL: levantá el balón por encima de la cabeza con las costillas abajo y lanzalo al piso con todo el cuerpo, desde la cadera y no solo con los brazos.',
-           'ALTERNATIVA: sin balón, remo ergómetro x 20 s a ritmo fuerte o SkiErg x 20 s.',
-           'SENSACIÓN OBJETIVO: hombros y pecho encendidos, brazos llenos y respiración agitada, sin dolor articular.'] };
-
-  FIN.pull = { tag: 'FINISHER', t: 'Cierre metabólico · Remo y agarre',
-    i: { min: 8, l: ['4 rondas: las tres estaciones sin pausa y 75 segundos de descanso al cerrar cada ronda.',
-                     '- Remo ergómetro x 250 m a ritmo fuerte',
-                     '- Farmer carry x 30 m',
-                     '- SkiErg x 20 s a ritmo fuerte'] },
-    a: { min: 10, l: ['5 rondas: las tres estaciones sin pausa y 60 segundos de descanso al cerrar cada ronda.',
-                      '- Remo ergómetro x 300 m a ritmo fuerte',
-                      '- Farmer carry x 40 m con carga exigente',
-                      '- SkiErg x 30 s a ritmo fuerte'] },
-    obj: 'Sumás trabajo cardiovascular y de agarre al final de la sesión de tracción: el remo y el transporte mantienen la espalda y el antebrazo trabajando mientras las pulsaciones suben, sin cargar la zona lumbar con peso pesado.',
-    tips: ['POR QUÉ ESTÁ ACÁ: el agarre y la espalda alta son lo que más se cansa en una sesión de tracción, y este bloque los exprime de otra manera y suma gasto calórico sin machacar nada.',
-           'REMO: empujá primero con las piernas, después abrí el torso y al final tirá con los brazos. Si tirás con los brazos desde el principio, te quedás sin nafta.',
-           'FARMER CARRY: hombros atrás, pasos cortos y el abdomen duro. Si el tronco se inclina, bajá la carga.',
+    a: { min: 10, l: ['AMRAP 10 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda y anotás cuántas hiciste.',
+                      '- SkiErg x 250 m a ritmo fuerte',
+                      '- Arrastre de trineo (sled pull) x 20 m con una carga exigente',
+                      '- Slam ball (balón medicinal) x 12 repeticiones a máxima intensidad'] },
+    obj: 'Cerrás el día de pierna con tren superior y core de competición: el SkiErg, el arrastre y los slams suben las pulsaciones sin volver a cargar cuádriceps ni glúteo, que ya hicieron el trabajo pesado y necesitan recuperar.',
+    tips: ['POR QUÉ ESTÁ ACÁ: las piernas ya hicieron lo duro. Este cierre suma gasto energético y capacidad aeróbica con la espalda, los brazos y el tronco, sin competir con la recuperación de la pierna.',
+           'INTERFERENCIA: acá no hay trineo de empuje, escaladora, zancadas ni saltos a propósito. Si caminás raro mañana, el cierre sobraba.',
+           'FORMATO: el AMRAP no es una carrera: buscá el mismo ritmo en todas las vueltas y anotá cuántas rondas completas lograste.',
            'SKIERG: arrancá la tracción con las caderas, seguí con los dorsales y terminá con los brazos; el ritmo es parejo, no a golpes.',
-           'ALTERNATIVA: sin remo ergómetro, bicicleta x 40 s fuerte; sin SkiErg, remo ergómetro x 20 s; sin farmer carry, transporte de maleta x 30 m por lado.',
-           'SENSACIÓN OBJETIVO: antebrazos y espalda ardiendo, piernas respondiendo y la respiración al límite pero controlada.'] };
+           'ARRASTRE: tirá con la espalda y las caderas, no con los brazos; los brazos son la última palanca.',
+           'SLAM BALL: balón por encima de la cabeza con las costillas abajo y lanzamiento al piso con todo el tronco.',
+           'ALTERNATIVA: sin SkiErg, remo ergómetro x 200 m con poca pierna; sin trineo, remo con mancuerna x 10 por lado.',
+           'SENSACIÓN OBJETIVO: espalda y brazos calientes, respiración agitada y las piernas descansando.'] };
 
-  FIN.full = { tag: 'FINISHER', t: 'Cierre metabólico · Circuito de cuerpo completo',
-    i: { min: 8, l: ['4 rondas: las tres estaciones sin pausa y 75 segundos de descanso al cerrar cada ronda.',
-                     '- Farmer carry x 30 m',
-                     '- Bicicleta / Assault bike x 30 s a ritmo fuerte',
-                     '- Flexiones de brazos x 10 a 12 repeticiones'] },
-    a: { min: 10, l: ['5 rondas: las tres estaciones sin pausa y 60 segundos de descanso al cerrar cada ronda.',
-                      '- Farmer carry x 40 m con carga exigente',
-                      '- Bicicleta / Assault bike x 30 s al máximo sostenible',
-                      '- Flexiones con manos elevadas / declinadas x 12 a 15 repeticiones'] },
-    obj: 'Un cierre que mezcla transporte, cardio y empuje para subir el gasto energético del día completo sin agregar fatiga muscular localizada: llegás a la próxima sesión de cuerpo completo con las piernas y el tronco recuperados.',
-    tips: ['POR QUÉ ESTÁ ACÁ: en un esquema de cuerpo completo cada patrón se entrena tres veces por semana; este circuito suma trabajo aeróbico y de agarre sin competir con los básicos del día.',
-           'RITMO: parejo de la primera a la última ronda. Es un cierre, no una competencia.',
-           'FARMER CARRY: el tronco quieto y los hombros atrás; el agarre trabaja gratis acá.',
-           'ALTERNATIVA: sin bicicleta, remo ergómetro x 250 m o escaladora x 30 s.',
-           'SENSACIÓN OBJETIVO: respiración agitada, cuerpo caliente y una sensación de haber hecho todo bien. Si terminás destruido, la carga fue demasiada.'] };
+  /* ---------- día de GLÚTEO / cadena posterior: intervalos de tracción y cardio sostenible, sin cadera cargada ---------- */
+  FIN.glute = { tag: 'FINISHER', t: 'Cierre metabólico · Intervalos 40:20 de SkiErg, bici y arrastre',
+    i: { min: 10, l: ['HIIT por intervalos: 3 rondas de tres estaciones, 40 segundos de trabajo y 20 de transición entre una estación y la siguiente; 90 segundos de descanso al cerrar cada ronda.',
+                      '- SkiErg x 40 s a ritmo fuerte',
+                      '- Assault bike x 40 s a un ritmo que puedas sostener las tres rondas',
+                      '- Arrastre de trineo (sled pull) x 40 s con una carga moderada'] },
+    a: { min: 12, l: ['HIIT por intervalos: 4 rondas de tres estaciones, 40 segundos de trabajo y 20 de transición entre una estación y la siguiente; 75 segundos de descanso al cerrar cada ronda.',
+                      '- SkiErg x 40 s al máximo sostenible',
+                      '- Assault bike x 40 s a un ritmo que puedas sostener las cuatro rondas',
+                      '- Arrastre de trineo (sled pull) x 40 s con una carga exigente'] },
+    obj: 'Cerrás el día de glúteo y cadena posterior con intervalos de competición que casi no cargan la cadera: el SkiErg y el arrastre trabajan espalda, brazos y core mientras la bici mantiene las pulsaciones, y el glúteo recupera para la próxima sesión.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy el glúteo y los isquios ya hicieron el trabajo pesado, con hip thrust, rumano y unilaterales. Acá se suma capacidad aeróbica y gasto sin repetir lo mismo.',
+           'INTERFERENCIA: no hay trineo de empuje, escaladora, zancadas ni burpees a propósito: son todas estaciones de cadera y rodilla que ya se cansaron.',
+           'FORMATO: 40 segundos de trabajo y 20 de transición. Si en la última ronda perdés más de 10 metros en el SkiErg, bajá un punto el esfuerzo en la primera.',
+           'BICICLETA: fuerte pero sostenible. Tenés que poder decir una palabra, no una frase; empujá más con los brazos que con las piernas.',
+           'ARRASTRE: tirá con la espalda y el core, con las caderas quietas y el torso firme.',
+           'ALTERNATIVA: sin SkiErg, remo ergómetro x 40 s con poca pierna; sin trineo, remo con banda x 40 s; sin bici, caminata inclinada rápida x 40 s.',
+           'SENSACIÓN OBJETIVO: pulsaciones altas, espalda y brazos calientes y el glúteo descansando.'] };
 
-  FIN.glute = { tag: 'FINISHER', t: 'Cierre metabólico · Escaladora y trineo',
-    i: { min: 8, l: ['4 rondas: pasás de una estación a la otra sin pausa y descansás 75 segundos al cerrar cada ronda.',
-                     '- Escaladora x 45 s a ritmo fuerte',
-                     '- Sled push / Trineo x 20 m con una carga que te permita caminar firme'] },
-    a: { min: 10, l: ['5 rondas: pasás de una estación a la otra sin pausa y descansás 60 segundos al cerrar cada ronda.',
-                      '- Escaladora x 60 s a ritmo fuerte',
-                      '- Sled push / Trineo x 25 m con una carga exigente'] },
-    obj: 'Cerrás el día de pierna y glúteo con trabajo cardiovascular de bajo impacto: la escaladora y el trineo mantienen el glúteo y el cuádriceps activos mientras suben las pulsaciones, sin sumar daño muscular que te complique el día siguiente.',
-    tips: ['POR QUÉ ESTÁ ACÁ: el glúteo y la pierna ya hicieron el trabajo duro. Acá se suma gasto energético y capacidad aeróbica sin restarle recuperación a la próxima sesión.',
-           'ESCALADORA: pasos completos, apoyando todo el pie y sin colgarte de las manos. El glúteo es el que empuja.',
-           'TRINEO: torso inclinado, brazos estirados y pasos cortos y rápidos.',
-           'ALTERNATIVA: sin escaladora, bicicleta x 45 s fuerte; sin trineo, farmer carry x 30 m.',
-           'SENSACIÓN OBJETIVO: piernas calientes y llenas, respiración agitada y ganas de seguir entrenando mañana.'] };
+  /* ---------- segundo día de GLÚTEO de la semana: mismo criterio, otro formato (EMOM) para no repetir el cierre ---------- */
+  FIN.gluteB = { tag: 'FINISHER', t: 'Cierre metabólico · SkiErg, arrastre y bici (EMOM)',
+    i: { min: 10, l: ['EMOM 10 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite hasta cerrar los diez.',
+                      '- Minuto 1: SkiErg x 12 calorías a ritmo fuerte',
+                      '- Minuto 2: Arrastre de trineo (sled pull) x 15 m con una carga moderada',
+                      '- Minuto 3: Assault bike x 10 calorías a un ritmo sostenible'] },
+    a: { min: 12, l: ['EMOM 12 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite cuatro veces.',
+                      '- Minuto 1: SkiErg x 15 calorías a ritmo fuerte',
+                      '- Minuto 2: Arrastre de trineo (sled pull) x 20 m con una carga exigente',
+                      '- Minuto 3: Assault bike x 12 calorías a un ritmo sostenible'] },
+    obj: 'Cerrás el segundo día de glúteo de la semana con otro formato de competición (EMOM): el SkiErg, el arrastre y la bici suben las pulsaciones con espalda, brazos y core y casi sin cadera cargada, así el glúteo recupera para la próxima sesión.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy el glúteo ya trabajó con volumen. Este cierre suma capacidad aeróbica y gasto sin repetir cadera ni rodilla, y cambia el formato respecto del primer día de glúteo de la semana.',
+           'INTERFERENCIA: no hay trineo de empuje, escaladora, zancadas ni burpees a propósito: son estaciones de cadera y rodilla que ya se cansaron.',
+           'FORMATO: el EMOM te marca el ritmo. Si una estación te lleva el minuto entero, bajá la carga o las calorías.',
+           'TRANSICIÓN: cambiá de estación caminando rápido, sin correr: los segundos de pausa son parte del entrenamiento.',
+           'BICICLETA: fuerte pero sostenible; empujá más con los brazos que con las piernas.',
+           'ALTERNATIVA: sin SkiErg, remo ergómetro con poca pierna; sin trineo, remo con banda x 30 s; sin bici, caminata inclinada rápida x 40 s.',
+           'SENSACIÓN OBJETIVO: pulsaciones altas, espalda y brazos calientes y el glúteo descansando.'] };
 
-  FIN.carry = { tag: 'FINISHER', t: 'Cierre metabólico · Transporte y slam ball',
-    i: { min: 6, l: ['4 rondas: las dos estaciones sin pausa y 75 segundos de descanso al cerrar cada ronda.',
-                     '- Farmer carry x 40 m',
-                     '- Slam ball (balón medicinal) x 12 repeticiones'] },
-    a: { min: 8, l: ['5 rondas: las dos estaciones sin pausa y 60 segundos de descanso al cerrar cada ronda.',
-                     '- Farmer carry x 40 m con carga exigente',
-                     '- Slam ball (balón medicinal) x 15 repeticiones'] },
-    obj: 'Densidad metabólica con ejercicios de bajo impacto articular: el transporte mantiene el tono del tronco y el agarre mientras los slams con balón elevan la frecuencia cardíaca con poco impacto articular.',
+  /* ---------- día de TORSO (empuje + tracción): piernas y cardio de competición ---------- */
+  FIN.torso = { tag: 'FINISHER', t: 'Cierre metabólico · Trineo, burpee broad jump y bici (For Time)',
+    i: { min: 10, l: ['3 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 90 segundos de descanso al cerrar cada ronda.',
+                      '- Sled push / Trineo x 20 m con una carga que te permita caminar firme',
+                      '- Burpee broad jump x 8 repeticiones a ritmo de carrera',
+                      '- Assault bike x 10 calorías'] },
+    a: { min: 12, l: ['4 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 75 segundos de descanso al cerrar cada ronda.',
+                      '- Sled push / Trineo x 25 m con una carga exigente',
+                      '- Burpee broad jump x 10 repeticiones a ritmo de carrera',
+                      '- Assault bike x 12 calorías'] },
+    obj: 'Cerrás el día de torso con piernas y cardio de competición: el trineo de empuje, el burpee broad jump y la bici elevan el gasto de toda la sesión sin sumar trabajo de pecho, hombros ni espalda, que ya cumplieron su volumen del día.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy se entrenó el torso completo. Este cierre usa las piernas y el sistema cardiovascular y es una versión corta de lo que se repite en una carrera Hyrox.',
+           'INTERFERENCIA: no hay remo, SkiErg ni press a propósito: el torso llega recuperado al próximo día de pierna o de torso.',
+           'FORMATO: anotá el tiempo total. La próxima semana el objetivo es repetirlo con la misma carga y bajar unos segundos.',
+           'BURPEE BROAD JUMP: pecho al piso, salto largo hacia adelante y de pie de nuevo. Es un movimiento de competición: la técnica pesa más que la velocidad.',
+           'TRINEO: torso inclinado, brazos estirados y pasos cortos y rápidos empujando el piso.',
+           'ALTERNATIVA: sin trineo, farmer carry x 30 m; sin burpee broad jump, burpees sin salto x 8; sin bici, escaladora x 30 s.',
+           'SENSACIÓN OBJETIVO: piernas llenas, respiración agitada y el torso fresco.'] };
+
+  /* ---------- cuerpo completo: mini simulación de carrera ---------- */
+  FIN.full = { tag: 'FINISHER', t: 'Cierre metabólico · Mini simulación Hyrox (For Time)',
+    i: { min: 10, l: ['2 rondas por tiempo (For Time): las cinco estaciones en orden, con 10 segundos de transición entre ellas y 2 minutos de descanso al cerrar la primera ronda.',
+                      '- SkiErg x 200 m a ritmo de carrera',
+                      '- Sled push / Trineo x 15 m con una carga que te permita caminar firme',
+                      '- Burpee broad jump x 6 repeticiones',
+                      '- Remo ergómetro x 200 m a ritmo de carrera',
+                      '- Wall balls x 12 repeticiones (6 kg a 3 m)'] },
+    a: { min: 12, l: ['2 rondas por tiempo (For Time): las cinco estaciones en orden, con 10 segundos de transición entre ellas y 90 segundos de descanso al cerrar la primera ronda.',
+                      '- SkiErg x 250 m a ritmo de carrera',
+                      '- Sled push / Trineo x 20 m con una carga exigente',
+                      '- Burpee broad jump x 8 repeticiones',
+                      '- Remo ergómetro x 250 m a ritmo de carrera',
+                      '- Wall balls x 15 repeticiones (9 kg a 3 m)'] },
+    obj: 'Una mini simulación del orden de una carrera Hyrox (SkiErg, trineo, burpee broad jump, remo y wall balls): entrenás el cambio de estación y el ritmo bajo fatiga con volumen contenido, ideal para un día de cuerpo completo.',
+    tips: ['POR QUÉ ESTÁ ACÁ: en un esquema de cuerpo completo cada patrón ya se entrenó con carga; este cierre suma capacidad de trabajo con las estaciones típicas de competición.',
+           'FORMATO: anotá el tiempo total de las dos rondas. Si la segunda es más de un 15% más lenta que la primera, arrancaste demasiado fuerte.',
+           'TRANSICIÓN: 10 segundos para cambiar de estación, caminando; es parte del entrenamiento.',
+           'RITMO: parejo de la primera a la última estación. Es un cierre, no una competencia.',
+           'ALTERNATIVA: sin SkiErg, remo x 200 m; sin trineo, farmer carry x 30 m; sin burpee broad jump, burpees sin salto.',
+           'SENSACIÓN OBJETIVO: respiración agitada, cuerpo caliente y la técnica intacta hasta la última estación.'] };
+
+  /* ---------- transporte y wall balls: densidad con bajo impacto articular ---------- */
+  FIN.carry = { tag: 'FINISHER', t: 'Cierre metabólico · Transporte y wall balls (AMRAP)',
+    i: { min: 8, l: ['AMRAP 8 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda.',
+                     '- Farmer carry x 30 m con una carga que te permita caminar firme',
+                     '- Wall balls x 10 repeticiones (6 kg a 3 m)',
+                     '- Assault bike x 8 calorías'] },
+    a: { min: 10, l: ['AMRAP 10 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda.',
+                      '- Farmer carry x 40 m con una carga exigente',
+                      '- Wall balls x 12 repeticiones (9 kg a 3 m)',
+                      '- Assault bike x 10 calorías'] },
+    obj: 'Densidad metabólica con estaciones de competición de bajo impacto articular: el transporte mantiene el tono del tronco y el agarre, los wall balls elevan la frecuencia cardíaca y la bici sostiene las pulsaciones sin golpear las articulaciones.',
     tips: ['POR QUÉ ESTÁ ACÁ: es un cierre corto y seco. Suma volumen de trabajo y gasto calórico sin sumarle estrés a las articulaciones.',
+           'FORMATO: anotá las rondas completas. La próxima semana el objetivo es sumar una vuelta o repetirlas con más carga.',
            'FARMER CARRY: pasos cortos, hombros atrás y costillas abajo.',
-           'SLAM BALL: balón por encima de la cabeza y lanzamiento al piso con todo el cuerpo, a ritmo parejo y sin frenar en la mitad.',
+           'WALL BALLS: sentadilla completa y lanzamiento al blanco en un solo movimiento.',
            'SENSACIÓN OBJETIVO: antebrazos llenos, pulsaciones altas y técnica limpia hasta el último metro.'] };
 
   FIN.zona2 = { tag: 'CARDIO', t: 'Cardio · Zona 2 de recuperación',
@@ -81260,6 +81377,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
            'RITMO: tenés que poder hablar frases completas. Si no podés, estás yendo demasiado fuerte para zona 2.',
            'ALTERNATIVA: bicicleta o elíptica a ritmo conversacional por el mismo tiempo.',
            'SENSACIÓN OBJETIVO: entrar en calor sin sentir cansancio y terminar con ganas de seguir.'] };
+
+  /* compatibilidad: el nombre viejo de los días de pierna */
+  FIN.sledBike = FIN.pierna;
 
   PB.FIN = FIN;
 })();
@@ -81315,7 +81435,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: la zancada inversa descarga el cuádriceps y el glúteo y el talón a una pierna trabaja el gemelo sin pausa. Pausa de un segundo abajo, en el estiramiento: ahí está el estímulo.' }),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   D.M_UP_A = { short: 'TORSO A', label: 'Torso A', title: 'Torso A · Fuerza de Empuje y Tracción', wu: 'upper', chips: ['💪 Torso', '🎯 Fuerza', '🔥 Cierre metabólico'],
@@ -81328,7 +81448,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
       R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Los dos se recuperan mientras el otro trabaja, así que podés cargar fuerte.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.push })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.M_LO_A = { short: 'PIERNA A', label: 'Pierna A', title: 'Pierna A · Fuerza de Sentadilla', wu: 'legs', chips: ['🦵 Pierna', '🎯 Fuerza', '🔥 Cierre metabólico'],
@@ -81341,7 +81461,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60'),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   D.M_UP_B = { short: 'TORSO B', label: 'Torso B', title: 'Torso B · Hipertrofia de Pecho, Espalda y Hombros', wu: 'upper', chips: ['💪 Torso', '🎯 Hipertrofia', '🔥 Cierre metabólico'],
@@ -81356,7 +81476,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones frontales con mancuernas'], null, '4x15/15-20/12-15|0|60|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y face pull sin pausa. Cargas livianas y rango completo: acá manda la congestión.' }),
       R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
       R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/40s|1|45', '3x15/50s|0|45'),
-      R('M', null, null, null, { fin: FIN.pull })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.M_UP_C = { short: 'TORSO C', label: 'Torso C', title: 'Torso C · Refuerzo de Hombro y Brazos', wu: 'upper', chips: ['💪 Torso', '🎯 Refuerzo', '🫀 Cardio zona 2'],
@@ -81383,7 +81503,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevación de talones sentado', '3x12-15|1|60', '4x12-20|0|60'),
       R('B', ['Zancada inversa', 'Puente de glúteo a una pierna'], '3x10 por lado/10 por lado|1|60', '3x10 por lado/12 por lado|0|60'),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   /* ---------- matriz masculina: frecuencia -> sesiones ---------- */
@@ -81435,7 +81555,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Aducción en máquina', '3x12-15|1|60', '4x15|0|45'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: el step up trabaja cuádriceps y glúteo y el talón a una pierna completa la pantorrilla, sin pausa entre las dos.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   D.F_GLU_B = { short: 'GLÚTEO B', label: 'Glúteo y Armonía', title: 'Glúteo y Armonía · Volumen, Espalda y Brazos', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Volumen + espalda + brazos', '🔥 Cierre metabólico'],
@@ -81449,7 +81569,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15-20|0|45'),
       R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
       R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.glute })
+      R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
   D.F_GLU_SH = { short: 'GLÚTEO + HOMBRO', label: 'Glúteo y Hombros', title: 'Glúteo y Hombros · Frecuencia y Estética', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hombros', '🔥 Cierre metabólico'],
@@ -81478,7 +81598,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true }),
       R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.push })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.F_PUSH = { short: 'PUSH', label: 'Hombro y Pecho', title: 'Push · Hombro, Pecho y Tríceps', wu: 'push', chips: ['💪 Empuje', '🎯 Hombro + pecho', '🔥 Cierre metabólico'],
@@ -81518,7 +81638,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
       R('B', ['Abducción de cadera en máquina', 'Aducción en máquina'], '3x15/15|1|45', '4x15-20/15|0|45|drop'),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   /* ---------- split femenino de 3 días: Pierna A / Push, Pull y Brazos / Pierna B ---------- */
@@ -81547,7 +81667,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y W seguidos sin pausa. Acá manda la congestión, no la carga.' }),
       R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.push })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.F_PB = { short: 'PIERNA B', label: 'Pierna B', title: 'Pierna B · Glúteos e Isquiotibiales + Refuerzo de Torso', wu: 'glute', chips: ['🦵 Pierna B', '🎯 Glúteo + isquios', '💪 Refuerzo de torso'],
@@ -81562,7 +81682,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, livianos y con rango completo.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: tres estaciones sin pausa para redondear el deltoide. La congestión es el objetivo.' }),
       R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.glute })
+      R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
   PB.ESTR.push(
@@ -81588,7 +81708,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function w(n){ return NUM[n] != null ? NUM[n] : String(n); }
   function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
   function nivDe(c){ return c.lv === 0 ? 'intermedio' : (c.lv === 1 ? 'avanzado' : 'pro'); }
-  function cargas(c){ return { farmer: c.f ? '2 x 16-24 kg' : '2 x 24-32 kg', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
+  function cargas(c){ return { farmer: c.f ? '16 a 24 kg en cada mano' : '24 a 32 kg en cada mano', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
   function Fin(tag, t, min, l, obj, tips){ return { tag: tag, t: t, i: { min: min, l: l }, obj: obj, tips: tips }; }
 
   var HX = {};
@@ -83243,7 +83363,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '(f) ORDEN Y FATIGA: lo más técnico y demandante primero; no fatigues un músculo antes de un ejercicio que lo necesita fresco (no tríceps pesado antes del press, no bíceps antes de las dominadas). ' +
       (av ? '(g) DURACIÓN REAL: el (N MIN) de cada bloque = series x (45 s de trabajo + descanso) / 60 + 2 min de preparación; la suma de todos los bloques ocupa entre el 90% y el 100% del tiempo máximo (una sesión que termina con más de 15 minutos de sobra está mal diseñada). ' +
          '(h) TÉCNICAS DE INTENSIDAD OBLIGATORIAS (mínimo 2 por sesión, en aislamientos y nunca en el básico pesado ni sobre una articulación con molestia): drop-set, myo-reps, rest-pause, parciales en el estiramiento o pausa isométrica de 2 s en el máximo estiramiento, escritas al final de la dosis ("| Drop-set", "| Myo-reps", "| Rest-pause"). ' +
-         '(i) CIERRE METABÓLICO: el último bloque de trabajo (antes del core, o en lugar de un accesorio liviano) es un biset o triset de aislamientos del foco de 8 a 12 minutos: 3 rondas de 12 a 20 repeticiones a RIR 0, con 30-45 s entre estaciones y 60-75 s al final de cada ronda, y una técnica de intensidad en la última estación. El atleta tiene que terminar con la sensación de haber hecho un trabajo profesional y exigente.\n'
+         '(i) CIERRE METABÓLICO: el último bloque de trabajo (antes del core, o en lugar de un accesorio liviano) es un biset o triset de aislamientos del foco de 8 a 12 minutos: 3 rondas de 12 a 20 repeticiones a RIR 0, con 30-45 s entre estaciones y 60-75 s al final de cada ronda, y una técnica de intensidad en la última estación. El atleta tiene que terminar con la sensación de haber hecho un trabajo profesional y exigente. Si el cierre es un finisher de cardio (perfil Hyrox, CrossFit o HIIT), se escribe con estaciones y formato de competición (SkiErg, Sled Push / Pull, Wall Balls, Assault Bike, Remo, Burpee Broad Jump, Farmer Carry; en EMOM, AMRAP, For Time o intervalos 40:20) y se ALINEA AL DÍA: complementa lo que el día no trabajó, sin repetirlo (día de empuje: piernas y tracción, sin press ni flexiones; día de tracción: piernas y empuje ligero, sin remo, SkiErg ni arrastre; día de pierna o glúteo: tren superior, SkiErg, arrastre y bici sostenible, sin trineo de empuje, escaladora ni zancadas; día de torso: piernas y cardio).\n'
          : '(g) DURACIÓN REAL: el (N MIN) de cada bloque = series x (45 s de trabajo + descanso) / 60 + 2 min de preparación; la suma de todos los bloques respeta el tiempo máximo. Un bloque de fuerza con 3 series o menos solo se justifica como top set pesado.\n') +
       '3f) ' + jpIA('ciencia') + '\n' +
       '3g) ' + jpIA('sala') + '\n' +
@@ -89537,6 +89657,20 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-s, html body:not(#_):not(#
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b{padding:2px 12px 12px; font-size:.82rem; line-height:1.5; color:var(--xc-txt); border-top:1px solid var(--xc-bd);}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row{padding-top:8px;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row b{color:var(--xc-tempo-c, var(--xc-acc)); font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt), html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt){display:grid !important; grid-template-columns:auto minmax(0,1fr) !important; align-items:center !important; gap:4px 10px !important; width:auto !important;
+  background:var(--xc-surface) !important; border:1px solid var(--xc-bd) !important; border-left:3px solid var(--xc-acc) !important; border-radius:var(--xc-r) !important;
+  padding:10px 12px !important; margin:8px 0 !important; box-shadow:var(--xc-sh) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-ex-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-ex-id{grid-row:1 / span 2; align-self:start;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-nombre{grid-column:2; min-width:0; font-family:var(--xc-font) !important; font-size:.95rem !important; font-weight:var(--xc-name-w) !important; letter-spacing:.03em !important; text-transform:uppercase !important;
+  line-height:1.25 !important; color:var(--xc-txt) !important; overflow-wrap:break-word !important; word-break:normal !important; padding:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-pill, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-plain-pill{grid-column:2; justify-self:start; display:inline-flex !important; max-width:100%; white-space:normal !important; background:var(--xc-acc-bg) !important; border:1px solid var(--xc-bd-2) !important;
+  color:var(--xc-acc) !important; font-family:var(--xc-font) !important; font-size:.82rem !important; font-weight:800 !important; letter-spacing:.04em !important; padding:3px 10px !important; border-radius:999px !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-nota, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt) .jp-sb-nota{grid-column:1 / -1;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt{display:flex !important; align-items:flex-start !important; gap:10px !important; background:var(--xc-acc-bg) !important; border:1px solid var(--xc-bd) !important; border-left:3px solid var(--xc-acc) !important;
+  border-radius:var(--xc-r) !important; padding:10px 12px !important; margin:6px 0 !important; width:auto !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-fmt-ic, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-fmt-ic{flex:0 0 auto; color:var(--xc-acc); font-size:1rem; line-height:1.3;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-plain-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-board .jp-sb-plain-fmt .jp-sb-plain-nombre{flex:1 1 0; min-width:0; font-family:var(--xc-font) !important; font-size:.82rem !important; font-weight:700 !important; letter-spacing:.01em !important; text-transform:none !important;
+  line-height:1.4 !important; color:var(--xc-txt) !important; overflow-wrap:break-word !important; word-break:normal !important; padding:0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex::before{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,#5CE1FF 0%,rgba(92,225,255,.15) 70%,transparent 100%); pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}

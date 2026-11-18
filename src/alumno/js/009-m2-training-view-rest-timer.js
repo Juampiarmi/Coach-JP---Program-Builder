@@ -1033,6 +1033,16 @@
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
   }
+  /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
+  function jpLimpiarNombreEstacionSB(nm){
+    return String(nm || '').replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s*[x\u00d7]\s*$/i, '').trim();
+  }
+  function jpEsLineaFormatoSB(txt, hayPastilla){
+    var t = String(txt || '').trim();
+    if(!t || hayPastilla) return false;
+    return t.length > 48 || /^(?:\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\s+(?:rondas?|series?|vueltas?|intervalos?)\b|^(?:amrap|emom|for\s*time|hiit|tabata|chipper)\b/i.test(t);
+  }
+  window.jpLimpiarNombreEstacion = jpLimpiarNombreEstacionSB; window.jpEsLineaFormato = jpEsLineaFormatoSB;
   window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
@@ -4180,11 +4190,18 @@
         }
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
-        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
+        /* nombre de estación limpio: sin el guion de viñeta ni la "x" que queda colgando cuando la cantidad pasó a la pastilla ("- Sled push / Trineo x" -> "Sled push / Trineo") */
+        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : jpLimpiarNombreEstacionSB(partesPlain.nm);
+        /* la línea de formato ("Cuatro rondas: ...", AMRAP, EMOM, For Time) es una consigna, no una estación: va en una banda sin número */
+        const esFormatoPlain = !esCalentamiento && jpEsLineaFormatoSB(nombrePlain, !!pillTxt);
+        if(esFormatoPlain){
+          filas += '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span></div>';
+          return;
+        }
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
             (!esCalentamiento ? '<span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span>' : '') +
-            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
+            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';

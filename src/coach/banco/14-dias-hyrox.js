@@ -13,7 +13,7 @@
   function w(n){ return NUM[n] != null ? NUM[n] : String(n); }
   function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
   function nivDe(c){ return c.lv === 0 ? 'intermedio' : (c.lv === 1 ? 'avanzado' : 'pro'); }
-  function cargas(c){ return { farmer: c.f ? '2 x 16-24 kg' : '2 x 24-32 kg', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
+  function cargas(c){ return { farmer: c.f ? '16 a 24 kg en cada mano' : '24 a 32 kg en cada mano', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
   function Fin(tag, t, min, l, obj, tips){ return { tag: tag, t: t, i: { min: min, l: l }, obj: obj, tips: tips }; }
 
   var HX = {};

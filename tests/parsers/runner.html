@@ -45,6 +45,7 @@
 <script src="cases-estilos.js"></script>
 <script src="cases-copia.js"></script>
 <script src="cases-cruce.js"></script>
+<script src="cases-metabolicos.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -89,6 +90,8 @@
     alumnoTon: { run: function(i){ return alumnoTon(i); }, valor: function(r){ return r; } },
     alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
     bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
+    bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
+    alumnoEstaciones: { run: function(i){ return alumnoEstaciones(i); }, valor: function(r){ return r; } },
     alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
     editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
     bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
@@ -527,6 +530,47 @@
         tempoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-tempo'), explica: /3 s bajada/.test(ex[0].textContent) && /1 s pausa abajo/.test(ex[0].textContent), tempoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-tempo') };
     }
     throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* estaciones de cardio / finisher en la app del alumno: nombre limpio, consigna de formato y reglas de layout compartidas por los estilos */
+  function alumnoEstaciones(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'nombre') return w.jpLimpiarNombreEstacion(i.nm);
+    if(i.caso === 'formato') return w.jpEsLineaFormato(i.txt, !!i.pill);
+    if(i.caso === 'css'){
+      var css = [].slice.call(w.document.querySelectorAll('style')).map(function(s){ return s.textContent; }).join('\n');
+      /* "@est" sin número vale para cualquier estilo: se expande a [data-jp-estilo] (los 3 estilos comparten estas reglas) */
+      var ok = function(pat){ return css.indexOf('[data-jp-estilo] .jp-sb-board .jp-sb-plain' + pat) >= 0; };
+      return { grid: ok(':not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt)'), fmt: ok('-fmt') };
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* cierres metabólicos del Banco BB: estaciones y formato de competición, alineados al día */
+  function auditarMetabolicos(){
+    var P = [], S = getS(), n = 0;
+    var FORMATO = /emom|amrap|for time|por tiempo|hiit|intervalos/i, ESTACION = /skierg|ski erg|sled|trineo|wall ball|assault bike|remo erg|burpee broad/i;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || '')) return;
+      (r.dias || []).forEach(function(d, k){
+        var bl = d.bloques || [], b = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!b) return;
+        var dia = String(d.title || d.titulo || '') + ' ' + String(d.label || '') + ' ' + String(d.short || '');
+        var txt = String(b.titulo || '') + ' ' + (b.items || []).join(' ');
+        if(/zona 2/i.test(txt)) return;                                                   /* el día corto de recuperación cierra con cardio suave */
+        n++;
+        if(!/cierre metab/i.test(String(b.titulo || ''))) { P.push(tag + ': el último bloque no es un cierre metabólico'); return; }
+        if(!FORMATO.test(txt)) P.push(tag + ': el cierre no tiene formato de competición (EMOM, AMRAP, For Time o intervalos)');
+        if(!ESTACION.test(txt)) P.push(tag + ': el cierre no usa estaciones de competición');
+        if(/battle\s*rope/i.test(txt)) P.push(tag + ': tiene battle ropes');
+        var empuje = /^(push|hombro y pecho)\b|\bpush\b/i.test(dia) && !/pull/i.test(dia), traccion = /\bpull\b/i.test(dia) && !/push/i.test(dia);
+        var pierna = /pierna|cuádriceps|cuadriceps|glúteo|gluteo|cadera/i.test(dia) && !empuje && !traccion;
+        if(empuje && /flexion|press|slam|face pull/i.test(txt)) P.push(tag + ': día de empuje con estaciones de empuje en el cierre');
+        if(traccion && /remo erg|skierg|ski erg|arrastre|sled pull|farmer/i.test(txt)) P.push(tag + ': día de tracción con estaciones de tracción o agarre en el cierre');
+        if(pierna && /sled push|trineo x|escaladora|zancada|burpee|wall ball/i.test(txt)) P.push(tag + ': día de pierna o glúteo con estaciones de pierna en el cierre');
+        if(pierna && !/skierg|ski erg|sled pull|arrastre/i.test(txt)) P.push(tag + ': día de pierna o glúteo sin tren superior en el cierre (SkiErg o arrastre)');
+      });
+    });
+    if(n < 30) P.push('esperaba auditar al menos 30 cierres y revisé ' + n);
+    return P;
   }
   /* Constructor de Glúteos: sin movimientos avanzados poco aplicables y con la metodología del tren inferior femenino */
   function auditarGluteos(){

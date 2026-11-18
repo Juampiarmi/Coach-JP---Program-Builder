@@ -48,7 +48,7 @@
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: la zancada inversa descarga el cuádriceps y el glúteo y el talón a una pierna trabaja el gemelo sin pausa. Pausa de un segundo abajo, en el estiramiento: ahí está el estímulo.' }),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   D.M_UP_A = { short: 'TORSO A', label: 'Torso A', title: 'Torso A · Fuerza de Empuje y Tracción', wu: 'upper', chips: ['💪 Torso', '🎯 Fuerza', '🔥 Cierre metabólico'],
@@ -61,7 +61,7 @@
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
       R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Los dos se recuperan mientras el otro trabaja, así que podés cargar fuerte.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.push })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.M_LO_A = { short: 'PIERNA A', label: 'Pierna A', title: 'Pierna A · Fuerza de Sentadilla', wu: 'legs', chips: ['🦵 Pierna', '🎯 Fuerza', '🔥 Cierre metabólico'],
@@ -74,7 +74,7 @@
       R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60'),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   D.M_UP_B = { short: 'TORSO B', label: 'Torso B', title: 'Torso B · Hipertrofia de Pecho, Espalda y Hombros', wu: 'upper', chips: ['💪 Torso', '🎯 Hipertrofia', '🔥 Cierre metabólico'],
@@ -89,7 +89,7 @@
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones frontales con mancuernas'], null, '4x15/15-20/12-15|0|60|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y face pull sin pausa. Cargas livianas y rango completo: acá manda la congestión.' }),
       R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
       R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/40s|1|45', '3x15/50s|0|45'),
-      R('M', null, null, null, { fin: FIN.pull })
+      R('M', null, null, null, { fin: FIN.torso })
     ] };
 
   D.M_UP_C = { short: 'TORSO C', label: 'Torso C', title: 'Torso C · Refuerzo de Hombro y Brazos', wu: 'upper', chips: ['💪 Torso', '🎯 Refuerzo', '🫀 Cardio zona 2'],
@@ -116,7 +116,7 @@
       R('A', 'Elevación de talones sentado', '3x12-15|1|60', '4x12-20|0|60'),
       R('B', ['Zancada inversa', 'Puente de glúteo a una pierna'], '3x10 por lado/10 por lado|1|60', '3x10 por lado/12 por lado|0|60'),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
-      R('M', null, null, null, { fin: FIN.sledBike })
+      R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
   /* ---------- matriz masculina: frecuencia -> sesiones ---------- */
