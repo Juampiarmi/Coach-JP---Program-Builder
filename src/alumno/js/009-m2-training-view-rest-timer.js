@@ -3918,7 +3918,17 @@
     var card = go.closest('.jp-sb-ex, .jp-sb-subex-resumen'), nm = card && card.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit');
     try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
     go.classList.add('on'); setTimeout(function(){ go.classList.remove('on'); }, 900);
-    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, 'Descanso \u00b7 ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio'));
+    var etiquetaDesc = 'Descanso \u00b7 ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio');
+    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, etiquetaDesc);
+    /* el toque en el bot\u00f3n de descanso SIEMPRE abre el reloj flotante: si por cualquier motivo el puente del m\u00f3dulo de calentamiento no lo abri\u00f3
+       (no carg\u00f3, o el motor qued\u00f3 en otro estado), se lo pide directo al motor \u00fanico de descanso. En CrossFit el descanso lo gobierna su propio widget. */
+    setTimeout(function(){
+      var h = document.getElementById('restHud');
+      if(!h || h.classList.contains('on')) return;
+      var cwt = document.getElementById('cwtWrap');
+      if((cwt && cwt.classList.contains('on')) || document.body.classList.contains('cf-disc')) return;
+      if(window.CoachTV && typeof window.CoachTV.rest === 'function') window.CoachTV.rest(seg, etiquetaDesc);
+    }, 160);
   });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){

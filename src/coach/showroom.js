@@ -10,12 +10,15 @@
   'use strict';
   if(window.CoachShowroom) return;
 
-  var VERSION = 'v2 · Azul Noche · 4 estilos interactivos';
+  var VERSION = 'v3 · Azul Noche · Clean Tech · High-Performance · Pulse · Compacto';
+  /* escudo oficial: oro #F5C518 con el rayo negro */
+  var ESCUDO = '<svg viewBox="0 0 64 74" role="img" aria-label="Coach JP"><defs><linearGradient id="srEsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFF2A8"/><stop offset="38%" stop-color="#F5C518"/><stop offset="72%" stop-color="#D6A500"/><stop offset="100%" stop-color="#8A6B00"/></linearGradient></defs>' +
+    '<path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="url(#srEsc)" stroke="#FFF2A8" stroke-width="1.6" stroke-linejoin="round"/><path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="#0A0C10"/></svg>';
   var ESTILOS = [
-    { n: 1, nombre: 'Clean Tech', tag: 'Minimalista', desc: 'Líneas finas, tipografía tabular y una estructura horizontal estricta: cada fila lleva su rótulo (volumen, descanso, técnica). La máxima limpieza visual.' },
-    { n: 2, nombre: 'High-Performance', tag: 'Acento ocre', desc: 'Industrial deportivo: el volumen va en un bloque resaltado con el ocre de la marca, números enormes y mayor contraste en las métricas.' },
-    { n: 3, nombre: 'Glass', tag: 'Glassmorphism sutil', desc: 'Capas translúcidas con desenfoque suave sobre el azul noche, bordes brillantes de 1 px y tarjetas que flotan.' },
-    { n: 4, nombre: 'Compacto de élite', tag: 'Densidad optimizada', desc: 'Pensado para leer en un segundo en el gimnasio: filas estrictas, descanso, tempo y RIR en una sola línea de celdas y números en negrita pura.' }
+    { n: 1, nombre: 'Clean Tech', tag: 'Minimalista · acento cian', desc: 'Líneas finas con brillo, tipografía tabular y una estructura horizontal estricta: cada fila lleva su rótulo (volumen, descanso, técnica). Las repeticiones en cian y el descanso en menta.' },
+    { n: 2, nombre: 'High-Performance', tag: 'Acento ocre', desc: 'Industrial deportivo: el volumen va en un bloque resaltado con el ocre de la marca, números enormes y el descanso en cian para que contraste.' },
+    { n: 3, nombre: 'Pulse', tag: 'Color por dato', desc: 'Barra naranja de la marca arriba y cada dato con su color: series en naranja, descanso en menta, tempo en cian y RIR en ámbar. Se lee de un vistazo, sin recargar.' },
+    { n: 4, nombre: 'Compacto de élite', tag: 'Densidad optimizada', desc: 'Pensado para leer en un segundo en el gimnasio: filas estrictas, descanso, tempo y RIR en una sola línea de celdas con filete de color y números en negrita pura.' }
   ];
   var VISTA = { modo: 'comparar', sel: 2, prueba: 0 };       /* modo: comparar | uno · sel: estilo grande · prueba: estilo probado (sin fijar) en el Builder */
 
@@ -42,7 +45,7 @@
   }
   function dosis(o){
     var r1 = '<span class="jp-db-seg jp-db-vol"><b class="jp-vn">' + o.series + '</b> <span class="jp-vl">SERIES</span> <i class="jp-vx">×</i> <b class="jp-vr">' + esc(o.reps) + '</b> <span class="jp-vl">' + (o.unidad || 'REPS') + '</span></span>';
-    var r2 = '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" tabindex="-1">⏱︎▶︎ DESCANSO ' + esc(o.rest) + '</button>';
+    var r2 = '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-sr-rest="' + segDe(o.rest) + '" aria-label="Iniciar descanso de ' + esc(o.rest) + '">⏱︎▶︎ DESCANSO ' + esc(o.rest) + '</button>';
     var r3 = (o.tempo ? '<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + esc(o.tempo) + '</b></span>' : '') +
              '<span class="jp-db-seg jp-db-rir jp-rir-alto"><small>RIR</small> <b>' + esc(o.rir) + '</b></span>' +
              (o.extra ? '<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + esc(o.extra) + '</b></span>' : '');
@@ -68,10 +71,64 @@
     return '<div class="sr-stage" data-jp-estilo="' + n + '"><div class="sr-bloque"><div class="sr-bloque-h"><span>FUERZA PRINCIPAL</span><em>// 17 MIN</em></div>' + lista.map(tarjeta).join('') + '</div></div>';
   }
 
+  /* ---------- cronómetro emergente de descanso (demo del Showroom) ----------
+     En la app del alumno el botón "DESCANSO" abre el reloj flotante de descanso. Las tarjetas de muestra del Showroom hacen lo mismo con un reloj propio y autónomo
+     (no usa datos ni guarda nada): así se prueba el gesto sin salir de la vista. */
+  var TIMER = { fin: 0, restante: 0, total: 0, corre: false, intervalo: null };
+  function segDe(txt){ var m = /^(\d+):(\d{2})$/.exec(String(txt || '').trim()); return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : (parseInt(txt, 10) || 0); }
+  function mmss(s){ s = Math.max(0, Math.round(s)); return ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + (s % 60)).slice(-2); }
+  function timerEl(){ return document.getElementById('srTimer'); }
+  function pintarTimer(){
+    var el = timerEl(); if(!el) return;
+    el.querySelector('.srt-t').textContent = mmss(TIMER.restante);
+    el.querySelector('.srt-bar > i').style.width = (TIMER.total > 0 ? Math.max(0, Math.min(100, TIMER.restante / TIMER.total * 100)) : 0).toFixed(1) + '%';
+    el.querySelector('[data-srt="pausa"]').textContent = TIMER.corre ? '⏸' : '▶';
+    el.classList.toggle('srt-warn', TIMER.restante <= 10 && TIMER.restante > 0);
+    el.classList.toggle('srt-fin', TIMER.restante <= 0);
+  }
+  function tickTimer(){
+    if(!TIMER.corre) return;
+    TIMER.restante = Math.max(0, Math.round((TIMER.fin - Date.now()) / 1000));
+    if(TIMER.restante <= 0){ TIMER.corre = false; clearInterval(TIMER.intervalo); TIMER.intervalo = null; var el = timerEl(); if(el) el.querySelector('.srt-lb').textContent = '¡A la próxima serie!'; setTimeout(function(){ if(!TIMER.corre && TIMER.restante <= 0) cerrarTimer(); }, 3200); }
+    pintarTimer();
+  }
+  function abrirTimer(seg, etiqueta){
+    if(!(seg > 0)) return;
+    var el = timerEl();
+    if(!el){
+      el = document.createElement('div'); el.id = 'srTimer'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Cronómetro de descanso');
+      el.innerHTML = '<div class="srt-h"><span class="srt-lb"></span><button type="button" data-srt="cerrar" aria-label="Cerrar">✕</button></div><div class="srt-t">00:00</div><div class="srt-bar"><i></i></div>' +
+        '<div class="srt-a"><button type="button" data-srt="pausa" aria-label="Pausar o reanudar">⏸</button><button type="button" data-srt="mas">+10s</button><button type="button" data-srt="saltar">SALTAR</button></div>';
+      el.addEventListener('click', function(e){
+        var b = e.target.closest ? e.target.closest('[data-srt]') : null; if(!b) return;
+        var a = b.getAttribute('data-srt');
+        if(a === 'cerrar' || a === 'saltar') cerrarTimer();
+        else if(a === 'mas'){ TIMER.restante += 10; if(TIMER.restante > TIMER.total) TIMER.total = TIMER.restante; TIMER.fin = Date.now() + TIMER.restante * 1000; pintarTimer(); }
+        else if(a === 'pausa'){
+          TIMER.corre = !TIMER.corre;
+          if(TIMER.corre){ TIMER.fin = Date.now() + TIMER.restante * 1000; if(!TIMER.intervalo) TIMER.intervalo = setInterval(tickTimer, 250); }
+          else if(TIMER.intervalo){ clearInterval(TIMER.intervalo); TIMER.intervalo = null; }
+          pintarTimer();
+        }
+      });
+      document.body.appendChild(el);
+    }
+    el.querySelector('.srt-lb').textContent = etiqueta || 'Descanso';
+    TIMER.total = TIMER.restante = seg; TIMER.fin = Date.now() + seg * 1000; TIMER.corre = true;
+    if(TIMER.intervalo) clearInterval(TIMER.intervalo);
+    TIMER.intervalo = setInterval(tickTimer, 250);
+    el.classList.add('on'); pintarTimer();
+  }
+  function cerrarTimer(){
+    TIMER.corre = false; if(TIMER.intervalo){ clearInterval(TIMER.intervalo); TIMER.intervalo = null; }
+    var el = timerEl(); if(el) el.classList.remove('on');
+  }
+
   /* ---------- la vista ---------- */
   function cabeza(){
     var fj = fijado();
-    return '<div class="topbar"><div><h2>🎨 Showroom</h2><div class="sub">Tarjetas de ejercicio sobre el fondo azul noche · 4 estilos para elegir</div></div><span class="pill teal" title="Si ves este sello estás en el Showroom nuevo">' + VERSION + '</span></div>' +
+    return '<div class="card sr-marca-card" style="padding:12px 16px"><div class="sr-marca">' + ESCUDO + '<div class="sr-marca-t"><span class="sr-marca-n">COACH <em>JP</em></span><span class="sr-marca-s">@coachjp.training</span></div></div></div>' +
+      '<div class="topbar"><div><h2>🎨 Showroom</h2><div class="sub">Tarjetas de ejercicio sobre el fondo azul noche · 4 estilos para elegir</div></div><span class="pill teal" title="Si ves este sello estás en el Showroom nuevo">' + VERSION + '</span></div>' +
       '<div class="card sr-info"><div class="sr-info-t"><b>Estilo vigente:</b> <span class="pill gold">' + esc(nombreDe(fj)) + '</span> ' + (tieneFijado() ? '' : '<span class="hint" style="display:inline">(por defecto: todavía no fijaste ninguno)</span>') +
         (VISTA.prueba ? ' <span class="pill teal">probando: ' + esc(nombreDe(VISTA.prueba)) + '</span>' : '') + '</div>' +
       '<div class="hint">Las 4 versiones comparten la misma estructura: <b>volumen grande</b> a lo largo de la tarjeta, el <b>descanso debajo</b>, el <b>tempo y el RIR</b> en la línea técnica y los <b>coaching tips</b> (Set-up, Ejecución, Cuidado) desplegables al pie. Al fijar un estilo se aplica al Builder y viaja a la app de cada alumno cuando exportás o recompilás.</div>' +
@@ -165,7 +222,12 @@
     try{ toast(VISTA.prueba ? '👁️ Probando el estilo ' + nombreDe(n) + ' en el Builder (sin fijar)' : 'Volviste al estilo vigente: ' + nombreDe(fijado())); }catch(e){}
   }
   function clic(e){
-    var t = e.target.closest ? e.target.closest('[data-sr-modo],[data-sr-sel],[data-sr-fijar],[data-sr-prueba],[data-sr-real],[data-sr-abrir]') : null; if(!t) return;
+    var t = e.target.closest ? e.target.closest('[data-sr-modo],[data-sr-sel],[data-sr-fijar],[data-sr-prueba],[data-sr-real],[data-sr-abrir],[data-sr-rest]') : null; if(!t) return;
+    if(t.dataset.srRest){
+      var cd = t.closest('.jp-sb-ex'), nm = cd && cd.querySelector('.jp-sb-ex-nombre');
+      abrirTimer(parseInt(t.dataset.srRest, 10), 'Descanso · ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio'));
+      return;
+    }
     if(t.dataset.srAbrir){ REAL.abierta = true; renderReal(); return; }
     if(t.dataset.srReal){ aplicarEnReal(parseInt(t.dataset.srReal, 10) || 2); return; }
     if(t.dataset.srModo){ VISTA.modo = t.dataset.srModo; render(); return; }
