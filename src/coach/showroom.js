@@ -24,7 +24,7 @@
   function esc(s){ return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function ui(){ try{ S.ui = S.ui || {}; return S.ui; }catch(e){ return {}; } }
   function estiloDe(n){ for(var i = 0; i < ESTILOS.length; i++){ if(ESTILOS[i].n === n) return ESTILOS[i]; } return null; }
-  function fijado(){ var n = parseInt(ui().estiloTarjeta, 10); return estiloDe(n) ? n : 2; }
+  function fijado(){ var n = parseInt(ui().estiloTarjeta, 10); return estiloDe(n) ? n : 4; }
   function tieneFijado(){ return !!estiloDe(parseInt(ui().estiloTarjeta, 10)); }
   function nombreDe(n){ var e = estiloDe(n); return e ? n + ' · ' + e.nombre : String(n); }
   /* El estilo fijado se aplica a las vistas del Builder (NO al <body>) para que las tarjetas de muestra del Showroom, que llevan su propio estilo, no hereden el del Builder. */
@@ -218,6 +218,6 @@
     var nb = document.querySelector('.navbtn[data-view="showroom"]');
     if(nb && !nb.getAttribute('data-sr-nav')){ nb.setAttribute('data-sr-nav', '1'); nb.addEventListener('click', function(){ try{ window.go('showroom'); }catch(e){} }); }
   }
-  window.CoachShowroom = { version: VERSION, seleccionar: function(n){ if(estiloDe(n)){ VISTA.sel = n; render(); } }, estilos: ESTILOS, fijado: fijado, fijar: fijar, probar: probar, render: render, aplicar: aplicar };
+  window.CoachShowroom = { version: VERSION, tieneFijado: tieneFijado, seleccionar: function(n){ if(estiloDe(n)){ VISTA.sel = n; render(); } }, estilos: ESTILOS, fijado: fijado, fijar: fijar, probar: probar, render: render, aplicar: aplicar };
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arrancar, 300); }); else setTimeout(arrancar, 300);
 })();
