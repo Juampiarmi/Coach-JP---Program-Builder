@@ -25,7 +25,7 @@
     lumbar:   { o: 'Fortalecés la cadena posterior y los erectores, la base que sostiene todos los levantamientos pesados.', s: 'Cadera apoyada en el aparato y cuerpo alineado de la cabeza a los talones.', c: 'Subí hasta alinear el tronco, sin pasarte de ahí, y bajá controlado.', x: 'No hiperextiendas la zona lumbar arriba: el rango termina con el cuerpo recto.', t: '2012' },
     rdl:      { o: 'Cargás isquiotibiales y glúteo en posición estirada: el rango largo es lo que más hipertrofia genera en la cadena posterior.', s: 'Cadera atrás, rodillas apenas flexionadas, barra pegada a las piernas y espalda neutra.', c: 'Empujá la cadera hacia atrás como cerrando una puerta con la cola y subí apretando el glúteo.', x: 'No redondees la espalda baja: el rango termina donde la columna pierde su forma.', t: '3110' },
     pmuerto:  { o: 'Entrenás cadena posterior, espalda y agarre con carga máxima: el ejercicio de fuerza más completo del programa.', s: 'Barra sobre el medio del pie, espalda neutra, dorsales activos y pecho arriba.', c: 'Empujá el piso con las piernas antes de mover la barra y terminá con el glúteo, sin hiperextender.', x: 'No tires desde la espalda baja ni dejes que la barra se separe del cuerpo.', t: '2010' },
-    hip:      { o: 'Cargás el glúteo mayor en extensión de cadera con pausa arriba: el ejercicio que más lo activa.', s: 'Espalda alta apoyada en el banco, pies al ancho de cadera y mentón hacia el pecho.', c: 'Empujá con los talones y frená 1 segundo arriba apretando el glúteo, con las costillas abajo.', x: 'No arquees la lumbar para ganar altura: el glúteo termina con la cadera alineada.', t: '2011' },
+    hip:      { o: 'Cargás el glúteo mayor en extensión de cadera con pausa arriba: el ejercicio que más lo activa.', s: 'Espalda alta apoyada en el banco, pies al ancho de cadera y mentón hacia el pecho.', c: 'Empujá con los talones y sostené la pausa arriba apretando el glúteo, con las costillas abajo.', x: 'No arquees la lumbar para ganar altura: el glúteo termina con la cadera alineada.', t: '2011' },
     glute_iso:{ o: 'Aislás el glúteo con tensión constante, ideal para sumar volumen sin cargar la espalda baja.', s: 'Cadera cuadrada, abdomen firme y el apoyo estable.', c: 'Extendé la cadera apretando el glúteo y sostené 1 segundo arriba.', x: 'No rotes la pelvis ni arquees la espalda baja para subir más la pierna.', t: '2011' },
     abduccion:{ o: 'Trabajás glúteo medio y menor, que dan la forma lateral de la cadera y estabilizan la pelvis.', s: 'Torso levemente inclinado hacia adelante y espalda apoyada si la máquina lo permite.', c: 'Abrí las piernas empujando con las rodillas y volvé lento sin soltar la tensión.', x: 'No rebotes con la pila de pesas ni uses el torso para impulsarte.', t: '2011' },
     aduccion: { o: 'Fortalecés los aductores de la cara interna del muslo, un grupo que suele quedar sin trabajar.', s: 'Espalda apoyada y piernas al ancho cómodo de la máquina.', c: 'Cerrá las piernas controlado y abrí en 3 segundos sintiendo el estiramiento.', x: 'No abras más de lo que tu cadera tolera sin dolor.', t: '3011' },
@@ -40,10 +40,18 @@
     triceps:  { o: 'Trabajás las tres cabezas del tríceps, que son dos tercios del volumen del brazo; con el brazo arriba de la cabeza se estira la porción larga.', s: 'Codos fijos y apuntando al frente, muñecas neutras y torso estable.', c: 'Extendé hasta bloquear sin sacudir y bajá en 2-3 segundos hasta estirar.', x: 'No abras los codos hacia afuera ni uses el torso para empujar.', t: '2011' },
     core_ant: { o: 'Entrenás el tronco para resistir el movimiento (antiextensión, antirrotación): la base que protege la columna bajo carga.', s: 'Abdomen contraído, costillas abajo y pelvis neutra.', c: 'Mantené el tronco quieto mientras se mueven brazos o piernas y respirá sin soltar la tensión.', x: 'Terminá la serie cuando la lumbar se despega o el torso rota, no cuando "arde".', t: '3011' },
     core_flex:{ o: 'Trabajás los abdominales con flexión de tronco o de cadera bajo control, en rangos que cuidan la columna.', s: 'Pelvis hacia atrás (retroversión) y abdomen contraído antes de empezar.', c: 'Llevá el esternón hacia la pelvis y subí las piernas sin balanceo.', x: 'No uses impulso ni dejes que la lumbar se arquee en la bajada.', t: '3011' },
+    rdl_def:  { o: 'Cargás glúteo mayor e isquiotibiales en la posición más estirada del recorrido: el déficit alarga el rango y concentra la tensión justo donde más hipertrofia por estiramiento se genera, con la bisagra de cadera (y no la espalda) haciendo el trabajo.', s: 'Parada sobre un disco o un escalón bajo de 3 a 5 cm, barra o mancuernas pegadas a las piernas, rodillas apenas flexionadas y espalda neutra.', c: 'Llevá la cadera hacia atrás como cerrando una puerta con la cola, bajá hasta sentir el estiramiento máximo de glúteo e isquios, pausa corta abajo y subí empujando el piso con la cadera.', x: 'El rango termina donde la columna pierde su forma: no redondees la espalda baja ni bajes "con la espalda" para ganar profundidad.', t: '3210' },
+    bulg_incl:{ o: 'Cargás el glúteo mayor en su posición más estirada: con el torso inclinado hacia adelante la carga se acerca a la cadera y la tensión pasa del cuádriceps al glúteo, de a una pierna y con poca fatiga axial.', s: 'Pie de atrás apoyado en un banco, paso largo, torso inclinado unos 30° con la mirada hacia el piso y las mancuernas a los costados del cuerpo.', c: 'Bajá en 3 segundos hasta estirar el glúteo de la pierna de adelante, pausa de 1 segundo abajo y subí empujando con el talón.', x: 'No dejes que la rodilla colapse hacia adentro ni cargues el peso en el pie de atrás: la pierna de adelante hace todo el trabajo.', t: '3110' },
+    patada_cruz:{ o: 'Aislás el glúteo mayor con un vector de fuerza cruzado: la polea cruza el cuerpo y alinea la resistencia con la dirección de las fibras, con tensión constante, cero carga sobre la columna y el glúteo estirado al volver.', s: 'Tobillera en la pierna que trabaja, polea baja, apoyo firme con las dos manos y torso levemente inclinado hacia adelante.', c: 'Llevá la pierna hacia atrás y apenas hacia afuera apretando el glúteo, sostené 1 segundo y volvé lento cruzando la línea media para estirarlo.', x: 'No arquees la espalda baja ni gires la pelvis para subir más la pierna: el rango termina donde se mueve la cadera.', t: '3011' },
+    puente_uni:{ o: 'Trabajás el glúteo mayor de a una pierna, con la pelvis estable y sin carga sobre la columna: alta activación y corrección de las diferencias entre un lado y el otro.', s: 'Espalda alta apoyada, pie de trabajo cerca de la cola, la otra pierna extendida y la pelvis nivelada.', c: 'Empujá con el talón hasta alinear costillas, cadera y rodilla, sostené 2 segundos apretando el glúteo y bajá lento.', x: 'No dejes que caiga el lado libre de la pelvis ni arquees la lumbar para subir más.', t: '3012' },
     gen:      { o: 'Estimulás el grupo muscular objetivo con técnica controlada y rango completo.', s: 'Posición estable, postura neutra y el músculo objetivo activado antes de empezar.', c: 'Controlá la bajada y buscá la contracción máxima en cada repetición.', x: 'No sacrifiques el rango ni la técnica por mover más carga.', t: '2011' }
   };
   /* ejercicio -> patrón del KB (el primero que coincide) */
   var RX_KB = [
+    [/peso muerto rumano con deficit|rumano con deficit/, 'rdl_def'],
+    [/bulgara con torso inclinado/, 'bulg_incl'],
+    [/patada de gluteo en polea cruzada/, 'patada_cruz'],
+    [/puente de gluteo a una pierna|puente de gluteo unilateral/, 'puente_uni'],
     [/press de banca|press banca|bench press|press plano con mancuernas|press de pecho en maquina|floor press/, 'press_h'],
     [/press inclinado|inclinado con barra|press de pecho inclinado/, 'press_inc'],
     [/aperturas|cruce de cables|pec deck|contractor de pecho/, 'aper'],
@@ -74,6 +82,8 @@
     [/rueda abdominal|plancha|pallof|dead bug|bird dog|hollow|woodchopper|copenhagen/, 'core_ant'],
     [/elevacion de piernas|crunch|v-ups|bicicleta abdominal/, 'core_flex']
   ];
+  /* tempo de una fila: el que fija la plantilla (fila.tp = ['3210', ...], uno por ejercicio) o el del patrón */
+  function tempoFila(fila, k, e){ var t = fila && fila.tp && fila.tp[k]; return t ? String(t) : kbDe(e).t; }
   function kbDe(nombre){
     var n = nzz(nombre);
     for(var i = 0; i < RX_KB.length; i++){ if(RX_KB[i][0].test(n)) return KB[RX_KB[i][1]]; }
@@ -200,7 +210,7 @@
     var tecTxt = d.tec && TEC[d.tec] ? ' | ' + TEC[d.tec].lb : '';
     ejs.forEach(function(e, k){
       var reps = d.reps[k] != null ? d.reps[k] : d.reps[d.reps.length - 1], rir = d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1];
-      var dosis = d.sets + 'x' + reps + ' | Tempo ' + kbDe(e).t + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
+      var dosis = d.sets + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
       L.push((multi ? 'A' + (k + 1) + '. ' : '') + etiquetaEj(e));
       L.push(dosis);
     });
@@ -218,14 +228,14 @@
     if(fila.n) [].concat(fila.n).forEach(function(x){ L.push('NOTA DEL DÍA: ' + porNivel(x, av)); });
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
-      L.push('TEMPO: Tempo ' + kb0.t + ' (' + tempoTxt(kb0.t) + ')');
+      var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
       if(esPrimeroFuerza) L.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2). No cuentan como volumen.');
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
         var kb = kbDe(e), id = 'A' + (k + 1);
         L.push(id + ' · SET-UP: ' + kb.s);
-        L.push(id + ' · CUE EFICIENTE: Tempo ' + kb.t + ' — ' + kb.c);
+        L.push(id + ' · CUE EFICIENTE: Tempo ' + tempoFila(fila, k, e) + ' — ' + kb.c);
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');

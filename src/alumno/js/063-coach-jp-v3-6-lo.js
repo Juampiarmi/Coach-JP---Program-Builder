@@ -184,7 +184,7 @@
       if(!l.done) return;
       series++;
       var kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
-      reps += rp; vol += kg * rp;
+      reps += rp; vol += jpTonelajeSerie(l);
     });
     return { series: series, reps: reps, vol: Math.round(vol) };
   }
@@ -292,7 +292,7 @@
       var c = partirClave(k); if(!c || c.w !== w || c.dia !== dia) return;
       var l = state.loads[k];
       if(!l || !l.done) return;
-      total += (parseFloat(l.kg) || 0) * (parseInt(l.reps, 10) || 0);
+      total += jpTonelajeSerie(l);
     });
     return Math.round(total);
   }

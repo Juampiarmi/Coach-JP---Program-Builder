@@ -1594,6 +1594,9 @@ const EXTRA_EX = [
   ["Elevación de talones en prensa", "Leg Press Calf Raise", "Piernas/Glúteos", "Aislamiento", "Máquina", "tobillo", "Rango completo con pausa abajo."],
   ["Elevación de talones a una pierna", "Single-Leg Calf Raise", "Piernas/Glúteos", "Aislamiento", "Peso corporal", "tobillo", "Corrige asimetrías del gemelo."],
   ["Sentadilla búlgara en multipower", "Smith Bulgarian Split Squat", "Piernas/Glúteos", "Rodilla dominante", "Multipower", "rodilla", "Guiada: permite concentrarse en la profundidad."],
+  ["Peso muerto rumano con déficit", "Deficit Romanian Deadlift", "Piernas/Glúteos", "Cadera dominante", "Barra", "lumbar", "Déficit de 3 a 5 cm: más rango de estiramiento de glúteo e isquios con la espalda neutra."],
+  ["Sentadilla búlgara con torso inclinado", "Forward-Lean Bulgarian Split Squat", "Piernas/Glúteos", "Rodilla dominante", "Mancuernas", "rodilla", "Torso inclinado unos 30°: pasa la tensión del cuádriceps al glúteo estirado."],
+  ["Patada de glúteo en polea cruzada", "Cross-Body Cable Glute Kickback", "Piernas/Glúteos", "Cadera dominante", "Polea", "", "Vector de fuerza cruzado: tensión constante en el glúteo sin carga sobre la columna."],
   ["Empuje de trineo hacia atrás", "Backward Sled Drag", "Piernas/Glúteos", "Rodilla dominante", "Máquina", "", "Cero excéntrico: excelente para rodillas sensibles."],
   ["Crunch abdominal", "Crunch", "Core", "Core / Anti-rotación", "Peso corporal", "cuello", "Sin traccionar del cuello con las manos."],
   ["Crunch en polea alta", "Cable Crunch", "Core", "Core / Anti-rotación", "Polea", "lumbar", "Flexión desde el torso, cadera fija."],
@@ -2070,7 +2073,7 @@ function seedExercises(){
   return out;
 }
 /* Incorpora la biblioteca oficial a un storage ya existente sin pisar lo propio */
-const LIB_VERSION = 6; /* v5: suma la categoría "Multiarticular / Complejo Atlético"; v6: 16 ejercicios usados por las plantillas del sistema (sync aditivo, no pisa datos existentes) */
+const LIB_VERSION = 7; /* v7: suma peso muerto rumano con déficit, sentadilla búlgara con torso inclinado y patada de glúteo en polea cruzada (plantillas del Constructor de Glúteos); v5: suma la categoría "Multiarticular / Complejo Atlético"; v6: 16 ejercicios usados por las plantillas del sistema (sync aditivo, no pisa datos existentes) */
 function syncLibrary(){
   if(S.libV === LIB_VERSION) return 0;
   let added = 0;
@@ -12899,27 +12902,49 @@ function lineaSetWA(i, ld){
    getLoadKey más arriba) -- filtrar por el prefijo "weekIdx|dayId|"
    basta para aislar sólo el día/semana que el alumno tiene abiertos
    ahora mismo, sin tocar el resto del historial guardado. */
-function calcularTonelajeSesion(){
-  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+/* TONELAJE · UN SOLO CRITERIO PARA TODA LA APP
+   Tonelaje de una serie = kg × repeticiones realmente hechas, solo si la serie está tildada (✓) y es trabajo de carga:
+     · reps "12+4+3" (Myo-Reps / Rest-Pause) suman todos los tramos; un rango "8-10" toma el primer número
+     · ejercicios UNILATERALES ("por pierna" / "por lado"): se registran las reps de UN lado, pero la carga se movió con los dos: cuentan por 2
+     · fuera: series sin kilos o sin reps, ejercicios medidos en metros / segundos / minutos, bandas, acarreos y trineo (kg × metros no es tonelaje)
+   Tonelaje de un día = suma de sus series, contando solo los bloques que existen HOY en ese día (el progreso guardado puede traer restos de un plan anterior
+   con el mismo id de día). Lo usan el HUD en vivo, el resumen de sesión, el reporte al coach, la Story Card, el historial y el reporte del mesociclo. */
+var JP_RX_ACARREO = /\\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\\b/i;
+var JP_RX_UNILATERAL = /\\b(unilateral|a una pierna|una pierna|single[\\s-]?leg|one[\\s-]?leg|single[\\s-]?arm|one[\\s-]?arm|un brazo|b[uú]lgara|bulgarian|split squat|pistol)\\b/i;
+function jpRepsReales(v){
+  var s = String(v == null ? '' : v).replace(',', '.').trim();
+  if(/^\\d+(\\.\\d+)?(\\s*\\+\\s*\\d+(\\.\\d+)?)+$/.test(s)) return s.split('+').reduce(function(a, x){ return a + (parseFloat(x) || 0); }, 0);
+  return numJP(s);
+}
+function jpTonelajeSerie(ld){
+  if(!ld || !ld.done) return 0;
+  var kg = numJP(ld.kg), reps = jpRepsReales(ld.reps);
+  if(!(kg > 0) || !(reps > 0)) return 0;
+  if(ld.u && ld.u !== 'reps') return 0;                          /* el ejercicio se prescribió en metros / segundos / minutos */
+  var nm = String(ld.ex || '');
+  if(nm){
+    var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(nm); }catch(eM){}
+    if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return 0;
+    if(JP_RX_ACARREO.test(nm)) return 0;
+  }
+  var lados = (ld.uni || (nm && JP_RX_UNILATERAL.test(nm))) ? 2 : 1;
+  return kg * reps * lados;
+}
+function jpTonelajeDia(weekIdx, day){
   if(!day) return 0;
-  var prefix = state.currentWeek + '|' + day.id + '|';
+  var pref = weekIdx + '|' + day.id + '|', validos = {}, hay = false;
+  ((day && day.blocks) || []).forEach(function(b){ if(b && b.id != null){ validos[b.id] = 1; hay = true; } });
   var total = 0;
-  Object.keys(state.loads).forEach(function(k){
-    if(k.indexOf(prefix) !== 0) return;
-    var ld = state.loads[k];
-    if(!ld || !ld.done) return;
-    var kg = numJP(ld.kg), reps = numJP(ld.reps);
-    if(!(kg > 0) || !(reps > 0)) return;
-    /* ejercicios medidos en tiempo, distancia o con banda: ahí el segundo casillero NO son repeticiones (segundos / metros), kg × eso inflaría el total */
-    if(ld.u && ld.u !== 'reps') return;                          /* el ejercicio se prescribió en metros / segundos / minutos */
-    if(ld.ex){
-      var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(ld.ex); }catch(eM){}
-      if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return;
-      if(/\\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
-    }
-    total += kg * reps;
+  Object.keys(state.loads || {}).forEach(function(k){
+    if(k.indexOf(pref) !== 0) return;
+    if(hay && !validos[k.split('|')[2]]) return;
+    total += jpTonelajeSerie(state.loads[k]);
   });
   return isFinite(total) ? Math.round(total) : 0;
+}
+function calcularTonelajeSesion(){
+  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+  return day ? jpTonelajeDia(state.currentWeek, day) : 0;
 }
 var _tonelajeAnimId = null, _tonelajeActual = 0, _tonelajeMostrado = 0, _tonelajeFinT = null;
 function _tonFmt(n){ return Number(n || 0).toLocaleString('es-AR'); }
@@ -14972,8 +14997,8 @@ function datosStoryCF(weekIdx, day){
       const l = state.loads[k];
       if(!l || !l.done) return;
       huboLoads = true;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      vol += kg * rp;
+      const kg = numJP(l.kg);
+      vol += jpTonelajeSerie(l);
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
@@ -15365,7 +15390,7 @@ function renderMain(){
      ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
-  html += '<button type="button" class="story-cta" id="storyCtaBtn">[ 📸 GENERAR STORY CARD ]</button>';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 GENERAR STORY CARD</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -15377,7 +15402,7 @@ function renderMain(){
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
   html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
-    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \\u2714 D\\u00cdA CONCLUIDO \\u00b7 ENVIAR REPORTE ]' : '[ \\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE ]') + '</button>';
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '\\u2714 D\\u00cdA CONCLUIDO \\u00b7 ENVIAR REPORTE' : '\\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
@@ -17297,6 +17322,51 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var s = document.createElement('span'); s.className = 'jp-db-seg jp-db-tempo'; s.innerHTML = '<small>TEMPO</small> <b>' + escSB(tp) + '</b>';
     r3.insertBefore(s, r3.firstChild);
   }
+  /* lo que la tarjeta del ejercicio ya muestra en su COACHING TIPS (Set-up · Ejecución · Cuidado) y el tempo (ficha + caja de cadencia) no se repite en
+     "PAUTAS TÉCNICAS & TIPS DEL BLOQUE". En un bloque con varios ejercicios la tarjeta solo toma las líneas con letra de estación (A1 · ...): las demás se conservan. */
+  function quitarTipsDeTarjetaSB(texto, nEj){
+    if(!(nEj > 0)) return texto;
+    var multi = nEj > 1;
+    return String(texto || '').split('\\n').filter(function(l){
+      var m = /^\\s*(?:([A-F]\\d)\\s*·\\s*)?([^:]{2,40}):\\s*\\S/.exec(l); if(!m) return true;
+      var et = m[2].trim();
+      if(multi && !m[1] && !/^tempo/i.test(et)) return true;
+      return !/^(set-?\\s*up|cue|clave|ejecuci|control|ritmo|cuidado|error|precauci|tempo)/i.test(et);
+    }).join('\\n');
+  }
+  /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
+  function jpExplicarTempoSB(tp){
+    var m = String(tp || '').match(/^([\\dXx])([\\dXx])([\\dXx])([\\dXx])$/);
+    if(!m) return '';
+    var sg = function(v, txt){ return v + ' s ' + txt; };
+    return [sg(m[1], 'bajada'), sg(m[2], 'pausa abajo'), /x/i.test(m[3]) ? 'subida explosiva' : sg(m[3], 'subida'), sg(m[4], 'pausa arriba')].join(' · ');
+  }
+  /* "OBJETIVO FISIOLÓGICO" y "TEMPO (CADENCIA)" viven en recuadros plegables al pie de la tarjeta del ejercicio (debajo de los coaching tips), no en el acordeón del bloque.
+     El objetivo es del bloque: va en la primera tarjeta. El tempo es de cada ejercicio: se explica con el que muestra su propia ficha. */
+  function jpCajasTarjetaSB(root, objetivoHtml){
+    var board = root && root.querySelector ? root.querySelector('[data-sportsboard]') : null; if(!board) return;
+    var caja = function(cls, tit, sub, cuerpo){
+      return '<details class="jp-ex-box jp-ex-box-' + cls + '"><summary><span class="jp-ex-box-t">' + tit + '</span><span class="jp-ex-box-s">' + sub + '</span></summary><div class="jp-ex-box-b">' + cuerpo + '</div></details>';
+    };
+    var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    var objetivoPendiente = !!objetivoHtml;
+    unidades.forEach(function(u){
+      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var html = '';
+      if(objetivoPendiente){ html += caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml); objetivoPendiente = false; }
+      var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
+      var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
+      if(ex) html += caja('tempo', '&#9201; TEMPO (CADENCIA)', escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
+      if(!html) return;
+      var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
+      u.appendChild(div);
+    });
+    if(objetivoPendiente){                                                       /* sin tarjetas de ejercicio en el bloque: el objetivo cierra el tablero */
+      var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml);
+      var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
+    }
+  }
+  window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
     var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
@@ -17366,6 +17436,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(v.rv) setLoadField(key, 'reps', v.rv);
     setLoadField(key, 'ex', regNombreCorto(e.nombre));           /* el historial verifica que la marca sea de ESTE ejercicio */
     if(e.u && e.u !== 'reps') setLoadField(key, 'u', e.u);       /* la unidad del segundo casillero (m / seg): el tonelaje la excluye */
+    if(e.uni) setLoadField(key, 'uni', 1);                       /* unilateral: el tonelaje cuenta los dos lados */
     setLoadField(key, 'done', true);
     qrAviso();
     var i = parseInt(card.getAttribute('data-qi'), 10), m = qrModelo(c, e, i);
@@ -20351,12 +20422,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \\u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
+            '<div class="jp-sb-biset-title"><span class="jp-sb-biset-pill">' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' \\u00b7 ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + '</span><span class="jp-sb-biset-sub">EJERCICIOS ENCADENADOS \\u00b7 SIN PAUSA ENTRE ELLOS</span></div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -20398,7 +20469,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          línea. Nunca en calentamiento (ahí la técnica no aplica). */
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
-        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1 });
+        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1, uni: entry.unilateral || '' });
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
@@ -20453,7 +20524,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '' });
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '', uni: entry.unilateral || '' });
       if(entry.tecnica === 'restpause' && !entry.tramos){
         var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
         for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\\u26a1 REST-PAUSE: al fallo \\u2192 pausa 15-20 s \\u2192 +2-4 reps \\u2192 pausa \\u2192 +2-4 reps (una sola serie)' : '');
@@ -20515,7 +20586,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
       ? unirMetaSB(block.tips, sepMeta.tips)
-      : formatTipsSB((function(){
+      : formatTipsSB(quitarTipsDeTarjetaSB((function(){
           var p = String(block.tips || ''), x = String(sepMeta.tips || '');
           if(!x) return p;
           if(!p) return x;
@@ -20523,7 +20594,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           if(np.indexOf(nx) >= 0) return p;
           if(nx.indexOf(np) >= 0) return x;
           return p + '\\n' + x;
-        })(), nombresTips);
+        })(), regCfg.length), nombresTips);
     /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
     const explicarTempoSB = function(tp){
       const m = String(tp || '').match(/^([\\dXx])([\\dXx])([\\dXx])([\\dXx])$/);
@@ -20546,8 +20617,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       });
       return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
-    const tieneObjTips = objetivoHtml || tipsHtml;
-    const tieneAcc = tieneObjTips || !!tempoHtml;
+    const tieneAcc = !!tipsHtml;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
        -- el énfasis muscular/técnico que el coach agrega entre paréntesis
        al título del bloque ("BLOQUE 4 | GLÚTEO (EXTENSIÓN DE CADERA &
@@ -20569,9 +20639,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             '<div class="jp-details-content">' +
-              (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-obj">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
-              tempoHtml +
             '</div>' +
           '</details>' : '') +
         (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg, obj: String(block.objective || ''), tp: String(block.tips || '') }) : '') +
@@ -20586,6 +20654,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
     try{ jpQrAcomodar(body); }catch(eQr){ console.warn('registro 1 toque', eQr); }
+    try{ jpCajasTarjetaSB(body, objetivoHtml); }catch(eCj){ console.warn('cajas de la tarjeta', eCj); }
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
@@ -21078,8 +21147,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const l = state.loads[k];
       if(!l || !l.done) return;
       series++;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      reps += rp; vol += kg * rp;
+      const kg = numJP(l.kg), rp = Math.round(jpRepsReales(l.reps));
+      reps += rp; vol += jpTonelajeSerie(l);
       if(kg > maxKg) maxKg = kg;
     });
     /* directiva (resumen de sesión CrossFit): score del WOD del día, si
@@ -21093,7 +21162,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       scoreWod = (state.scores && state.scores[skeyWod]) || '';
     }
     /* un solo criterio de tonelaje en toda la app: para la sesión abierta se usa el mismo cálculo del HUD (kg × reps válidas; sin metros, segundos ni acarreos) */
-    try{ if(weekIdx === state.currentWeek && day && day.id === state.currentDay && typeof calcularTonelajeSesion === 'function') vol = calcularTonelajeSesion(); }catch(eT){}
     return { vol: Math.round(vol), series: series, reps: reps, maxKg: maxKg, scoreWod: scoreWod };
   }
   /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- desglose
@@ -21264,7 +21332,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">' + (SP ? '[ \\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE ]' : '\\ud83d\\udcf2 ENVIAR RESUMEN DE SESI\\u00d3N AL COACH') + '</button>' +
+            '<button class="sc-share" id="scShare" type="button">' + (SP ? '\\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE' :'\\ud83d\\udcf2 ENVIAR RESUMEN DE SESI\\u00d3N AL COACH') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -23335,7 +23403,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(!acts || document.getElementById('scStory')) return;
     const b = document.createElement('button');
     b.className = 'sc-story'; b.id = 'scStory'; b.type = 'button';
-    b.textContent = window.COACH_DISCIPLINA === 'sports' ? '[ 📸 GENERAR STORY CARD ]' : '📸 Generar Story Card';
+    b.textContent = window.COACH_DISCIPLINA === 'sports' ? '📸 GENERAR STORY CARD' : '📸 Generar Story Card';
     acts.insertBefore(b, acts.firstChild);
     b.addEventListener('click', function(){
       const day = DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0];
@@ -24322,7 +24390,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
         if(!(kg > 0) && !(rp > 0)) continue;
         sets.push((kg > 0 ? kg : 'BW') + '\\u00d7' + (rp > 0 ? rp : '–'));
-        vol += (kg > 0 ? kg : 0) * (rp > 0 ? rp : 0);
+        vol += jpTonelajeSerie(l);
       }
       if(sets.length) hayDatos = true;
       volTotal += vol;
@@ -26126,7 +26194,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       m.n++;
       var kg = parseFloat(l.kg) || 0, rp = parseFloat(l.reps) || 0;
       if(kg > 0){
-        m.vol += kg * (rp > 0 ? rp : 1);
+        m.vol += jpTonelajeSerie(l);
         if(kg > m.kg || (kg === m.kg && rp > m.reps)){ m.kg = kg; m.reps = rp > 0 ? rp : 1; }
       }
     });
@@ -26167,7 +26235,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       if(!nm) return;
       var r = rp > 0 ? rp : 1, m = mapa[nm] || (mapa[nm] = { ex: nm, kg: 0, reps: 0, vol: 0, blk: {} });
       m.blk[p[2]] = 1;
-      m.vol += kg * r;
+      m.vol += jpTonelajeSerie(l);
       if(kg > m.kg || (kg === m.kg && r > m.reps)){ m.kg = kg; m.reps = r; }
     });
     return Object.keys(mapa).map(function(k){ mapa[k].vol = Math.round(mapa[k].vol); return mapa[k]; })
@@ -29220,9 +29288,10 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       var kg = parseFloat(l && l.kg), reps = parseInt(l && l.reps, 10) || 0;
       if(!(kg > 0)) return;
       if(l.done){
-        vol += kg * (reps || 1); series++;
+        var tn = jpTonelajeSerie(l);
+        vol += tn; series++;
         var wIdx = parseInt(String(k).split('|')[0], 10);
-        if(!isNaN(wIdx) && volPorSemana[wIdx] !== undefined) volPorSemana[wIdx] += kg * (reps || 1);
+        if(!isNaN(wIdx) && volPorSemana[wIdx] !== undefined) volPorSemana[wIdx] += tn;
       }
       if(kg > topKg){ topKg = kg; topEx = l.__ex || ''; }
     });
@@ -36453,7 +36522,7 @@ body:not(.cf-disc) .block .set-row.set-row-done{
       if(!l.done) return;
       series++;
       var kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
-      reps += rp; vol += kg * rp;
+      reps += rp; vol += jpTonelajeSerie(l);
     });
     return { series: series, reps: reps, vol: Math.round(vol) };
   }
@@ -36561,7 +36630,7 @@ body:not(.cf-disc) .block .set-row.set-row-done{
       var c = partirClave(k); if(!c || c.w !== w || c.dia !== dia) return;
       var l = state.loads[k];
       if(!l || !l.done) return;
-      total += (parseFloat(l.kg) || 0) * (parseInt(l.reps, 10) || 0);
+      total += jpTonelajeSerie(l);
     });
     return Math.round(total);
   }
@@ -46903,6 +46972,18 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip b, html body:not(#_):not(#
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.su b{color:var(--xc-acc);}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.cu b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.cu b{color:#FF9C7A;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip span{font-size:.82rem; line-height:1.5; color:var(--xc-txt); opacity:.92;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-cajas{display:grid; gap:8px; margin:8px 0 0; clear:both;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box{background:var(--xc-tip-bg); border:1px solid var(--xc-bd); border-radius:calc(var(--xc-r) * .8); overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 12px; position:relative; -webkit-tap-highlight-color:transparent;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary::-webkit-details-marker, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary::-webkit-details-marker{display:none;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary::after{content:"▾"; margin-left:auto; color:var(--xc-acc); transition:transform .18s ease; font-size:.8rem;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box[open] > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box[open] > summary::after{transform:rotate(180deg);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-t{font-family:var(--xc-font); font-weight:800; font-size:.7rem; letter-spacing:.16em; color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-tempo .jp-ex-box-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-tempo .jp-ex-box-t{color:var(--xc-tempo-c, var(--xc-acc));}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-s, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-s{font-size:.66rem; color:var(--xc-lbl); letter-spacing:.04em;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b{padding:2px 12px 12px; font-size:.82rem; line-height:1.5; color:var(--xc-txt); border-top:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row{padding-top:8px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row b{color:var(--xc-tempo-c, var(--xc-acc)); font-variant-numeric:tabular-nums;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex::before{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,#5CE1FF 0%,rgba(92,225,255,.15) 70%,transparent 100%); pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}
@@ -46990,6 +47071,214 @@ html body:not(#_):not(#__) .jp-badge{ display:none !important; }
 #v-showroom .sr-marca-n{ font-family:'Chakra Petch','Barlow Condensed',system-ui,sans-serif; font-weight:900; font-size:1.05rem; letter-spacing:.1em; color:var(--jp-marca-blanco); }
 #v-showroom .sr-marca-n em{ font-style:normal; color:var(--jp-marca-naranja); }
 #v-showroom .sr-marca-s{ font-family:var(--font-mono,'JetBrains Mono',ui-monospace,monospace); font-size:.68rem; color:var(--jp-marca-sub); margin-top:3px; }
+</style>
+<style id="jpPielApp">
+/* =========================================================
+   PIEL DE LA APP DEL ALUMNO · azul noche (#0B132B) + identidad oficial + estética del Estilo 4
+   ---------------------------------------------------------
+   Una sola hoja, al final de la cascada, que lleva TODO el entorno a la misma paleta: encabezado, selectores de semana y día, menús y ventanas emergentes,
+   historial, directiva táctica, resumen, botones inferiores y menú flotante. Antes cada módulo traía su propio negro / gris / naranja.
+     fondos         #0B132B (página) · #0F1938 (barras) · #131F43 (tarjetas y ventanas) · #0B1330 (campos)
+     bordes         azul brillante fino (rgba(130,160,235,.32))
+     acento         ámbar #FFC24B (acción y datos clave) · cian #5CE1FF (tiempo) · menta #5BF0B5 (hecho)
+     marca          escudo #F5C518 con rayo negro · COACH #FFFFFF · JP #EE5A12 (solo en el logotipo)
+   Solo presentación: no toca datos ni lógica.
+   ========================================================= */
+:root{
+  --pn-bg:#0B132B; --pn-s1:#0F1938; --pn-s2:#131F43; --pn-s3:#1A2850; --pn-in:#0B1330;
+  --pn-bd:rgba(130,160,235,.32); --pn-bd2:rgba(150,178,240,.52);
+  --pn-txt:#EEF3FF; --pn-mut:#9FB0D8;
+  --pn-amb:#FFC24B; --pn-cy:#5CE1FF; --pn-mint:#5BF0B5;
+}
+
+/* ---------- 1 · encabezado ---------- */
+html body:not(#_):not(#__) .hd-compact{ background:var(--pn-s1) !important; background-image:none !important; border-bottom:1px solid var(--pn-bd) !important; box-shadow:0 12px 28px -20px rgba(0,0,0,.85) !important; }
+html body:not(#_):not(#__) .hd-compact::before, html body:not(#_):not(#__) .hd-compact::after{ background:none !important; }
+html body:not(#_):not(#__) .hdc-shield{ background:linear-gradient(155deg,#1A2850,#0F1938) !important; }
+/* el escudo siempre dorado con el rayo negro (otros módulos recoloraban todos los degradados SVG a naranja) */
+html body:not(#_):not(#__) #hdcGold stop:nth-child(1){ stop-color:#FFF2A8 !important; }
+html body:not(#_):not(#__) #hdcGold stop:nth-child(2){ stop-color:#F5C518 !important; }
+html body:not(#_):not(#__) #hdcGold stop:nth-child(3){ stop-color:#D6A500 !important; }
+html body:not(#_):not(#__) #hdcGold stop:nth-child(4){ stop-color:#8A6B00 !important; }
+html body:not(#_):not(#__) .hdc-name{ color:#FFFFFF !important; }
+html body:not(#_):not(#__) .jp-status-pill.jp-status-active{ background:rgba(91,240,181,.12) !important; border:1px solid rgba(91,240,181,.5) !important; color:var(--pn-mint) !important; box-shadow:none !important; }
+html body:not(#_):not(#__) .jp-status-pill.jp-status-active *{ color:var(--pn-mint) !important; }
+html body:not(#_):not(#__) .hdc-fz, html body:not(#_):not(#__) .hdc-info, html body:not(#_):not(#__) .jp-ux-menu-btn, html body:not(#_):not(#__) .jp-prs-quickbtn{
+  background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; color:var(--pn-amb) !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__) .jp-ux-menu-btn *{ color:var(--pn-amb) !important; fill:var(--pn-amb) !important; }
+
+/* ---------- selectores de semana y de día ---------- */
+html body:not(#_):not(#__) .hdc-days-row{ background:var(--pn-s1) !important; border-bottom:1px solid var(--pn-bd) !important; }
+html body:not(#_):not(#__) .jp-wk-btn{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; color:var(--pn-txt) !important; box-shadow:none !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .jp-wk-btn:hover, html body:not(#_):not(#__) .jp-wk-btn[aria-expanded="true"]{ border-color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-wk-btn *{ color:inherit !important; }
+html body:not(#_):not(#__) .jp-wk-btn .jp-wk-caret, html body:not(#_):not(#__) .jp-wk-btn > span:last-child{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-wk-pop{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; box-shadow:0 22px 44px -14px rgba(0,0,0,.8) !important; border-radius:10px !important; }
+html body:not(#_):not(#__) .jp-wk-pop button{ background:transparent !important; border:1px solid transparent !important; color:var(--pn-txt) !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .jp-wk-pop button *{ color:inherit !important; }
+html body:not(#_):not(#__) .jp-wk-pop button.on{ background:rgba(255,194,75,.14) !important; border-color:rgba(255,194,75,.55) !important; color:var(--pn-amb) !important; }
+
+/* ---------- cabecera del día ---------- */
+html body:not(#_):not(#__) .jp-session-pretag{ color:var(--pn-mut) !important; }
+html body:not(#_):not(#__) .jp-session-main{ border-left:4px solid var(--pn-amb) !important; color:#FFFFFF !important; }
+html body:not(#_):not(#__) .meta-chip{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .jp-brief-hud span{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd) !important; box-shadow:none !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .jp-brief-hud span b{ color:#FFFFFF !important; text-shadow:none !important; }
+html body:not(#_):not(#__) .jp-brief-hud span:first-child b{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-brief-hud span:last-child b{ color:var(--pn-cy) !important; }
+html body:not(#_):not(#__) .jp-brief-hud small{ color:var(--pn-mut) !important; }
+html body:not(#_):not(#__) .jp-brief-dir{ background:var(--pn-s2) !important; border:1px solid rgba(255,194,75,.5) !important; color:var(--pn-txt) !important; box-shadow:none !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .jp-brief-dir:hover{ background:rgba(255,194,75,.1) !important; }
+html body:not(#_):not(#__) .jp-sb-tag, html body:not(#_):not(#__) .jp-sb-tag *{ color:#8FB0F0 !important; }
+
+/* ---------- ventanas emergentes, menús, historial y directiva táctica ---------- */
+html body:not(#_):not(#__) .modal-overlay, html body:not(#_):not(#__) .man-wrap, html body:not(#_):not(#__) .meso-wrap, html body:not(#_):not(#__) .msr-wrap,
+html body:not(#_):not(#__) .story-wrap, html body:not(#_):not(#__) .tm-wrap, html body:not(#_):not(#__) .cwt-wrap, html body:not(#_):not(#__) .prhub-wrap, html body:not(#_):not(#__) .jp-dir-modal{ background:rgba(6,11,30,.9) !important; }
+html body:not(#_):not(#__) .modal, html body:not(#_):not(#__) .jp-dir-box, html body:not(#_):not(#__) .prhub, html body:not(#_):not(#__) .week-info-card, html body:not(#_):not(#__) .cwt,
+html body:not(#_):not(#__) .tm, html body:not(#_):not(#__) .man, html body:not(#_):not(#__) .meso, html body:not(#_):not(#__) .msr-box, html body:not(#_):not(#__) .story-box,
+html body:not(#_):not(#__) .video-popup, html body:not(#_):not(#__) .week-selector-wrap, html body:not(#_):not(#__) .jp-ux-cb-list{
+  background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; box-shadow:0 26px 60px -20px rgba(0,0,0,.85) !important; color:var(--pn-txt) !important;
+}
+html body:not(#_):not(#__) .jp-dir-box h4{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-dir-box h3{ color:#FFFFFF !important; }
+html body:not(#_):not(#__) .jp-dir-box p{ color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .jp-dir-box button{ background:var(--pn-s3) !important; border:1px solid var(--pn-bd2) !important; color:var(--pn-txt) !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .gc-card, html body:not(#_):not(#__) .guide-section, html body:not(#_):not(#__) .gc-row, html body:not(#_):not(#__) .hdp-curve-chip, html body:not(#_):not(#__) .hdp-uni-b{
+  background:var(--pn-s1) !important; border-color:var(--pn-bd) !important;
+}
+html body:not(#_):not(#__) .note-chip, html body:not(#_):not(#__) .blk-tag, html body:not(#_):not(#__) .wf-sheet-trigger, html body:not(#_):not(#__) .block-note-input, html body:not(#_):not(#__) .jp-input-native,
+html body:not(#_):not(#__) .cwt-mode, html body:not(#_):not(#__) .cwt-central-input, html body:not(#_):not(#__) .ph-sel, html body:not(#_):not(#__) #calcWeight, html body:not(#_):not(#__) #calcReps, html body:not(#_):not(#__) #calcRound,
+html body:not(#_):not(#__) #cwtPrep, html body:not(#_):not(#__) #cwtInt, html body:not(#_):not(#__) #tmKg, html body:not(#_):not(#__) #phEx, html body:not(#_):not(#__) #phKg, html body:not(#_):not(#__) #phRp,
+html body:not(#_):not(#__) .jp-sb-plain-pill, html body:not(#_):not(#__) .fz-p{ background:var(--pn-in) !important; border-color:var(--pn-bd) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .jp-set-row-native{ background:var(--pn-s1) !important; border-color:var(--pn-bd) !important; }
+html body:not(#_):not(#__) #stickyBar, html body:not(#_):not(#__) #cwtMini, html body:not(#_):not(#__) #jpMiniBar{ background:var(--pn-s1) !important; border-color:var(--pn-bd2) !important; box-shadow:0 14px 30px -16px rgba(0,0,0,.85) !important; }
+html body:not(#_):not(#__) #stickyBar .sb-d, html body:not(#_):not(#__) #jpMiniBar .jmb-d{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jmb-timer{ background:rgba(255,194,75,.1) !important; border:1px solid rgba(255,194,75,.5) !important; color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) #jpToast{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) #restHud{ background:var(--pn-s2) !important; border:1px solid rgba(255,194,75,.6) !important; box-shadow:0 22px 50px -16px rgba(0,0,0,.85),0 0 26px -10px rgba(255,194,75,.5) !important; }
+html body:not(#_):not(#__) #restHud button{ background:var(--pn-s3) !important; border-color:var(--pn-bd2) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) #rhSkip{ background:linear-gradient(135deg,#FFC24B,#F5A81C) !important; color:#0B132B !important; border-color:transparent !important; }
+html body:not(#_):not(#__) #offPill, html body:not(#_):not(#__) #sesBanner{ background:rgba(255,194,75,.12) !important; border:1px solid rgba(255,194,75,.45) !important; color:var(--pn-amb) !important; }
+
+/* ---------- 5 · parte inferior: completar bloque, resumen, story, finalizar, criterio ---------- */
+html body:not(#_):not(#__) .jp-done-btn{
+  background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; border-radius:6px !important; color:var(--pn-txt) !important; box-shadow:none !important;
+  font-weight:800 !important; letter-spacing:.1em !important; min-height:46px; text-transform:uppercase;
+}
+html body:not(#_):not(#__) .jp-done-btn:active{ transform:scale(.98); }
+html body:not(#_):not(#__) .jp-done-btn.on, html body:not(#_):not(#__) .jp-done-btn.done, html body:not(#_):not(#__) .jp-done-btn[aria-pressed="true"]{
+  background:rgba(91,240,181,.14) !important; border-color:rgba(91,240,181,.6) !important; color:var(--pn-mint) !important;
+}
+html body:not(#_):not(#__) .jp-resumen-ses{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; border-radius:6px !important; box-shadow:none !important; }
+html body:not(#_):not(#__) .jp-resumen-ses .info-card-title{ color:var(--pn-mut) !important; letter-spacing:.2em !important; }
+html body:not(#_):not(#__) .jp-resumen-ses *{ color:inherit; }
+html body:not(#_):not(#__) .story-cta, html body:not(#_):not(#__) .sc-story{
+  background:transparent !important; border:1px solid rgba(92,225,255,.6) !important; color:var(--pn-cy) !important; border-radius:6px !important; box-shadow:none !important;
+  font-weight:800 !important; letter-spacing:.12em !important; min-height:48px;
+}
+html body:not(#_):not(#__) .story-cta:active, html body:not(#_):not(#__) .sc-story:active{ background:rgba(92,225,255,.12) !important; }
+html body:not(#_):not(#__) .jp-close-cta, html body:not(#_):not(#__) .sc-share{
+  background:linear-gradient(180deg,#FFC24B,#F5A81C) !important; color:#0B132B !important; border:0 !important; border-radius:6px !important;
+  box-shadow:0 12px 28px -14px rgba(255,194,75,.7) !important; font-weight:900 !important; letter-spacing:.1em !important; min-height:52px; text-shadow:none !important;
+}
+html body:not(#_):not(#__) .jp-close-cta.done{ background:rgba(91,240,181,.14) !important; color:var(--pn-mint) !important; border:1px solid rgba(91,240,181,.6) !important; box-shadow:none !important; }
+html body:not(#_):not(#__) .jp-criterio{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd) !important; border-radius:6px !important; box-shadow:none !important; }
+html body:not(#_):not(#__) .jp-criterio > summary, html body:not(#_):not(#__) .jp-criterio .cr-t{ color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .day-complete-cta{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; border-radius:6px !important; color:var(--pn-txt) !important; }
+
+/* ---------- menú flotante de herramientas ---------- */
+html body:not(#_):not(#__) .hdd-fab{
+  background:var(--pn-s2) !important; border:1px solid rgba(255,194,75,.6) !important; color:var(--pn-amb) !important;
+  box-shadow:0 14px 30px -12px rgba(0,0,0,.85),0 0 22px -8px rgba(255,194,75,.5) !important;
+}
+html body:not(#_):not(#__) .hdd-fab svg, html body:not(#_):not(#__) .hdd-fab svg *{ color:var(--pn-amb) !important; stroke:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .hd-dock.open .hdd-fab{ background:var(--pn-amb) !important; border-color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .hd-dock.open .hdd-fab svg, html body:not(#_):not(#__) .hd-dock.open .hdd-fab svg *{ color:#0B132B !important; stroke:#0B132B !important; }
+html body:not(#_):not(#__) .hdd-b{
+  background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; border-radius:8px !important; color:var(--pn-txt) !important;
+  box-shadow:0 12px 26px -14px rgba(0,0,0,.85) !important;
+}
+html body:not(#_):not(#__) .hdd-b .ic svg, html body:not(#_):not(#__) .hdd-b .ic svg *{ stroke:var(--pn-amb) !important; color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .hdd-b .tx{ color:var(--pn-txt) !important; font-weight:800; letter-spacing:.06em; }
+html body:not(#_):not(#__) .hdd-b:active{ border-color:var(--pn-amb) !important; }
+
+/* ---------- 4 · biset / triset: un solo bloque encadenado ---------- */
+html body:not(#_):not(#__) .jp-sb-biset{
+  position:relative; margin:14px 0 10px !important; padding:12px 10px 4px 12px !important; border:1px solid rgba(255,194,75,.5) !important; border-radius:10px !important;
+  background:linear-gradient(180deg,rgba(255,194,75,.08),rgba(255,194,75,.02)) !important; box-shadow:0 0 0 1px rgba(255,194,75,.06),0 14px 30px -20px rgba(255,194,75,.5) !important;
+}
+html body:not(#_):not(#__) .jp-sb-biset > .jp-sb-biset-title{
+  display:flex !important; flex-wrap:wrap; align-items:center; gap:2px 10px; margin:-26px 0 10px -4px !important; padding:0 !important; background:none !important; border:0 !important;
+}
+html body:not(#_):not(#__) .jp-sb-biset-pill{
+  display:inline-block; background:var(--pn-amb); color:#0B132B !important; padding:4px 12px; border-radius:99px; box-shadow:0 6px 16px -8px rgba(255,194,75,.9);
+  font-family:'Chakra Petch','Barlow Condensed',system-ui,sans-serif; font-weight:900; font-size:.78rem; letter-spacing:.16em; text-transform:uppercase;
+}
+html body:not(#_):not(#__) .jp-sb-biset-sub{ flex:1 0 100%; margin:6px 0 0 2px; font-size:.62rem; letter-spacing:.14em; color:var(--pn-amb) !important; font-weight:700; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-bracket{ border:0 !important; border-left:4px solid var(--pn-amb) !important; padding:0 0 0 12px !important; margin-left:2px !important; position:relative; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen{ position:relative; border-left:0 !important; margin-bottom:6px !important; }
+/* cada ejercicio de la cadena: la letra (A1, A2...) como nodo de la guía */
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen .jp-sb-letra{
+  background:var(--pn-amb) !important; color:#0B132B !important; border:0 !important; border-radius:99px !important; font-weight:900 !important; min-width:30px; text-align:center;
+  box-shadow:0 0 0 3px #0B132B,0 0 0 4px rgba(255,194,75,.6) !important;
+}
+/* el conector entre ejercicios: "sin pausa" */
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen + .jp-sb-subex-resumen::before{
+  content:"\\2193  SIN PAUSA \\00B7 PASA AL SIGUIENTE"; display:block; margin:2px 0 8px; padding:3px 0; text-align:center; font-size:.62rem; font-weight:800; letter-spacing:.14em; color:var(--pn-amb);
+  border-top:1px dashed rgba(255,194,75,.5); border-bottom:1px dashed rgba(255,194,75,.5); background:rgba(255,194,75,.06); border-radius:4px;
+}
+
+/* ---------- ajustes finos sobre las reglas con id y por disciplina de 089 ---------- */
+html body:not(#_):not(#__) #jpWkBtn, html body:not(#_):not(#__) #jpDayBtn{
+  background:var(--pn-s2) !important; background-image:none !important; border:1px solid var(--pn-bd2) !important; border-left-width:1px !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__) #jpWkBtn b, html body:not(#_):not(#__) #jpDayBtn b{ color:#FFFFFF !important; }
+html body:not(#_):not(#__) #jpWkBtn i, html body:not(#_):not(#__) #jpDayBtn i, html body:not(#_):not(#__) #jpDayBtn .jp-day-ic{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) #hdcName{ text-shadow:none !important; color:#FFFFFF !important; }
+html body:not(#_):not(#__) .day-title{ text-shadow:none !important; border-left:4px solid var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-wk-pop button b{ color:var(--pn-mut) !important; }
+html body:not(#_):not(#__) .jp-wk-pop button.on b{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-wk-pop button small{ color:var(--pn-mut) !important; }
+html body:not(#_):not(#__) .jp-sb-board .jp-summary-btn{ color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .jp-sb-board .jp-summary-btn svg{ color:var(--pn-amb) !important; stroke:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .jp-sb-board .jp-block-details{ border-color:var(--pn-bd) !important; }
+html body:not(#_):not(#__) .jp-warm-acc summary{ background:var(--pn-s2) !important; border-color:var(--pn-bd) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .jp-sb-tmin, html body:not(#_):not(#__) .jp-sb-board .jp-tag-lb{ color:#8FB0F0 !important; }
+html body:not(#_):not(#__) .jp-sb-biset > .jp-sb-biset-title::after, html body:not(#_):not(#__) .jp-sb-biset > .jp-sb-biset-title::before{ content:none !important; display:none !important; }
+
+/* los botones con id los pisan reglas con id en otros módulos: se sube un escalón de especificidad */
+html body:not(#_):not(#__):not(#___) #jpCerrarDiaBtn.jp-close-cta, html body:not(#_):not(#__):not(#___) #jpCerrarDiaBtn.jp-close-cta:not(.done){
+  background:linear-gradient(180deg,#FFC24B,#F5A81C) !important; color:#0B132B !important; border:0 !important; border-radius:6px !important; box-shadow:0 12px 28px -14px rgba(255,194,75,.7) !important;
+  font-weight:900 !important; letter-spacing:.1em !important; text-shadow:none !important;
+}
+html body:not(#_):not(#__):not(#___) #jpCerrarDiaBtn.jp-close-cta.done{ background:rgba(91,240,181,.14) !important; color:var(--pn-mint) !important; border:1px solid rgba(91,240,181,.6) !important; box-shadow:none !important; }
+html body:not(#_):not(#__):not(#___) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(92,225,255,.6) !important; color:var(--pn-cy) !important; box-shadow:none !important; border-radius:6px !important; }
+
+/* menú de tres puntos del encabezado (Historial y marcas · Tamaño de letra · Perfil) */
+html body:not(#_):not(#__):not(#___) #jpUxMenu.jp-ux-menu{ background:var(--pn-s2) !important; border:1px solid var(--pn-bd2) !important; box-shadow:0 22px 50px -14px rgba(0,0,0,.85) !important; border-radius:10px !important; }
+html body:not(#_):not(#__):not(#___) #jpUxMenu button{ background:transparent !important; color:var(--pn-txt) !important; border-radius:8px !important; }
+html body:not(#_):not(#__):not(#___) #jpUxMenu button:hover, html body:not(#_):not(#__):not(#___) #jpUxMenu button:active{ background:rgba(255,194,75,.12) !important; }
+html body:not(#_):not(#__):not(#___) #jpUxMenu em, html body:not(#_):not(#__):not(#___) #jpUxMenu small, html body:not(#_):not(#__):not(#___) #jpUxMenu .jp-ux-tag{ background:rgba(255,194,75,.12) !important; border:1px solid rgba(255,194,75,.45) !important; color:var(--pn-amb) !important; }
+
+/* historial y marcas */
+html body:not(#_):not(#__) .prhub .ph-tab{ background:var(--pn-s1) !important; border:1px solid var(--pn-bd) !important; color:var(--pn-mut) !important; border-radius:8px !important; }
+html body:not(#_):not(#__) .prhub .ph-tab.on{ background:rgba(255,194,75,.12) !important; border-color:rgba(255,194,75,.6) !important; color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .prhub .ph-day{ background:var(--pn-s1) !important; border:1px solid var(--pn-bd) !important; color:var(--pn-txt) !important; }
+html body:not(#_):not(#__) .prhub .ph-day.on{ background:var(--pn-amb) !important; border-color:var(--pn-amb) !important; color:#0B132B !important; }
+html body:not(#_):not(#__) .prhub .ph-prow{ background:var(--pn-s1) !important; border-color:var(--pn-bd) !important; }
+html body:not(#_):not(#__) .prhub .ph-prow b{ color:var(--pn-cy) !important; }
+html body:not(#_):not(#__) .prhub .ph-prow em{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .prhub .ph-ptot{ background:rgba(255,194,75,.1) !important; border-color:rgba(255,194,75,.45) !important; }
+html body:not(#_):not(#__) .prhub .ph-ptot b{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .prhub .ph-share{ background:linear-gradient(180deg,#FFC24B,#F5A81C) !important; border-color:transparent !important; color:#0B132B !important; }
+
+/* guía de entrenamiento y ventanas de ayuda: los títulos y chapas en ámbar (el naranja queda solo para "JP" del logotipo) */
+html body:not(#_):not(#__) .modal .mh-icon, html body:not(#_):not(#__) .guide-section-title, html body:not(#_):not(#__) .gc-title,
+html body:not(#_):not(#__) .guide-section b, html body:not(#_):not(#__) .gc-card b{ color:var(--pn-amb) !important; }
+html body:not(#_):not(#__) .gc-badge, html body:not(#_):not(#__) .gc-pill, html body:not(#_):not(#__) .gd-rir{
+  background:rgba(255,194,75,.12) !important; border-color:rgba(255,194,75,.45) !important; color:var(--pn-amb) !important;
+}
 </style>
 
 </body>
@@ -80581,7 +80870,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     lumbar:   { o: 'Fortalecés la cadena posterior y los erectores, la base que sostiene todos los levantamientos pesados.', s: 'Cadera apoyada en el aparato y cuerpo alineado de la cabeza a los talones.', c: 'Subí hasta alinear el tronco, sin pasarte de ahí, y bajá controlado.', x: 'No hiperextiendas la zona lumbar arriba: el rango termina con el cuerpo recto.', t: '2012' },
     rdl:      { o: 'Cargás isquiotibiales y glúteo en posición estirada: el rango largo es lo que más hipertrofia genera en la cadena posterior.', s: 'Cadera atrás, rodillas apenas flexionadas, barra pegada a las piernas y espalda neutra.', c: 'Empujá la cadera hacia atrás como cerrando una puerta con la cola y subí apretando el glúteo.', x: 'No redondees la espalda baja: el rango termina donde la columna pierde su forma.', t: '3110' },
     pmuerto:  { o: 'Entrenás cadena posterior, espalda y agarre con carga máxima: el ejercicio de fuerza más completo del programa.', s: 'Barra sobre el medio del pie, espalda neutra, dorsales activos y pecho arriba.', c: 'Empujá el piso con las piernas antes de mover la barra y terminá con el glúteo, sin hiperextender.', x: 'No tires desde la espalda baja ni dejes que la barra se separe del cuerpo.', t: '2010' },
-    hip:      { o: 'Cargás el glúteo mayor en extensión de cadera con pausa arriba: el ejercicio que más lo activa.', s: 'Espalda alta apoyada en el banco, pies al ancho de cadera y mentón hacia el pecho.', c: 'Empujá con los talones y frená 1 segundo arriba apretando el glúteo, con las costillas abajo.', x: 'No arquees la lumbar para ganar altura: el glúteo termina con la cadera alineada.', t: '2011' },
+    hip:      { o: 'Cargás el glúteo mayor en extensión de cadera con pausa arriba: el ejercicio que más lo activa.', s: 'Espalda alta apoyada en el banco, pies al ancho de cadera y mentón hacia el pecho.', c: 'Empujá con los talones y sostené la pausa arriba apretando el glúteo, con las costillas abajo.', x: 'No arquees la lumbar para ganar altura: el glúteo termina con la cadera alineada.', t: '2011' },
     glute_iso:{ o: 'Aislás el glúteo con tensión constante, ideal para sumar volumen sin cargar la espalda baja.', s: 'Cadera cuadrada, abdomen firme y el apoyo estable.', c: 'Extendé la cadera apretando el glúteo y sostené 1 segundo arriba.', x: 'No rotes la pelvis ni arquees la espalda baja para subir más la pierna.', t: '2011' },
     abduccion:{ o: 'Trabajás glúteo medio y menor, que dan la forma lateral de la cadera y estabilizan la pelvis.', s: 'Torso levemente inclinado hacia adelante y espalda apoyada si la máquina lo permite.', c: 'Abrí las piernas empujando con las rodillas y volvé lento sin soltar la tensión.', x: 'No rebotes con la pila de pesas ni uses el torso para impulsarte.', t: '2011' },
     aduccion: { o: 'Fortalecés los aductores de la cara interna del muslo, un grupo que suele quedar sin trabajar.', s: 'Espalda apoyada y piernas al ancho cómodo de la máquina.', c: 'Cerrá las piernas controlado y abrí en 3 segundos sintiendo el estiramiento.', x: 'No abras más de lo que tu cadera tolera sin dolor.', t: '3011' },
@@ -80596,10 +80885,18 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     triceps:  { o: 'Trabajás las tres cabezas del tríceps, que son dos tercios del volumen del brazo; con el brazo arriba de la cabeza se estira la porción larga.', s: 'Codos fijos y apuntando al frente, muñecas neutras y torso estable.', c: 'Extendé hasta bloquear sin sacudir y bajá en 2-3 segundos hasta estirar.', x: 'No abras los codos hacia afuera ni uses el torso para empujar.', t: '2011' },
     core_ant: { o: 'Entrenás el tronco para resistir el movimiento (antiextensión, antirrotación): la base que protege la columna bajo carga.', s: 'Abdomen contraído, costillas abajo y pelvis neutra.', c: 'Mantené el tronco quieto mientras se mueven brazos o piernas y respirá sin soltar la tensión.', x: 'Terminá la serie cuando la lumbar se despega o el torso rota, no cuando "arde".', t: '3011' },
     core_flex:{ o: 'Trabajás los abdominales con flexión de tronco o de cadera bajo control, en rangos que cuidan la columna.', s: 'Pelvis hacia atrás (retroversión) y abdomen contraído antes de empezar.', c: 'Llevá el esternón hacia la pelvis y subí las piernas sin balanceo.', x: 'No uses impulso ni dejes que la lumbar se arquee en la bajada.', t: '3011' },
+    rdl_def:  { o: 'Cargás glúteo mayor e isquiotibiales en la posición más estirada del recorrido: el déficit alarga el rango y concentra la tensión justo donde más hipertrofia por estiramiento se genera, con la bisagra de cadera (y no la espalda) haciendo el trabajo.', s: 'Parada sobre un disco o un escalón bajo de 3 a 5 cm, barra o mancuernas pegadas a las piernas, rodillas apenas flexionadas y espalda neutra.', c: 'Llevá la cadera hacia atrás como cerrando una puerta con la cola, bajá hasta sentir el estiramiento máximo de glúteo e isquios, pausa corta abajo y subí empujando el piso con la cadera.', x: 'El rango termina donde la columna pierde su forma: no redondees la espalda baja ni bajes "con la espalda" para ganar profundidad.', t: '3210' },
+    bulg_incl:{ o: 'Cargás el glúteo mayor en su posición más estirada: con el torso inclinado hacia adelante la carga se acerca a la cadera y la tensión pasa del cuádriceps al glúteo, de a una pierna y con poca fatiga axial.', s: 'Pie de atrás apoyado en un banco, paso largo, torso inclinado unos 30° con la mirada hacia el piso y las mancuernas a los costados del cuerpo.', c: 'Bajá en 3 segundos hasta estirar el glúteo de la pierna de adelante, pausa de 1 segundo abajo y subí empujando con el talón.', x: 'No dejes que la rodilla colapse hacia adentro ni cargues el peso en el pie de atrás: la pierna de adelante hace todo el trabajo.', t: '3110' },
+    patada_cruz:{ o: 'Aislás el glúteo mayor con un vector de fuerza cruzado: la polea cruza el cuerpo y alinea la resistencia con la dirección de las fibras, con tensión constante, cero carga sobre la columna y el glúteo estirado al volver.', s: 'Tobillera en la pierna que trabaja, polea baja, apoyo firme con las dos manos y torso levemente inclinado hacia adelante.', c: 'Llevá la pierna hacia atrás y apenas hacia afuera apretando el glúteo, sostené 1 segundo y volvé lento cruzando la línea media para estirarlo.', x: 'No arquees la espalda baja ni gires la pelvis para subir más la pierna: el rango termina donde se mueve la cadera.', t: '3011' },
+    puente_uni:{ o: 'Trabajás el glúteo mayor de a una pierna, con la pelvis estable y sin carga sobre la columna: alta activación y corrección de las diferencias entre un lado y el otro.', s: 'Espalda alta apoyada, pie de trabajo cerca de la cola, la otra pierna extendida y la pelvis nivelada.', c: 'Empujá con el talón hasta alinear costillas, cadera y rodilla, sostené 2 segundos apretando el glúteo y bajá lento.', x: 'No dejes que caiga el lado libre de la pelvis ni arquees la lumbar para subir más.', t: '3012' },
     gen:      { o: 'Estimulás el grupo muscular objetivo con técnica controlada y rango completo.', s: 'Posición estable, postura neutra y el músculo objetivo activado antes de empezar.', c: 'Controlá la bajada y buscá la contracción máxima en cada repetición.', x: 'No sacrifiques el rango ni la técnica por mover más carga.', t: '2011' }
   };
   /* ejercicio -> patrón del KB (el primero que coincide) */
   var RX_KB = [
+    [/peso muerto rumano con deficit|rumano con deficit/, 'rdl_def'],
+    [/bulgara con torso inclinado/, 'bulg_incl'],
+    [/patada de gluteo en polea cruzada/, 'patada_cruz'],
+    [/puente de gluteo a una pierna|puente de gluteo unilateral/, 'puente_uni'],
     [/press de banca|press banca|bench press|press plano con mancuernas|press de pecho en maquina|floor press/, 'press_h'],
     [/press inclinado|inclinado con barra|press de pecho inclinado/, 'press_inc'],
     [/aperturas|cruce de cables|pec deck|contractor de pecho/, 'aper'],
@@ -80630,6 +80927,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     [/rueda abdominal|plancha|pallof|dead bug|bird dog|hollow|woodchopper|copenhagen/, 'core_ant'],
     [/elevacion de piernas|crunch|v-ups|bicicleta abdominal/, 'core_flex']
   ];
+  /* tempo de una fila: el que fija la plantilla (fila.tp = ['3210', ...], uno por ejercicio) o el del patrón */
+  function tempoFila(fila, k, e){ var t = fila && fila.tp && fila.tp[k]; return t ? String(t) : kbDe(e).t; }
   function kbDe(nombre){
     var n = nzz(nombre);
     for(var i = 0; i < RX_KB.length; i++){ if(RX_KB[i][0].test(n)) return KB[RX_KB[i][1]]; }
@@ -80756,7 +81055,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var tecTxt = d.tec && TEC[d.tec] ? ' | ' + TEC[d.tec].lb : '';
     ejs.forEach(function(e, k){
       var reps = d.reps[k] != null ? d.reps[k] : d.reps[d.reps.length - 1], rir = d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1];
-      var dosis = d.sets + 'x' + reps + ' | Tempo ' + kbDe(e).t + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
+      var dosis = d.sets + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
       L.push((multi ? 'A' + (k + 1) + '. ' : '') + etiquetaEj(e));
       L.push(dosis);
     });
@@ -80774,14 +81073,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(fila.n) [].concat(fila.n).forEach(function(x){ L.push('NOTA DEL DÍA: ' + porNivel(x, av)); });
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
-      L.push('TEMPO: Tempo ' + kb0.t + ' (' + tempoTxt(kb0.t) + ')');
+      var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
       if(esPrimeroFuerza) L.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2). No cuentan como volumen.');
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
         var kb = kbDe(e), id = 'A' + (k + 1);
         L.push(id + ' · SET-UP: ' + kb.s);
-        L.push(id + ' · CUE EFICIENTE: Tempo ' + kb.t + ' — ' + kb.c);
+        L.push(id + ' · CUE EFICIENTE: Tempo ' + tempoFila(fila, k, e) + ' — ' + kb.c);
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
@@ -81097,35 +81396,39 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 </script>
 <script>
 /* =========================================================
-   PLANTILLAS BASE COACH JP · sesiones femeninas (Bodybuilding)
+   PLANTILLAS BASE COACH JP · sesiones femeninas (Bodybuilding) · CONSTRUCTOR DE GLÚTEOS
    Misma estructura que 12-dias-masculino.js: entrada en calor · F principal · H compuestos · A aislamientos · B/T cierre · C core · M finisher (o K cardio).
+   Metodología del tren inferior:
+     · hipertrofia por estiramiento: el glúteo se carga en su longitud más larga (peso muerto rumano con déficit, sentadilla búlgara con el torso inclinado) y se pausa ahí
+     · máxima tensión en el acortamiento: hip thrust pesado con pausa de 2 segundos arriba y patada en polea con vector de fuerza cruzado
+     · estabilidad externa máxima y poca fatiga axial: hack squat, prensa, hip thrust y polea antes que la sentadilla con barra; unilaterales con apoyo
+     · volumen inteligente: de 3 a 5 series efectivas por ejercicio principal (nunca más de 8), RIR 0-1 en la serie efectiva y 2 a 3 exposiciones de glúteo por semana
+   Tempo exacto por fila con tp: ['bajada, pausa abajo, subida, pausa arriba']. Sin movimientos de nivel avanzado poco aplicables (dominadas lastradas, rueda abdominal, elevaciones colgado).
    ========================================================= */
 (function(){
   'use strict';
   var PB = window.__jpPB; if(!PB) return;
   var R = PB.R, D = PB.D, FIN = PB.FIN;
 
-  D.F_GLU_A = { short: 'GLÚTEO A', label: 'Cadera y Glúteo', title: 'Cadera y Glúteo · Hip Thrust Pesado', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hip thrust pesado', '🔥 Cierre metabólico'],
-    foco: 'Día madre de glúteo: el hip thrust con pausa de 1 segundo arriba es el ejercicio de carga de la semana, el peso muerto rumano estira isquios y glúteo y la sentadilla búlgara corrige diferencias entre piernas. La abducción y la patada cierran con congestión para el glúteo medio. La pausa arriba es innegociable: sin ella el ejercicio se vuelve un rebote lumbar. Es una sesión pesada y larga: cargá con ganas.',
+  D.F_GLU_A = { short: 'GLÚTEO A', label: 'Cadera y Glúteo', title: 'Cadera y Glúteo · Hip Thrust Pesado', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hip thrust pesado + estiramiento', '🔥 Cierre metabólico'],
+    foco: 'Día madre del Constructor de Glúteos: el hip thrust pesado con pausa de 2 segundos arriba es el ejercicio de carga de la semana (máxima tensión con el glúteo acortado), el peso muerto rumano con déficit lo lleva a la posición más estirada con la bisagra de cadera haciendo el trabajo, la sentadilla búlgara con el torso inclinado lo carga estirado de a una pierna y la patada en polea cruzada cierra con tensión constante. Todo con apoyo estable y poca fatiga axial. Cada ejercicio principal va de 3 a 5 series efectivas con RIR 0-1: se trabaja cerca del fallo técnico y se descansa lo necesario para repetir la calidad.',
     filas: [
-      R('F', 'Hip thrust con barra', '4x6-8|2|150', '5x6-8|1|180', { n: 'Espalda alta apoyada, mentón al pecho y pausa de un segundo arriba con el glúteo apretado y las costillas abajo. Es el ejercicio donde más se nota si progresaste: anotá los kilos.' }),
-      R('H', 'Peso muerto rumano', '3x8-10|2|120', '4x6-8|1|150'),
-      R('H', 'Bulgarian split squat', '3x8-10|1|90', '4x8-10|0-1|90', { n: 'Arrancá siempre por la pierna más débil. Torso levemente inclinado hacia adelante para cargar más el glúteo y menos el cuádriceps.' }),
-      R('A', 'Patada de glúteo en polea', '3x12-15|1|60', '4x12-15|0|45|drop'),
-      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|60'),
-      R('A', 'Abducción de cadera en máquina', '3x15-20|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo con banda'], '3x12 por lado/15|1|45', null, { soloI: true, n: 'Cierre de glúteo medio: la abducción con banda empuja las rodillas hacia afuera y el puente con banda termina de congestionar. Sin pausa entre las dos.' }),
-      R('T', ['Abducción con banda (monster walk)', 'Patada de glúteo con banda', 'Puente de glúteo con banda'], null, '3x12 por lado/12 por lado/20|0|45|drop', { soloA: true, n: 'Triset de glúteo: tres estaciones seguidas con la banda y la máquina. La congestión es el objetivo: si el glúteo no arde, faltó intención.' }),
+      R('F', 'Hip thrust con barra', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['2012'], n: 'Espalda alta apoyada, mentón al pecho, pies bajo las rodillas y pausa de 2 segundos arriba con el glúteo apretado y las costillas abajo. Es el ejercicio donde más se nota si progresaste: anotá los kilos y no regales la pausa.' }),
+      R('H', 'Peso muerto rumano con déficit', '3x8-10|1|120', '4x6-8|0-1|150', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm, cadera hacia atrás y pausa de 2 segundos abajo en el estiramiento máximo del glúteo y los isquios. El rango termina donde la espalda pierde su forma: la bisagra la hace la cadera.' }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Arrancá siempre por la pierna más débil. Torso inclinado unos 30°, bajada de 3 segundos y pausa de 1 segundo abajo con el glúteo estirado: el peso lo lleva la pierna de adelante.' }),
+      R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'], n: 'La polea cruza el cuerpo: llevá la pierna atrás y apenas hacia afuera, sostené 1 segundo apretando el glúteo y volvé lento cruzando la línea media para estirarlo.' }),
+      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0-1|60'),
+      R('B', ['Puente de glúteo a una pierna', 'Abducción con banda (monster walk)'], '3x10 por lado/12 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo: el puente a una pierna activa el glúteo mayor con la pelvis estable y la abducción con banda termina de congestionar el glúteo medio. Sin pausa entre las dos.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
 
-  D.F_QUAD = { short: 'PIERNA', label: 'Cuádriceps', title: 'Cuádriceps · Rodilla Dominante', wu: 'legs', chips: ['🦵 Pierna', '🎯 Sentadilla + prensa', '🔥 Cierre metabólico'],
-    foco: 'Día de rodilla dominante: sentadilla como ancla, prensa y hack squat para el volumen de cuádriceps y glúteo en rangos profundos, y aislamientos de cuádriceps, isquio, gemelo y aductores. Pies a la altura media de la plataforma para repartir el trabajo entre cuádriceps y glúteo. Es la sesión con más volumen de pierna de la semana: llegá con hidratos comidos y con ganas.',
+  D.F_QUAD = { short: 'PIERNA', label: 'Cuádriceps', title: 'Cuádriceps · Rodilla Dominante', wu: 'legs', chips: ['🦵 Pierna', '🎯 Hack squat + prensa', '🔥 Cierre metabólico'],
+    foco: 'Día de rodilla dominante con máxima estabilidad: el hack squat como ancla (torso apoyado, cero fatiga lumbar), la prensa con los pies altos y abiertos para repartir el trabajo con el glúteo y la sentadilla búlgara con el torso inclinado para el glúteo estirado. Aislamientos de cuádriceps, isquio, gemelo y aductores cierran el volumen. Es la sesión con más trabajo de cuádriceps de la semana: llegá con hidratos comidos y con ganas.',
     filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|150', '5x5-7|1|210', { n: 'Profundidad pareja en todas las series y los talones clavados en el piso. La sentadilla es el ejercicio que más sistema nervioso consume: por eso va primera.' }),
-      R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120'),
-      R('H', 'Hack squat', '3x8-12|1|120', '4x8-10|0-1|120'),
+      R('F', 'Hack squat', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['3110'], n: 'Espalda apoyada, pies a la altura media de la plataforma y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: usala para cargar fuerte sin pagar con la espalda baja.' }),
+      R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120', { tp: ['3110'], n: 'Pies altos y apenas abiertos para sumar glúteo: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil.' }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '3x8-10 por lado|0-1|90', { tp: ['3110'] }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
@@ -81136,29 +81439,29 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ] };
 
   D.F_GLU_B = { short: 'GLÚTEO B', label: 'Glúteo y Armonía', title: 'Glúteo y Armonía · Volumen, Espalda y Brazos', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Volumen + espalda + brazos', '🔥 Cierre metabólico'],
-    foco: 'Segunda sesión de glúteo de la semana, pensada para volumen: unilaterales, abducción y patadas con tensión constante, una tracción vertical y un deltoide lateral que le dan una segunda exposición semanal a la espalda y al hombro, y un biset de brazos para el equilibrio estético. Acá no se busca la carga máxima sino la conexión con el glúteo en cada repetición. Es el día del bombeo.',
+    foco: 'Segunda sesión de glúteo de la semana, pensada para volumen con tensión limpia: hip thrust a una pierna con pausa, peso muerto rumano con déficit liviano para estirar, abducción y patadas cruzadas con tensión constante, una tracción vertical y un deltoide lateral que le dan una segunda exposición semanal a la espalda y al hombro, y un biset de brazos para el equilibrio estético. Acá no se busca la carga máxima sino la conexión con el glúteo en cada repetición. Es el día del bombeo.',
     filas: [
-      R('F', 'Hip thrust a una pierna', '3x10 por lado|1|90', '4x8-10 por lado|0-1|90', { n: 'Una pierna por vez, pelvis cuadrada y pausa arriba. Arrancá por la pierna más débil y que la otra copie el mismo número de repeticiones.' }),
-      R('H', 'Step up al cajón', '3x10 por lado|1|90', '3x10 por lado|0-1|90'),
+      R('F', 'Hip thrust a una pierna', '3x10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['2012'], n: 'Una pierna por vez, pelvis cuadrada y pausa de 2 segundos arriba. Arrancá por la pierna más débil y que la otra copie el mismo número de repeticiones.' }),
+      R('H', 'Peso muerto rumano con déficit', '3x10-12|1|90', '3x8-10|0-1|120', { tp: ['3210'], n: 'Con mancuernas y sobre un disco de 3 a 5 cm: bajá lento hasta el estiramiento máximo del glúteo y los isquios y pausa de 2 segundos abajo. Carga moderada, rango largo.' }),
       R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Abducción sentado en máquina', '4x15-20|1|45', '4x15-20|0|45|drop'),
-      R('A', 'Patada de glúteo en máquina', '3x12-15|1|60', '3x12-15|0|45|drop'),
+      R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '3x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15-20|0|45'),
       R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
+      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
 
   D.F_GLU_SH = { short: 'GLÚTEO + HOMBRO', label: 'Glúteo y Hombros', title: 'Glúteo y Hombros · Frecuencia y Estética', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hombros', '🔥 Cierre metabólico'],
-    foco: 'Tercera exposición semanal del glúteo con hip thrust en rango medio y un unilateral, más un bloque de hombros (press, laterales y posteriores) para sumar anchura y proporción. Los hombros llegan frescos porque el trabajo de pierna es de baja demanda sistémica. Sesión de volumen y estética: buscá la conexión con cada músculo.',
+    foco: 'Tercera exposición semanal del glúteo con hip thrust en rango medio y pausa, una búlgara liviana con el torso inclinado y patadas cruzadas, más un bloque de hombros (press, laterales y posteriores) para sumar anchura y proporción. Los hombros llegan frescos porque el trabajo de pierna es de baja demanda sistémica. Sesión de volumen y estética: buscá la conexión con cada músculo.',
     filas: [
-      R('F', 'Hip thrust con barra', '3x8-10|2|120', '4x6-8|1|150', { n: 'Rango medio y pausa arriba. Esta tercera exposición semanal del glúteo se hace con carga seria pero sin llegar al límite: tenés que llegar fresca a los hombros.' }),
-      R('H', 'Zancada inversa', '3x10 por lado|1|90', '3x10 por lado|0-1|90'),
+      R('F', 'Hip thrust con barra', '3x8-10|1|120', '4x6-8|0-1|150', { tp: ['2012'], n: 'Rango medio y pausa de 2 segundos arriba. Esta tercera exposición semanal del glúteo se hace con carga seria pero sin llegar al límite: tenés que llegar fresca a los hombros.' }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x10 por lado|1|90', '3x10 por lado|0-1|90', { tp: ['3110'] }),
       R('H', 'Press de hombros sentado', '3x8-12|1|90', '4x8-10|0-1|90'),
-      R('A', 'Patada de glúteo en polea', '3x12-15|1|60', '3x12-15|0|45|drop'),
+      R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '3x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo con banda'], '3x12 por lado/15|1|45', '3x12 por lado/20|0|45|drop'),
+      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop'),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
@@ -81166,7 +81469,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   D.F_UP = { short: 'TORSO', label: 'Torso y Core', title: 'Torso y Core · Espalda, Pecho y Hombros', wu: 'upper', chips: ['💪 Torso', '🎯 Espalda + pecho + hombro', '🔥 Cierre metabólico'],
     foco: 'Sesión de torso integral: espalda con tracción vertical y horizontal, pecho en dos ángulos (press inclinado y cruce de cables), un press de hombro y un biset de deltoide lateral y posterior para la postura y la proporción. Un biset de brazos y el core cierran el día. Priorizá la espalda: es el contrapeso del trabajo de pierna y lo que más cambia la silueta.',
     filas: [
-      R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas', n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van a las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
+      R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van a las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
       R('H', 'Press inclinado con mancuernas', '4x8-12|1|120', '4x8-10|1|120'),
       R('H', 'Remo apoyado en banco inclinado', '4x10-12|1|90', '4x10-12|0-1|90'),
       R('H', 'Press de hombros sentado', '3x10-12|1|90', '3x10-12|0-1|90'),
@@ -81187,7 +81490,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('B', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
+      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.push })
     ] };
 
@@ -81195,7 +81498,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     foco: 'Día de tracción: remo pesado, tracción vertical y horizontal para el dorsal, y trabajo de deltoide posterior y face pull para la postura. El bíceps entra al final con un biset sin pausa. Tirá con los codos y apretá las escápulas medio segundo en cada repetición: es lo que separa una espalda trabajada de una espalda "mirada".',
     filas: [
       R('F', 'Remo con barra inclinado', '4x6-8|2|150', '5x5-7|1|180', { n: 'Torso firme a 45 grados, abdomen duro y la barra sube al ombligo. Si el torso se levanta para ayudar, bajá el peso.' }),
-      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
+      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|120', '4x6-8|1|150'),
       R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Face Pull con cuerda', '3x15|1|45', '4x15-20|0|45'),
@@ -81205,11 +81508,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ] };
 
   D.F_PIE = { short: 'PIERNA', label: 'Pierna Completa', title: 'Pierna Completa · Glúteo Medio y Cuádriceps', wu: 'legs', chips: ['🦵 Pierna', '🎯 Armonía de pierna', '🔥 Cierre metabólico'],
-    foco: 'Sesión de pierna completa: sentadilla como ancla, peso muerto rumano para la cadena posterior y zancadas para el trabajo unilateral. Cuádriceps, isquios y gemelo cierran con aislamiento, y un biset de abductores y aductores termina de armar la pierna. Pierna armónica: ningún grupo se descuida.',
+    foco: 'Sesión de pierna completa con estabilidad externa: hack squat como ancla, peso muerto rumano con déficit para la cadena posterior estirada y sentadilla búlgara con el torso inclinado para el trabajo unilateral. Cuádriceps, isquios y gemelo cierran con aislamiento, y un biset de abductores y aductores termina de armar la pierna. Pierna armónica: ningún grupo se descuida.',
     filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|150', '5x5-7|1|210'),
-      R('H', 'Peso muerto rumano', '3x8-10|2|120', '4x6-8|1|150'),
-      R('H', 'Zancadas caminando', '3x10 por lado|1|90', '4x10 por lado|0-1|90'),
+      R('F', 'Hack squat', '4x6-8|1|150', '5x5-7|0-1|180', { tp: ['3110'] }),
+      R('H', 'Peso muerto rumano con déficit', '3x8-10|1|120', '4x6-8|0-1|150', { tp: ['3210'] }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'] }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Curl femoral tumbado', '3x10-12|1|75', '3x10-12|0|60'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
@@ -81220,16 +81523,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 
   /* ---------- split femenino de 3 días: Pierna A / Push, Pull y Brazos / Pierna B ---------- */
   D.F_PA = { short: 'PIERNA A', label: 'Pierna A', title: 'Pierna A · Glúteos y Cuádriceps + Core', wu: 'legs', chips: ['🦵 Pierna A', '🎯 Glúteo + cuádriceps', '🔥 Cierre metabólico'],
-    foco: 'Pierna A con énfasis estricto en glúteos y cuádriceps: la sentadilla marca la carga del día, la prensa y el hack squat suman volumen de rodilla dominante en rangos profundos, y el hip thrust con pausa arriba y la sentadilla búlgara llevan el glúteo a trabajar estirado y contraído. Extensión de cuádriceps y patada cierran con tensión constante, el biset de glúteo medio termina de congestionar, y el core termina la sesión. Es una sesión larga y pesada: llegá con hidratos comidos y buscá la conexión con el glúteo en cada repetición.',
+    foco: 'Pierna A del Constructor de Glúteos, con énfasis estricto en glúteos y cuádriceps: el hip thrust pesado con pausa de 2 segundos arriba marca la carga del día (glúteo acortado, máxima tensión), el hack squat suma volumen de rodilla dominante con el torso apoyado y sin fatiga axial, la sentadilla búlgara con el torso inclinado lleva el glúteo a trabajar estirado y la patada en polea cruzada cierra con tensión constante. El biset de glúteo medio termina de congestionar y el core cierra la sesión. Cada ejercicio principal va de 3 a 5 series efectivas con RIR 0-1: llegá con hidratos comidos y buscá la conexión con el glúteo en cada repetición.',
     filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|150', '5x5-7|1|210', { n: 'Profundidad pareja en todas las series y los talones clavados en el piso. Pies a la altura de los hombros y rodillas siguiendo la línea de los pies: la sentadilla va primera porque es la que más sistema nervioso consume.' }),
-      R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120', { n: 'Pies a media altura y apenas abiertos para repartir el trabajo entre cuádriceps y glúteo. Bajá hasta donde la pelvis no se despegue del respaldo: ese es tu rango útil.' }),
-      R('H', 'Hip thrust con barra', '4x8-10|1|120', '5x8-10|0-1|120', { n: 'Espalda alta apoyada, mentón al pecho y pausa de un segundo arriba con el glúteo apretado. Es el ejercicio donde más se nota si progresaste: anotá los kilos.' }),
-      R('H', 'Bulgarian split squat', '3x8-10|1|90', '4x8-10|0-1|90', { n: 'Arrancá siempre por la pierna más débil y repetí con la otra el mismo número de repeticiones. Torso levemente inclinado hacia adelante para cargar más el glúteo.' }),
+      R('F', 'Hip thrust con barra', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['2012'], n: 'Espalda alta apoyada, mentón al pecho, pies bajo las rodillas y pausa de 2 segundos arriba con el glúteo apretado y las costillas abajo. Es el ejercicio donde más se nota si progresaste: anotá los kilos y no regales la pausa.' }),
+      R('H', 'Hack squat', '4x8-10|1|120', '4x8-10|0-1|120', { tp: ['3110'], n: 'Espalda apoyada, pies a media altura y apenas abiertos para repartir el trabajo entre cuádriceps y glúteo. Bajada de 3 segundos hasta donde la pelvis no se despegue del respaldo: ese es tu rango útil.' }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Arrancá siempre por la pierna más débil y repetí con la otra el mismo número de repeticiones. Torso inclinado unos 30° y pausa de 1 segundo abajo con el glúteo estirado.' }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Patada de glúteo en polea', '3x12-15|1|60', '4x12-15|0|45|drop'),
-      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo con banda'], '3x12 por lado/15|1|45', null, { soloI: true, n: 'Cierre de glúteo medio: la abducción con banda empuja las rodillas hacia afuera y el puente con banda termina de congestionar. Sin pausa entre las dos.' }),
-      R('T', ['Abducción con banda (monster walk)', 'Patada de glúteo con banda', 'Puente de glúteo con banda'], null, '3x12 por lado/12 por lado/20|0|45|drop', { soloA: true, n: 'Triset de glúteo: tres estaciones seguidas con banda. La congestión es el objetivo: si el glúteo no arde, faltó intención.' }),
+      R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
+      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo medio: la abducción con banda empuja las rodillas hacia afuera y el puente a una pierna termina de congestionar con la pelvis estable. Sin pausa entre las dos.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
@@ -81237,7 +81538,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   D.F_PPB = { short: 'PUSH PULL + BRAZOS', label: 'Push, Pull y Brazos', title: 'Push, Pull y Brazos · Torso Completo', wu: 'upper', chips: ['💪 Torso', '🎯 Empuje + tracción + brazos', '🔥 Cierre metabólico'],
     foco: 'Sesión de torso completo y equilibrado: una tracción vertical abre el día, seguida de un press inclinado, un remo y un press de hombro para cubrir empuje y tracción en partes iguales. El cruce de cables trabaja el pecho estirado, el deltoide lateral y posterior redondean el hombro y el cierre de brazos (bíceps y tríceps) termina de armar la silueta. Priorizá la espalda: es el contrapeso del trabajo de pierna y lo que más cambia la postura. Controlá la bajada de cada repetición y no regales rango.',
     filas: [
-      R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas', n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van hacia las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
+      R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van hacia las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
       R('H', 'Press inclinado con mancuernas', '4x8-12|1|120', '4x8-10|1|120'),
       R('H', 'Remo apoyado en banco inclinado', '4x10-12|1|90', '4x10-12|0-1|90'),
       R('H', 'Press de hombros sentado', '3x10-12|1|90', '3x10-12|0-1|90'),
@@ -81250,23 +81551,23 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ] };
 
   D.F_PB = { short: 'PIERNA B', label: 'Pierna B', title: 'Pierna B · Glúteos e Isquiotibiales + Refuerzo de Torso', wu: 'glute', chips: ['🦵 Pierna B', '🎯 Glúteo + isquios', '💪 Refuerzo de torso'],
-    foco: 'Pierna B con énfasis estricto en glúteos e isquiotibiales: el peso muerto rumano abre el día con la cadena posterior estirada, el hip thrust y la zancada inversa cargan el glúteo en dos longitudes distintas y el curl femoral y la abducción cierran con tensión constante. Al final entra un refuerzo de torso (tracción vertical y hombros) que te da una segunda exposición semanal a espalda y deltoides sin sumar fatiga de pierna. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
+    foco: 'Pierna B del Constructor de Glúteos, con énfasis estricto en glúteos e isquiotibiales: el peso muerto rumano con déficit abre el día con la cadena posterior en su máximo estiramiento, el hip thrust con pausa y la sentadilla búlgara con el torso inclinado cargan el glúteo en dos longitudes distintas y el curl femoral y la patada en polea cruzada cierran con tensión constante. Al final entra un refuerzo de torso (tracción vertical y hombros) que te da una segunda exposición semanal a espalda y deltoides sin sumar fatiga de pierna. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
     filas: [
-      R('F', 'Peso muerto rumano', '4x6-8|2|150', '5x5-7|1|180', { n: 'La cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta sentir el estiramiento de los isquios sin perder la espalda neutra: ahí termina el rango útil.' }),
-      R('H', 'Hip thrust con barra', '4x8-10|1|120', '5x8-10|0-1|120', { n: 'Pausa de un segundo arriba, costillas abajo y mentón al pecho. En esta sesión trabajás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
-      R('H', 'Zancada inversa', '3x10 por lado|1|90', '4x10 por lado|0-1|90', { n: 'Paso largo y torso levemente inclinado hacia adelante para cargar el glúteo. Empujá con el talón de la pierna que queda adelante.' }),
+      R('F', 'Peso muerto rumano con déficit', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta sentir el estiramiento máximo de glúteo e isquios, pausa de 2 segundos y subí sin perder la espalda neutra: ahí termina el rango útil.' }),
+      R('H', 'Hip thrust con barra', '4x8-10|1|120', '5x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba, costillas abajo y mentón al pecho. En esta sesión trabajás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
+      R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Torso inclinado unos 30° para cargar el glúteo estirado y pausa de 1 segundo abajo. Arrancá por la pierna más débil.' }),
       R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
-      R('A', 'Abducción sentado en máquina', '4x15-20|1|45', '4x15-20|0|45|drop'),
+      R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '4x10-12|0-1|90', { n: 'Refuerzo de torso: no es el día para buscar el máximo sino estímulo de calidad con poca fatiga. Codos a las costillas y pausa de medio segundo abajo.' }),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, livianos y con rango completo.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: tres estaciones sin pausa para redondear el deltoide. La congestión es el objetivo.' }),
-      R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
+      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
 
   PB.ESTR.push(
-    { g: 'f', f: 3, est: 'Pierna A · Push, Pull y Brazos · Pierna B', dias: ['F_PA', 'F_PPB', 'F_PB'], res: 'Split de tres días con prioridad en tren inferior: Pierna A (glúteos y cuádriceps + core), Push, Pull y Brazos (torso completo y equilibrado) y Pierna B (glúteos e isquiotibiales + refuerzo de torso). Glúteo y pierna dos veces por semana, con la sesión de torso en el medio para recuperar. Todas con entrada en calor específica, un básico pesado, compuestos de hipertrofia, cierre de congestión, core y finisher metabólico.' },
-    { g: 'f', f: 4, est: 'Glúteo · Torso · Pierna · Glúteo y Hombros', dias: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], res: 'Glúteo en frecuencia 2 (con una tercera exposición a baja demanda), torso integral y una sesión de rodilla dominante: la mayor parte del volumen va a tren inferior sin descuidar el desarrollo general.' },
+    { g: 'f', f: 3, est: 'Pierna A · Push, Pull y Brazos · Pierna B', dias: ['F_PA', 'F_PPB', 'F_PB'], res: 'Split de tres días con prioridad en tren inferior (Constructor de Glúteos): Pierna A (glúteos y cuádriceps + core), Push, Pull y Brazos (torso completo y equilibrado) y Pierna B (glúteos e isquiotibiales + refuerzo de torso). Glúteo y pierna dos veces por semana, con la sesión de torso en el medio para recuperar. Hipertrofia por estiramiento (peso muerto rumano con déficit, búlgara con el torso inclinado), hip thrust pesado con pausa y patada en polea cruzada, con apoyos estables y poca fatiga axial. Todas con entrada en calor específica, un básico pesado, compuestos de hipertrofia, cierre de congestión, core y finisher metabólico.' },
+    { g: 'f', f: 4, est: 'Glúteo · Torso · Pierna · Glúteo y Hombros', dias: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], res: 'Glúteo en frecuencia 2 (con una tercera exposición a baja demanda), torso integral y una sesión de rodilla dominante con máquinas estables: la mayor parte del volumen va a tren inferior sin descuidar el desarrollo general.' },
     { g: 'f', f: 5, est: 'Glúteo · Push · Pierna · Pull · Glúteo y Armonía', dias: ['F_GLU_A', 'F_PUSH', 'F_QUAD', 'F_PULL', 'F_GLU_B'], res: 'Glúteo y pierna en frecuencia 2-3 con Push y Pull dedicados: cadera pesada, empuje (hombro y pecho), cuádriceps e isquios, tracción y una segunda sesión de glúteo con brazos. Cinco sesiones completas: se entrena fuerte y se descansa en serio.' }
   );
 })();
@@ -89224,6 +89525,18 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip b, html body:not(#_):not(#
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.su b{color:var(--xc-acc);}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.cu b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.cu b{color:#FF9C7A;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip span{font-size:.82rem; line-height:1.5; color:var(--xc-txt); opacity:.92;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-cajas{display:grid; gap:8px; margin:8px 0 0; clear:both;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box{background:var(--xc-tip-bg); border:1px solid var(--xc-bd); border-radius:calc(var(--xc-r) * .8); overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 12px; position:relative; -webkit-tap-highlight-color:transparent;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary::-webkit-details-marker, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary::-webkit-details-marker{display:none;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box > summary::after{content:"▾"; margin-left:auto; color:var(--xc-acc); transition:transform .18s ease; font-size:.8rem;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box[open] > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box[open] > summary::after{transform:rotate(180deg);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-t{font-family:var(--xc-font); font-weight:800; font-size:.7rem; letter-spacing:.16em; color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-tempo .jp-ex-box-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-tempo .jp-ex-box-t{color:var(--xc-tempo-c, var(--xc-acc));}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-s, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-s{font-size:.66rem; color:var(--xc-lbl); letter-spacing:.04em;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b{padding:2px 12px 12px; font-size:.82rem; line-height:1.5; color:var(--xc-txt); border-top:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row{padding-top:8px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-box-b .jp-tempo-row b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-box-b .jp-tempo-row b{color:var(--xc-tempo-c, var(--xc-acc)); font-variant-numeric:tabular-nums;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex::before{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,#5CE1FF 0%,rgba(92,225,255,.15) 70%,transparent 100%); pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}
@@ -89377,12 +89690,19 @@ html body:not(#_):not(#__) .jp-badge{ display:none !important; }
       '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + o.id + '</span><span class="jp-sb-ex-nombre">' + esc(o.nombre) + ' <span class="jp-nom-en">(' + esc(o.en) + ')</span></span></div>' +
       dosis(o) +
       '<div class="jp-qc"><button type="button" class="jp-qc-tg" tabindex="-1"><span class="jp-qc-tg-t"><span class="jp-qc-tg-l">Registrar carga</span><span class="jp-qc-tg-id">· ' + o.id + '</span></span><span class="jp-qc-tg-b"><span class="jp-qc-tg-h">Tocar para registrar</span></span></button>' +
-      tips(o.su, o.ej, o.cu) + '</div></div>';
+      tips(o.su, o.ej, o.cu) + cajas(o) + '</div></div>';
+  }
+  /* recuadros al pie de la tarjeta (igual que en la app del alumno): objetivo fisiológico y tempo (cadencia) */
+  function cajas(o){
+    var caja = function(cls, tit, sub, cuerpo){ return '<details class="jp-ex-box jp-ex-box-' + cls + '"><summary><span class="jp-ex-box-t">' + tit + '</span><span class="jp-ex-box-s">' + sub + '</span></summary><div class="jp-ex-box-b">' + cuerpo + '</div></details>'; };
+    var m = /^([0-9xX])([0-9xX])([0-9xX])([0-9xX])$/.exec(o.tempo || '');
+    var ex = m ? [m[1] + ' s bajada', m[2] + ' s pausa abajo', (/x/i.test(m[3]) ? 'subida explosiva' : m[3] + ' s subida'), m[4] + ' s pausa arriba'].join(' · ') : '';
+    return '<div class="jp-ex-cajas">' + (o.obj ? caja('obj', '🎯 OBJETIVO FISIOLÓGICO', 'Qué trabajás y por qué', esc(o.obj)) : '') + (ex ? caja('tempo', '⏱ TEMPO (CADENCIA)', esc(o.tempo), '<div class="jp-tempo-row"><b>' + esc(o.tempo) + '</b> → ' + esc(ex) + '</div>') : '') + '</div>';
   }
   var MUESTRA = [
-    { id: '01', nombre: 'Press de banca plano con barra', en: 'Barbell Bench Press', ancla: true, series: 4, reps: '5-7', rest: '3:00', tempo: '3010', rir: '2',
+    { id: '01', nombre: 'Press de banca plano con barra', en: 'Barbell Bench Press', ancla: true, series: 4, reps: '5-7', rest: '3:00', tempo: '3010', rir: '2', obj: 'Entrenás pecho, hombro y tríceps con carga alta: el empuje horizontal que más fuerza y masa aporta al tren superior.',
       su: 'Escápulas juntas y hacia abajo, pies firmes y la barra sobre la línea del pecho.', ej: 'Bajá controlado hasta rozar el pecho y empujá como si te alejaras del banco.', cu: 'No rebotes ni despegues la cadera del banco; si el hombro molesta, cerrá un poco el agarre.' },
-    { id: '02', nombre: 'Remo con barra inclinado', en: 'Bent-Over Barbell Row', series: 4, reps: '6-8', rest: '2:30', tempo: '2011', rir: '1',
+    { id: '02', nombre: 'Remo con barra inclinado', en: 'Bent-Over Barbell Row', series: 4, reps: '6-8', rest: '2:30', tempo: '2011', rir: '1', obj: 'Dorsal y espalda media con la espalda neutra: la tracción que equilibra el empuje y cuida los hombros.',
       su: 'Torso a 45 grados, abdomen duro y la barra cerca de las piernas.', ej: 'Tirá de los codos hacia la cadera y sostené medio segundo arriba.', cu: 'Si el torso se levanta para ayudar, bajá la carga.' },
     { id: '03', nombre: 'Plancha lateral', en: 'Side Plank', series: 3, reps: '30', unidad: 'SEG', rest: '0:45', rir: '1',
       su: 'Codo bajo el hombro, pies apilados y la cadera alta.', ej: 'Cuerpo en línea recta, respirando sin soltar el abdomen.', cu: 'No dejes caer la cadera hacia el piso.' }

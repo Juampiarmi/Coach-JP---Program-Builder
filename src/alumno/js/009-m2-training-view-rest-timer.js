@@ -989,6 +989,51 @@
     var s = document.createElement('span'); s.className = 'jp-db-seg jp-db-tempo'; s.innerHTML = '<small>TEMPO</small> <b>' + escSB(tp) + '</b>';
     r3.insertBefore(s, r3.firstChild);
   }
+  /* lo que la tarjeta del ejercicio ya muestra en su COACHING TIPS (Set-up · Ejecución · Cuidado) y el tempo (ficha + caja de cadencia) no se repite en
+     "PAUTAS TÉCNICAS & TIPS DEL BLOQUE". En un bloque con varios ejercicios la tarjeta solo toma las líneas con letra de estación (A1 · ...): las demás se conservan. */
+  function quitarTipsDeTarjetaSB(texto, nEj){
+    if(!(nEj > 0)) return texto;
+    var multi = nEj > 1;
+    return String(texto || '').split('\n').filter(function(l){
+      var m = /^\s*(?:([A-F]\d)\s*·\s*)?([^:]{2,40}):\s*\S/.exec(l); if(!m) return true;
+      var et = m[2].trim();
+      if(multi && !m[1] && !/^tempo/i.test(et)) return true;
+      return !/^(set-?\s*up|cue|clave|ejecuci|control|ritmo|cuidado|error|precauci|tempo)/i.test(et);
+    }).join('\n');
+  }
+  /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
+  function jpExplicarTempoSB(tp){
+    var m = String(tp || '').match(/^([\dXx])([\dXx])([\dXx])([\dXx])$/);
+    if(!m) return '';
+    var sg = function(v, txt){ return v + ' s ' + txt; };
+    return [sg(m[1], 'bajada'), sg(m[2], 'pausa abajo'), /x/i.test(m[3]) ? 'subida explosiva' : sg(m[3], 'subida'), sg(m[4], 'pausa arriba')].join(' · ');
+  }
+  /* "OBJETIVO FISIOLÓGICO" y "TEMPO (CADENCIA)" viven en recuadros plegables al pie de la tarjeta del ejercicio (debajo de los coaching tips), no en el acordeón del bloque.
+     El objetivo es del bloque: va en la primera tarjeta. El tempo es de cada ejercicio: se explica con el que muestra su propia ficha. */
+  function jpCajasTarjetaSB(root, objetivoHtml){
+    var board = root && root.querySelector ? root.querySelector('[data-sportsboard]') : null; if(!board) return;
+    var caja = function(cls, tit, sub, cuerpo){
+      return '<details class="jp-ex-box jp-ex-box-' + cls + '"><summary><span class="jp-ex-box-t">' + tit + '</span><span class="jp-ex-box-s">' + sub + '</span></summary><div class="jp-ex-box-b">' + cuerpo + '</div></details>';
+    };
+    var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    var objetivoPendiente = !!objetivoHtml;
+    unidades.forEach(function(u){
+      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var html = '';
+      if(objetivoPendiente){ html += caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml); objetivoPendiente = false; }
+      var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
+      var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
+      if(ex) html += caja('tempo', '&#9201; TEMPO (CADENCIA)', escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
+      if(!html) return;
+      var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
+      u.appendChild(div);
+    });
+    if(objetivoPendiente){                                                       /* sin tarjetas de ejercicio en el bloque: el objetivo cierra el tablero */
+      var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml);
+      var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
+    }
+  }
+  window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
     var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
@@ -1058,6 +1103,7 @@
     if(v.rv) setLoadField(key, 'reps', v.rv);
     setLoadField(key, 'ex', regNombreCorto(e.nombre));           /* el historial verifica que la marca sea de ESTE ejercicio */
     if(e.u && e.u !== 'reps') setLoadField(key, 'u', e.u);       /* la unidad del segundo casillero (m / seg): el tonelaje la excluye */
+    if(e.uni) setLoadField(key, 'uni', 1);                       /* unilateral: el tonelaje cuenta los dos lados */
     setLoadField(key, 'done', true);
     qrAviso();
     var i = parseInt(card.getAttribute('data-qi'), 10), m = qrModelo(c, e, i);
@@ -4043,12 +4089,12 @@
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
+            '<div class="jp-sb-biset-title"><span class="jp-sb-biset-pill">' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' \u00b7 ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + '</span><span class="jp-sb-biset-sub">EJERCICIOS ENCADENADOS \u00b7 SIN PAUSA ENTRE ELLOS</span></div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -4090,7 +4136,7 @@
          línea. Nunca en calentamiento (ahí la técnica no aplica). */
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
-        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1 });
+        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1, uni: entry.unilateral || '' });
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
@@ -4145,7 +4191,7 @@
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '' });
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '', uni: entry.unilateral || '' });
       if(entry.tecnica === 'restpause' && !entry.tramos){
         var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
         for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\u26a1 REST-PAUSE: al fallo \u2192 pausa 15-20 s \u2192 +2-4 reps \u2192 pausa \u2192 +2-4 reps (una sola serie)' : '');
@@ -4207,7 +4253,7 @@
     });
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
       ? unirMetaSB(block.tips, sepMeta.tips)
-      : formatTipsSB((function(){
+      : formatTipsSB(quitarTipsDeTarjetaSB((function(){
           var p = String(block.tips || ''), x = String(sepMeta.tips || '');
           if(!x) return p;
           if(!p) return x;
@@ -4215,7 +4261,7 @@
           if(np.indexOf(nx) >= 0) return p;
           if(nx.indexOf(np) >= 0) return x;
           return p + '\n' + x;
-        })(), nombresTips);
+        })(), regCfg.length), nombresTips);
     /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
     const explicarTempoSB = function(tp){
       const m = String(tp || '').match(/^([\dXx])([\dXx])([\dXx])([\dXx])$/);
@@ -4238,8 +4284,7 @@
       });
       return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
-    const tieneObjTips = objetivoHtml || tipsHtml;
-    const tieneAcc = tieneObjTips || !!tempoHtml;
+    const tieneAcc = !!tipsHtml;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
        -- el énfasis muscular/técnico que el coach agrega entre paréntesis
        al título del bloque ("BLOQUE 4 | GLÚTEO (EXTENSIÓN DE CADERA &
@@ -4261,9 +4306,7 @@
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             '<div class="jp-details-content">' +
-              (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-obj">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
-              tempoHtml +
             '</div>' +
           '</details>' : '') +
         (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg, obj: String(block.objective || ''), tp: String(block.tips || '') }) : '') +
@@ -4278,6 +4321,7 @@
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
     try{ jpQrAcomodar(body); }catch(eQr){ console.warn('registro 1 toque', eQr); }
+    try{ jpCajasTarjetaSB(body, objetivoHtml); }catch(eCj){ console.warn('cajas de la tarjeta', eCj); }
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
@@ -4770,8 +4814,8 @@
       const l = state.loads[k];
       if(!l || !l.done) return;
       series++;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      reps += rp; vol += kg * rp;
+      const kg = numJP(l.kg), rp = Math.round(jpRepsReales(l.reps));
+      reps += rp; vol += jpTonelajeSerie(l);
       if(kg > maxKg) maxKg = kg;
     });
     /* directiva (resumen de sesión CrossFit): score del WOD del día, si
@@ -4785,7 +4829,6 @@
       scoreWod = (state.scores && state.scores[skeyWod]) || '';
     }
     /* un solo criterio de tonelaje en toda la app: para la sesión abierta se usa el mismo cálculo del HUD (kg × reps válidas; sin metros, segundos ni acarreos) */
-    try{ if(weekIdx === state.currentWeek && day && day.id === state.currentDay && typeof calcularTonelajeSesion === 'function') vol = calcularTonelajeSesion(); }catch(eT){}
     return { vol: Math.round(vol), series: series, reps: reps, maxKg: maxKg, scoreWod: scoreWod };
   }
   /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- desglose
@@ -4956,7 +4999,7 @@
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">' + (SP ? '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]' : '\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
+            '<button class="sc-share" id="scShare" type="button">' + (SP ? '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE' :'\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>';

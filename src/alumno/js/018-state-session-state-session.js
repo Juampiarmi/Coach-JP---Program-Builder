@@ -170,7 +170,7 @@
       m.n++;
       var kg = parseFloat(l.kg) || 0, rp = parseFloat(l.reps) || 0;
       if(kg > 0){
-        m.vol += kg * (rp > 0 ? rp : 1);
+        m.vol += jpTonelajeSerie(l);
         if(kg > m.kg || (kg === m.kg && rp > m.reps)){ m.kg = kg; m.reps = rp > 0 ? rp : 1; }
       }
     });
@@ -211,7 +211,7 @@
       if(!nm) return;
       var r = rp > 0 ? rp : 1, m = mapa[nm] || (mapa[nm] = { ex: nm, kg: 0, reps: 0, vol: 0, blk: {} });
       m.blk[p[2]] = 1;
-      m.vol += kg * r;
+      m.vol += jpTonelajeSerie(l);
       if(kg > m.kg || (kg === m.kg && r > m.reps)){ m.kg = kg; m.reps = r; }
     });
     return Object.keys(mapa).map(function(k){ mapa[k].vol = Math.round(mapa[k].vol); return mapa[k]; })

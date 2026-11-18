@@ -56,12 +56,19 @@
       '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + o.id + '</span><span class="jp-sb-ex-nombre">' + esc(o.nombre) + ' <span class="jp-nom-en">(' + esc(o.en) + ')</span></span></div>' +
       dosis(o) +
       '<div class="jp-qc"><button type="button" class="jp-qc-tg" tabindex="-1"><span class="jp-qc-tg-t"><span class="jp-qc-tg-l">Registrar carga</span><span class="jp-qc-tg-id">· ' + o.id + '</span></span><span class="jp-qc-tg-b"><span class="jp-qc-tg-h">Tocar para registrar</span></span></button>' +
-      tips(o.su, o.ej, o.cu) + '</div></div>';
+      tips(o.su, o.ej, o.cu) + cajas(o) + '</div></div>';
+  }
+  /* recuadros al pie de la tarjeta (igual que en la app del alumno): objetivo fisiológico y tempo (cadencia) */
+  function cajas(o){
+    var caja = function(cls, tit, sub, cuerpo){ return '<details class="jp-ex-box jp-ex-box-' + cls + '"><summary><span class="jp-ex-box-t">' + tit + '</span><span class="jp-ex-box-s">' + sub + '</span></summary><div class="jp-ex-box-b">' + cuerpo + '</div></details>'; };
+    var m = /^([0-9xX])([0-9xX])([0-9xX])([0-9xX])$/.exec(o.tempo || '');
+    var ex = m ? [m[1] + ' s bajada', m[2] + ' s pausa abajo', (/x/i.test(m[3]) ? 'subida explosiva' : m[3] + ' s subida'), m[4] + ' s pausa arriba'].join(' · ') : '';
+    return '<div class="jp-ex-cajas">' + (o.obj ? caja('obj', '🎯 OBJETIVO FISIOLÓGICO', 'Qué trabajás y por qué', esc(o.obj)) : '') + (ex ? caja('tempo', '⏱ TEMPO (CADENCIA)', esc(o.tempo), '<div class="jp-tempo-row"><b>' + esc(o.tempo) + '</b> → ' + esc(ex) + '</div>') : '') + '</div>';
   }
   var MUESTRA = [
-    { id: '01', nombre: 'Press de banca plano con barra', en: 'Barbell Bench Press', ancla: true, series: 4, reps: '5-7', rest: '3:00', tempo: '3010', rir: '2',
+    { id: '01', nombre: 'Press de banca plano con barra', en: 'Barbell Bench Press', ancla: true, series: 4, reps: '5-7', rest: '3:00', tempo: '3010', rir: '2', obj: 'Entrenás pecho, hombro y tríceps con carga alta: el empuje horizontal que más fuerza y masa aporta al tren superior.',
       su: 'Escápulas juntas y hacia abajo, pies firmes y la barra sobre la línea del pecho.', ej: 'Bajá controlado hasta rozar el pecho y empujá como si te alejaras del banco.', cu: 'No rebotes ni despegues la cadera del banco; si el hombro molesta, cerrá un poco el agarre.' },
-    { id: '02', nombre: 'Remo con barra inclinado', en: 'Bent-Over Barbell Row', series: 4, reps: '6-8', rest: '2:30', tempo: '2011', rir: '1',
+    { id: '02', nombre: 'Remo con barra inclinado', en: 'Bent-Over Barbell Row', series: 4, reps: '6-8', rest: '2:30', tempo: '2011', rir: '1', obj: 'Dorsal y espalda media con la espalda neutra: la tracción que equilibra el empuje y cuida los hombros.',
       su: 'Torso a 45 grados, abdomen duro y la barra cerca de las piernas.', ej: 'Tirá de los codos hacia la cadera y sostené medio segundo arriba.', cu: 'Si el torso se levanta para ayudar, bajá la carga.' },
     { id: '03', nombre: 'Plancha lateral', en: 'Side Plank', series: 3, reps: '30', unidad: 'SEG', rest: '0:45', rir: '1',
       su: 'Codo bajo el hombro, pies apilados y la cadera alta.', ej: 'Cuerpo en línea recta, respirando sin soltar el abdomen.', cu: 'No dejes caer la cadera hacia el piso.' }

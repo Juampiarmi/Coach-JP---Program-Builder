@@ -536,27 +536,49 @@ function lineaSetWA(i, ld){
    getLoadKey más arriba) -- filtrar por el prefijo "weekIdx|dayId|"
    basta para aislar sólo el día/semana que el alumno tiene abiertos
    ahora mismo, sin tocar el resto del historial guardado. */
-function calcularTonelajeSesion(){
-  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+/* TONELAJE · UN SOLO CRITERIO PARA TODA LA APP
+   Tonelaje de una serie = kg × repeticiones realmente hechas, solo si la serie está tildada (✓) y es trabajo de carga:
+     · reps "12+4+3" (Myo-Reps / Rest-Pause) suman todos los tramos; un rango "8-10" toma el primer número
+     · ejercicios UNILATERALES ("por pierna" / "por lado"): se registran las reps de UN lado, pero la carga se movió con los dos: cuentan por 2
+     · fuera: series sin kilos o sin reps, ejercicios medidos en metros / segundos / minutos, bandas, acarreos y trineo (kg × metros no es tonelaje)
+   Tonelaje de un día = suma de sus series, contando solo los bloques que existen HOY en ese día (el progreso guardado puede traer restos de un plan anterior
+   con el mismo id de día). Lo usan el HUD en vivo, el resumen de sesión, el reporte al coach, la Story Card, el historial y el reporte del mesociclo. */
+var JP_RX_ACARREO = /\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\b/i;
+var JP_RX_UNILATERAL = /\b(unilateral|a una pierna|una pierna|single[\s-]?leg|one[\s-]?leg|single[\s-]?arm|one[\s-]?arm|un brazo|b[uú]lgara|bulgarian|split squat|pistol)\b/i;
+function jpRepsReales(v){
+  var s = String(v == null ? '' : v).replace(',', '.').trim();
+  if(/^\d+(\.\d+)?(\s*\+\s*\d+(\.\d+)?)+$/.test(s)) return s.split('+').reduce(function(a, x){ return a + (parseFloat(x) || 0); }, 0);
+  return numJP(s);
+}
+function jpTonelajeSerie(ld){
+  if(!ld || !ld.done) return 0;
+  var kg = numJP(ld.kg), reps = jpRepsReales(ld.reps);
+  if(!(kg > 0) || !(reps > 0)) return 0;
+  if(ld.u && ld.u !== 'reps') return 0;                          /* el ejercicio se prescribió en metros / segundos / minutos */
+  var nm = String(ld.ex || '');
+  if(nm){
+    var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(nm); }catch(eM){}
+    if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return 0;
+    if(JP_RX_ACARREO.test(nm)) return 0;
+  }
+  var lados = (ld.uni || (nm && JP_RX_UNILATERAL.test(nm))) ? 2 : 1;
+  return kg * reps * lados;
+}
+function jpTonelajeDia(weekIdx, day){
   if(!day) return 0;
-  var prefix = state.currentWeek + '|' + day.id + '|';
+  var pref = weekIdx + '|' + day.id + '|', validos = {}, hay = false;
+  ((day && day.blocks) || []).forEach(function(b){ if(b && b.id != null){ validos[b.id] = 1; hay = true; } });
   var total = 0;
-  Object.keys(state.loads).forEach(function(k){
-    if(k.indexOf(prefix) !== 0) return;
-    var ld = state.loads[k];
-    if(!ld || !ld.done) return;
-    var kg = numJP(ld.kg), reps = numJP(ld.reps);
-    if(!(kg > 0) || !(reps > 0)) return;
-    /* ejercicios medidos en tiempo, distancia o con banda: ahí el segundo casillero NO son repeticiones (segundos / metros), kg × eso inflaría el total */
-    if(ld.u && ld.u !== 'reps') return;                          /* el ejercicio se prescribió en metros / segundos / minutos */
-    if(ld.ex){
-      var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(ld.ex); }catch(eM){}
-      if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return;
-      if(/\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
-    }
-    total += kg * reps;
+  Object.keys(state.loads || {}).forEach(function(k){
+    if(k.indexOf(pref) !== 0) return;
+    if(hay && !validos[k.split('|')[2]]) return;
+    total += jpTonelajeSerie(state.loads[k]);
   });
   return isFinite(total) ? Math.round(total) : 0;
+}
+function calcularTonelajeSesion(){
+  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+  return day ? jpTonelajeDia(state.currentWeek, day) : 0;
 }
 var _tonelajeAnimId = null, _tonelajeActual = 0, _tonelajeMostrado = 0, _tonelajeFinT = null;
 function _tonFmt(n){ return Number(n || 0).toLocaleString('es-AR'); }
@@ -2609,8 +2631,8 @@ function datosStoryCF(weekIdx, day){
       const l = state.loads[k];
       if(!l || !l.done) return;
       huboLoads = true;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      vol += kg * rp;
+      const kg = numJP(l.kg);
+      vol += jpTonelajeSerie(l);
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
@@ -3002,7 +3024,7 @@ function renderMain(){
      ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
-  html += '<button type="button" class="story-cta" id="storyCtaBtn">[ 📸 GENERAR STORY CARD ]</button>';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 GENERAR STORY CARD</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -3014,7 +3036,7 @@ function renderMain(){
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
   html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
-    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE ]' : '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]') + '</button>';
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '\u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE' : '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);

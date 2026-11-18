@@ -86,6 +86,9 @@
     copiaCF:      { run: function(i){ return copiaCaso(i); }, valor: function(r){ return r; } },
     showroom:     { run: function(i){ return showroomCaso(i); }, valor: function(r){ return r; } },
     alumnoEstilo: { run: function(i){ return alumnoEstilo(i); }, valor: function(r){ return r; } },
+    alumnoTon: { run: function(i){ return alumnoTon(i); }, valor: function(r){ return r; } },
+    alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
+    bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
     alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
     editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
     bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
@@ -496,6 +499,54 @@
       } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; win.toast = aviso; S.activeId = act0; if(S.ui) S.ui.day = dia0; }
     }
     throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* tonelaje de la app del alumno: un solo criterio (kg × reps hechas, unilateral x2, sin metros / segundos / acarreos, solo bloques vigentes) */
+  function alumnoTon(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var S = w.eval('state'), previo = S.loads;
+    try{
+      if(i.caso === 'serie') return w.jpTonelajeSerie(i.ld);
+      if(i.caso === 'dia'){
+        S.loads = i.loads;
+        return w.jpTonelajeDia(0, i.dia);
+      }
+      throw new Error('caso desconocido: ' + i.caso);
+    } finally { S.loads = previo; }
+  }
+  /* pautas del bloque sin repetir lo de la tarjeta, y recuadros de objetivo / tempo al pie de la tarjeta */
+  function alumnoPautas(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'quitar') return w.jpQuitarTipsDeTarjeta(i.texto, i.nEj).split('\n');
+    if(i.caso === 'cajas'){
+      var d = w.document, cont = d.createElement('div');
+      cont.innerHTML = '<div data-sportsboard="x"><div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + i.tempo + '</b></span></div></div>' +
+        (i.dos ? '<div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>2011</b></span></div></div>' : '') + '</div>';
+      w.jpCajasTarjeta(cont, i.objetivo);
+      var ex = cont.querySelectorAll('.jp-sb-ex'), q = function(u, s){ return u ? u.querySelectorAll(s).length : 0; };
+      return { objetivoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-obj'), objetivoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-obj'),
+        tempoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-tempo'), explica: /3 s bajada/.test(ex[0].textContent) && /1 s pausa abajo/.test(ex[0].textContent), tempoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-tempo') };
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* Constructor de Glúteos: sin movimientos avanzados poco aplicables y con la metodología del tren inferior femenino */
+  function auditarGluteos(){
+    var P = [], S = getS(), n = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_f\d_[ia]$/.test(r.id || '')) return;
+      n++;
+      var txt = JSON.stringify(r.dias || []);
+      if(/weighted pull|dominadas lastradas/i.test(txt)) P.push(r.id + ': tiene dominadas lastradas');
+      if(/rueda abdominal|ab wheel|piernas colgado|hanging leg|toes to bar/i.test(txt)) P.push(r.id + ': tiene ejercicios de core avanzados (rueda o colgado)');
+      if(/back squat|sentadilla con barra/i.test(txt)) P.push(r.id + ': todavía usa la sentadilla con barra (fatiga axial)');
+      if(!/hip thrust|barbell hip thrust/i.test(txt)) P.push(r.id + ': no tiene hip thrust');
+      if(!/Tempo 2012/.test(txt)) P.push(r.id + ': el hip thrust no lleva pausa de 2 segundos arriba (Tempo 2012)');
+      if(!/d[eé]ficit|deficit romanian/i.test(txt)) P.push(r.id + ': no tiene peso muerto rumano con déficit');
+      if(!/torso inclinado|forward-lean/i.test(txt)) P.push(r.id + ': no tiene sentadilla búlgara con el torso inclinado');
+      if(!/cruzada|cross-body/i.test(txt)) P.push(r.id + ': no tiene patada de glúteo en polea cruzada');
+      if(!/a una pierna|single-leg/i.test(txt)) P.push(r.id + ': no tiene trabajo unilateral de cadera (puente o hip thrust a una pierna)');
+    });
+    if(n < 6) P.push('esperaba 6 plantillas de bodybuilding femenino y hay ' + n);
+    return P;
   }
   /* ningún battle rope en ninguna plantilla del Banco (sistema, Banco Pro ni copias guardadas) */
   function auditarSinRopes(){

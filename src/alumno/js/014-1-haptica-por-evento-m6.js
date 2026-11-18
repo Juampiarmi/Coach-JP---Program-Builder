@@ -424,7 +424,7 @@
         var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
         if(!(kg > 0) && !(rp > 0)) continue;
         sets.push((kg > 0 ? kg : 'BW') + '\u00d7' + (rp > 0 ? rp : '–'));
-        vol += (kg > 0 ? kg : 0) * (rp > 0 ? rp : 0);
+        vol += jpTonelajeSerie(l);
       }
       if(sets.length) hayDatos = true;
       volTotal += vol;
