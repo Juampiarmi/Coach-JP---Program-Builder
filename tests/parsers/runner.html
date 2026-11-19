@@ -98,6 +98,7 @@
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
     alumnoPiel: { run: function(i){ return alumnoPiel(i); }, valor: function(r){ return r; } },
     alumnoStory: { run: function(i){ return alumnoStory(i); }, valor: function(r){ return r; } },
+    alumnoCircuitos: { run: function(i){ return alumnoCircuitos(i); }, valor: function(r){ return r; } },
     alumnoEstaciones: { run: function(i){ return alumnoEstaciones(i); }, valor: function(r){ return r; } },
     alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
     editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
@@ -787,6 +788,8 @@
     var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
     if(i.caso === 'nombre') return w.jpLimpiarNombreEstacion(i.nm);
     if(i.caso === 'formato') return w.jpEsLineaFormato(i.txt, !!i.pill);
+    if(i.caso === 'partir') return w.jpPartirEstacion(i.txt);
+    if(i.caso === 'consigna') return w.jpEsConsigna(i.txt);
     if(i.caso === 'css'){
       var css = [].slice.call(w.document.querySelectorAll('style')).map(function(s){ return s.textContent; }).join('\n');
       /* "@est" sin número vale para cualquier estilo: se expande a [data-jp-estilo] (los 3 estilos comparten estas reglas) */
@@ -794,6 +797,43 @@
       return { grid: ok(':not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt)'), fmt: ok('-fmt') };
     }
     throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* ---------- circuito de cardio / finisher en la app del alumno: todas las estaciones con la misma estructura ---------- */
+  function alumnoCircuitos(i){
+    var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('la app del alumno no expone jpPizarraSports');
+    var S = getS(), P = [], d = w.document, n = 0, vistos = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || '')) return;
+      (r.dias || []).forEach(function(dia, k){
+        var b = (dia.bloques || [])[(dia.bloques || []).length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!b || b.modalidad !== 'metcon') return;
+        var cont = d.createElement('div'); cont.innerHTML = '<div class="block"><div class="block-body"></div></div>'; d.body.appendChild(cont);
+        try{
+          n++; vistos++;
+          w.jpPizarraSports(cont.querySelector('.block'), { id: 'tcirc' + n, title: b.titulo, items: (b.items || []).slice(), category: b.category, objective: b.objective, tips: b.tips }, 0, 'dia1');
+          var filas = [].slice.call(cont.querySelectorAll('.jp-sb-board > .jp-sb-plain'));
+          if(!filas.length){ P.push(tag + ': el bloque no dibuja filas'); return; }
+          var fmt = filas.filter(function(f){ return f.classList.contains('jp-sb-plain-fmt'); }), est = filas.filter(function(f){ return f.classList.contains('jp-sb-plain-est'); });
+          if(est.length + fmt.length !== filas.length) P.push(tag + ': hay filas que no son estación ni consigna (' + filas.map(function(f){ return f.className.replace('jp-sb-plain ', ''); }).join(' | ') + ')');
+          if(fmt.length > 1) P.push(tag + ': ' + fmt.length + ' bandas de formato (debe haber una sola)');
+          if(fmt.length && filas[0] !== fmt[0]) P.push(tag + ': la consigna de formato no es la primera fila');
+          if(est.length < 1) P.push(tag + ': sin estaciones');
+          est.forEach(function(f, j){
+            var id = f.querySelector('.jp-sb-ex-id'), nm = f.querySelector('.jp-sb-plain-nombre'), pill = f.querySelector('.jp-sb-plain-pill'), t = nm ? nm.textContent.trim() : '';
+            var porMin = !!(est[0].querySelector('.jp-sb-ex-id') && /^M\d/.test(est[0].querySelector('.jp-sb-ex-id').textContent.trim()));      /* EMOM: la estación lleva su minuto (M1, M2...) en vez del número */
+            if(!id || (porMin ? !/^M\d+$/.test(id.textContent.trim()) : id.textContent.trim() !== ('0' + (j + 1)).slice(-2))) P.push(tag + ' · estación ' + (j + 1) + ': sin su número (' + (porMin ? 'minuto' : ('0' + (j + 1)).slice(-2)) + ')');
+            if(!t || t.length > 42 || /\s[x×]\s*\d/i.test(t)) P.push(tag + ' · estación ' + (j + 1) + ': el nombre no está limpio («' + t + '»)');
+            if(!pill || !pill.textContent.trim()) P.push(tag + ' · estación ' + (j + 1) + ': sin la cantidad en su pastilla');
+            if(f.querySelector('.jp-sb-fmt-ic')) P.push(tag + ' · estación ' + (j + 1) + ': lleva el ícono de cronómetro');
+          });
+          var ob = cont.querySelector('.jp-ex-box-obj .jp-ex-box-b'), tp = cont.querySelector('.jp-details-content');
+          if(!ob || ob.textContent.trim().length < 40) P.push(tag + ': el objetivo fisiológico está vacío o es muy corto');
+          if(!tp || tp.textContent.trim().length < 80) P.push(tag + ': las pautas del bloque están vacías o son muy cortas');
+        } finally { d.body.removeChild(cont); }
+      });
+    });
+    if(vistos < 12) P.push('esperaba revisar al menos 12 cierres metabólicos y revisé ' + vistos);
+    return P;
   }
   /* piel de la app del alumno: íconos a color y barra de Activación sin segundo borde ni relleno que la pegue al bloque siguiente */
   function alumnoPiel(i){

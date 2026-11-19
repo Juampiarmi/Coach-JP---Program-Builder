@@ -667,14 +667,34 @@
       return '<li>' + (m ? '<b>' + escSB(m[1].charAt(0).toUpperCase() + m[1].slice(1)) + ':</b> ' + escSB(m[2]) : escSB(l)) + '</li>';
     }).join('\n') + '</ul>';
   }
-  /* Sports: pildora + detalle completo + boton de timer + tarjeta de registro (carga usada, score/rondas, notas) */
+  /* Sports: las estaciones de un bloque cronometrado (AMRAP / EMOM / For Time) con la MISMA fila que el resto de los circuitos: número (o minuto), nombre corto, cantidad en su pastilla y la aclaración en su línea;
+     la consigna ("las tres estaciones en orden...", descansos) va en una banda aparte. CrossFit sigue usando jpContinuoListaHtml. */
+  function jpEsBandaSB(l){
+    return jpEsConsignaSB(l) || /^\s*(?:rest|descanso)\b/i.test(l) || (!/^\s*[-\u2022*]/.test(l) && !/^\s*min(?:ute|uto)?s?\s*\d/i.test(l) && !jpPartirEstacionSB(l) && String(l).trim().length > 48);
+  }
+  function jpFilaEstacionHtml(idTxt, nm, qty, nota){
+    return '<div class="jp-sb-plain jp-sb-plain-est"><span class="jp-sb-ex-id">' + escSB(idTxt) + '</span><span class="jp-sb-plain-nombre">' + escSB(nm) + '</span>' +
+      (qty ? '<span class="jp-sb-plain-pill">' + escSB(qty) + '</span>' : '') + (nota ? '<div class="jp-sb-nota">' + escSB(nota) + '</div>' : '') + '</div>';
+  }
+  function jpContinuoEstacionesSB(c){
+    var n = 0;
+    return c.detalle.map(function(l0){
+      var l = String(l0 == null ? '' : l0).trim();
+      if(!l.replace(/^[\s\-\u2013\u2014\u2022*]+/, '')) return '';      /* una viñeta suelta ("-") que deja el corte por minutos no es una estación */
+      if(jpEsBandaSB(l)) return '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(l.replace(/^[\s\-–—•*]+/, '')) + '</span></div>';
+      var mMin = l.match(/^\s*[-•*]?\s*min(?:ute|uto)?s?\s*(\d+(?:\s*[-–]\s*\d+)?)\s*[:.\-–—)]*\s*(.*)$/i);
+      var idTxt = mMin ? 'M' + mMin[1].replace(/\s+/g, '') : jpIdx2(++n);
+      var txt = jpLimpiarNombreEstacionSB(mMin ? mMin[2] : l), est = jpPartirEstacionSB(txt);
+      return jpFilaEstacionHtml(idTxt, est ? est.nm : txt, est ? est.qty : '', est ? est.nota : '');
+    }).join('');
+  }
   function jpContinuoSportsHtml(c, block, weekIdx, dayId){
     var skey = weekIdx + '|' + dayId + '|' + block.id;
     var nk = function(k){ return skey + '|__cont_' + k; };
     var val = function(k){ return escSB((state.notes && state.notes[nk(k)]) || ''); };
     var nivel = (state.notes && state.notes[nk('nivel')]) || '';
     var tcfg = jpCfgContinuo(c);
-    return jpContinuoPillHtml(c) + jpContinuoListaHtml(c) +
+    return jpContinuoPillHtml(c) + jpContinuoEstacionesSB(c) +
       (tcfg ? '<button type="button" class="jp-cf-wodtimer jp-cont-timer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">\u23f1 INICIAR TIMER ' + escSB(c.etiqueta) + '</button>' : '') +
       '<div class="jp-cont-reg"><div class="jp-cont-reg-lb">[ REGISTRO DEL WOD ]</div>' +
         '<label class="jp-cont-f"><span>CARGA UTILIZADA</span><input type="text" class="jp-cont-in" data-nkey="' + nk('carga') + '" placeholder="Ej: KB 16 kg / 20 kg" value="' + val('carga') + '"></label>' +
@@ -1042,6 +1062,25 @@
     if(!t || hayPastilla) return false;
     return t.length > 48 || /^(?:\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\s+(?:rondas?|series?|vueltas?|intervalos?)\b|^(?:amrap|emom|for\s*time|hiit|tabata|chipper)\b/i.test(t);
   }
+  /* consigna de formato por su arranque ("4 rondas", "AMRAP", "EMOM", "HIIT por intervalos"): nunca una estación aunque lleve "x 40 s" más adelante */
+  function jpEsConsignaSB(txt){
+    return /^\s*(?:(?:\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\s+(?:rondas?|series?|vueltas?|intervalos?)\b|(?:amrap|emom|e\d+mom|for\s*time|hiit|tabata|chipper)\b)/i.test(String(txt || ''));
+  }
+  /* "SkiErg x 40 s al máximo sostenible" -> { nm: "SkiErg", qty: "40 S", nota: "Al máximo sostenible" }; sin cantidad ("x 40 s", "x 20 m", "x 12 cal", "x 10") devuelve null */
+  function jpPartirEstacionSB(txt){
+    var t = String(txt || '').trim();
+    var m = t.match(/^(.*?\S)\s+[x×]\s*(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)\s*(minutos?|min|segundos?|segs?|seg|s|mts?|metros?|km|m|cals?|calor[ií]as|repeticiones|reps?)?(?![A-Za-zÀ-ÿ])[.,:;]?\s*(.*)$/i);
+    var unidadSB = function(u0){ var u = String(u0 || '').toLowerCase(); return !u ? '' : (/^min/.test(u) ? 'MIN' : (/^seg|^s$/.test(u) ? 'S' : (/^(?:m|mt|mts|metro|metros)$/.test(u) ? 'M' : (/^km/.test(u) ? 'KM' : (/^cal/.test(u) ? 'CAL' : 'REPS'))))); };
+    if(!m){
+      /* cantidad al principio ("20 min Caminata inclinada (Zona 2)"): la cantidad va a la pastilla y el resto es el nombre */
+      var mI = t.match(/^(\d+(?:[.,]\d+)?)\s*(minutos?|min|km|cals?)\s+(\S.*)$/i);
+      return mI ? { nm: mI[3].trim(), qty: mI[1] + ' ' + unidadSB(mI[2]), nota: '' } : null;
+    }
+    var un = unidadSB(m[3]);
+    var nota = String(m[4] || '').replace(/^[\s\-–—:,;]+/, '').trim();
+    return { nm: m[1].trim(), qty: m[2].replace(/\s+/g, '') + (un ? ' ' + un : ''), nota: nota ? nota.charAt(0).toUpperCase() + nota.slice(1) : '' };
+  }
+  window.jpPartirEstacion = jpPartirEstacionSB; window.jpEsConsigna = jpEsConsignaSB;
   window.jpLimpiarNombreEstacion = jpLimpiarNombreEstacionSB; window.jpEsLineaFormato = jpEsLineaFormatoSB;
   window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
@@ -3869,6 +3908,7 @@
       (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
   }
   window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
+  window.jpPizarraSports = pizarraSports;    /* idem: el runner arma un bloque y mira el DOM real de la tarjeta */
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
      unilateralidad/ejecución ("por pierna"/"por lado"): formato exacto
@@ -4193,17 +4233,26 @@
         /* nombre de estación limpio: sin el guion de viñeta ni la "x" que queda colgando cuando la cantidad pasó a la pastilla ("- Sled push / Trineo x" -> "Sled push / Trineo") */
         const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : jpLimpiarNombreEstacionSB(partesPlain.nm);
         /* la línea de formato ("Cuatro rondas: ...", AMRAP, EMOM, For Time) es una consigna, no una estación: va en una banda sin número */
-        const esFormatoPlain = !esCalentamiento && jpEsLineaFormatoSB(nombrePlain, !!pillTxt);
+        /* estación de cardio / finisher: una línea con viñeta ("- SkiErg x 40 s al máximo sostenible") o con cantidad ("Assault bike x 40 s a un ritmo sostenible") es SIEMPRE una estación,
+           aunque sea larga: antes las de más de 48 caracteres se tomaban por consigna de formato y el circuito mezclaba filas numeradas con bandas de cronómetro. Todas las estaciones se
+           arman igual: número, nombre corto, cantidad en su pastilla y la aclaración en una línea propia. */
+        const estPartida = !esCalentamiento ? jpPartirEstacionSB(nombrePlain) : null;
+        const esEstacionPlain = !esCalentamiento && (!!pillTxt || /^\s*[\-–—•*]\s*\S/.test(partesPlain.nm) || (!!estPartida && !jpEsConsignaSB(nombrePlain)));
+        const esFormatoPlain = !esCalentamiento && !esEstacionPlain && jpEsLineaFormatoSB(nombrePlain, !!pillTxt);
+        const claseEst = !esCalentamiento && !esFormatoPlain;
         if(esFormatoPlain){
           filas += '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span></div>';
           return;
         }
-        filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
+        const nomEst = (esEstacionPlain && estPartida) ? estPartida.nm : nombrePlain;
+        const pillEst = pillTxt || ((esEstacionPlain && estPartida) ? estPartida.qty : '');
+        const notaEst = [(esEstacionPlain && estPartida && estPartida.nota) ? estPartida.nota : ''].concat(entry.notas || []).filter(Boolean);
+        filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + (claseEst ? ' jp-sb-plain-est' : '') + '">' +
             (!esCalentamiento ? '<span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
-            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
+            '<span class="jp-sb-plain-nombre">' + escSB(nomEst) + '</span>' +
+            (pillEst ? '<span class="jp-sb-plain-pill">' + escSB(pillEst) + '</span>' : '') +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
-            (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
+            (notaEst.length ? '<div class="jp-sb-nota">' + escSB(notaEst.join(' · ')) + '</div>' : '') +
           '</div>';
         return;
       }

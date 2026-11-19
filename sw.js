@@ -7,7 +7,7 @@
      notificación local "tiempo cumplido" SÓLO si ninguna ventana de la app
      está visible (si el alumno la está mirando, el propio timer ya avisó).
      Best effort: el sistema operativo puede dormir el SW antes de tiempo. */
-const CACHE = 'coachjp-athlete-v11';   /* v11: invalida las cachés v10 al activarse (piel azul noche también en CrossFit & Hyrox: pizarra, filas, chips, campos, dock y cronómetro de WOD) */
+const CACHE = 'coachjp-athlete-v12';   /* v12: invalida las cachés v11 al activarse (circuitos de cardio / metabólico con todas las estaciones iguales: número, nombre, cantidad y aclaración) */
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(Promise.all([
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k.indexOf('coachjp-athlete-') === 0).map(k => caches.delete(k)))),
