@@ -4781,7 +4781,7 @@ function abrirModalCopiarPlan(){
     if(e.target.closest('[data-cpirdestino]')){
       const destId = e.target.closest('[data-cpirdestino]').dataset.cpirdestino;
       cerrarModalCopiarPlan();
-      S.activeId = destId; save(); renderBuilder(); renderAthletes();
+      jpActivarAlumno(destId); save(); renderBuilder(); renderAthletes();      /* cambio de alumno completo: día, semana y memoria de CrossFit propios del destino */
     }
   });
 }
@@ -4800,44 +4800,78 @@ function jpRenovarIdsBloques(listas, mapa){
   const vistos = new Set();
   (listas || []).forEach(arr => {
     if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr);
+    /* un elemento que no es un bloque (null, texto) rompía la validación y abortaba toda la copia: se descarta */
+    for(let i = arr.length - 1; i >= 0; i--){ if(!arr[i] || typeof arr[i] !== 'object') arr.splice(i, 1); }
+    const usados = new Set();      /* dos bloques de la MISMA lista con el mismo id (planes viejos) reciben ids distintos: antes heredaban el mismo y la copia se rechazaba */
     arr.forEach(b => {
-      if(!b || typeof b !== 'object') return;
       const viejo = b.id;
-      if(viejo != null && mapa[viejo]){ b.id = mapa[viejo]; return; }
-      const nid = uid('b'); if(viejo != null) mapa[viejo] = nid; b.id = nid;
+      let nid = (viejo != null && mapa[viejo]) ? mapa[viejo] : null;
+      if(!nid || usados.has(nid)){ nid = uid('b'); if(viejo != null && !mapa[viejo]) mapa[viejo] = nid; }
+      usados.add(nid); b.id = nid;
     });
   });
+}
+/* días de un plan recién clonado: sin días nulos, con ids válidos y únicos (letras, números, guion y guion bajo) y con lista de bloques. Los planes viejos o editados a mano traían ids
+   vacíos, repetidos o con caracteres raros y la copia entera se rechazaba con "estructura inválida". Devuelve cuántas cosas se repararon. */
+function jpRepararDiasClonados(dias){
+  let n = 0;
+  for(let i = dias.length - 1; i >= 0; i--){ if(!dias[i] || typeof dias[i] !== 'object'){ dias.splice(i, 1); n++; } }
+  const usados = new Set();
+  dias.forEach((d, i) => {
+    let id = String(d.id == null ? '' : d.id).trim().replace(/[^A-Za-z0-9_-]/g, '');
+    if(!id || usados.has(id)){ let k = i + 1; while(usados.has('dia' + k)) k++; id = 'dia' + k; }
+    if(id !== d.id){ d.id = id; n++; }
+    usados.add(id);
+    if(!Array.isArray(d.bloques)){ d.bloques = []; n++; }
+    if(Array.isArray(d.bloquesPorSemana)) d.bloquesPorSemana.forEach((s, w) => { if(!Array.isArray(s)){ d.bloquesPorSemana[w] = []; n++; } });
+  });
+  return n;
 }
 function jpListasDeDia(d){ return [d.bloques].concat(Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : []); }
 function jpIdDiaLibre(p, desde){
   const usados = new Set((p.dias || []).map(x => x && x.id)); let k = desde + 1; while(usados.has('dia' + k)) k++; return 'dia' + k;
 }
 const JP_COPIA_UNDO = {};      /* última copia de plan por alumno destino: permite deshacerla mientras el panel está abierto */
-function ejecutarCopiaPlan(origenId, destinoId){
+/* NÚCLEO ÚNICO de "copiar el plan de un alumno a otro": lo usan "Copiar plan completo" (ejecutarCopiaPlan) y "Duplicar planificación / Clonar plan de otro atleta" (runDup).
+   Antes eran dos implementaciones: la vieja (runDup) recortaba los días a la frecuencia del destino, no confirmaba la semana activa de CrossFit, dejaba al destino en la modalidad
+   equivocada (se perdían 3 de las 4 semanas) y reutilizaba los ids de bloque de las semanas, así que el destino quedaba con datos cruzados con los del origen.
+   opts: { meso (copiar la configuración del mesociclo, por defecto sí) · fichas (conservar título, chips y foco de cada día del origen; si es false, el destino conserva los suyos por posición) ·
+           revisar(dias, destinoAth) (ajuste de los bloques ya clonados, p. ej. ejercicios vetados para el destino) }.
+   Se arma TODO en variables locales y recién al final se escribe: si algo falla, el destino queda exactamente como estaba. Devuelve { ok, motivo, dias, nBl, nTodas, cfO, reparados }. */
+function jpClonarPlanEntre(origenId, destinoId, opts){
+  opts = opts || {};
   const pOrigen = plan(origenId);
   const athDestino = getAth(destinoId);
   const pDestino = plan(destinoId);
-  if(!pOrigen || !athDestino || !pDestino){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
-  if(origenId === destinoId){ toast('El destino es el mismo alumno/a: elegí otro', 'warn'); return false; }
+  if(!pOrigen || !athDestino || !pDestino) return { ok: false, motivo: 'faltan datos del origen o del destino' };
+  if(origenId === destinoId) return { ok: false, motivo: 'el destino es el mismo alumno/a: elegí otro', aviso: true };
   jpSincronizarCF(pOrigen, origenId);
   jpSincronizarCF(pDestino, destinoId);
   const cfO = esPlanCFActivo(pOrigen);
-  /* se arma TODO en variables locales y recién al final se asigna: si algo sale mal, el destino queda exactamente como estaba */
   const dias = clonarEstructuraProfunda(pOrigen.dias);
+  let reparados = jpRepararDiasClonados(dias);
   const mapa = {};
   dias.forEach(d => { jpRenovarIdsBloques(jpListasDeDia(d), mapa); });
   dias.forEach(d => {
     if(cfO){ const ps = asegurarBloquesPorSemana(d); d.bloques = ps[0]; }      /* el puntero apunta a la semana 1, igual que un día recién abierto */
     else { delete d.bloquesPorSemana; if(!Array.isArray(d.bloques)) d.bloques = []; }
   });
+  /* sin "fichas": cada día conserva el título, las etiquetas y el foco que ya tenía el destino en esa posición */
+  if(opts.fichas === false){
+    dias.forEach((d, i) => {
+      const dd = pDestino.dias[i]; if(!dd) return;
+      ['title', 'label', 'metaChips', 'summary', 'focusText', 'cooldown'].forEach(k => { if(dd[k] !== undefined) d[k] = clonarEstructuraProfunda(dd[k]); });
+    });
+  }
+  if(typeof opts.revisar === 'function'){ try{ opts.revisar(dias, athDestino); }catch(e){ console.warn('[Copia de plan] revisión de ejercicios', e); } }
   const problemas = jpValidarEstructuraPlan({ dias: dias });
-  if(problemas.length){ console.warn('[Copia de plan] estructura inválida:\n - ' + problemas.join('\n - ')); toast('No se copió: el plan de origen tiene problemas de estructura (' + problemas[0] + ')', 'err'); return false; }
-  const meso = clonarEstructuraProfunda(pOrigen.meso);
+  if(problemas.length){ console.warn('[Copia de plan] estructura inválida:\n - ' + problemas.join('\n - ')); return { ok: false, motivo: 'el plan de origen tiene problemas de estructura (' + problemas[0] + ')' }; }
+  const meso = (opts.meso === false) ? null : clonarEstructuraProfunda(pOrigen.meso);
   /* copia de seguridad en memoria del plan que se va a reemplazar */
-  JP_COPIA_UNDO[destinoId] = clonarEstructuraProfunda({ dias: pDestino.dias, meso: pDestino.meso, estado: pDestino.estado, vigenciaDesde: pDestino.vigenciaDesde, vigenciaHasta: pDestino.vigenciaHasta,
+  JP_COPIA_UNDO[destinoId] = clonarEstructuraProfunda({ dias: pDestino.dias, meso: pDestino.meso, freqBase: pDestino.freqBase, estado: pDestino.estado, vigenciaDesde: pDestino.vigenciaDesde, vigenciaHasta: pDestino.vigenciaHasta,
     meta: JP_META_PLAN.reduce((o, k) => { if(pDestino.meta && pDestino.meta[k] !== undefined) o[k] = pDestino.meta[k]; return o; }, {}), tenia: JP_META_PLAN.filter(k => pDestino.meta && pDestino.meta[k] !== undefined) });
   pDestino.dias = dias;
-  pDestino.meso = meso;
+  if(meso) pDestino.meso = meso;
   pDestino.estado = pOrigen.estado;
   pDestino.vigenciaDesde = pOrigen.vigenciaDesde;
   pDestino.vigenciaHasta = pOrigen.vigenciaHasta;
@@ -4847,17 +4881,25 @@ function ejecutarCopiaPlan(origenId, destinoId){
     if(pOrigen.meta && pOrigen.meta[k] !== undefined) pDestino.meta[k] = clonarEstructuraProfunda(pOrigen.meta[k]);
     else if(k === 'mesoDisc' || k === 'mesoNivel' || k === 'mesoObjetivo' || k === 'mesoTexto' || k === 'mesoFecha') delete pDestino.meta[k];
   });
-  if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; }
+  /* la cantidad de días del plan copiado manda: la base de frecuencia queda en la del alumno, así plan() nunca agrega días vacíos ni recorta los copiados */
+  pDestino.freqBase = Math.max(3, Math.min(6, parseInt(athDestino.freq, 10) || 4));
+  if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; _cfSemanaCargada = null; _cfAthCargado = null; }
   guardarAhora();
-  renderAthletes();
-  const nombreDestino = fullName(athDestino);
   const nBl = dias.reduce((s, d) => s + (cfO ? (asegurarBloquesPorSemana(d)[0] || []).length : (d.bloques || []).length), 0);
   const nTodas = cfO ? dias.reduce((s, d) => s + asegurarBloquesPorSemana(d).reduce((q, arr) => q + (arr || []).length, 0), 0) : nBl;
+  return { ok: true, dias: dias.length, nBl: nBl, nTodas: nTodas, cfO: cfO, reparados: reparados };
+}
+function ejecutarCopiaPlan(origenId, destinoId){
+  const r = jpClonarPlanEntre(origenId, destinoId);
+  if(!r.ok){ toast(r.aviso ? r.motivo : 'No se copió: ' + r.motivo, r.aviso ? 'warn' : 'err'); return false; }
+  renderAthletes();
+  const athDestino = getAth(destinoId), nombreDestino = fullName(athDestino);
   const body = document.getElementById('cpModalBody');
   if(body){
     body.innerHTML =
-      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + dias.length + ' días' +
-        (cfO ? ', 4 semanas independientes y ' + nTodas + ' bloques en total' : ' y ' + nBl + ' bloques') + '. La modalidad del plan pasó a ' + (cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.</div></div>' +
+      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + r.dias + ' días' +
+        (r.cfO ? ', 4 semanas independientes y ' + r.nTodas + ' bloques en total' : ' y ' + r.nBl + ' bloques') + '. La modalidad del plan pasó a ' + (r.cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.' +
+        (r.reparados ? ' Se repararon ' + r.reparados + ' identificador(es) del plan de origen que estaban dañados.' : '') + '</div></div>' +
       '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn ghost" data-cpundo="' + esc(destinoId) + '" style="flex:1 1 100%">↩ Deshacer esta copia</button>' +
         '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
@@ -4871,7 +4913,7 @@ function ejecutarCopiaPlan(origenId, destinoId){
 function deshacerCopiaPlan(destinoId){
   const prev = JP_COPIA_UNDO[destinoId], pD = plan(destinoId);
   if(!prev || !pD){ toast('No hay una copia reciente para deshacer', 'warn'); return false; }
-  pD.dias = prev.dias; pD.meso = prev.meso; pD.estado = prev.estado; pD.vigenciaDesde = prev.vigenciaDesde; pD.vigenciaHasta = prev.vigenciaHasta;
+  pD.dias = prev.dias; pD.meso = prev.meso; if(prev.freqBase !== undefined) pD.freqBase = prev.freqBase; pD.estado = prev.estado; pD.vigenciaDesde = prev.vigenciaDesde; pD.vigenciaHasta = prev.vigenciaHasta;
   pD.meta = pD.meta || {};
   JP_META_PLAN.forEach(k => { if(prev.tenia.indexOf(k) >= 0) pD.meta[k] = prev.meta[k]; else delete pD.meta[k]; });
   delete JP_COPIA_UNDO[destinoId];
@@ -15621,69 +15663,82 @@ document.addEventListener('DOMContentLoaded', init);
     $('#dupLog').innerHTML = '';
     openModal('mDup');
   }
+  /* "Duplicar planificación" (vista Alumnos) y "Clonar plan de otro atleta" (Builder): usan el mismo núcleo que "Copiar plan completo" (jpClonarPlanEntre), así que copian TODOS los días
+     (antes se recortaban a la frecuencia del destino), las 4 semanas de CrossFit, la modalidad del plan y ids nuevos de bloque; además revisan los ejercicios vetados para el destino
+     tanto en los bloques viejos (block / superset / finisher) como en los de pizarra actuales (lista con "Ejercicio / NxM | RIR / Rest"). */
   function runDup(){
     const from = getAth($('#dupFrom').value), to = getAth($('#dupTo').value);
     if(!from || !to){ toast('Elegí origen y destino', 'err'); return; }
     if(from.id === to.id){ toast('Elegí dos alumnos distintos', 'err'); return; }
-    const src = plan(from.id), dst = plan(to.id);
     const fix = $('#dupFix').checked;
-    const notas = [];
+    const notas = [], vistas = new Set();
     let cambios = 0, quitados = 0;
+    const nota = t => { if(!vistas.has(t)){ vistas.add(t); notas.push(t); } };
+    const EST = window.__jpPB && window.__jpPB.EST;
+    const peligro = ex => !!ex && checkExercise(to, ex).some(a => a.level === 'danger');
 
     const revisar = (exId, ctx) => {
       const ex = getEx(exId);
-      if(!ex) return null;
-      if(!checkExercise(to, ex).some(a => a.level === 'danger')) return exId;
-      if(!fix){ notas.push('«' + ex.es + '» queda marcado como vetado en ' + ctx + '.'); return exId; }
+      if(!ex) return exId;
+      if(!peligro(ex)) return exId;
+      if(!fix){ nota('«' + ex.es + '» queda marcado como vetado en ' + ctx + '.'); return exId; }
       const alt = suggestAlts(to, ex, 1)[0];
-      if(alt){ cambios++; notas.push('«' + ex.es + '» → «' + alt.es + '» en ' + ctx + '.'); return alt.id; }
-      quitados++; notas.push('«' + ex.es + '» quitado de ' + ctx + ': sin variante segura.');
+      if(alt){ cambios++; nota('«' + ex.es + '» → «' + alt.es + '» en ' + ctx + '.'); return alt.id; }
+      quitados++; nota('«' + ex.es + '» quitado de ' + ctx + ': sin variante segura.');
       return null;
     };
-
-    const nuevos = clone(src.dias).map((d, i) => {
-      d.id = (dst.dias[i] && dst.dias[i].id) || ('dia' + (i + 1));
-      if(!$('#dupFichas').checked && dst.dias[i]){
-        d.title = dst.dias[i].title; d.label = dst.dias[i].label;
-        d.metaChips = dst.dias[i].metaChips; d.summary = dst.dias[i].summary;
-        d.focusText = dst.dias[i].focusText; d.cooldown = dst.dias[i].cooldown;
+    /* bloque de pizarra (lista): se cambia o se quita el ejercicio vetado con el mismo motor del editor del Banco (el texto del bloque se regenera para el ejercicio nuevo) */
+    const revisarPizarra = (b, lista, ctx) => {
+      if(!EST) return true;
+      let m = null; try{ m = EST.parsearBloque(b); }catch(e){ return true; }
+      if(!m) return true;
+      const malos = []; m.ex.forEach((e, k) => { if(e.lib && peligro(e.lib)) malos.push(k); });
+      for(let j = malos.length - 1; j >= 0; j--){
+        const k = malos[j], lib = m.ex[k].lib, dia = { bloques: lista };
+        if(!fix){ nota('«' + lib.es + '» queda marcado como vetado en ' + ctx + '.'); continue; }
+        const alt = suggestAlts(to, lib, 1)[0];
+        if(alt && EST.cambiarEjercicio(dia, b, k, alt.es, to.nivel)){ cambios++; nota('«' + lib.es + '» → «' + alt.es + '» en ' + ctx + '.'); continue; }
+        const q = EST.quitarEjercicio(dia, b, k, to.nivel);
+        quitados++; nota('«' + lib.es + '» quitado de ' + ctx + ': sin variante segura.');
+        if(q === 'bloque') return false;
       }
-      d.bloques = (d.bloques || []).map(b => {
-        b.id = uid('b');
-        const ctx = d.short + ' · ' + (b.titulo || '');
-        if(b.tipo === 'block' && b.exId){ const r = revisar(b.exId, ctx); if(!r) return null; b.exId = r; }
-        if(b.tipo === 'superset'){
+      return true;
+    };
+    const revisarLista = (lista, d) => {
+      const quedan = lista.filter(b => {
+        const ctx = (d.short || '') + ' · ' + (b.titulo || '');
+        if(b.tipo === 'block' && b.exId){ const r = revisar(b.exId, ctx); if(!r) return false; b.exId = r; }
+        else if(b.tipo === 'superset'){
           b.ejercicios = (b.ejercicios || []).map(e => { const r = revisar(e.exId, ctx); return r ? (e.exId = r, e) : null; }).filter(Boolean);
-          if(b.ejercicios.length < 1) return null;
+          if(b.ejercicios.length < 1) return false;
         }
-        if(b.tipo === 'finisher'){
+        else if(b.tipo === 'finisher'){
           b.fin = (b.fin || []).map(e => { const r = revisar(e.exId, ctx); return r ? (e.exId = r, e) : null; }).filter(Boolean);
-          if(!b.fin.length) return null;
+          if(!b.fin.length) return false;
         }
-        return b;
-      }).filter(Boolean);
-      return d;
+        else if(b.tipo === 'list') return revisarPizarra(b, lista, ctx);
+        return true;
+      });
+      lista.splice(0, lista.length, ...quedan);      /* la lista conserva su identidad: en CrossFit d.bloques es un puntero a la semana */
+    };
+    const r = jpClonarPlanEntre(from.id, to.id, {
+      meso: $('#dupMeso').checked, fichas: $('#dupFichas').checked,
+      revisar: dias => { dias.forEach(d => { const vistos = new Set(); jpListasDeDia(d).forEach(arr => { if(Array.isArray(arr) && !vistos.has(arr)){ vistos.add(arr); revisarLista(arr, d); } }); }); }
     });
-
-    const need = Math.max(3, Math.min(6, parseInt(to.freq, 10) || 4));
-    dst.dias = nuevos.slice(0, need);
-    while(dst.dias.length < need){
-      const i = dst.dias.length;
-      dst.dias.push(clone((plan(to.id).dias[i]) || { id:'dia'+(i+1), short:'DÍA '+(i+1), label:'Sesión '+(i+1), title:'Día '+(i+1), metaChips:[], focusTitle:'Foco Técnico del Día', focusText:'', summary:'', cooldown:[], bloques:[] }));
-    }
-    if($('#dupMeso').checked) dst.meso = clone(src.meso);
-    save();
+    if(!r.ok){ toast(r.aviso ? r.motivo : 'No se copió: ' + r.motivo, r.aviso ? 'warn' : 'err'); return; }
     if(S.activeId === to.id) renderBuilder();
     renderAthletes();
 
     $('#dupLog').innerHTML =
       '<div class="alert ' + (notas.length ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (notas.length ? '⚠️' : '✅') + '</span><div>' +
-        '<b>Plan copiado a ' + esc(fullName(to)) + ' · ' + dst.dias.length + ' días</b>' +
+        '<b>Plan copiado a ' + esc(fullName(to)) + ' · ' + r.dias + ' días' + (r.cfO ? ' · 4 semanas independientes (CrossFit &amp; Hyrox)' : '') + '</b>' +
         (cambios ? cambios + ' ejercicio(s) reemplazado(s) por variantes seguras. ' : '') +
         (quitados ? quitados + ' quitado(s) sin alternativa. ' : '') +
+        (r.reparados ? 'Se repararon ' + r.reparados + ' identificador(es) dañados del plan de origen. ' : '') +
         (!notas.length ? 'Sin conflictos biomecánicos para el destino.' : '') +
         notas.slice(0, 8).map(n => '<div style="margin-top:3px">• ' + esc(n) + '</div>').join('') +
         (notas.length > 8 ? '<div style="margin-top:3px;opacity:.75">…y ' + (notas.length - 8) + ' más.</div>' : '') +
+        '<div style="margin-top:8px"><button type="button" class="btn xs ghost" data-dupundo="' + esc(to.id) + '">↩ Deshacer esta copia</button></div>' +
       '</div></div>';
     toast('Planificación duplicada a ' + fullName(to) + ' ✔');
   }
@@ -15955,6 +16010,7 @@ document.addEventListener('DOMContentLoaded', init);
     });
 
     $('#dupRun').addEventListener('click', runDup);
+    $('#dupLog').addEventListener('click', e => { const u = e.target.closest('[data-dupundo]'); if(u && deshacerCopiaPlan(u.dataset.dupundo)) $('#dupLog').innerHTML = ''; });
     $('#dupFrom').addEventListener('change', () => {
       if($('#dupTo').value === $('#dupFrom').value){
         const otro = S.athletes.find(a => a.id !== $('#dupFrom').value);

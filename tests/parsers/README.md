@@ -11,6 +11,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-progresion.js` | Carga sugerida de la semana siguiente (doble progresión con RIR, borradores, referencia por nombre, descarga) con la app del alumno compilada, y sanidad del editor del Builder (ID de día válido, estructura del plan, altas y bajas de días) |
 | `cases-estilos.js` | Showroom (4 estilos, fijar el estilo, vista de comparación) y tarjeta de ejercicio de la app del alumno (barra de dosis en tres filas, estilo aplicado al body) |
 | `cases-copia.js` | Copia entre alumnos en CrossFit: plan completo (modalidad, 4 semanas, deshacer), semana y día, con alumnos de prueba en memoria |
+| `cases-copia-plan.js` | Copiar el plan de un alumno a otro con "Duplicar planificación / Clonar plan de otro atleta" (mismo núcleo que "Copiar plan completo"): sin recortar días, 4 semanas de CrossFit, ids propios, ids dañados, ejercicios vetados y deshacer |
 | `cases-cruce.js` | Cambio de alumno en el Builder: estado cruzado entre modalidades, día y semana propios de cada alumno, procesos asíncronos de un alumno que no caen en otro, estructuras de días nulas o rotas |
 | `cases-elite.js` | Bodybuilding avanzado / élite integrado al Builder: criterios de las 6 plantillas (3, 4 y 5 días · hombres y mujeres), editor estructurado del Banco (swap, series / RIR / descanso, agregar y quitar ejercicios), alertas automáticas, volumen semanal por grupo, asignación al alumno y barra de control del Builder |
 | `runner.html` | Los adaptadores y la pantalla |

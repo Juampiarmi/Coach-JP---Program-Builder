@@ -47,6 +47,7 @@
 <script src="cases-cruce.js"></script>
 <script src="cases-metabolicos.js"></script>
 <script src="cases-elite.js"></script>
+<script src="cases-copia-plan.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -91,6 +92,7 @@
     alumnoTon: { run: function(i){ return alumnoTon(i); }, valor: function(r){ return r; } },
     alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
     bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
+    copiaPlan:    { run: function(i){ return copiaPlanCaso(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -339,6 +341,96 @@
       A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
       win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast; win.confirm = orig.confirm;
       S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
+    }
+  }
+  /* ---------- copia de plan entre alumnos: "Copiar plan completo" y "Duplicar planificación / Clonar plan de otro atleta" (mismo núcleo) ---------- */
+  function copiaPlanCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_dp_o', 'ath_test_dp_d'], PB = win.__jpPB;
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, confirm: win.confirm, act: S.activeId, ui: S.ui ? JSON.parse(JSON.stringify({ cfWeek: S.ui.cfWeek, day: S.ui.day })) : {} };
+    win.save = win.guardarAhora = win.renderBuilder = win.renderAthletes = function(){}; win.toast = function(){}; win.confirm = function(){ return true; };
+    function alumno(id, nombre, extra){
+      var a = { id: id, nombre: nombre, apellido: 'Dup', freq: 3, nivel: 'Avanzado', genero: 'F' }; Object.keys(extra || {}).forEach(function(k){ a[k] = extra[k]; });
+      S.athletes.push(a); A.push(a); S.plans[id] = win.newPlan(a); return a;
+    }
+    function dias(n){ return win.newPlan({ id: 'x', freq: n }).dias; }
+    function sinRefs(){ return win.jpAuditarReferenciasCompartidas(S.plans).length; }
+    function idsBloques(p){ var o = {}; p.dias.forEach(function(d){ win.jpListasDeDia(d).forEach(function(l){ (l || []).forEach(function(b){ if(b && b.id) o[b.id] = 1; }); }); }); return o; }
+    function plantilla(id){ return JSON.parse(JSON.stringify(PB.construirDias(PB.LISTA.filter(function(t){ return t.id === id; })[0]))); }
+    /* el modal "Duplicar planificación" se maneja por su pantalla: se llenan los selectores y se toca Duplicar */
+    function duplicar(origen, destino, o){
+      var d = win.document, $ = function(i){ return d.getElementById(i); };
+      $('dupFrom').innerHTML = '<option value="' + origen + '">o</option>'; $('dupTo').innerHTML = '<option value="' + destino + '">d</option>';
+      $('dupFrom').value = origen; $('dupTo').value = destino;
+      $('dupMeso').checked = !(o && o.meso === false); $('dupFichas').checked = !(o && o.fichas === false); $('dupFix').checked = !(o && o.fix === false);
+      $('dupLog').innerHTML = ''; $('dupRun').click();
+      return $('dupLog').innerText;
+    }
+    try{
+      S.ui = S.ui || {};
+      var aO = alumno(ids[0], 'Origen'), aD = alumno(ids[1], 'Destino', { freq: 3, nivel: 'Intermedio', genero: 'M' }), pO = S.plans[ids[0]], pD = S.plans[ids[1]];
+      S.activeId = ids[0]; S.ui.day = 0; S.ui.cfWeek = 0;
+
+      if(c.caso === 'dupCF'){
+        /* CrossFit de 6 días con 4 semanas distintas -> alumno de Fuerza de 3 días: llegan los 6 días, las 4 semanas y la modalidad */
+        pO.dias = dias(6); pO.freqBase = 6; pO.meta.mesoDisc = 'crossfit';
+        pO.dias.forEach(function(d, i){ var ps = win.asegurarBloquesPorSemana(d); [0, 1, 2, 3].forEach(function(w){ ps[w] = [win.nuevoBloquePizarra(true, 'metcon', 'WOD d' + (i + 1) + ' s' + (w + 1), ['AMRAP 10', '10 Burpees'])]; }); d.bloques = ps[0]; });
+        S.ui.cfWeek = 2; win.sincronizarBloquesSemana(pO);
+        var antes = JSON.stringify(pO.dias);
+        var log = duplicar(ids[0], ids[1]), p2 = win.plan(ids[1]), o1 = idsBloques(pO), comun = 0; Object.keys(idsBloques(p2)).forEach(function(k){ if(o1[k]) comun++; });
+        return { copiado: /Plan copiado/.test(log), disc: p2.meta.mesoDisc, dias: p2.dias.length, freqBase: p2.freqBase,
+          semanasDia6: (p2.dias[5].bloquesPorSemana || []).map(function(a){ return a.map(function(b){ return b.titulo; }).join('+'); }).join(' / '),
+          punteroEnS1: p2.dias[0].bloques === p2.dias[0].bloquesPorSemana[0], idsCompartidos: comun, referencias: sinRefs(), problemas: win.jpValidarEstructuraPlan(p2),
+          origenIntacto: JSON.stringify(pO.dias) === antes, nombrePropio: p2.meta.footer2.indexOf('Destino') >= 0 };
+      }
+      if(c.caso === 'dupSports'){
+        /* Bodybuilding de 5 días (plantilla élite) -> alumno de 3 días: no se recorta; sin "fichas" el destino conserva sus títulos en los días que ya tenía */
+        pO.dias = plantilla('jp26_f5_a'); pO.freqBase = 5; pO.meta.mesoDisc = 'hiper';
+        var tit0 = pD.dias.map(function(d){ return d.title; });
+        var log2 = duplicar(ids[0], ids[1], { fichas: false }), p3 = win.plan(ids[1]);
+        var cuenta = function(p){ return p.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0); };
+        var itemsDe = function(p){ return JSON.stringify(p.dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); })); };
+        var oIds = idsBloques(pO);
+        return { copiado: /Plan copiado/.test(log2), dias: p3.dias.length, bloques: cuenta(p3) === cuenta(pO), disc: p3.meta.mesoDisc, titulosDestino: p3.dias.slice(0, 3).map(function(d){ return d.title; }).join('|') === tit0.join('|'),
+          titulosOrigen: p3.dias[3].title === pO.dias[3].title, items: itemsDe(p3) === itemsDe(pO),
+          idsPropios: Object.keys(idsBloques(p3)).every(function(k){ return !oIds[k]; }), referencias: sinRefs(), problemas: win.jpValidarEstructuraPlan(p3) };
+      }
+      if(c.caso === 'idsRotos'){
+        /* plan de origen con ids dañados (bloques repetidos o sin id, elementos nulos, días con ids inválidos o repetidos): se repara y se copia */
+        pO.dias = dias(3);
+        pO.dias[0].bloques = [win.nuevoBloquePizarra(false, 'strength', 'A', ['Sentadilla', '4x8']), win.nuevoBloquePizarra(false, 'strength', 'B', ['Press', '4x8']), null, 'texto suelto', win.nuevoBloquePizarra(false, 'accessory', 'C', ['Curl', '3x12'])];
+        pO.dias[0].bloques[1].id = pO.dias[0].bloques[0].id; delete pO.dias[0].bloques[4].id;
+        pO.dias[1].id = 'día 2|x'; pO.dias[2].id = 'dia1';
+        var res = win.jpClonarPlanEntre(ids[0], ids[1]), p4 = win.plan(ids[1]);
+        var di = p4.dias.map(function(d){ return d.id; });
+        return { ok: res.ok, reparados: res.reparados > 0, bloquesDia1: p4.dias[0].bloques.length, idsDia: di.every(function(x){ return /^[A-Za-z0-9_-]+$/.test(x); }) && new Set(di).size === di.length, problemas: win.jpValidarEstructuraPlan(p4), referencias: sinRefs() };
+      }
+      if(c.caso === 'vetados'){
+        /* el destino tiene prohibido el rumano con déficit: con "reemplazar" se cambia por una variante segura (bloque de pizarra regenerado); sin eso solo se avisa; el origen no cambia */
+        pO.dias = plantilla('jp26_f4_a'); pO.freqBase = 4; pO.meta.mesoDisc = 'hiper'; pD.dias = dias(4); pD.freqBase = 4; aD.freq = 4;
+        aD.prohibidos = ['Peso muerto rumano con déficit'];
+        var txt = function(p){ return JSON.stringify(p.dias.map(function(d){ return d.bloques.map(function(b){ return [b.titulo, b.items]; }); })); };
+        var origen = txt(pO);
+        var log3 = duplicar(ids[0], ids[1], { fix: true }), p5 = win.plan(ids[1]), conFix = txt(p5);
+        var bl0 = pO.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0), bl1 = p5.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0);
+        var log4 = duplicar(ids[0], ids[1], { fix: false }), p6 = win.plan(ids[1]);
+        return { reemplazo: /→/.test(log3), sinVetado: conFix.indexOf('Peso muerto rumano con déficit') < 0, mismosBloques: bl0 === bl1, origenIntacto: txt(pO) === origen && origen.indexOf('Peso muerto rumano con déficit') >= 0,
+          soloAviso: /queda marcado como vetado/.test(log4) && txt(p6).indexOf('Peso muerto rumano con déficit') >= 0, problemas: win.jpValidarEstructuraPlan(p5) };
+      }
+      if(c.caso === 'deshacer'){
+        pO.dias = plantilla('jp26_m5_a'); pO.meta.mesoDisc = 'hiper';
+        var prev = JSON.stringify([pD.dias, pD.freqBase, pD.meta.mesoDisc]), estado = function(){ var q = win.plan(ids[1]); return JSON.stringify([q.dias, q.freqBase, q.meta.mesoDisc]); };
+        duplicar(ids[0], ids[1]);
+        var cambio = estado() !== prev;
+        win.document.querySelector('#dupLog [data-dupundo]').click();
+        return { cambio: cambio, vuelve: estado() === prev, botonSeVa: win.document.getElementById('dupLog').innerText === '' };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      ids.forEach(function(id){ delete S.plans[id]; });
+      A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast; win.confirm = orig.confirm;
+      S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
+      try{ win.document.getElementById('dupLog').innerHTML = ''; }catch(e){}
     }
   }
   /* ---------- Bodybuilding avanzado / élite: criterios de las 6 plantillas y editor estructurado del Banco ---------- */
@@ -719,6 +811,22 @@
         var cs = function(s){ return w.getComputedStyle(cont.querySelector(s)); };
         var acc = cs('.jp-warm-acc'), body = cs('.block-body'), sm = cs('summary');
         return { sinBordeDoble: parseFloat(acc.borderTopWidth) === 0, sinRelleno: parseFloat(body.paddingBottom) === 0, altoMinimo: parseFloat(sm.minHeight) >= 48 };
+      }
+      if(i.caso === 'crossfit'){
+        /* la piel de CrossFit & Hyrox: pizarra, filas, chips, campos, dock y cronómetro con la paleta azul noche (no negro neutro ni celeste / naranja eléctricos) */
+        var hadCF = d.body.classList.contains('cf-disc'); d.body.classList.add('cf-disc');
+        cont.innerHTML = '<div class="wod-board jp-cfboard jp-cf-fase-metcon" id="t1"><div class="jp-cf-tag">[ CROSSFIT ]</div><div class="jp-cf-rows"><div class="jp-cf-row"><span class="jp-cf-pct">80%</span><span class="jp-cf-rv">21</span></div></div></div>' +
+          '<div class="wod-board jp-cfboard jp-cf-fase-strength" id="t2"><div class="jp-cf-tag">[ STRENGTH ]</div></div>' +
+          '<div class="block" id="t3"><div class="wod-board jp-cfboard"></div></div>' +
+          '<div class="hd-dock" id="t4"></div><input class="jp-sc-a" id="t5"><button class="cwt-start" id="t6"></button><button class="sa-x" id="t7"></button><div class="cwt-screen" id="t8"></div>';
+        var g = function(id, p){ return w.getComputedStyle(cont.querySelector('#' + id))[p]; }, q = function(s, p){ return w.getComputedStyle(cont.querySelector(s))[p]; };
+        var neutro = function(c){ var m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(c); if(!m) return false; var a = [+m[1], +m[2], +m[3]]; return Math.max.apply(null, a) - Math.min.apply(null, a) < 14 && Math.max.apply(null, a) < 60; };
+        var res = { tarjeta: g('t1', 'backgroundColor'), bordeMetcon: g('t1', 'borderTopColor'), bordeStrength: g('t2', 'borderTopColor'), etiqueta: q('#t2 .jp-cf-tag', 'color'), filas: q('.jp-cf-rows', 'backgroundColor'),
+          chip: q('.jp-cf-pct', 'backgroundColor'), campo: g('t5', 'backgroundColor'), cta: g('t6', 'backgroundColor'), cierre: g('t7', 'backgroundColor'),
+          sinMarcoDoble: parseFloat(g('t3', 'borderTopWidth')) === 0 && g('t3', 'backgroundImage') === 'none',
+          sinNegro: ['t1', 't4', 't5', 't7', 't8'].concat([]).every(function(id){ return !neutro(g(id, 'backgroundColor')); }) && !neutro(q('.jp-cf-pct', 'backgroundColor')) && !neutro(q('.jp-cf-rows', 'backgroundColor')) };
+        if(!hadCF) d.body.classList.remove('cf-disc');
+        return res;
       }
       throw new Error('caso desconocido: ' + i.caso);
     } finally { d.body.removeChild(cont); }

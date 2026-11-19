@@ -67,5 +67,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
   { id: 'piel.ico.01', area: 'App del alumno · íconos', fn: 'alumnoPiel', input: { caso: 'emoji' }, expect: { objetivo: 'none', calendario: 'none', cierreNegro: true }, modo: 'subset',
     nota: 'Los emojis de la tarjeta (objetivo, tempo, calendario, cronómetro) se ven a color, sin filtro de escala de grises; solo el del botón ámbar de cierre sigue en negro' },
   { id: 'piel.act.01', area: 'App del alumno · activación', fn: 'alumnoPiel', input: { caso: 'activacion' }, expect: { sinBordeDoble: true, sinRelleno: true, altoMinimo: true }, modo: 'subset',
-    nota: 'La barra ACTIVACIÓN no lleva un segundo borde ni el relleno inferior que la dejaba pegada y solapada con el borde del bloque siguiente' }
+    nota: 'La barra ACTIVACIÓN no lleva un segundo borde ni el relleno inferior que la dejaba pegada y solapada con el borde del bloque siguiente' },
+  { id: 'piel.cf.01', area: 'App del alumno · piel CrossFit', fn: 'alumnoPiel', input: { caso: 'crossfit' },
+    expect: { tarjeta: 'rgb(19, 31, 67)', bordeMetcon: 'rgb(238, 90, 18)', bordeStrength: 'rgb(92, 225, 255)', etiqueta: 'rgb(92, 225, 255)', filas: 'rgb(15, 25, 56)', chip: 'rgb(26, 40, 80)', campo: 'rgb(11, 19, 48)', cta: 'rgb(255, 194, 75)', cierre: 'rgb(26, 40, 80)', sinMarcoDoble: true, sinNegro: true }, modo: 'subset',
+    nota: 'CrossFit & Hyrox usa la misma piel azul noche que Sports: tarjeta de la pizarra, filas, chips y campos en las superficies de la paleta, el color de la fase en el borde y la etiqueta (naranja de la marca solo en el WOD), ámbar en la acción principal y ningún fondo negro neutro; el cajón que envuelve a la pizarra no dibuja un segundo marco' }
 ]);
