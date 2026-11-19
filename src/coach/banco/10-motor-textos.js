@@ -44,15 +44,19 @@
     bulg_incl:{ o: 'Cargás el glúteo mayor en su posición más estirada: con el torso inclinado hacia adelante la carga se acerca a la cadera y la tensión pasa del cuádriceps al glúteo, de a una pierna y con poca fatiga axial.', s: 'Pie de atrás apoyado en un banco, paso largo, torso inclinado unos 30° con la mirada hacia el piso y las mancuernas a los costados del cuerpo.', c: 'Bajá en 3 segundos hasta estirar el glúteo de la pierna de adelante, pausa de 1 segundo abajo y subí empujando con el talón.', x: 'No dejes que la rodilla colapse hacia adentro ni cargues el peso en el pie de atrás: la pierna de adelante hace todo el trabajo.', t: '3110' },
     patada_cruz:{ o: 'Aislás el glúteo mayor con un vector de fuerza cruzado: la polea cruza el cuerpo y alinea la resistencia con la dirección de las fibras, con tensión constante, cero carga sobre la columna y el glúteo estirado al volver.', s: 'Tobillera en la pierna que trabaja, polea baja, apoyo firme con las dos manos y torso levemente inclinado hacia adelante.', c: 'Llevá la pierna hacia atrás y apenas hacia afuera apretando el glúteo, sostené 1 segundo y volvé lento cruzando la línea media para estirarlo.', x: 'No arquees la espalda baja ni gires la pelvis para subir más la pierna: el rango termina donde se mueve la cadera.', t: '3011' },
     puente_uni:{ o: 'Trabajás el glúteo mayor de a una pierna, con la pelvis estable y sin carga sobre la columna: alta activación y corrección de las diferencias entre un lado y el otro.', s: 'Espalda alta apoyada, pie de trabajo cerca de la cola, la otra pierna extendida y la pelvis nivelada.', c: 'Empujá con el talón hasta alinear costillas, cadera y rodilla, sostené 2 segundos apretando el glúteo y bajá lento.', x: 'No dejes que caiga el lado libre de la pelvis ni arquees la lumbar para subir más.', t: '3012' },
+    hiper45:  { o: 'Cargás glúteo mayor e isquiotibiales con la cadera en bisagra y el torso apoyado: tensión alta con el glúteo estirado y casi ninguna carga sobre la columna.', s: 'Almohadillas por debajo de las crestas de la cadera, tobillos fijos y el cuerpo alineado de la cabeza a los talones.', c: 'Bajá el torso con la espalda neutra hasta sentir el estiramiento y subí empujando con el glúteo hasta alinear el cuerpo, sin pasarte.', x: 'No hiperextiendas la zona lumbar arriba: el rango termina con el cuerpo recto y el glúteo apretado.', t: '3110' },
     gen:      { o: 'Estimulás el grupo muscular objetivo con técnica controlada y rango completo.', s: 'Posición estable, postura neutra y el músculo objetivo activado antes de empezar.', c: 'Controlá la bajada y buscá la contracción máxima en cada repetición.', x: 'No sacrifiques el rango ni la técnica por mover más carga.', t: '2011' }
   };
   /* ejercicio -> patrón del KB (el primero que coincide) */
   var RX_KB = [
+    [/cruce de cables deltoides|pec deck inverso/, 'delt_post'],
+    [/hiperextensiones en banco a 45/, 'hiper45'],
+    [/sentadilla en multipower/, 'hack'],
     [/peso muerto rumano con deficit|rumano con deficit/, 'rdl_def'],
     [/bulgara con torso inclinado/, 'bulg_incl'],
     [/patada de gluteo en polea cruzada/, 'patada_cruz'],
     [/puente de gluteo a una pierna|puente de gluteo unilateral/, 'puente_uni'],
-    [/press de banca|press banca|bench press|press plano con mancuernas|press de pecho en maquina|floor press/, 'press_h'],
+    [/press de banca|press banca|bench press|press plano con mancuernas|press de pecho en maquina|press de pecho convergente|floor press/, 'press_h'],
     [/press inclinado|inclinado con barra|press de pecho inclinado/, 'press_inc'],
     [/aperturas|cruce de cables|pec deck|contractor de pecho/, 'aper'],
     [/fondos en paralelas|fondos de triceps/, 'fondos'],
@@ -298,5 +302,6 @@
   /* registros que llenan los archivos de días (src/coach/banco/1x-*.js) y arma 20-armado.js */
   var D = {}, ESTR = [];
 
-  window.__jpPB = { tempoTxt: tempoTxt, KB: KB, kbDe: kbDe, R: R, textoBloque: textoBloque, textoWarmup: textoWarmup, exLib: exLib, etiquetaEj: etiquetaEj, partesDosis: partesDosis, TEC: TEC, nzz: nzz, D: D, ESTR: ESTR, WU: WU, N_ROL: N_ROL };
+  window.__jpPB = { tempoTxt: tempoTxt, KB: KB, kbDe: kbDe, R: R, textoBloque: textoBloque, textoWarmup: textoWarmup, exLib: exLib, etiquetaEj: etiquetaEj, partesDosis: partesDosis, TEC: TEC, nzz: nzz, D: D, ESTR: ESTR, WU: WU, N_ROL: N_ROL,
+    minBloque: minBloque, nombreCorto: nombreCorto, PREF: PREF, TAG: TAG, tempoFila: tempoFila };
 })();

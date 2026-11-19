@@ -7,7 +7,7 @@
      notificación local "tiempo cumplido" SÓLO si ninguna ventana de la app
      está visible (si el alumno la está mirando, el propio timer ya avisó).
      Best effort: el sistema operativo puede dormir el SW antes de tiempo. */
-const CACHE = 'coachjp-athlete-v9';   /* v9: invalida las cachés v8 al activarse (cierres metabólicos de competición alineados al día y estaciones sin cortes verticales) */
+const CACHE = 'coachjp-athlete-v10';   /* v10: invalida las cachés v9 al activarse (íconos a color, barra de Activación sin solape, progresión porcentual desde la Semana 1 y Story Card sin PIERNA repetido) */
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(Promise.all([
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k.indexOf('coachjp-athlete-') === 0).map(k => caches.delete(k)))),

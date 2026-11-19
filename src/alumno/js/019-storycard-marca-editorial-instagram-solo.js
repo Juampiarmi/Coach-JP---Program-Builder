@@ -137,9 +137,12 @@
     var low = function(n){ return String(n || '').toLowerCase(); };
     var top = gs[0], t = '';
     var lista = function(a){ return a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : (a[0] || ''); };
-    if(top.nombre === 'PIERNA'){
-      var subs = gs.slice(1, 4).map(function(x){ return low(x.nombre); });
-      t = 'Sesión de tren inferior: ' + (subs.length ? lista(subs) + (subs.length > 1 ? ' concentran' : ' concentra') : 'la pierna concentra') + ' el ' + top.pct + '% de las series efectivas';
+    if(typeof window.jpEsTrenInferior === 'function' && window.jpEsTrenInferior(gs)){
+      /* tren inferior: el encabezado lo nombra una sola vez y los renglones de arriba son solo los músculos específicos */
+      var inferiores = gs.filter(function(x){ return /^(CUÁDRICEPS|ISQUIOS|GLÚTEO|GEMELOS)$/.test(x.nombre); });
+      var subs = inferiores.slice(0, 4).map(function(x){ return low(x.nombre); });
+      var pctInf = Math.min(100, inferiores.reduce(function(s, x){ return s + (x.pct || 0); }, 0));
+      t = 'Sesión de tren inferior: ' + lista(subs) + (subs.length > 1 ? ' concentran' : ' concentra') + ' el ' + pctInf + '% de las series efectivas';
     } else if(top.pct >= 50){
       var apoyo = gs.slice(1, 3).map(function(x){ return low(x.nombre); });
       t = 'Estímulo mecánico dominante en ' + low(top.nombre) + ' (' + top.pct + '% de las series efectivas)' + (apoyo.length ? ', con trabajo complementario de ' + lista(apoyo) : '');
@@ -148,6 +151,7 @@
     }
     return t + '.';
   }
+  window.jpTextoEnfasis = textoEnfasis;
   function dibujarMarca(d){
     var c = document.getElementById('storyCanvas'); if(!c) return;
     d = d || {};

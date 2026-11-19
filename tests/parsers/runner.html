@@ -46,6 +46,7 @@
 <script src="cases-copia.js"></script>
 <script src="cases-cruce.js"></script>
 <script src="cases-metabolicos.js"></script>
+<script src="cases-elite.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -90,7 +91,11 @@
     alumnoTon: { run: function(i){ return alumnoTon(i); }, valor: function(r){ return r; } },
     alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
     bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
+    eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
+    eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
+    alumnoPiel: { run: function(i){ return alumnoPiel(i); }, valor: function(r){ return r; } },
+    alumnoStory: { run: function(i){ return alumnoStory(i); }, valor: function(r){ return r; } },
     alumnoEstaciones: { run: function(i){ return alumnoEstaciones(i); }, valor: function(r){ return r; } },
     alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
     editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
@@ -336,6 +341,160 @@
       S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
     }
   }
+  /* ---------- Bodybuilding avanzado / élite: criterios de las 6 plantillas y editor estructurado del Banco ---------- */
+  function eliteTpl(id){ var t = (win.__jpPB.LISTA || []).filter(function(x){ return x.id === id; })[0]; if(!t) throw new Error('no existe ' + id); return t; }
+  function eliteDias(id){ return win.__jpPB.construirDias(eliteTpl(id)); }
+  function ejerciciosDia(d){ var out = []; (d.bloques || []).forEach(function(b){ var m = win.__jpPB.EST.parsearBloque(b); if(m) m.ex.forEach(function(e){ out.push(e); }); }); return out; }
+  function eliteCaso(c){
+    var PB = win.__jpPB, EST = PB.EST, P = [], ids = ['m3', 'm4', 'm5', 'f3', 'f4', 'f5'].map(function(x){ return 'jp26_' + x + '_a'; });
+    if(c.caso === 'criterios'){
+      /* alertas automáticas (guiados seguidos, estaciones, axial, RIR) y volumen semanal en rango en las 6 plantillas */
+      ids.forEach(function(id){
+        var t = eliteTpl(id), dias = eliteDias(id);
+        if(t.niv !== 'avanzado') P.push(id + ': no es avanzado');
+        dias.forEach(function(d, i){ EST.alertasDia(d, { niv: 'avanzado', genero: t.g }).forEach(function(a){ P.push(id + ' día ' + (i + 1) + ': ' + a.msg); }); });
+        EST.alertasPlan(dias).forEach(function(a){ P.push(id + ': ' + a.msg); });
+        EST.volumen(dias, t.g, 'avanzado').forEach(function(x){ if(x.est !== 'ok') P.push(id + ': ' + x.g + ' ' + x.v + ' series (rango ' + x.lo + '-' + x.hi + ')'); });
+        /* nomenclatura híbrida: todo ejercicio con nombre en inglés distinto lleva "(Name)" */
+        dias.forEach(function(d, i){ ejerciciosDia(d).forEach(function(e){ if(e.lib && e.lib.en && PB.nzz(e.lib.en) !== PB.nzz(e.lib.es) && !/\(.+\)\s*$/.test(e.etiqueta)) P.push(id + ' día ' + (i + 1) + ': «' + e.nombre + '» sin nombre en inglés'); }); });
+      });
+    } else if(c.caso === 'mujeres'){
+      ['f3', 'f4', 'f5'].forEach(function(f){
+        var id = 'jp26_' + f + '_a', dias = eliteDias(id), nGlu = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Glúteo' && /hip thrust/i.test(e.nombre); }); }).length;
+        if(nGlu < 2) P.push(id + ': hip thrust en ' + nGlu + ' días (mínimo 2)');
+        var minGlu = f === 'f5' ? 3 : 2, expGlu = dias.filter(function(d){ return ejerciciosDia(d).filter(function(e){ return e.g === 'Glúteo'; }).reduce(function(a, e){ return a + e.sets; }, 0) >= 6; }).length;
+        if(expGlu < minGlu) P.push(id + ': glúteo con 6 o más series en ' + expGlu + ' días (mínimo ' + minGlu + ')');
+        if(dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return /plancha lateral/i.test(e.nombre); }); }).length >= dias.length) P.push(id + ': la plancha lateral está en todos los días');
+        /* brazos esculpidos con trabajo en elongación */
+        var txt = JSON.stringify(dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); }));
+        if(!/curl de bíceps en banco inclinado/i.test(txt)) P.push(id + ': sin curl inclinado (bíceps elongado)');
+        if(!/extensión tríceps tras nuca/i.test(txt)) P.push(id + ': sin extensión de tríceps sobre la cabeza (tríceps elongado)');
+      });
+      /* 4 y 5 días no comparten ningún día (ni el título ni el contenido) */
+      var d4 = eliteTpl('jp26_f4_a').dias, d5 = eliteTpl('jp26_f5_a').dias, D = PB.D;
+      function nombres(k){ return D[k].filas.filter(function(r){ return !r.fin; }).reduce(function(a, r){ return a.concat([].concat(r.ej || [])); }, []); }
+      d4.forEach(function(a){ d5.forEach(function(b){
+        if(a === b) P.push('el día ' + a + ' está en el plan de 4 y en el de 5 días');
+        var A = nombres(a), B = nombres(b), com = A.filter(function(x){ return B.indexOf(x) >= 0; }).length, uni = A.length + B.length - com;
+        if(uni && com / uni > 0.6) P.push(a + ' y ' + b + ' (4 y 5 días) comparten ' + Math.round(com / uni * 100) + '% de los ejercicios');
+      }); });
+    } else if(c.caso === 'hombres'){
+      var rep = { jp26_m3_a: 2, jp26_m4_a: 3, jp26_m5_a: 3 };
+      Object.keys(rep).forEach(function(id){
+        var dias = eliteDias(id);
+        var dl = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Hombro lateral'; }); }).length;
+        var dp = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Hombro posterior'; }); }).length;
+        if(dl < rep[id]) P.push(id + ': deltoide lateral en ' + dl + ' días (mínimo ' + rep[id] + ')');
+        if(dp < 2) P.push(id + ': deltoide posterior en ' + dp + ' días (mínimo 2)');
+        var txt = JSON.stringify(dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); }));
+        if(!/curl de bíceps en banco inclinado/i.test(txt)) P.push(id + ': sin curl inclinado (bíceps elongado)');
+        if(!/extensión tríceps tras nuca/i.test(txt)) P.push(id + ': sin extensión de tríceps sobre la cabeza (tríceps elongado)');
+        if(/remo con barra inclinado|remo pendlay/i.test(txt)) P.push(id + ': ancla de remo con barra libre (poca estabilidad externa)');
+        if(!/remo pecho apoyado/i.test(txt)) P.push(id + ': sin remo con el pecho apoyado');
+      });
+    } else if(c.caso === 'intermedio'){
+      /* el nivel intermedio conserva sus sesiones compartidas de siempre */
+      var esp = { jp26_m3_i: ['M_PUSH', 'M_PULL', 'M_LEGS'], jp26_m4_i: ['M_UP_A', 'M_LO_A', 'M_UP_B', 'M_LO_B'], jp26_f4_i: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], jp26_f3_i: ['F_PA', 'F_PPB', 'F_PB'] };
+      Object.keys(esp).forEach(function(id){ if(JSON.stringify(eliteTpl(id).dias) !== JSON.stringify(esp[id])) P.push(id + ': cambió sus días: ' + eliteTpl(id).dias.join(',')); });
+      ids.forEach(function(id){ if(eliteTpl(id).dias.some(function(k){ return !/^E_/.test(k); })) P.push(id + ': el avanzado no usa solo sesiones élite'); });
+    }
+    return P;
+  }
+  function eliteEdit(c){
+    var PB = win.__jpPB, EST = PB.EST, dias, d, b, m, r;
+    function bloqueCon(dia, txt){ return dia.bloques.filter(function(x){ return (x.titulo || '').indexOf(txt) >= 0; })[0]; }
+    if(c.caso === 'swap'){
+      dias = eliteDias('jp26_m4_a'); d = dias[3]; b = bloqueCon(d, 'Peso muerto rumano'); var id0 = b.id, obj0 = b.objective;
+      EST.cambiarEjercicio(d, b, 0, 'Peso muerto rumano con déficit', 'avanzado');
+      m = EST.parsearBloque(b);
+      return { id: b.id === id0, titulo: /Peso muerto rumano con déficit/.test(b.titulo), nombre: m.ex[0].nombre, hibrido: /\(.+\)$/.test(m.ex[0].etiqueta), serie: m.ex[0].sets + 'x' + m.ex[0].reps, rir: m.ex[0].rir, objetivoNuevo: b.objective !== obj0 && !!b.objective, ramp: /RAMP-UP/.test(b.tips), minutos: /\(\d+ MIN\)$/.test(b.titulo) };
+    }
+    if(c.caso === 'dosis'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; b = bloqueCon(d, 'Press de banca plano con barra'); var tips0 = b.tips, obj1 = b.objective;
+      m = EST.parsearBloque(b); m.ex[0].sets = 5; m.ex[0].reps = '4-6'; m.ex[0].rir = '0'; m.rest = 210; EST.aplicarModelo(m);
+      var n = EST.parsearBloque(b);
+      return { items: b.items.slice(1), rest: b.restSeconds, titulo: /\(23 MIN\)$/.test(b.titulo), pautasIntactas: b.tips === tips0 && b.objective === obj1, nombre: n.ex[0].nombre };
+    }
+    if(c.caso === 'bisets'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; b = bloqueCon(d, 'Biset'); var n0 = d.bloques.length;
+      var antes = EST.parsearBloque(b).ex.length;
+      var r1 = EST.quitarEjercicio(d, b, 1, 'avanzado'), m1 = EST.parsearBloque(b);
+      var r2 = EST.quitarEjercicio(d, b, 0, 'avanzado');
+      return { antes: antes, sigue: !!r1, ahora: m1.ex.length, sinA1: !b.items.some(function(l){ return /^A\d\./.test(l); }), rol: /^Accesorios/.test(b.titulo), ultimo: r2 };
+    }
+    if(c.caso === 'agregar'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; var antesSeries = EST.volumen(dias, 'm', 'avanzado').filter(function(x){ return x.g === 'Bíceps'; })[0].v;
+      var res = EST.agregarBloque(d, 'Curl martillo', 'avanzado');
+      var m2 = EST.parsearBloque(res.bloque), sig = d.bloques[res.pos + 1];
+      return { antes: antesSeries, despues: EST.volumen(dias, 'm', 'avanzado').filter(function(x){ return x.g === 'Bíceps'; })[0].v, ejercicio: m2.ex[0].nombre, dosis: m2.ex[0].sets + 'x' + m2.ex[0].reps + '/' + m2.ex[0].rir, antesDelCore: sig && (sig.modalidad === 'core' || sig.modalidad === 'metcon') };
+    }
+    if(c.caso === 'alertas'){
+      dias = eliteDias('jp26_m3_a'); d = dias[1];
+      var tipos = function(){ return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).map(function(a){ return a.k; }).sort().join(','); };
+      var base = tipos();
+      /* dos poleas seguidas en el mismo biset */
+      b = bloqueCon(d, 'Biset Pájaro'); EST.cambiarEjercicio(d, b, 0, 'Cruce de cables deltoides posterior', 'avanzado'); EST.cambiarEjercicio(d, b, 1, 'Encogimientos en polea baja', 'avanzado');
+      var conPoleas = tipos();
+      /* dos patrones axiales */
+      var f = bloqueCon(d, 'Remo Pecho Apoyado'); EST.cambiarEjercicio(d, f, 0, 'Remo con barra inclinado', 'avanzado');
+      var h = bloqueCon(d, 'Jalón'); EST.cambiarEjercicio(d, h, 0, 'Remo Pendlay', 'avanzado');
+      var conAxial = tipos();
+      /* RIR 2 */
+      var mr = EST.parsearBloque(bloqueCon(d, 'Pull-over')); mr.ex[0].rir = '2'; EST.aplicarModelo(mr);
+      var conRir = tipos();
+      /* RIR 2 en un nivel intermedio no es un problema */
+      var rirInter = EST.alertasDia(d, { niv: 'intermedio', genero: 'm' }).filter(function(a){ return a.k === 'rir'; }).length;
+      return { base: base, conPoleas: conPoleas, conAxial: conAxial, conRir: conRir, rirInter: rirInter };
+    }
+    if(c.caso === 'estacion'){
+      dias = eliteDias('jp26_m3_a'); d = dias[1]; b = bloqueCon(d, 'Biset Curl'); EST.cambiarEjercicio(d, b, 0, 'Curl de bíceps tras la espalda', 'avanzado');
+      return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).filter(function(a){ return a.k === 'estacion'; }).map(function(a){ return a.msg; });
+    }
+    if(c.caso === 'core'){
+      dias = eliteDias('jp26_f3_a');
+      dias.forEach(function(x){ var bl = x.bloques.filter(function(y){ return y.modalidad === 'core'; })[0]; if(bl) EST.cambiarEjercicio(x, bl, 0, 'Plancha lateral', 'avanzado'); });
+      return EST.alertasPlan(dias).map(function(a){ return a.k; });
+    }
+    if(c.caso === 'alternativas'){
+      var f = EST.alternativas('Hip thrust con barra', 'f');
+      var cualquiera = EST.alternativas('Aperturas de pie con mancuernas', 'm');
+      return { hip: f.indexOf('Hip thrust en máquina') >= 0 && f.indexOf('Hip thrust a una pierna') >= 0, sinSiMismo: f.indexOf('Hip thrust con barra') < 0, sinAvanzadosEnMujeres: EST.alternativas('Elevación de piernas en banco', 'f').indexOf('Elevación de piernas colgado') < 0 && EST.alternativas('Jalón al pecho con agarre ancho', 'f').indexOf('Dominadas lastradas') < 0, conAvanzadosEnHombres: EST.alternativas('Elevación de piernas en banco', 'm').indexOf('Elevación de piernas colgado') >= 0 && EST.alternativas('Jalón al pecho con agarre ancho', 'm').indexOf('Dominadas lastradas') >= 0, respaldo: cualquiera.length >= 4 };
+    }
+    if(c.caso === 'volumen'){
+      d = { bloques: [] };
+      [['Press de banca plano con barra', '4x6'], ['Elevaciones laterales con mancuernas', '5x15'], ['Hip thrust con barra', '3x8'], ['Plancha lateral', '3x30s']].forEach(function(x){
+        var nb = EST.agregarBloque({ bloques: [] }, x[0], 'avanzado'); var mm = EST.parsearBloque(nb.bloque); mm.ex[0].sets = parseInt(x[1], 10); mm.ex[0].reps = x[1].split('x')[1]; EST.aplicarModelo(mm); d.bloques.push(nb.bloque);
+      });
+      var v = EST.volumen([d], 'f', 'avanzado'), o = {}; v.forEach(function(x){ o[x.g] = x.v; });
+      var vi = EST.volumen([d], 'f', 'intermedio').filter(function(x){ return x.g === 'Glúteo'; })[0];
+      return { pecho: o['Pecho'], lateral: o['Hombro lateral'], gluteo: o['Glúteo'], core: o['Core'], rangoInter: vi.lo + '-' + vi.hi };
+    }
+    if(c.caso === 'asignar'){
+      /* una plantilla élite editada se asigna con sus cambios y no toca a otros alumnos */
+      var S = getS(), reg = (S.banco || []).filter(function(x){ return x.id === 'bkstd_jp26_m4_a'; })[0], ids = ['ath_test_el_a', 'ath_test_el_b'], A = [];
+      var orig = { save: win.save, rb: win.renderBuilder, toast: win.toast, confirm: win.confirm, act: S.activeId, dias: reg.dias, ed: reg.editada };
+      win.save = win.renderBuilder = win.toast = function(){}; win.confirm = function(){ return true; };
+      try{
+        ids.forEach(function(id){ var a = { id: id, nombre: 'El' + id, apellido: 'Test', freq: 4, nivel: 'Avanzado', genero: 'M' }; S.athletes.push(a); A.push(a); S.plans[id] = win.newPlan(a); });
+        var otro = JSON.stringify(S.plans[ids[1]].dias);
+        reg.dias = JSON.parse(JSON.stringify(PB.construirDias(eliteTpl('jp26_m4_a'))));
+        var bb = bloqueCon(reg.dias[0], 'Press de banca plano con barra'); EST.cambiarEjercicio(reg.dias[0], bb, 0, 'Press plano con mancuernas', 'avanzado');
+        reg.editada = 1;
+        var res = win.CoachBaseJP.asignar('jp26_m4_a', A[0], { sinConfirmar: true });
+        var p = win.plan(ids[0]), blq = bloqueCon(p.dias[0], 'Press plano con mancuernas');
+        /* barra de control del Builder: volumen y alertas del plan del alumno activo */
+        S.activeId = ids[0]; if(!S.ui) S.ui = {}; S.ui.day = 0; EST.pintarBuilder();
+        var barra = win.document.getElementById('estCtlBar'), bTxt = barra ? barra.innerText : '', filas = barra ? barra.querySelectorAll('.est-v').length : 0;
+        if(barra) barra.remove();
+        return { barra: !!barra && /Control del plan/i.test(bTxt), filas: filas, asignada: !!res, dias: p.dias.length, conCambio: !!blq, sinOriginal: !bloqueCon(p.dias[0], 'Press de banca plano con barra'), semanas: !!(blq && blq.weekItems && blq.weekItems.length === 4), otroIntacto: JSON.stringify(S.plans[ids[1]].dias) === otro };
+      } finally {
+        reg.dias = orig.dias; if(orig.ed === undefined) delete reg.editada; else reg.editada = orig.ed;
+        ids.forEach(function(id){ delete S.plans[id]; }); A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+        win.save = orig.save; win.renderBuilder = orig.rb; win.toast = orig.toast; win.confirm = orig.confirm; S.activeId = orig.act;
+      }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   /* ---------- Showroom y estilos de tarjeta ---------- */
   function showroomCaso(c){
     var S = getS(), SR = win.CoachShowroom;
@@ -467,7 +626,7 @@
     st.loads = JSON.parse(JSON.stringify(i.loads || {})); st.rirEx = JSON.parse(JSON.stringify(i.rirEx || {}));
     try{
       var r = w.jpSugerirCarga(i.c, i.e, i.setN || 1);
-      return r ? { kg: r.kg, origen: r.origen, pre: r.pre } : null;
+      return r ? { kg: r.kg, origen: r.origen, pre: r.pre, txt: r.txt } : null;
     } finally { st.loads = l0; st.rirEx = r0; }
   }
   /* editor del Builder: ids de día y estructura del plan, con las funciones reales; save / renderBuilder / toast se anulan y el alumno de prueba se quita al terminar */
@@ -542,6 +701,35 @@
       var ok = function(pat){ return css.indexOf('[data-jp-estilo] .jp-sb-board .jp-sb-plain' + pat) >= 0; };
       return { grid: ok(':not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt)'), fmt: ok('-fmt') };
     }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* piel de la app del alumno: íconos a color y barra de Activación sin segundo borde ni relleno que la pegue al bloque siguiente */
+  function alumnoPiel(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, cont = d.createElement('div');
+    d.body.appendChild(cont);
+    try{
+      if(i.caso === 'emoji'){
+        cont.innerHTML = '<div class="jp-ex-box-t"><span class="jp-emo">🎯</span></div><div class="jp-wk-btn"><span class="jp-emo">📅</span></div><button class="jp-close-cta"><span class="jp-emo">✅</span></button>';
+        var f = function(s){ return w.getComputedStyle(cont.querySelector(s)).filter; };
+        return { objetivo: f('.jp-ex-box-t .jp-emo'), calendario: f('.jp-wk-btn .jp-emo'), cierreNegro: f('.jp-close-cta .jp-emo').indexOf('brightness(0)') >= 0 };
+      }
+      if(i.caso === 'activacion'){
+        cont.innerHTML = '<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary><span class="jp-warm-lb">ACTIVACIÓN</span></summary></details></div></div>';
+        var cs = function(s){ return w.getComputedStyle(cont.querySelector(s)); };
+        var acc = cs('.jp-warm-acc'), body = cs('.block-body'), sm = cs('summary');
+        return { sinBordeDoble: parseFloat(acc.borderTopWidth) === 0, sinRelleno: parseFloat(body.paddingBottom) === 0, altoMinimo: parseFloat(sm.minHeight) >= 48 };
+      }
+      throw new Error('caso desconocido: ' + i.caso);
+    } finally { d.body.removeChild(cont); }
+  }
+  /* Story Card: énfasis muscular sin el renglón general "PIERNA" junto a sus subgrupos */
+  function alumnoStory(i){
+    var w = alumnoWin(); if(!w || !w.CoachMetricas) throw new Error('no hay app del alumno');
+    var det = i.det.map(function(x){ return { ex: x.ex, n: x.n, vol: 0, kg: 0, reps: 0 }; });
+    var gs = w.CoachMetricas.grupos(det);
+    if(i.caso === 'grupos') return gs.map(function(g){ return g.nombre; });
+    if(i.caso === 'texto'){ var tx = w.jpTextoEnfasis(gs); return { inferior: /tren inferior/.test(tx), sinPierna: !/pierna/i.test(tx), texto: tx }; }
     throw new Error('caso desconocido: ' + i.caso);
   }
   /* cierres metabólicos del Banco BB: estaciones y formato de competición, alineados al día */

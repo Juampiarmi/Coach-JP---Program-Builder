@@ -43713,7 +43713,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 @@include coach/banco/14-dias-hyrox.js@@
 </script>
 <script>
+@@include coach/banco/15-elite.js@@
+</script>
+<script>
 @@include coach/banco/20-armado.js@@
+</script>
+<script>
+@@include coach/banco/21-estructura.js@@
 </script>
 <script>
 /* =========================================================
@@ -43896,8 +43902,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function hidratarStd(){
     var n = 0;
     (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
-      if(!r || !r.std || (r.dias && r.dias.length)) return;
+      if(!r || !r.std) return;
       var t = LISTA.filter(function(x){ return x.id === r.stdId; })[0]; if(!t) return;
+      /* las plantillas del sistema que el coach NO editó siguen la versión del código: descripción y ficha de mesociclo (los días se regeneran abajo) */
+      if(!r.editada){
+        if(r.notas !== t.resumen){ r.notas = t.resumen; n++; }
+        var meta = PB.metaDe(t); r.meta = r.meta || {};
+        Object.keys(meta).forEach(function(k){ if(r.meta[k] !== meta[k]){ r.meta[k] = meta[k]; n++; } });
+      }
+      if(r.dias && r.dias.length) return;
       r.dias = PB.construirDias(t); n++;
     });
     return n;
@@ -44169,12 +44182,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     }
     var mod = MOD[b.modalidad] || ['BLOQUE', 'h'], items = b.items || [], h = '';
     if(editando){
+      var est = (PB.EST && actual) ? PB.EST.htmlBloque(b, di, bi, PB.EST.ctxDe(actual)) : '';
       return '<div class="pv-blq pv-ed ' + mod[1] + '" data-pvd="' + di + '" data-pvb="' + bi + '"><div class="pv-bh"><span class="pv-tag">' + mod[0] + '</span><span class="pv-mv">' +
         '<button type="button" class="btn xs ghost" data-pvact="bup" data-pvarg="' + di + ':' + bi + '" title="Subir el bloque">▲</button>' +
         '<button type="button" class="btn xs ghost" data-pvact="bdn" data-pvarg="' + di + ':' + bi + '" title="Bajar el bloque">▼</button>' +
         '<button type="button" class="btn xs ghost" data-pvact="bdel" data-pvarg="' + di + ':' + bi + '" title="Quitar el bloque">🗑</button></span></div>' +
+        est + (est ? '<details class="pv-det est-adv"><summary>Texto avanzado: título y líneas de ejercicios</summary>' : '') +
         '<label class="pv-edl">Título del bloque<input class="pv-ei" data-pvf="titulo" value="' + E(b.titulo || '') + '"></label>' +
-        '<label class="pv-edl">Ejercicios y dosis (un renglón por línea)<textarea class="pv-ea" data-pvf="items" rows="' + Math.max(3, Math.min(12, items.length + 1)) + '">' + E(items.join('\n')) + '</textarea></label>' +
+        '<label class="pv-edl">Ejercicios y dosis (un renglón por línea)<textarea class="pv-ea" data-pvf="items" rows="' + Math.max(3, Math.min(12, items.length + 1)) + '">' + E(items.join('\n')) + '</textarea></label>' + (est ? '</details>' : '') +
         '<label class="pv-edl">Objetivo<textarea class="pv-ea" data-pvf="objective" rows="3">' + E(b.objective || '') + '</textarea></label>' +
         '<label class="pv-edl">Pautas y coaching tips (el tempo va acá)<textarea class="pv-ea" data-pvf="tips" rows="6">' + E(b.tips || '') + '</textarea></label>' +
         (b.modalidad === 'calentamiento' ? '' : '<div class="pv-edb"><button type="button" class="btn xs ghost" data-pvia="' + di + ':' + bi + '">✨ Regenerar tips con IA</button></div>') + '</div>';
@@ -44492,20 +44507,24 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(prog && prog !== r.notas) body += '<p class="pv-resumen"><b style="color:#E5C378">Progresión:</b> ' + E(prog.slice(0, 600)) + '</p>';
     body += '<div class="pv-nav">' + dias.map(function(d, i){ return '<button type="button" data-pvdia="' + i + '">' + E(d.short || ('DÍA ' + (i + 1))) + '</button>'; }).join('') + '<button type="button" class="pv-tg" id="pvTg">▾ Expandir pautas</button></div>';
     if(!dias.length) body += '<div class="hint">Esta plantilla está vacía.</div>';
+    var estOk = !!(PB.EST && PB.EST.aplica(r)), estCtx = PB.EST ? PB.EST.ctxDe(r) : {};
+    if(estOk) body += PB.EST.htmlPanel(r);
     dias.forEach(function(d, i){
       if(editando){
         body += '<section class="pv-day" id="pvDia' + i + '" data-pvdd="' + i + '"><div class="pv-dh"><span class="n">' + E(d.short || ('DÍA ' + (i + 1))) + '</span>' +
           '<span class="pv-mv"><button type="button" class="btn xs ghost" data-pvact="dup" data-pvarg="' + i + '" title="Subir el día">▲</button><button type="button" class="btn xs ghost" data-pvact="ddn" data-pvarg="' + i + '" title="Bajar el día">▼</button><button type="button" class="btn xs ghost" data-pvact="ddel" data-pvarg="' + i + '" title="Quitar el día">🗑 Quitar día</button></span></div>' +
           '<label class="pv-edl">Título del día<input class="pv-ei" data-pvdf="title" value="' + E(d.title || '') + '"></label>' +
           '<label class="pv-edl">Foco del día (lo que lee el alumno antes de entrenar)<textarea class="pv-ea" data-pvdf="focusText" rows="4">' + E(d.focusText || '') + '</textarea></label>' +
+          (estOk ? PB.EST.htmlAlertasDia(d, i, estCtx) : '') +
           (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') +
+          (estOk ? PB.EST.htmlAgregar(i, estCtx) : '') +
           '<div class="pv-add"><select class="pv-ei" data-pvnuevo="' + i + '">' + Object.keys(BLOQUES_NUEVOS).map(function(k){ return '<option value="' + k + '">' + BLOQUES_NUEVOS[k][0] + '</option>'; }).join('') + '</select>' +
           '<button type="button" class="btn xs gold" data-pvact="badd" data-pvarg="' + i + '">➕ Agregar bloque</button></div></section>';
         return;
       }
       body += '<section class="pv-day" id="pvDia' + i + '"><div class="pv-dh"><span class="n">' + E(d.short || ('DÍA ' + (i + 1))) + '</span><h4>' + E(d.title || d.label || '') + '</h4></div>' +
         ((d.metaChips || []).length ? '<div class="pv-meta">' + d.metaChips.map(function(c){ return '<span class="pv-pill">' + E(c) + '</span>'; }).join('') + '</div>' : '') +
-        (d.focusText ? '<p class="pv-foco">' + E(d.focusText) + '</p>' : '') + (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') + '</section>';
+        (d.focusText ? '<p class="pv-foco">' + E(d.focusText) + '</p>' : '') + (estOk ? PB.EST.htmlAlertasDia(d, i, estCtx) : '') + (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') + '</section>';
     });
     if(editando) body += '<div class="pv-add"><button type="button" class="btn sm gold" data-pvact="dadd" data-pvarg="0">➕ Agregar día</button></div>';
     var bd = document.getElementById('pvBody'); bd.innerHTML = body; bd.scrollTop = keep || 0;
@@ -44518,6 +44537,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ var m = document.getElementById('mBankView'); if(m && m.classList.contains('on')) closeModal('mBankView'); } });
   window.CoachBaseJP = window.CoachBaseJP || {}; window.CoachBaseJP.previsualizar = function(id){ editando = false; abrir(id); };
   window.CoachBaseJP.editar = function(id){ editando = false; abrir(id); if(actual && actual.id === id) entrarEdicion(); };
+  /* el editor estructurado (coach/banco/21-estructura.js) lee la plantilla abierta y pide repintar sin perder el scroll */
+  window.CoachBaseJP.actual = function(){ return actual; };
+  window.CoachBaseJP.editando = function(){ return !!editando; };
+  window.CoachBaseJP.volcar = volcarCampos;
+  window.CoachBaseJP.refrescar = function(){ if(actual) abrir(actual.id, true); };
 })();
 </script>
 <script>

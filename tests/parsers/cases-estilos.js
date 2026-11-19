@@ -55,5 +55,17 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'La barra de dosis va en tres filas: volumen (4 SERIES × 5-7 REPS), descanso debajo, y tempo + RIR en la línea técnica' },
   { id: 'est.dos.02', area: 'App del alumno · tarjeta', fn: 'alumnoEstilo', input: { caso: 'dosis', args: [3, '30', 'seg', '', '', 0, '', null, true, '', false] },
     expect: { vol: '3 SERIES × 30 SEG', tempo: null, rir: null, filas: 2 }, modo: 'subset',
-    nota: 'Sin tempo ni RIR no se inventa la fila técnica; una estación intermedia de biset muestra "sin descanso" debajo del volumen' }
+    nota: 'Sin tempo ni RIR no se inventa la fila técnica; una estación intermedia de biset muestra "sin descanso" debajo del volumen' },
+
+  /* ---- Story Card: énfasis muscular sin repetir PIERNA ---- */
+  { id: 'story.enf.01', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'grupos', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral tumbado', n: 3 }] }, expect: ['CUÁDRICEPS', 'GEMELOS', 'ISQUIOS'],
+    nota: 'Un día de pierna lista solo los músculos específicos (cuádriceps, isquios, gemelos): ya no aparece un renglón general PIERNA encima de ellos' },
+  { id: 'story.enf.02', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'texto', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral tumbado', n: 3 }] }, expect: { inferior: true, sinPierna: true }, modo: 'subset',
+    nota: 'La referencia general al tren inferior queda en el texto descriptivo, sin nombrar "pierna" como un grupo más' },
+  { id: 'story.enf.03', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'grupos', det: [{ ex: 'Press de banca plano con barra', n: 4 }, { ex: 'Remo con barra', n: 3 }] }, expect: ['PECHO', 'ESPALDA'], nota: 'Un día de torso no cambia' },
+  /* ---- piel: íconos a color y barra de activación ---- */
+  { id: 'piel.ico.01', area: 'App del alumno · íconos', fn: 'alumnoPiel', input: { caso: 'emoji' }, expect: { objetivo: 'none', calendario: 'none', cierreNegro: true }, modo: 'subset',
+    nota: 'Los emojis de la tarjeta (objetivo, tempo, calendario, cronómetro) se ven a color, sin filtro de escala de grises; solo el del botón ámbar de cierre sigue en negro' },
+  { id: 'piel.act.01', area: 'App del alumno · activación', fn: 'alumnoPiel', input: { caso: 'activacion' }, expect: { sinBordeDoble: true, sinRelleno: true, altoMinimo: true }, modo: 'subset',
+    nota: 'La barra ACTIVACIÓN no lleva un segundo borde ni el relleno inferior que la dejaba pegada y solapada con el borde del bloque siguiente' }
 ]);

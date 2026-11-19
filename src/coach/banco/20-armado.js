@@ -24,9 +24,11 @@
     var out = [];
     ESTR.forEach(function(e){
       NIVELES.forEach(function(n){
-        var t = { id: 'jp26_' + e.g + e.f + '_' + (n.k === 'avanzado' ? 'a' : 'i'), g: e.g, gen: GEN[e.g], f: e.f, niv: n.k, nivLb: n.lb, est: e.est,
+        /* el nivel avanzado / élite puede traer sesiones propias (15-elite.js: ESTR.diasA / estA / resA); el intermedio usa siempre las compartidas */
+        var av = n.k === 'avanzado' && e.diasA, est = av && e.estA ? e.estA : e.est, res = av && e.resA ? e.resA : e.res;
+        var t = { id: 'jp26_' + e.g + e.f + '_' + (n.k === 'avanzado' ? 'a' : 'i'), g: e.g, gen: GEN[e.g], f: e.f, niv: n.k, nivLb: n.lb, est: est,
           nombre: 'Bodybuilding · ' + GEN[e.g] + ' · ' + e.f + ' días · ' + n.lb,
-          resumen: e.est + '. ' + e.res + ' ' + n.res, meso: n.meso, suf: n.suf, dias: e.dias };
+          resumen: est + '. ' + res + ' ' + n.res, meso: n.meso, suf: n.suf, dias: av ? e.diasA : e.dias };
         out.push(t);
       });
     });

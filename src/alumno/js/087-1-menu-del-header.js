@@ -520,6 +520,11 @@
   }
   function redondear(kg, paso){ paso = paso || 2.5; return Math.round(kg / paso) * paso; }
   function fmtKg(n){ return String(Math.round(n * 100) / 100).replace('.', ','); }
+  function fmtPct(n){ return String(Math.round(n * 10) / 10).replace('.', ','); }
+  /* progresión porcentual sobre la Semana 1: S2 +2,5%, S3 +5%, y +2,5% por cada semana de acumulación siguiente; descarga: −15% */
+  var JP_PCT_DESCARGA = 15;
+  function jpPctProgresion(w){ return w <= 1 ? 2.5 : 5 + 2.5 * (w - 2); }
+  window.jpPctProgresion = jpPctProgresion; window.JP_PCT_DESCARGA = JP_PCT_DESCARGA;
   function carga(w, d, b, idx, set){ try{ return getLoad(getLoadKey(w, d, b, idx, set)) || {}; }catch(e){ return {}; } }
   /* id de cada ejercicio de la rutina (dia|bloque|indice) -> nombre */
   var mapaNom = null;
@@ -655,12 +660,19 @@
       if(ult && !deload){
         var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '');
         if(!rr || !(ref.reps > 0)) return { kg: ref.kg, pre: !!rr, origen: rr ? 'progresion' : 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '') };
-        var rirReg = rirRegistrado(ult.clave), nota = '', pr;
+        var rirReg = rirRegistrado(ult.clave), nota = '', pr, calc = '';
         if(ult.w === 0 && c.w >= 1){
-          /* Semanas 2, 3 y siguientes: la sobrecarga sale de lo registrado en la Semana 1 (S2 sube si en S1 llegaste al tope de reps con RIR de sobra; S3 sube más) */
-          var llego = ref.reps >= rr.max, holgado = (rirReg == null || rirReg >= 1);
-          var fac = c.w === 1 ? ((llego && holgado) ? 1.025 : 1) : ((llego && holgado) ? 1.05 : (rirReg === 0 ? 1 : 1.025));
-          pr = fac === 1 ? { kg: ref.kg, sube: false, motivo: (llego && !holgado) ? 'fallo' : 'rango' } : { kg: Math.max(redondear(ref.kg * fac), ref.kg + 2.5), sube: true, motivo: 'tope' };
+          /* Semanas 2, 3 y siguientes: progresión PORCENTUAL calculada sobre lo registrado en la Semana 1 (S2 +2,5%, S3 +5%, y +2,5% más por cada semana siguiente).
+             Solo se frena si en S1 no llegaste al mínimo del rango o marcaste RIR 0: ahí se mantiene la carga de S1 */
+          var pctP = jpPctProgresion(c.w), llegoMin = ref.reps >= rr.min, holgado = (rirReg == null || rirReg >= 1);
+          if(llegoMin && holgado){
+            pr = { kg: redondear(ref.kg * (1 + pctP / 100), 1.25), sube: true, motivo: 'tope' };
+            if(pr.kg <= ref.kg) pr.kg = redondear(ref.kg + 1.25, 1.25);
+            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg';
+            nota = ' · ' + calc;
+          } else {
+            pr = { kg: ref.kg, sube: false, motivo: holgado ? 'rango' : 'fallo' };
+          }
           /* ...pero nunca por debajo de lo que el alumno YA hizo en la semana inmediatamente anterior, ni por encima de lo que no pudo completar ahí */
           if(c.w >= 2){
             var prev = registroSemana(c, e, setN || 1, c.w - 1);
@@ -679,12 +691,13 @@
           pr = progresion(ref, rr, rirReg, 1.025);
         }
         if(!pr.sube) return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(pr.kg) + ' kg y buscá ' + rr.max + ' reps' + (pr.motivo === 'fallo' ? ' (marcaste RIR 0: sumá reservas antes de subir)' : '') + ' (' + previo + ')' + nota };
+        if(calc && nota === ' · ' + calc) return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(pr.kg) + ' kg × ' + (rr.min === rr.max ? rr.max : rr.min + '-' + rr.max) + ' reps · ' + calc + (rirReg != null ? ' (RIR ' + rirReg + ' en S1)' : '') };
         return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(pr.kg) + ' kg (+' + fmtKg(Math.max(0, pr.kg - ref.kg)) + ')' + (ref.reps >= rr.max ? ' · llegaste a ' + ref.reps + ' reps' + (rirReg != null ? ' con RIR ' + rirReg : '') : '') + ' (' + previo + ')' + nota };
       }
-      /* descarga: ~85% de la carga de la Semana 1 (va antes de la marca real, que ignoraría la base de la semana) */
+      /* descarga: 85% de la carga registrada en la Semana 1 (−15%); va antes de la marca real, que ignoraría la base de la semana */
       if(ult && deload){
-        var kgD0 = redondear(ult.ref.kg * 0.85);
-        return { kg: kgD0, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu base de S' + (ult.w + 1) + ' (' + fmtKg(ult.ref.kg) + ' kg)' };
+        var kgD0 = redondear(ult.ref.kg * (1 - JP_PCT_DESCARGA / 100), 1.25);
+        return { kg: kgD0, pre: true, origen: 'descarga', txt: 'Descarga S' + (c.w + 1) + ' · −' + JP_PCT_DESCARGA + '% de tu base de S' + (ult.w + 1) + ' (' + fmtKg(ult.ref.kg) + ' kg) = ' + fmtKg(kgD0) + ' kg' + (ult.ref.reps ? ' × ' + ult.ref.reps + ' reps' : '') + ' con RIR 4' };
       }
       var real = e1rmReal(e.nombre);
       if(real > 0 && rr){
