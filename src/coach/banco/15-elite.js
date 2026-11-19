@@ -92,12 +92,17 @@
     F: { 'Pecho': [3, 9], 'Espalda': [10, 16], 'Hombro lateral': [8, 14], 'Hombro posterior': [4, 12], 'Hombro anterior': [0, 8], 'Bíceps': [6, 12], 'Tríceps': [6, 12], 'Cuádriceps': [8, 14], 'Isquios': [8, 14], 'Glúteo': [20, 36], 'Gemelos': [6, 12], 'Core': [6, 15] }
   };
   /* movimientos que no se ofrecen a la base de alumnas como opción por defecto (poco aplicables): se siguen pudiendo elegir a mano */
+  /* planes de 3 días: con una sola exposición semanal por grupo y 3 sesiones largas, el piso de los grupos secundarios baja un poco para que cada sesión siga siendo recuperable */
+  var RANGOS3 = {
+    M: { 'Hombro lateral': [8, 20], 'Bíceps': [6, 14], 'Tríceps': [6, 14], 'Isquios': [6, 14], 'Gemelos': [5, 14], 'Cuádriceps': [9, 20] },
+    F: { 'Bíceps': [5, 12], 'Tríceps': [5, 12], 'Gemelos': [5, 12] }
+  };
   var NO_FEM = ['Dominadas lastradas', 'Rueda abdominal', 'Elevación de piernas colgado'];
 
   /* tempo propio de las variantes de hip thrust (pausa de 2 segundos arriba): se conserva al cambiar de variante */
   var TP = { 'Hip thrust con barra': '2012', 'Hip thrust en máquina': '2012', 'Hip thrust a una pierna': '2012' };
 
-  PB.ELITE = { CAT: CAT, FAM: FAM, RANGOS: RANGOS, NO_FEM: NO_FEM, TP: TP, VER: 1 };
+  PB.ELITE = { CAT: CAT, FAM: FAM, RANGOS: RANGOS, RANGOS3: RANGOS3, NO_FEM: NO_FEM, TP: TP, VER: 1 };
 
   /* =========================================================
      HOMBRES
@@ -131,16 +136,16 @@
     ] };
 
   D.E_M_LEG3 = { short: 'PIERNA', label: 'Pierna Completa', title: 'Pierna Completa · Más Laterales y Brazos', wu: 'legs', chips: ['🦵 Pierna', '🎯 Hack + cadena posterior + laterales', '🔥 Cierre metabólico'],
-    foco: 'Día de pierna completa pensado para frecuencia 3: el hack squat es el ancla (cuádriceps cargado a fondo y sin fatiga lumbar), el peso muerto rumano es el único patrón axial pesado del día y carga la cadena posterior estirada, y los aislamientos y el gemelo con pausa cierran el volumen. Como el split es de tres días, este día suma una segunda exposición semanal de deltoide lateral y un biset de brazos. Es el día más largo de la semana: llegá comido y descansado.',
+    foco: 'Día de pierna completa pensado para frecuencia 3: el hack squat es el ancla (cuádriceps cargado a fondo y sin fatiga lumbar), el peso muerto rumano es el único patrón axial pesado del día y carga la cadena posterior estirada, y los aislamientos y el gemelo con pausa cierran el volumen. Como el split es de tres días, este día suma una segunda exposición semanal de deltoide lateral y un biset corto de brazos. Son 32 series efectivas, pensadas para rendir de verdad en cada una y recuperar a tiempo para el próximo Push: llegá comido y descansado.',
     filas: [
       E('F', 'Hack squat', '4x6-8|1|180', { tp: ['3110'], n: 'Espalda apoyada, pies a media altura y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: cargá fuerte sin pagar con la espalda baja.' }),
       E('H', 'Peso muerto rumano', '4x6-8|1|150', { tp: ['3210'], n: 'Único patrón axial pesado del día: cadera atrás, barra pegada a las piernas y pausa corta abajo en el estiramiento. Si la espalda pierde su forma, ahí terminó el rango.' }),
       E('H', 'Bulgarian split squat', '3x8-10 por lado|1|90', { tp: ['3110'] }),
       E('A', 'Extensión de cuádriceps', '3x12-15|0|60|drop'),
-      E('A', 'Curl femoral sentado', '4x10-12|0|75', { n: 'Sentado el isquio queda más estirado que tumbado: es la versión que más hipertrofia da. Bajá en 3 segundos.' }),
-      E('A', 'Elevación de gemelos de pie', '6x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
-      E('A', 'Elevaciones laterales con mancuernas', '4x15-20|0|45'),
-      E('B', ['Curl de bíceps con barra Z', 'Press francés en banco plano'], '3x8-10/8-10|0|60', { n: 'Biset de brazos con la misma barra Z: bíceps y tríceps antagonistas, sin pausa entre uno y otro.' }),
+      E('A', 'Curl femoral sentado', '3x10-12|0|75', { n: 'Sentado el isquio queda más estirado que tumbado: es la versión que más hipertrofia da. Bajá en 3 segundos.' }),
+      E('A', 'Elevación de gemelos de pie', '5x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
+      E('A', 'Elevaciones laterales con mancuernas', '3x15-20|0|45'),
+      E('B', ['Curl de bíceps con barra Z', 'Press francés en banco plano'], '2x8-10/8-10|0|60', { n: 'Biset de brazos con la misma barra Z: bíceps y tríceps antagonistas, sin pausa entre uno y otro.' }),
       E('C', 'Crunch en polea alta', '3x12-15|1|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };

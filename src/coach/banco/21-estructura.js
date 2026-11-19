@@ -226,7 +226,9 @@
 
   /* ---------- volumen semanal por grupo muscular ---------- */
   function volumen(dias, genero, niv){
-    var tot = {}, R = RANGOS[String(genero || '').toLowerCase() === 'f' ? 'F' : 'M'], esc = esAvanzado(niv) ? 1 : 0.7;
+    var tot = {}, k = String(genero || '').toLowerCase() === 'f' ? 'F' : 'M', R = RANGOS[k], esc = esAvanzado(niv) ? 1 : 0.7;
+    var r3 = ((dias || []).length <= 3 && EL.RANGOS3) ? EL.RANGOS3[k] : null;      /* plan de 3 días: pisos ajustados en los grupos secundarios */
+    if(r3){ R = Object.assign({}, R, r3); }
     (dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ var m = parsearBloque(b); if(m) m.ex.forEach(function(e){ if(e.g) tot[e.g] = (tot[e.g] || 0) + (e.sets || 0); }); }); });
     return Object.keys(R).map(function(g){
       var lo = Math.round(R[g][0] * esc), hi = Math.round(R[g][1] * esc), v = tot[g] || 0;
