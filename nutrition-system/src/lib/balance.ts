@@ -1,3 +1,4 @@
+import { portionCap, withCapSex } from './portionCaps';
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
 import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2 } from './foods';
 import { fitAltsToMain } from './menuOptions';
@@ -10,28 +11,9 @@ export const BALANCE_TOLERANCE = 0.03;
 /** Tolerancia de cierre calórico del día: 100 % ± 1 % (tolerancia cero a "kcal pendientes" con todo tildado). */
 export const KCAL_TOLERANCE = 0.01;
 /** Tope de aceite por comida (1 cda); el resto de la brecha de grasas va a palta / frutos secos. */
-const OIL_CAP_G = 15;
-/** Topes gastronómicos por comida: aceite 1 cda; palta 70 g (acompaña ensalada o tostada, nunca porción masiva). */
-const CAPS: Record<string, number> = { oliva: OIL_CAP_G, palta: 70, leche: 500, isotonica: 1000, whey: 60, huevo: 250, claras: 330 };
-/** Porción máxima realista por comida según el grupo (el cierre nunca prescribe 1,6 kg de yogur). */
-const GROUP_MAX: Record<string, number> = {
-  'lean-protein': 300,
-  'dairy-protein': 350,
-  eggs: 250,
-  whey: 60,
-  'protein-snack': 100,
-  starch: 450,
-  cereal: 120,
-  fruit: 300,
-  'sport-carb': 120,
-  fat: 40,
-};
-const foodCap = (foodId: string | undefined) => {
-  if (!foodId) return Infinity;
-  const ref = FOOD_BY_ID[foodId];
-  return CAPS[foodId] ?? (ref ? (GROUP_MAX[ref.group] ?? Infinity) : Infinity);
-};
-const capOf = (i: FoodItem, m: Meal) => (i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : foodCap(i.foodId));
+// Topes: la Tabla Única de Topes por Toma (portionCaps.ts), según el tipo de comida y el sexo del atleta.
+const foodCap = (foodId: string | undefined, role?: Meal['role']) => (foodId ? portionCap(foodId, { role }).max : Infinity);
+const capOf = (i: FoodItem, m: Meal) => (i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : foodCap(i.foodId, m.role));
 
 type Anchor = 'p' | 'c' | 'f';
 type DayTotals = Macros & { kcal: number };
@@ -197,6 +179,10 @@ function injectSource(meals: Meal[], day: DayMode, macro: 'c' | 'f', gap: number
  * (y por ende de kcal, con la proteína ya fijada por la IA / el coach).
  */
 export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: DayBalance[] } {
+  return withCapSex(plan.profile.sex, () => balancePlanInner(plan));
+}
+
+function balancePlanInner(plan: AthletePlan): { plan: AthletePlan; report: DayBalance[] } {
   const t = computeTelemetry(plan);
   let meals = plan.meals;
   const report: DayBalance[] = [];

@@ -127,6 +127,20 @@ export const FOODS: FoodRef[] = [
   { id: 'whey-isolate', name: 'Whey protein aislado (sin lactosa)', group: 'whey', unit: { label: 'scoop', grams: 30 }, p: 88, c: 2, f: 1, leucine: 9.5, equiv: ['whey'] },
   { id: 'tofu', name: 'Tofu firme', group: 'lean-protein', p: 15, c: 2, f: 8, leucine: 1.2 },
   { id: 'garbanzos', name: 'Garbanzos (cocidos)', group: 'starch', p: 8.9, c: 27, f: 2.6, leucine: 0.63, equiv: ['lentejas'] },
+  // Banco de planes maestros: platos típicos argentinos y variantes Sin TACC / vegetariana (valores promedio de tabla AR).
+  { id: 'jamon', name: 'Jamón cocido natural', group: 'lean-protein', unit: { label: 'feta', grams: 20 }, p: 19, c: 1, f: 3.5, leucine: 1.5 },
+  { id: 'granola', name: 'Granola', group: 'cereal', p: 9, c: 64, f: 14, leucine: 0.7, equiv: ['avena'] },
+  { id: 'polenta', name: 'Polenta (cocida)', group: 'starch', p: 1.6, c: 15, f: 0.3, leucine: 0.15, equiv: ['papa', 'arroz'] },
+  { id: 'calabaza', name: 'Calabaza / zapallo (cocido)', group: 'starch', p: 1, c: 7, f: 0.1, leucine: 0.05, equiv: ['papa', 'batata'] },
+  { id: 'harina-arroz', name: 'Harina de arroz sin TACC', group: 'cereal', p: 6, c: 80, f: 1.4, leucine: 0.5 },
+  { id: 'pan-sin-tacc', name: 'Pan sin TACC (sello oficial)', group: 'cereal', unit: { label: 'rebanada', grams: 30 }, p: 3, c: 50, f: 5, leucine: 0.2, equiv: ['galletas-arroz', 'tostadas-arroz'] },
+  { id: 'fideos-sin-tacc', name: 'Fideos de arroz o maíz sin TACC (cocidos)', group: 'starch', p: 2.5, c: 30, f: 0.5, leucine: 0.2, equiv: ['arroz', 'papa'] },
+  { id: 'pan-arabe', name: 'Pan árabe integral', group: 'cereal', unit: { label: 'u', grams: 60 }, p: 9, c: 50, f: 2.5, leucine: 0.65, equiv: ['pan'] },
+  { id: 'noquis', name: 'Ñoquis de papa (cocidos)', group: 'starch', p: 3.5, c: 30, f: 1, leucine: 0.25, equiv: ['fideos', 'papa'] },
+  { id: 'porotos', name: 'Porotos (cocidos)', group: 'starch', p: 8.5, c: 22, f: 0.5, leucine: 0.7, equiv: ['lentejas', 'garbanzos'] },
+  { id: 'soja-texturizada', name: 'Soja texturizada (hidratada)', group: 'lean-protein', p: 17, c: 11, f: 0.4, leucine: 1.3, equiv: ['tofu'] },
+  { id: 'naranja', name: 'Naranja / mandarina', group: 'fruit', unit: { label: 'u', grams: 150 }, p: 0.9, c: 10, f: 0.2, leucine: 0.02 },
+  { id: 'pan-rallado', name: 'Pan rallado (rebozado)', group: 'cereal', p: 12, c: 72, f: 2, leucine: 0.8 },
 ];
 
 export const FOOD_BY_ID: Record<string, FoodRef> = Object.fromEntries(FOODS.map((f) => [f.id, f]));

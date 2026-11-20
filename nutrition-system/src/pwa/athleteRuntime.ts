@@ -308,6 +308,7 @@ const runtime = String.raw`
   // ---------- Medidas caseras en lenguaje cotidiano (misma lógica que src/lib/household.ts) ----------
   function humanQty(q, m) {
     var h = q >= 3 ? Math.round(q) : Math.round(q * 2) / 2, half = m.f ? 'media' : 'medio', of = m.of || '';
+    if (q < 0.875 && q >= 0.625) return '3/4 de ' + m.one + of;
     if (h <= 0.5) return half + ' ' + m.one + of;
     if (h === 1) return '1 ' + m.one + of;
     if (h === 1.5) return '1 ' + m.one + ' y ' + half + of;
@@ -326,7 +327,7 @@ const runtime = String.raw`
     parts[0] = p;
     return parts.join(' ');
   }
-  // "≈ 2 potes de 180 g", "≈ 1 bife mediano", "≈ 5 cdas soperas", "≈ 2 unidades" (nada de "2 2 unidadess").
+  // "≈ 2 potes de 200 g", "≈ 1 bife mediano", "≈ 5 cdas soperas", "≈ 2 unidades" (nada de "2 2 unidadess").
   function unitHintFor(foodId, grams) {
     if (!foodId || !(grams > 0)) return '';
     var list = D.house && D.house[foodId];
@@ -863,7 +864,7 @@ const runtime = String.raw`
   function portionsPanel() {
     var list = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ CALCULADORA DE PORCIONES VISUALES · SIN BALANZA ]</div><h3>Tu mano es la medida</h3>';
-    h += '<div class="hands"><div><b>✋ 1 palma de la mano</b><span>≈ 110 g de carne, pollo o pescado cocido (el grosor y el tamaño de tu palma, sin los dedos)</span></div><div><b>✊ 1 puño</b><span>≈ 150 g de arroz, fideos o papa cocidos · 1 fruta mediana</span></div><div><b>🤲 1 mano ahuecada</b><span>≈ 30 g de avena, tutucas o cereal</span></div><div><b>👍 1 pulgar</b><span>≈ 15 g de frutos secos o pasta de maní</span></div><div><b>🥄 1 cda</b><span>≈ 13 g de aceite · 20 g de miel · 15 g de queso untable</span></div><div><b>🥛 1 pote / 1 taza</b><span>≈ 180 g de yogur · 250 ml de leche</span></div></div>';
+    h += '<div class="hands"><div><b>✋ 1 palma de la mano</b><span>≈ 110 g de carne, pollo o pescado cocido (el grosor y el tamaño de tu palma, sin los dedos)</span></div><div><b>✊ 1 puño</b><span>≈ 150 g de arroz, fideos o papa cocidos · 1 fruta mediana</span></div><div><b>🤲 1 mano ahuecada</b><span>≈ 30 g de avena, tutucas o cereal</span></div><div><b>👍 1 pulgar</b><span>≈ 15 g de frutos secos o pasta de maní</span></div><div><b>🥄 1 cda</b><span>≈ 13 g de aceite · 20 g de miel · 15 g de queso untable</span></div><div><b>🥛 1 pote / 1 taza</b><span>≈ 200 g de yogur · 250 ml de leche</span></div></div>';
     h += '<p class="muted" style="font-size:12px;margin-top:10px">Equivalencias de lo que elegiste hoy (día ' + S.mode.toUpperCase() + '). Si cambiás de opción en una comida, esta lista se actualiza:</p>';
     list.forEach(function (x) {
       var otl = x.alt ? x.alt.title : x.m.title;

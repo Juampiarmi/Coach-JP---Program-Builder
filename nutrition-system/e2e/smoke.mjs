@@ -88,6 +88,19 @@ try {
   await page.getByTitle('Eliminar comida').first().click();
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await page.getByText('Plan desactualizado.').isVisible(), 'Indicador: plan desactualizado después de editar');
+
+  // Planes listos: filtrar, ver un plan y aplicarlo al alumno.
+  await page.locator('section nav button', { hasText: 'Planes listos' }).click();
+  await page.getByRole('button', { name: 'Sin TACC', exact: true }).click();
+  const cards = page.locator('[data-bank-card]');
+  check((await cards.count()) === 4, `Planes listos: 4 planes por sexo y variante (${await cards.count()})`);
+  await cards.first().click();
+  check((await page.getByRole('button', { name: /Aplicar a este alumno/ }).isVisible()), 'Planes listos: detalle del plan con botón Aplicar');
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: /Aplicar a este alumno/ }).click();
+  await page.waitForTimeout(200);
+  check((await meals.count()) > 0, 'Planes listos: al aplicar abre Comidas con el plan nuevo');
+  check((await page.getByText(/Galletas de arroz|Arroz|Papa|Batata|Polenta/).count()) > 0, 'Planes listos: comidas reemplazadas por las del plan Sin TACC');
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

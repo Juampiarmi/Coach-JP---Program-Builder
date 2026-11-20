@@ -1,0 +1,693 @@
+import { CITES } from './evidence';
+import { FOOD_BY_ID } from './foods';
+import { comboSteps, type Combo, type ComboPart } from './menuOptions';
+import { portionCap, type CapCtx } from './portionCaps';
+import { itemFromFood, uid } from './seed';
+import type { FoodItem, Macros, Meal, MealDay, MealRole, Phase, Sex } from './types';
+
+// =====================================================================================================
+// BANCO DE PLANES MAESTROS (nutrición deportiva · Argentina)
+// 8 planes maestros (mujer / hombre × definición, recomposición, hipertrofia, rendimiento) × 3 variantes
+// (estándar, sin TACC, vegetariano) = 24 planes. Cada uno con día de entreno y de descanso, escalón calórico
+// automático (A base / B denso) y 4-5 opciones reales por comida.
+// Escalado: los gramos salen de los macros del objetivo (g/kg × peso del alumno), siempre dentro de la
+// Tabla Única de Topes (portionCaps.ts). Si faltan calorías se suma densidad (más carbo / grasa dentro del tope,
+// aceite, fruta de postre, frutos secos) o una colación extra; nunca se agranda un lácteo o una verdura.
+// =====================================================================================================
+
+export type BankGoal = 'def' | 'rec' | 'hip' | 'ren';
+export type BankVariant = 'std' | 'stacc' | 'veg';
+export type BankPlanId = `${Sex}-${BankGoal}`;
+
+export interface BankSelection {
+  plan: BankPlanId;
+  variant: BankVariant;
+}
+
+interface GoalDef {
+  id: BankGoal;
+  label: string;
+  short: string;
+  phase: Phase;
+  anamnesisGoal: string;
+  /** g/kg: proteína por sexo; carbos y grasas por día. */
+  p: Record<Sex, number>;
+  on: { c: number; f: number };
+  off: { c: number; f: number };
+  balance: string;
+  rationale: string;
+  evidence: { label: string; doi?: string }[];
+}
+
+export const BANK_GOALS: GoalDef[] = [
+  {
+    id: 'def',
+    label: 'Definición',
+    short: 'Pérdida de grasa con proteína alta',
+    phase: 'recomp',
+    anamnesisGoal: 'cut',
+    p: { F: 2.2, M: 2.4 },
+    on: { c: 3.0, f: 0.8 },
+    off: { c: 1.8, f: 1.0 },
+    balance: 'Déficit de −15 a −20 %',
+    rationale: 'Proteína alta para conservar el músculo en déficit, carbos alrededor del entreno los días de entreno y comidas de alta saciedad (proteína + verduras + fibra).',
+    evidence: [CITES.protein, CITES.bodyComp, CITES.morton],
+  },
+  {
+    id: 'rec',
+    label: 'Recomposición',
+    short: 'Déficit leve, ciclado entreno / descanso',
+    phase: 'maintenance',
+    anamnesisGoal: 'recomp',
+    p: { F: 2.2, M: 2.2 },
+    on: { c: 4.0, f: 0.9 },
+    off: { c: 2.5, f: 1.1 },
+    balance: 'Déficit leve a mantenimiento',
+    rationale: 'Más carbos los días de entreno para rendir y recuperar, menos los de descanso; proteína constante para ganar músculo mientras baja la grasa.',
+    evidence: [CITES.bodyComp, CITES.protein, CITES.timing],
+  },
+  {
+    id: 'hip',
+    label: 'Hipertrofia',
+    short: 'Volumen limpio (+250 a +400 kcal)',
+    phase: 'surplus',
+    anamnesisGoal: 'hypertrophy',
+    p: { F: 2.0, M: 2.0 },
+    on: { c: 5.5, f: 1.0 },
+    off: { c: 4.0, f: 1.1 },
+    balance: 'Superávit controlado',
+    rationale: 'Superávit chico para ganar músculo con poca grasa, proteína repartida en 5-6 tomas y carga de glucógeno antes y después de entrenar.',
+    evidence: [CITES.iraki, CITES.protein, CITES.issnReview],
+  },
+  {
+    id: 'ren',
+    label: 'Rendimiento CrossFit / Híbrido',
+    short: 'Alta disponibilidad de carbohidratos',
+    phase: 'maintenance',
+    anamnesisGoal: 'peri',
+    p: { F: 1.8, M: 1.8 },
+    on: { c: 6.0, f: 1.0 },
+    off: { c: 3.5, f: 1.0 },
+    balance: 'Mantenimiento, carbos altos los días de entreno',
+    rationale: 'Carbos altos los días de entreno para sostener sesiones intensas y dobles, recarga rápida después de entrenar y proteína suficiente para recuperar.',
+    evidence: [CITES.carbs, CITES.burke, CITES.timing],
+  },
+];
+
+export const BANK_VARIANTS: { id: BankVariant; label: string; note: string }[] = [
+  { id: 'std', label: 'Estándar', note: 'Omnívoro, comidas típicas de la mesa argentina.' },
+  {
+    id: 'stacc',
+    label: 'Sin TACC',
+    note: 'Apto celíacos: arroz, papa, batata, polenta, galletas de arroz y panqueques de harina de arroz primero; pan y fideos sin TACC como alternativa.',
+  },
+  { id: 'veg', label: 'Vegetariano', note: 'Ovo-lácteo: huevos, lácteos, legumbres, tofu y soja, con la proteína justa en cada comida principal.' },
+];
+
+export const STACC_WARNING =
+  'SIN TACC: usá tostadora, tabla, colador y aceite de fritura aparte (contaminación cruzada). Fiambres, quesos, yogures, dulces, salsas y suplementos sólo con el sello oficial «Sin TACC».';
+
+/** Pisos de energía: protegen la energía disponible (≥ 30 kcal/kg de masa magra). */
+export const KCAL_FLOOR: Record<Sex, number> = { F: 1400, M: 1800 };
+/** Escalón B (denso) a partir de estas kcal del día de entreno. */
+const TIER_B: Record<Sex, number> = { F: 1700, M: 2600 };
+export const SEX_LABEL: Record<Sex, string> = { F: 'Mujer activa', M: 'Hombre activo' };
+export const SEX_RANGE: Record<Sex, string> = { F: '1.400 – 2.100 kcal', M: '2.000 – 3.200 kcal' };
+/** Pesos de referencia (vista previa y prueba automática). */
+export const REF_WEIGHTS: Record<Sex, number[]> = { F: [48, 54, 60, 66, 72, 78], M: [62, 70, 78, 86, 94, 102] };
+
+export const BANK_PLAN_IDS: BankPlanId[] = (['F', 'M'] as Sex[]).flatMap((s) => BANK_GOALS.map((g) => `${s}-${g.id}` as BankPlanId));
+export const goalOf = (id: BankPlanId) => BANK_GOALS.find((g) => g.id === id.split('-')[1])!;
+export const sexOf = (id: BankPlanId) => id.split('-')[0] as Sex;
+
+// ---------------------------------------------------------------------------------------------------------
+// Recetas (4-5 opciones por comida y variante). r: macro que ajusta ese ingrediente; x: cantidad fija.
+// ---------------------------------------------------------------------------------------------------------
+
+type SlotKind = 'breakfast' | 'mid' | 'lunch' | 'pre' | 'merienda' | 'dinner' | 'night' | 'extra';
+type R = Omit<Combo, 'roles'>;
+const P = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'p', ...extra });
+const C = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'c', ...extra });
+const F = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'f', ...extra });
+const X = (id: string, g: number): ComboPart => ({ id, r: 'x', g });
+const SELLO = 'Elegí fiambres, quesos, yogures, dulces y suplementos con el sello oficial «Sin TACC».';
+
+const STD: Record<SlotKind, R[]> = {
+  breakfast: [
+    { title: 'Café con leche, tostadas integrales con queso untable y huevos revueltos', parts: [P('huevo'), C('pan'), X('leche', 200), X('untable', 15)], steps: ['Prepará el café con {leche} de leche descremada.', 'Batí {huevo} y cocinalos revueltos en sartén antiadherente 2-3 min.', 'Tostá {pan} de pan integral y untalo con {untable} de queso untable.'] },
+    { title: 'Panqueques de avena con frutillas y yogur', parts: [P('claras', { min: 66 }), C('avena'), X('huevo', 50), X('frutillas', 150), X('yogur', 150)], steps: ['Mezclá {avena} de avena con {huevo} y {claras}.', 'Cociná los panqueques en sartén antiadherente 1-2 min por lado.', 'Serví con {yogur} de yogur y {frutillas} de frutillas. Con mate o café.'] },
+    { title: 'Yogur con granola y banana[ con proteína|whey][ y nueces|nueces]', parts: [X('yogur', 200), P('whey', { min: 0 }), C('granola'), F('nueces'), X('banana', 100)], steps: ['Poné {yogur} de yogur en un bowl[ y mezclá {whey} de proteína en polvo].', 'Sumá {granola} de granola y {banana} de banana en rodajas.', '[Terminá con {nueces} de nueces picadas.] Con mate o café.'] },
+    { title: 'Tostado de jamón y queso con café con leche y una mandarina', parts: [P('jamon'), C('pan'), X('queso-light', 30), X('leche', 200), X('naranja', 150)], steps: ['Armá el tostado con {pan} de pan integral, {jamon} de jamón cocido natural y {queso-light} de queso light.', 'Tostalo en sandwichera o sartén hasta que se derrita el queso.', 'Acompañá con café con {leche} de leche y {naranja} de mandarina.'] },
+    { title: 'Mate con tostadas, ricota y miel + huevos duros', parts: [P('huevo'), C('pan'), X('ricota', 60), X('miel', 10)], steps: ['Herví {huevo} 9-10 min.', 'Tostá {pan} de pan integral y untalo con {ricota} de ricota y {miel} de miel.', 'Con mate amargo o café.'] },
+  ],
+  mid: [
+    { title: 'Yogur con avena y frutillas', parts: [P('yogur', { min: 150 }), C('avena'), X('frutillas', 100)], steps: ['Mezclá {yogur} de yogur con {avena} de avena.', 'Sumá {frutillas} de frutillas cortadas.'] },
+    { title: 'Sándwich integral de atún con tomate', parts: [P('atun'), C('pan'), X('vegetales', 50)], steps: ['Escurrí {atun} de atún al natural.', 'Armá el sándwich con {pan} de pan integral, el atún y {vegetales} de tomate y lechuga.'] },
+    { title: 'Mate con galletas de arroz, pasta de maní y banana', parts: [C('galletas-arroz'), F('mani'), X('banana', 120)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {banana} de banana. Con mate.'] },
+    { title: 'Frutos secos, fruta y un vaso de leche', parts: [P('leche', { min: 200 }), F('nueces'), X('manzana', 180)], steps: ['Serví {nueces} de nueces y {manzana} de manzana.', 'Tomá {leche} de leche descremada.'] },
+  ],
+  lunch: [
+    { title: 'Pechuga grillada con arroz yamaní y ensalada mixta', parts: [P('pollo'), C('yamani'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {pollo} de pechuga 5-6 min por lado.', 'Serví con {yamani} de arroz yamaní cocido.', 'Ensalada mixta con {vegetales} de verduras y {oliva} de aceite de oliva.'] },
+    { title: 'Peceto al horno con papas al natural y ensalada', parts: [P('nalga'), C('papa'), F('oliva'), X('vegetales', 200)], steps: ['Cociná {nalga} de peceto al horno a 200 °C, 25-30 min.', 'Herví {papa} de papa con cáscara.', 'Ensalada de {vegetales} de tomate y lechuga con {oliva} de aceite de oliva.'] },
+    { title: 'Fideos con bolognesa magra', parts: [P('picada'), C('fideos'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Dorá {picada} de carne picada especial con cebolla[ y {oliva} de aceite].', 'Sumá {vegetales} de salsa de tomate natural y cociná 10 min.', 'Mezclá con {fideos} de fideos cocidos al dente.'] },
+    { title: 'Merluza a la plancha con puré de calabaza y papa', parts: [P('merluza'), C('papa'), F('oliva'), X('calabaza', 150)], steps: ['Cociná {merluza} de merluza a la plancha 3-4 min por lado.', 'Pisá {papa} de papa y {calabaza} de calabaza hervidas con {oliva} de aceite de oliva.'] },
+    { title: 'Ensalada completa de pollo, huevo y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('huevo', 50), X('vegetales', 200)], steps: ['Cortá {pollo} de pollo grillado en tiras y {huevo} de huevo duro.', 'Mezclá con {arroz} de arroz frío y {vegetales} de verduras.', 'Condimentá con {oliva} de aceite de oliva y limón.'] },
+  ],
+  pre: [
+    { title: 'Yogur con banana y galletas de arroz', parts: [P('yogur', { min: 150 }), C('banana'), X('galletas-arroz', 18)], steps: ['Serví {yogur} de yogur con {banana} de banana en rodajas.', 'Acompañá con {galletas-arroz} de galletas de arroz. Con mate.'] },
+    { title: 'Licuado de leche, banana y avena[ con proteína|whey]', parts: [P('whey', { min: 0 }), C('banana'), X('leche', 250), X('avena', 20)], steps: ['Licuá {leche} de leche con {banana} de banana, {avena} de avena[ y {whey} de proteína en polvo].'] },
+    { title: 'Sándwich de pan lactal con jamón y miel', parts: [P('jamon'), C('pan-lactal'), X('miel', 10)], steps: ['Armá el sándwich con {pan-lactal} de pan lactal y {jamon} de jamón cocido.', 'Sumá {miel} de miel en una de las tapas.'] },
+    { title: 'Galletas de arroz con dulce de membrillo y un vaso de leche', parts: [P('leche', { min: 200 }), C('galletas-arroz'), X('dulce-membrillo', 20)], steps: ['Untá {galletas-arroz} de galletas de arroz con {dulce-membrillo} de dulce de membrillo.', 'Tomá {leche} de leche.'] },
+    { title: 'Alfajor proteico con fruta', parts: [X('alfajor-proteico', 50), C('banana')], steps: ['Comé {alfajor-proteico} de alfajor proteico y {banana} de banana 60-90 min antes de entrenar.'] },
+    { title: 'Banana con galletas de arroz y miel', parts: [C('banana'), X('galletas-arroz', 18), X('miel', 10)], steps: ['Comé {banana} de banana con {galletas-arroz} de galletas de arroz y {miel} de miel 60-90 min antes de entrenar.'] },
+  ],
+  merienda: [
+    { title: 'Mate con yogur y frutillas[ + nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces'), X('frutillas', 150)], steps: ['Serví {yogur} de yogur con {frutillas} de frutillas.', '[Sumá {nueces} de nueces.] Con mate.'] },
+    { title: 'Tostadas de arroz con ricota y tomate', parts: [P('ricota'), C('tostadas-arroz'), X('vegetales', 50)], steps: ['Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota.', 'Sumá {vegetales} de tomate en rodajas, sal y orégano.'] },
+    { title: 'Mate, huevo duro y fruta', parts: [P('huevo'), X('manzana', 180)], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {manzana} de manzana. Con mate.'] },
+    { title: 'Café con leche y tostado de jamón y queso', parts: [P('jamon'), C('pan'), X('leche', 200), X('queso-light', 30)], steps: ['Armá el tostado con {pan} de pan integral, {jamon} de jamón y {queso-light} de queso light.', 'Acompañá con café con {leche} de leche.'] },
+  ],
+  dinner: [
+    { title: 'Wok de pollo con verduras y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {pollo} de pollo en tiras con {oliva} de aceite.', 'Sumá {vegetales} de verduras (morrón, zanahoria, zucchini) 3-4 min.', 'Serví con {arroz} de arroz cocido.'] },
+    { title: 'Hamburguesas caseras de carne magra con batata al horno y ensalada', parts: [P('picada'), C('batata'), F('oliva'), X('vegetales', 150)], steps: ['Formá las hamburguesas con {picada} de carne picada especial y cocinalas a la plancha.', 'Asá {batata} de batata en gajos a 200 °C, 30 min.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite.'] },
+    { title: 'Omelette de huevos y claras con queso y verduras + pan integral', parts: [P('claras', { min: 66 }), C('pan'), X('huevo', 100), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras salteadas y {queso-light} de queso light.', 'Acompañá con {pan} de pan integral.'] },
+    { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
+    { title: 'Wok de lomo con arroz y verduras', parts: [P('lomo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {lomo} de lomo en tiras con {oliva} de aceite a fuego fuerte.', 'Sumá {vegetales} de verduras y salsa de soja.', 'Serví con {arroz} de arroz.'] },
+  ],
+  night: [
+    { title: 'Yogur griego[ con nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces')], steps: ['Serví {yogur} de yogur[ con {nueces} de nueces].'] },
+    { title: 'Leche con proteína', parts: [P('whey'), X('leche', 250)], steps: ['Mezclá {leche} de leche con {whey} de proteína en polvo.'] },
+    { title: 'Huevos duros con tostada integral', parts: [P('huevo'), C('pan', { max: 30 })], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {pan} de pan integral.'] },
+    { title: 'Ricota con canela y miel', parts: [P('ricota'), X('miel', 10)], steps: ['Serví {ricota} de ricota con canela y {miel} de miel.'] },
+  ],
+  extra: [
+    { title: 'Colación extra: sándwich integral de jamón y queso', parts: [P('jamon'), C('pan'), X('queso-light', 30)], steps: ['Armá el sándwich con {pan} de pan integral, {jamon} de jamón y {queso-light} de queso light.'] },
+    { title: 'Colación extra: yogur con granola y banana', parts: [P('yogur', { min: 150 }), C('granola'), X('banana', 100)], steps: ['Serví {yogur} de yogur con {granola} de granola y {banana} de banana.'] },
+    { title: 'Colación extra: frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
+    { title: 'Colación extra: licuado de leche, banana y avena', parts: [P('leche', { min: 200 }), C('avena'), X('banana', 120)], steps: ['Licuá {leche} de leche con {banana} de banana y {avena} de avena.'] },
+  ],
+};
+
+const STACC: Record<SlotKind, R[]> = {
+  breakfast: [
+    { title: 'Panqueques de harina de arroz con huevo, queso untable y frutillas', parts: [P('huevo'), C('harina-arroz'), X('leche', 100), X('untable', 15), X('frutillas', 150)], steps: ['Mezclá {harina-arroz} de harina de arroz con {huevo} y {leche} de leche.', 'Cociná los panqueques en sartén antiadherente 1-2 min por lado.', 'Untalos con {untable} de queso untable y serví con {frutillas} de frutillas.', SELLO] },
+    { title: 'Mate con galletas de arroz, queso untable y huevos revueltos', parts: [P('huevo'), C('galletas-arroz'), X('untable', 20), X('naranja', 150)], steps: ['Batí {huevo} y cocinalos revueltos 2-3 min.', 'Untá {galletas-arroz} de galletas de arroz con {untable} de queso untable.', 'Acompañá con {naranja} de mandarina. Con mate.', SELLO] },
+    { title: 'Yogur con frutillas y banana[ + nueces|nueces]', parts: [P('yogur', { min: 150 }), C('banana'), F('nueces'), X('frutillas', 100)], steps: ['Serví {yogur} de yogur con {banana} de banana y {frutillas} de frutillas.', '[Sumá {nueces} de nueces.]', SELLO] },
+    { title: 'Café con leche y tostadas de pan sin TACC con jamón y queso', parts: [P('jamon'), C('pan-sin-tacc'), X('leche', 200), X('queso-light', 30)], steps: ['Tostá {pan-sin-tacc} de pan sin TACC en tostadora propia.', 'Armá con {jamon} de jamón y {queso-light} de queso light.', 'Acompañá con café con {leche} de leche.', SELLO] },
+    { title: 'Tostadas de arroz con ricota y miel + huevos duros', parts: [P('huevo'), C('tostadas-arroz'), X('ricota', 60), X('miel', 10)], steps: ['Herví {huevo} 9-10 min.', 'Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota y {miel} de miel.', SELLO] },
+  ],
+  mid: [
+    { title: 'Yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana en rodajas.', SELLO] },
+    { title: 'Galletas de arroz con queso untable y fruta', parts: [C('galletas-arroz'), X('untable', 30), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {untable} de queso untable.', 'Acompañá con {naranja} de mandarina.', SELLO] },
+    { title: 'Mate con frutos secos y fruta', parts: [F('nueces'), C('manzana')], steps: ['Comé {nueces} de nueces con {manzana} de manzana. Con mate.'] },
+    { title: 'Leche con cacao amargo y tostadas de arroz', parts: [P('leche', { min: 200 }), C('tostadas-arroz')], steps: ['Tomá {leche} de leche con cacao amargo.', 'Acompañá con {tostadas-arroz} de tostadas de arroz.', SELLO] },
+  ],
+  lunch: [
+    { title: 'Pechuga grillada con arroz y ensalada mixta', parts: [P('pollo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {pollo} de pechuga 5-6 min por lado.', 'Serví con {arroz} de arroz cocido.', 'Ensalada mixta con {vegetales} de verduras y {oliva} de aceite de oliva.'] },
+    { title: 'Peceto al horno con papas y batatas al natural', parts: [P('nalga'), C('papa'), F('oliva'), X('batata', 100), X('vegetales', 150)], steps: ['Cociná {nalga} de peceto al horno a 200 °C, 25-30 min.', 'Herví {papa} de papa y {batata} de batata.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite de oliva.'] },
+    { title: 'Merluza a la plancha con polenta cremosa y ensalada', parts: [P('merluza'), C('polenta'), F('oliva'), X('vegetales', 150)], steps: ['Cociná {merluza} de merluza a la plancha 3-4 min por lado.', 'Prepará {polenta} de polenta cremosa con agua y sal.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite de oliva.'] },
+    { title: 'Fideos de arroz sin TACC con bolognesa magra', parts: [P('picada'), C('fideos-sin-tacc'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Dorá {picada} de carne picada con cebolla[ y {oliva} de aceite].', 'Sumá {vegetales} de salsa de tomate (con sello Sin TACC) y cociná 10 min.', 'Mezclá con {fideos-sin-tacc} de fideos sin TACC, cocidos en una olla y colador propios.'] },
+    { title: 'Milanesas de peceto rebozadas en harina de arroz, al horno, con puré de calabaza', parts: [P('nalga'), C('papa'), X('harina-arroz', 20), X('huevo', 50), X('calabaza', 150)], steps: ['Pasá {nalga} de peceto en finas láminas por {huevo} batido y {harina-arroz} de harina de arroz.', 'Hornealas a 200 °C, 10 min por lado.', 'Pisá {papa} de papa y {calabaza} de calabaza hervidas.'] },
+  ],
+  pre: [
+    { title: 'Banana con galletas de arroz y miel', parts: [C('banana'), X('galletas-arroz', 18), X('miel', 10)], steps: ['Comé {banana} de banana con {galletas-arroz} de galletas de arroz y {miel} de miel 60-90 min antes de entrenar.'] },
+    { title: 'Yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana.', SELLO] },
+    { title: 'Licuado de leche y banana[ con proteína|whey]', parts: [P('whey', { min: 0 }), C('banana'), X('leche', 250)], steps: ['Licuá {leche} de leche con {banana} de banana[ y {whey} de proteína en polvo con sello Sin TACC].'] },
+    { title: 'Tostadas de pan sin TACC con dulce de membrillo y un vaso de leche', parts: [P('leche', { min: 200 }), C('pan-sin-tacc'), X('dulce-membrillo', 20)], steps: ['Tostá {pan-sin-tacc} de pan sin TACC y untalo con {dulce-membrillo} de dulce de membrillo.', 'Tomá {leche} de leche.', SELLO] },
+  ],
+  merienda: [
+    { title: 'Mate con yogur y frutillas[ + nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces'), X('frutillas', 150)], steps: ['Serví {yogur} de yogur con {frutillas} de frutillas.', '[Sumá {nueces} de nueces.] Con mate.', SELLO] },
+    { title: 'Tostadas de arroz con ricota y tomate', parts: [P('ricota'), C('tostadas-arroz'), X('vegetales', 50)], steps: ['Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota.', 'Sumá {vegetales} de tomate, sal y orégano.', SELLO] },
+    { title: 'Mate, huevo duro y fruta', parts: [P('huevo'), X('manzana', 180)], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {manzana} de manzana. Con mate.'] },
+    { title: 'Café con leche y pan sin TACC con queso', parts: [P('queso-light'), C('pan-sin-tacc'), X('leche', 200)], steps: ['Tostá {pan-sin-tacc} de pan sin TACC con {queso-light} de queso light.', 'Acompañá con café con {leche} de leche.', SELLO] },
+  ],
+  dinner: [
+    { title: 'Wok de pollo con verduras y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {pollo} de pollo en tiras con {oliva} de aceite.', 'Sumá {vegetales} de verduras 3-4 min (salsa de soja con sello Sin TACC).', 'Serví con {arroz} de arroz.'] },
+    { title: 'Hamburguesas caseras de carne pura con batata al horno', parts: [P('picada'), C('batata'), F('oliva'), X('vegetales', 150)], steps: ['Formá las hamburguesas con {picada} de carne picada pura (sin pan rallado) y cocinalas a la plancha.', 'Asá {batata} de batata en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
+    { title: 'Pizza de polenta con pollo, queso y tomate', parts: [P('pollo'), C('polenta'), X('queso-light', 30), X('vegetales', 100)], steps: ['Extendé {polenta} de polenta firme en una placa y dorala 15 min a 200 °C.', 'Cubrí con {vegetales} de tomate, {pollo} de pollo desmenuzado y {queso-light} de queso light.', 'Gratiná 5 min.', SELLO] },
+    { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
+    { title: 'Omelette con queso y verduras + pan sin TACC', parts: [P('claras', { min: 66 }), C('pan-sin-tacc'), X('huevo', 100), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras y {queso-light} de queso light.', 'Acompañá con {pan-sin-tacc} de pan sin TACC.', SELLO] },
+  ],
+  night: [
+    { title: 'Yogur griego[ con nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces')], steps: ['Serví {yogur} de yogur con {nueces} de nueces.', SELLO] },
+    { title: 'Leche con proteína', parts: [P('whey'), X('leche', 250)], steps: ['Mezclá {leche} de leche con {whey} de proteína en polvo con sello Sin TACC.'] },
+    { title: 'Huevos duros con galletas de arroz', parts: [P('huevo'), C('galletas-arroz', { max: 27 })], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {galletas-arroz} de galletas de arroz.'] },
+    { title: 'Ricota con canela y miel', parts: [P('ricota'), X('miel', 10)], steps: ['Serví {ricota} de ricota con canela y {miel} de miel.', SELLO] },
+  ],
+  extra: [
+    { title: 'Colación extra: yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana.', SELLO] },
+    { title: 'Colación extra: galletas de arroz con pasta de maní y fruta', parts: [C('galletas-arroz'), F('mani'), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {naranja} de mandarina.'] },
+    { title: 'Colación extra: frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
+    { title: 'Colación extra: licuado de leche y banana', parts: [P('leche', { min: 200 }), C('banana')], steps: ['Licuá {leche} de leche con {banana} de banana.'] },
+  ],
+};
+
+const VEG: Record<SlotKind, R[]> = {
+  breakfast: [
+    STD.breakfast[0],
+    STD.breakfast[1],
+    STD.breakfast[2],
+    { title: 'Tostado de queso y tomate con café con leche', parts: [P('queso-light'), C('pan'), X('leche', 200), X('vegetales', 50)], steps: ['Armá el tostado con {pan} de pan integral, {queso-light} de queso light y {vegetales} de tomate.', 'Acompañá con café con {leche} de leche.'] },
+    STD.breakfast[4],
+  ],
+  mid: [
+    STD.mid[0],
+    { title: 'Sándwich integral de huevo duro y tomate', parts: [P('huevo'), C('pan'), X('vegetales', 50)], steps: ['Herví {huevo} 9-10 min y cortalo en rodajas.', 'Armá el sándwich con {pan} de pan integral y {vegetales} de tomate y lechuga.'] },
+    STD.mid[2],
+    STD.mid[3],
+  ],
+  lunch: [
+    { title: 'Guiso de lentejas con arroz y huevo duro + yogur de postre', parts: [P('huevo'), C('lentejas'), F('oliva', { max: 10 }), X('arroz', 80), X('vegetales', 150), X('yogur', 150)], steps: ['Cociná {lentejas} de lentejas con {vegetales} de cebolla, morrón y zanahoria[ y {oliva} de aceite].', 'Serví con {arroz} de arroz y {huevo} de huevo duro.', 'De postre, {yogur} de yogur (suma la proteína que le falta a la legumbre).'] },
+    { title: 'Tofu grillado con arroz yamaní y verduras salteadas', parts: [P('tofu'), C('yamani'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {tofu} de tofu firme en cubos con salsa de soja.', 'Saltá {vegetales} de verduras con {oliva} de aceite.', 'Serví con {yamani} de arroz yamaní.'] },
+    { title: 'Milanesas de soja al horno con puré de papa', parts: [P('soja-texturizada'), C('papa'), F('oliva'), X('huevo', 50), X('pan-rallado', 20)], steps: ['Mezclá {soja-texturizada} de soja texturizada hidratada con {huevo} y formá las milanesas.', 'Pasalas por {pan-rallado} de pan rallado y hornealas 10 min por lado.', 'Serví con puré de {papa} de papa y {oliva} de aceite de oliva.'] },
+    { title: 'Ensalada completa de garbanzos, huevo, queso y arroz', parts: [P('huevo'), C('garbanzos'), F('oliva'), X('queso-light', 30), X('vegetales', 200)], steps: ['Mezclá {garbanzos} de garbanzos cocidos con {vegetales} de verduras.', 'Sumá {huevo} de huevo duro y {queso-light} de queso light en cubos.', 'Condimentá con {oliva} de aceite de oliva.'] },
+    { title: 'Omelette de claras con queso, papas al horno y ensalada', parts: [P('claras', { min: 66 }), C('papa'), F('oliva'), X('huevo', 50), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras} y cociná el omelette con {queso-light} de queso light.', 'Asá {papa} de papa en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
+  ],
+  pre: [STD.pre[0], STD.pre[1], { title: 'Tostadas de pan lactal con queso untable y miel', parts: [P('untable'), C('pan-lactal'), X('miel', 10)], steps: ['Untá {pan-lactal} de pan lactal con {untable} de queso untable y {miel} de miel.'] }, STD.pre[3], STD.pre[4]],
+  merienda: [STD.merienda[0], STD.merienda[1], STD.merienda[2], { title: 'Café con leche y tostado de queso', parts: [P('queso-light'), C('pan'), X('leche', 200)], steps: ['Armá el tostado con {pan} de pan integral y {queso-light} de queso light.', 'Acompañá con café con {leche} de leche.'] }],
+  dinner: [
+    { title: 'Wok de tofu con verduras y arroz', parts: [P('tofu'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {tofu} de tofu en cubos con {oliva} de aceite.', 'Sumá {vegetales} de verduras y salsa de soja.', 'Serví con {arroz} de arroz.'] },
+    { title: 'Pizza casera de pan árabe con queso, huevo y verduras', parts: [P('huevo'), C('pan-arabe'), X('queso-light', 40), X('vegetales', 100)], steps: ['Cubrí {pan-arabe} de pan árabe con {vegetales} de tomate y verduras.', 'Sumá {queso-light} de queso light y {huevo} de huevo.', 'Horneá 8-10 min a 220 °C.'] },
+    STD.dinner[2],
+    { title: 'Guiso de porotos y calabaza con huevo', parts: [P('huevo'), C('porotos'), F('oliva', { max: 10 }), X('calabaza', 150), X('vegetales', 100)], steps: ['Cociná {porotos} de porotos con {calabaza} de calabaza y {vegetales} de verduras[ con {oliva} de aceite].', 'Serví con {huevo} de huevo duro o poché.'] },
+    { title: 'Ñoquis de papa con salsa de tomate y ricota', parts: [P('ricota'), C('noquis'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Herví {noquis} de ñoquis hasta que floten.', 'Serví con {vegetales} de salsa de tomate[, {oliva} de aceite] y {ricota} de ricota por encima.'] },
+  ],
+  night: STD.night,
+  extra: [
+    { title: 'Colación extra: sándwich integral de queso y tomate', parts: [P('queso-light'), C('pan'), X('vegetales', 50)], steps: ['Armá el sándwich con {pan} de pan integral, {queso-light} de queso light y {vegetales} de tomate.'] },
+    STD.extra[1],
+    STD.extra[2],
+    STD.extra[3],
+  ],
+};
+
+export const RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = { std: STD, stacc: STACC, veg: VEG };
+
+// ---------------------------------------------------------------------------------------------------------
+// Estructura de cada día: comidas según escalón y reparto de macros por comida.
+// ---------------------------------------------------------------------------------------------------------
+
+interface SlotDef {
+  kind: SlotKind;
+  name: string;
+  role: MealRole;
+  time: string;
+  /** Peso relativo de proteína / carbos / grasas en el día. */
+  w: [number, number, number];
+}
+const SLOT: Record<SlotKind, SlotDef> = {
+  breakfast: { kind: 'breakfast', name: 'Desayuno', role: 'breakfast', time: '07:30', w: [1, 1, 1] },
+  mid: { kind: 'mid', name: 'Media mañana', role: 'snack', time: '10:30', w: [0.5, 0.5, 0.6] },
+  lunch: { kind: 'lunch', name: 'Almuerzo', role: 'lunch', time: '13:00', w: [1.3, 1.2, 1.2] },
+  pre: { kind: 'pre', name: 'Antes de entrenar', role: 'peri', time: '17:00', w: [0.5, 1, 0.2] },
+  merienda: { kind: 'merienda', name: 'Merienda', role: 'snack', time: '17:00', w: [0.6, 0.5, 0.7] },
+  dinner: { kind: 'dinner', name: 'Cena', role: 'dinner', time: '21:00', w: [1.3, 1.1, 1.1] },
+  night: { kind: 'night', name: 'Antes de dormir', role: 'snack', time: '22:30', w: [0.6, 0.2, 0.6] },
+  extra: { kind: 'extra', name: 'Colación extra', role: 'snack', time: '16:00', w: [0.4, 0.5, 0.4] },
+};
+
+function structure(sex: Sex, tierB: boolean, day: MealDay): SlotKind[] {
+  const on = day === 'on';
+  if (sex === 'F') {
+    if (!tierB) return on ? ['breakfast', 'lunch', 'pre', 'dinner'] : ['breakfast', 'lunch', 'merienda', 'dinner'];
+    return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner'];
+  }
+  if (!tierB) return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner'];
+  return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner', 'night'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner', 'night'];
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Motor: macros del objetivo → gramos dentro de los topes → cierre del día por densidad energética.
+// ---------------------------------------------------------------------------------------------------------
+
+type Tot = { p: number; c: number; f: number; kcal: number };
+const kcalOf = (m: { p: number; c: number; f: number }) => m.p * 4 + m.c * 4 + m.f * 9;
+const totals = (items: FoodItem[]): Tot => {
+  const t = items.reduce((a, i) => ({ p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }), { p: 0, c: 0, f: 0 });
+  return { ...t, kcal: kcalOf(t) };
+};
+
+/** Macros del día (g) a partir del objetivo y el peso; respeta el piso de energía subiendo los carbos. */
+export function dayTargets(goal: GoalDef, sex: Sex, weightKg: number) {
+  const mk = (d: { c: number; f: number }) => {
+    const p = goal.p[sex];
+    let c = d.c;
+    const kcal = kcalOf({ p: p * weightKg, c: c * weightKg, f: d.f * weightKg });
+    if (kcal < KCAL_FLOOR[sex]) c += (KCAL_FLOOR[sex] - kcal) / 4 / weightKg;
+    return { p, c: Math.round(c * 100) / 100, f: d.f };
+  };
+  const on = mk(goal.on);
+  const off = mk(goal.off);
+  const grams = (g: Macros) => ({ p: g.p * weightKg, c: g.c * weightKg, f: g.f * weightKg });
+  return { gkg: { on, off }, on: { ...grams(on), kcal: kcalOf(grams(on)) }, off: { ...grams(off), kcal: kcalOf(grams(off)) } };
+}
+
+const stepOf = (id: string) => {
+  const u = FOOD_BY_ID[id]?.unit;
+  if (id === 'huevo') return 50;
+  if (id === 'claras') return 33;
+  if (u && u.grams <= 60 && FOOD_BY_ID[id].group !== 'dairy-protein') return u.grams;
+  return 5;
+};
+
+interface Ctx extends CapCtx {
+  sex: Sex;
+}
+
+/** Gramos de una receta para un objetivo de macros, cada ingrediente dentro de su rango (tope duro incluido). */
+function solve(rec: R, T: Tot, ctx: Ctx): Record<string, number> {
+  const g: Record<string, number> = {};
+  const lim = (p: ComboPart) => {
+    const cap = portionCap(p.id, ctx);
+    // La proteína y el carbo que dan nombre al plato siempre van (al menos su porción mínima real);
+    // la grasa y lo marcado con min: 0 (proteína en polvo opcional, nueces) pueden quedar afuera.
+    const lo = p.min ?? (p.r === 'p' || p.r === 'c' ? cap.min : 0);
+    return { lo: Math.min(lo, cap.max), hi: Math.min(p.max ?? Infinity, cap.max), capMin: cap.min };
+  };
+  rec.parts.forEach((p) => (g[p.id] = p.r === 'x' ? Math.min(p.g ?? 0, portionCap(p.id, ctx).max) : 0));
+  const macro = (k: 'p' | 'c' | 'f', skip: string) => rec.parts.reduce((a, p) => (p.id === skip ? a : a + (FOOD_BY_ID[p.id][k] * g[p.id]) / 100), 0);
+  for (let it = 0; it < 6; it++) {
+    for (const k of ['p', 'c', 'f'] as const) {
+      const part = rec.parts.find((p) => p.r === k);
+      if (!part) continue;
+      const per = FOOD_BY_ID[part.id][k] / 100;
+      if (!(per > 0)) continue;
+      const { lo, hi, capMin } = lim(part);
+      const st = stepOf(part.id);
+      let v = Math.round(Math.max(0, (T[k] - macro(k, part.id)) / per) / st) * st;
+      // Porciones mínimas reales: un ingrediente o va en porción de verdad o no va (nada de 8 g de whey).
+      if (v > 0 && v < capMin) v = v >= capMin / 2 || lo > 0 ? capMin : 0;
+      g[part.id] = Math.min(hi, Math.max(lo, v));
+    }
+  }
+  return g;
+}
+
+const toItems = (g: Record<string, number>) =>
+  Object.entries(g)
+    .filter(([, v]) => v > 0)
+    .map(([id, v]) => itemFromFood(id, v));
+
+interface Work {
+  slot: SlotDef;
+  T: Tot;
+  recipes: R[];
+  /** Gramos de cada opción (la 1 es la que cierra el día). */
+  grams: Record<string, number>[];
+  added: Set<string>;
+}
+
+/** Ingrediente ajustable de la opción 1 para subir / bajar energía (los fijos y las verduras no se tocan). */
+const adjustable = (w: Work, k: 'p' | 'c' | 'f') => w.recipes[0].parts.filter((p) => p.r === k).map((p) => p.id);
+
+/** Módulos de densidad por comida: lo que se suma (en este orden) cuando faltan calorías. */
+const MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
+  breakfast: { c: ['naranja'], f: ['nueces'] },
+  mid: { c: ['banana'], f: ['nueces'] },
+  lunch: { c: ['naranja'], f: ['oliva'] },
+  pre: { c: ['banana'], f: [] },
+  merienda: { c: ['manzana'], f: ['nueces'] },
+  dinner: { c: ['naranja'], f: ['oliva'] },
+  night: { c: [], f: ['nueces'] },
+  extra: { c: [], f: [] },
+};
+const moduleTitle = (id: string, kind: SlotKind) =>
+  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana' } as Record<string, string>)[id] ?? '';
+/** Título con tramos opcionales "[ con proteína|whey]": sólo se nombra lo que el plato lleva de verdad. */
+const titleFor = (title: string, g: Record<string, number>) => title.replace(/\[([^|\]]*)\|([a-z-]+)\]/g, (_, txt: string, id: string) => ((g[id] ?? 0) > 0 ? txt : ''));
+
+function dayKcal(ws: Work[]) {
+  return ws.reduce((a, w) => a + totals(toItems(w.grams[0])).kcal, 0);
+}
+
+/** Cambia una cantidad dentro de su rango; devuelve las kcal que movió. */
+function nudge(w: Work, id: string, kcalWanted: number, ctx: Ctx, opts: { allowNew?: boolean; floor?: number; max?: number } = {}): number {
+  const g = w.grams[0];
+  const ref = FOOD_BY_ID[id];
+  const kpg = kcalOf(ref) / 100;
+  if (!(kpg > 0)) return 0;
+  const base = portionCap(id, { ...ctx, role: w.slot.role });
+  const cap = { min: base.min, max: Math.min(base.max, opts.max ?? Infinity) };
+  const cur = g[id] ?? 0;
+  if (cur === 0 && !opts.allowNew) return 0;
+  const st = stepOf(id);
+  let next: number;
+  if (kcalWanted > 0) {
+    const want = cur + Math.max(st, Math.round(kcalWanted / kpg / st) * st);
+    next = Math.min(cap.max, Math.max(cur === 0 ? cap.min : cur, want));
+  } else {
+    const floor = opts.floor ?? cap.min;
+    const want = cur - Math.max(st, Math.round(-kcalWanted / kpg / st) * st);
+    next = Math.max(floor, want);
+    if (next < cap.min && floor === 0) next = 0;
+  }
+  if (next === cur) return 0;
+  g[id] = next;
+  if (cur === 0) w.added.add(id);
+  if (next === 0) {
+    delete g[id];
+    w.added.delete(id);
+  }
+  return (next - cur) * kpg;
+}
+
+function dayMacros(ws: Work[]): Tot {
+  return ws.reduce((a, w) => {
+    const t = totals(toItems(w.grams[0]));
+    return { p: a.p + t.p, c: a.c + t.c, f: a.f + t.f, kcal: a.kcal + t.kcal };
+  }, { p: 0, c: 0, f: 0, kcal: 0 });
+}
+
+type Move = [Work, string, { allowNew?: boolean; floor?: number; max?: number }];
+/** Módulo de densidad: como mucho 1 unidad por comida (1 fruta de postre, 1 banana, 1 cda de aceite). */
+const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, oliva: 15 };
+
+/**
+ * Cierre del día: lleva la opción 1 de cada comida al total de calorías (±2 %) corrigiendo primero el macro más
+ * desviado. Faltan calorías: sube el macro (carbos o grasas) más por debajo de su meta, con los ingredientes de la
+ * receta hasta su tope y después con módulos de densidad (fruta de postre, aceite, frutos secos); si todo está al
+ * tope, colación extra. Sobran: baja el macro más pasado (lo agregado primero; la proteína nunca por debajo de su
+ * porción mínima real). Lejos de la meta reparte entre todas las comidas; cerca, hace el ajuste fino que mejor cierra.
+ */
+function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, mkExtra: () => Work | null) {
+  const up = (k: 'c' | 'f'): Move[] => [
+    ...ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, { allowNew: k === 'f' }])),
+    ...ws.flatMap((w) =>
+      MODULES[w.slot.kind][k]
+        .filter((id) => !adjustable(w, k).includes(id) && !(k === 'f' && w.recipes[0].parts.some((p) => p.r === 'f' && FOOD_BY_ID[p.id].group === 'fat')))
+        .map((id): Move => [w, id, { allowNew: true, max: MODULE_MAX[id] }]),
+    ),
+  ];
+  const down = (k: 'p' | 'c' | 'f'): Move[] => [
+    ...ws.flatMap((w) => [...w.added].filter((id) => (k === 'f' ? MODULES[w.slot.kind].f : MODULES[w.slot.kind].c).includes(id)).map((id): Move => [w, id, { floor: 0 }])),
+    ...ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, k === 'f' ? { floor: 0 } : {}])),
+  ];
+  const kpgOf = (id: string) => kcalOf(FOOD_BY_ID[id]) / 100;
+  // Antes de cerrar: proteína muy por encima de la meta (varias comidas en su porción mínima) se recorta una vez
+  // hacia la mínima real; después el cierre nunca la vuelve a subir salvo que todo lo demás esté al tope.
+  for (let i = 0; i < 20; i++) {
+    const D = dayMacros(ws);
+    if (D.p <= target.p * 1.1) break;
+    let m = 0;
+    for (const [w, id, o] of down('p')) m += Math.abs(nudge(w, id, -Math.min(120, (D.p - target.p * 1.1) * 4), ctx, o));
+    if (!m) break;
+  }
+  for (let guard = 0; guard < 400; guard++) {
+    const D = dayMacros(ws);
+    const gap = target.kcal - D.kcal;
+    const dev = { p: D.p / target.p - 1, c: D.c / target.c - 1, f: D.f / target.f - 1 };
+    if (Math.abs(gap) <= target.kcal * 0.02) return;
+    let lists: Move[][];
+    if (gap > 0) {
+      const order = (['c', 'f'] as const).slice().sort((a, b) => dev[a] - dev[b]);
+      lists = [up(order[0]), up(order[1])];
+    } else {
+      const order = (['p', 'c', 'f'] as const).slice().sort((a, b) => dev[b] - dev[a]);
+      lists = order.map((k) => down(k));
+    }
+    let moved = 0;
+    const fine = Math.abs(gap) < target.kcal * 0.08;
+    for (const list of lists) {
+      if (!list.length) continue;
+      if (fine) {
+        // Ajuste fino: el único movimiento que más acerca al total sin pasarse.
+        let best: { m: Move; err: number } | null = null;
+        for (const m of list) {
+          const [w, id] = m;
+          const cur = w.grams[0][id] ?? 0;
+          const base = portionCap(id, { ...ctx, role: w.slot.role });
+          const cap = { min: base.min, max: Math.min(base.max, m[2].max ?? Infinity) };
+          const st = stepOf(id);
+          const g = Math.round(gap / kpgOf(id) / st) * st || Math.sign(gap) * st;
+          const floor = m[2].floor ?? cap.min;
+          let next = gap > 0 ? Math.min(cap.max, Math.max(cur === 0 ? cap.min : cur, cur + g)) : Math.max(floor, cur + g);
+          if (gap < 0 && next < cap.min && floor === 0) next = 0;
+          if (cur === 0 && !m[2].allowNew) continue;
+          const err = Math.abs(gap - (next - cur) * kpgOf(id));
+          if (next !== cur && err < Math.abs(gap) && (!best || err < best.err)) best = { m, err };
+        }
+        if (best) moved = Math.abs(nudge(best.m[0], best.m[1], gap, ctx, best.m[2]));
+      } else {
+        // Reparto con presupuesto: cada comida toma su parte del faltante y nunca se mueve más de lo que falta.
+        let rem = gap;
+        list.forEach(([w, id, o], k) => {
+          if (Math.abs(rem) < target.kcal * 0.01 || Math.sign(rem) !== Math.sign(gap)) return;
+          const left = list.length - k;
+          const m = nudge(w, id, rem / left, ctx, o);
+          rem -= m;
+          moved += Math.abs(m);
+        });
+      }
+      if (moved) break;
+    }
+    if (!moved && gap > 0 && extraLeft.n > 0) {
+      const ex = mkExtra();
+      if (ex) {
+        ws.push(ex);
+        extraLeft.n--;
+        continue;
+      }
+    }
+    if (!moved && gap > 0) for (const [w, id, o] of down('p').map((m): Move => [m[0], m[1], {}])) if (!moved) moved = nudge(w, id, gap, ctx, o);
+    if (!moved) return;
+  }
+}
+
+/** Lleva una alternativa a las kcal de la opción 1 (dentro de los topes) moviendo sus carbos, grasas y proteína. */
+function fitAlt(rec: R, g: Record<string, number>, kcal: number, slot: SlotDef, ctx: Ctx) {
+  const w: Work = { slot, T: { p: 0, c: 0, f: 0, kcal }, recipes: [rec], grams: [g], added: new Set() };
+  for (let guard = 0; guard < 60; guard++) {
+    const gap = kcal - totals(toItems(g)).kcal;
+    if (Math.abs(gap) <= kcal * 0.05) return;
+    let moved = 0;
+    for (const k of (gap > 0 ? ['c', 'f', 'p'] : ['f', 'c', 'p']) as ('p' | 'c' | 'f')[]) {
+      for (const id of adjustable(w, k)) {
+        moved = nudge(w, id, gap, ctx, { floor: gap < 0 && k !== 'p' ? 0 : undefined });
+        if (moved) break;
+      }
+      if (moved) break;
+    }
+    if (!moved) return;
+  }
+}
+
+/**
+ * Orden de las opciones según el objetivo: en hipertrofia y rendimiento (más carbos, proteína 1,8-2 g/kg) las
+ * colaciones arrancan por las livianas en proteína; en definición y recomposición, por las proteicas (saciedad).
+ */
+function ordered(goal: BankGoal, kind: SlotKind, recs: R[]): R[] {
+  if (!['pre', 'mid', 'merienda'].includes(kind)) return recs;
+  const lean = (r: R) => (r.parts.some((p) => p.r === 'p' && (p.min ?? 1) > 0) || r.parts.some((p) => p.r === 'x' && /alfajor|yogur|whey/.test(p.id)) ? 1 : 0);
+  const carbFirst = goal === 'hip' || goal === 'ren';
+  return [...recs].sort((a, b) => (carbFirst ? lean(a) - lean(b) : lean(b) - lean(a)));
+}
+
+function buildDay(sel: BankSelection, weightKg: number, day: MealDay, tierB: boolean, target: Tot): Meal[] {
+  const sex = sexOf(sel.plan);
+  const ctx: Ctx = { sex, veg: sel.variant === 'veg' };
+  const goalId = goalOf(sel.plan).id;
+  const base = RECIPES[sel.variant];
+  const recipes = Object.fromEntries((Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, base[k])])) as Record<SlotKind, R[]>;
+  const kinds = structure(sex, tierB, day);
+  const wsum = kinds.reduce((a, k) => [a[0] + SLOT[k].w[0], a[1] + SLOT[k].w[1], a[2] + SLOT[k].w[2]], [0, 0, 0]);
+  const mkWork = (kind: SlotKind, share?: [number, number, number]): Work => {
+    const slot = SLOT[kind];
+    const s = share ?? [slot.w[0] / wsum[0], slot.w[1] / wsum[1], slot.w[2] / wsum[2]];
+    const T = { p: target.p * s[0], c: target.c * s[1], f: target.f * s[2], kcal: 0 };
+    T.kcal = kcalOf(T);
+    const recs = recipes[kind];
+    return { slot, T, recipes: recs, grams: recs.map((r) => solve(r, T, { ...ctx, role: slot.role })), added: new Set() };
+  };
+  const ws = kinds.map((k) => mkWork(k));
+  // Colación extra (hasta 2) para atletas grandes que con los topes no llegan: ~400-500 kcal de comida real.
+  const extraLeft = { n: 2 };
+  const mkExtra = () => {
+    const ex = mkWork('extra', [0.12, 0.12, 0.1]);
+    ex.slot = { ...ex.slot, name: extraLeft.n === 2 ? 'Colación extra' : 'Segunda colación extra', time: extraLeft.n === 2 ? '16:00' : '11:30' };
+    return ex;
+  };
+  closeDay(ws, target, ctx, extraLeft, mkExtra);
+
+  return ws.map((w) => {
+    const main = toItems(w.grams[0]);
+    const kcal = totals(main).kcal;
+    const suffix = [...w.added].map((id) => moduleTitle(id, w.slot.kind)).join('');
+    const opts = w.recipes.map((rec, i) => {
+      const g = i === 0 ? w.grams[0] : { ...w.grams[i] };
+      if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role });
+      const items = toItems(g);
+      const combo: Combo = { ...rec, roles: [w.slot.role] };
+      return { title: titleFor(rec.title, g) + (i === 0 ? suffix : ''), items, steps: comboSteps(combo, items) };
+    });
+    const [first, ...alts] = opts;
+    return {
+      id: uid(),
+      name: w.slot.name,
+      time: w.slot.time,
+      day,
+      role: w.slot.role,
+      items: first.items,
+      title: first.title,
+      steps: first.steps,
+      alts: alts.map((a) => ({ title: a.title, items: a.items, steps: a.steps })),
+    } satisfies Meal;
+  });
+}
+
+export interface BankPlan {
+  sel: BankSelection;
+  weightKg: number;
+  tier: 'A' | 'B';
+  gkg: { on: Macros; off: Macros };
+  target: { on: Tot; off: Tot };
+  meals: Meal[];
+}
+
+/** Arma el plan completo (día de entreno + día de descanso) para un peso. */
+export function buildBankPlan(sel: BankSelection, weightKg: number): BankPlan {
+  const sex = sexOf(sel.plan);
+  const goal = goalOf(sel.plan);
+  const t = dayTargets(goal, sex, weightKg);
+  const tierB = t.on.kcal > TIER_B[sex];
+  const meals = [...buildDay(sel, weightKg, 'on', tierB, t.on), ...buildDay(sel, weightKg, 'off', tierB, t.off)];
+  return { sel, weightKg, tier: tierB ? 'B' : 'A', gkg: t.gkg, target: { on: t.on, off: t.off }, meals };
+}
+
+/** Alimentos con gluten (prohibidos en la variante Sin TACC) y carnes (prohibidas en la vegetariana). */
+export const GLUTEN_FOODS = new Set(['pan', 'pan-lactal', 'pan-arabe', 'pan-rallado', 'fideos', 'noquis', 'avena', 'avena-instantanea', 'granola', 'galletitas-agua', 'alfajor-proteico', 'barra-proteica', 'barrita-cereal', 'copos-maiz']);
+export const MEAT_FOODS = new Set(['pollo', 'cuadril', 'lomo', 'nalga', 'picada', 'merluza', 'atun', 'cerdo', 'jamon']);
+
+export const planLabel = (sel: BankSelection) => `${goalOf(sel.plan).label} · ${SEX_LABEL[sexOf(sel.plan)]} · ${BANK_VARIANTS.find((v) => v.id === sel.variant)!.label}`;
+
+/**
+ * "Aplicar a este alumno": el plan del banco con las porciones calculadas para su peso actual (siempre dentro de
+ * la Tabla Única de Topes), la matriz de macros del objetivo y los horarios según su entreno.
+ * Perfil, suplementos, anamnesis y nota del coach se conservan (Sin TACC suma su aviso fijo).
+ */
+export function applyBankPlan<T extends { profile: { weightKg: number; phase: Phase }; periodization: { on: Macros; off: Macros }; meals: Meal[]; coachNote: string }>(
+  base: T,
+  sel: BankSelection,
+  retime: (meals: Meal[]) => Meal[] = (m) => m,
+): T {
+  const goal = goalOf(sel.plan);
+  const bp = buildBankPlan(sel, base.profile.weightKg);
+  const note = [base.coachNote.trim() || goal.rationale, sel.variant === 'stacc' && !base.coachNote.includes('SIN TACC') ? STACC_WARNING : ''].filter(Boolean).join('\n\n');
+  return {
+    ...base,
+    profile: { ...base.profile, phase: goal.phase },
+    periodization: { ...base.periodization, on: bp.gkg.on, off: bp.gkg.off },
+    meals: retime(bp.meals),
+    coachNote: note,
+  };
+}
+
+/** Resumen para la tarjeta del banco (sin armar las comidas): macros, calorías y cantidad de comidas por día. */
+export function planSummary(sel: BankSelection, weightKg: number) {
+  const sex = sexOf(sel.plan);
+  const t = dayTargets(goalOf(sel.plan), sex, weightKg);
+  const tierB = t.on.kcal > TIER_B[sex];
+  const opts = (kinds: SlotKind[]) => kinds.reduce((a, k) => a + RECIPES[sel.variant][k].length, 0) / kinds.length;
+  const on = structure(sex, tierB, 'on');
+  const off = structure(sex, tierB, 'off');
+  return { gkg: t.gkg, kcal: { on: Math.round(t.on.kcal), off: Math.round(t.off.kcal) }, tier: tierB ? 'B' : 'A', meals: { on: on.length, off: off.length }, optionsPerMeal: Math.round(Math.min(opts(on), opts(off))) };
+}

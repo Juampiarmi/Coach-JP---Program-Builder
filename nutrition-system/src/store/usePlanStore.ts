@@ -8,7 +8,7 @@ import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
-import { buildTemplatePlan, goalById, type TemplateSelection } from '@/lib/templateBank';
+import { applyBankPlan, goalOf, type BankSelection } from '@/lib/planBank';
 import { friendlyMealName, modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -93,7 +93,8 @@ interface PlanState {
   /** Horarios + exclusiones de la Anamnesis Pro aplicados a las comidas, con cierre de macros redistribuido. */
   applyAnamnesisToMeals: () => number;
   /** Biblioteca de planes master: clona el plan semilla adaptado al peso y target del atleta activo. */
-  applyTemplate: (sel: TemplateSelection) => void;
+  /** Banco de planes maestros: aplica el plan elegido adaptado al peso del alumno. */
+  applyTemplate: (sel: BankSelection) => void;
   /** Anamnesis Pro & Lifestyle del atleta activo (se guarda dentro del plan → localStorage y backup JSON). */
   setAnamnesis: (patch: Partial<Anamnesis>) => void;
 
@@ -393,18 +394,18 @@ export const usePlanStore = create<PlanState>()(
       retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile, s.plan.anamnesis) }) })),
       applyTemplate: (sel) => {
         const s = get();
-        const goal = goalById(sel.goal);
+        const goal = goalOf(sel.plan);
         const an = sanitizeAnamnesis(s.plan.anamnesis);
-        // Preferencias del plan semilla que quedan registradas en la anamnesis (la IA y la PWA las respetan).
+        // El objetivo y la condición Sin TACC quedan en la anamnesis (la IA y la app del alumno los respetan).
         const anamnesis = {
           ...an,
           goal: goal.anamnesisGoal,
-          allergies: sel.pref === 'lactose' ? [...new Set([...an.allergies, 'lactose'])] : an.allergies,
-          cooking: sel.pref === 'quick' ? ('quick' as const) : an.cooking,
+          allergies: sel.variant === 'stacc' ? [...new Set([...an.allergies, 'gluten'])] : an.allergies,
           disabledSlots: [],
         };
-        const next = buildTemplatePlan({ ...s.plan, anamnesis }, sel, { retime: true });
-        set({ plan: touch({ ...next, coachNote: s.plan.coachNote || goal.rationale }), builderTab: 'meals' });
+        const base = { ...s.plan, anamnesis };
+        const next = applyBankPlan(base, sel, (meals) => retimeMeals(meals, base.profile, anamnesis));
+        set({ plan: touch(next), builderTab: 'meals' });
       },
       applyAnamnesisToMeals: () => {
         const s = get();

@@ -11,14 +11,14 @@ export interface Measure {
   many: string;
   /** Femenino: "media taza", "1 taza y media". */
   f?: boolean;
-  /** Aclaración después de la cantidad: "2 potes de 180 g". */
+  /** Aclaración después de la cantidad: "2 potes de 200 g". */
   of?: string;
 }
 const M = (g: number, one: string, many: string, f = false, of = ''): Measure => ({ g, one, many, f, of });
 
 const TAZA_COCIDO = (g: number) => [M(g, 'taza', 'tazas', true, ' (cocido)')];
 const BIFE = [M(180, 'bife mediano', 'bifes medianos')];
-const POTE = [M(180, 'pote', 'potes', false, ' de 180 g')];
+const POTE = [M(200, 'pote', 'potes', false, ' de 200 g')];
 const CDA_SOPERA = [M(15, 'cda sopera', 'cdas soperas', true)];
 
 export const HOUSE: Record<string, Measure[]> = {
@@ -80,14 +80,15 @@ export const HAND: Record<string, Measure> = {
   veg: M(100, 'puño', 'puños'),
   cereal: M(30, 'mano ahuecada', 'manos ahuecadas', true),
   fat: M(15, 'pulgar', 'pulgares'),
-  'dairy-protein': M(180, 'pote', 'potes', false, ' de 180 g'),
+  'dairy-protein': M(200, 'pote', 'potes', false, ' de 200 g'),
 };
 
-/** Cantidad en lenguaje cotidiano: "medio pote", "1 papa mediana y media", "2 potes de 180 g", "13 cdas soperas". */
+/** Cantidad en lenguaje cotidiano: "medio pote", "1 papa mediana y media", "2 potes de 200 g", "13 cdas soperas". */
 export function humanQty(q: number, m: Measure) {
   const h = q >= 3 ? Math.round(q) : Math.round(q * 2) / 2;
   const half = m.f ? 'media' : 'medio';
   const of = m.of ?? '';
+  if (q < 0.875 && q >= 0.625) return `3/4 de ${m.one}${of}`;
   if (h <= 0.5) return `${half} ${m.one}${of}`;
   if (h === 1) return `1 ${m.one}${of}`;
   if (h === 1.5) return `1 ${m.one} y ${half}${of}`;
@@ -119,7 +120,7 @@ function pluralFirst(label: string) {
   return [p, ...rest].join(' ');
 }
 
-/** Medida casera para un alimento / plato: "≈ 2 potes de 180 g", "≈ 1 bife mediano", "≈ 2 unidades". */
+/** Medida casera para un alimento / plato: "≈ 2 potes de 200 g", "≈ 1 bife mediano", "≈ 2 unidades". */
 export function houseMeasure(foodId: string | undefined, grams: number) {
   if (!foodId || !(grams > 0)) return '';
   const list = HOUSE[foodId];

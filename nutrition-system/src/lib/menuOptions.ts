@@ -1,3 +1,4 @@
+import { portionCap } from './portionCaps';
 import { FOOD_BY_ID, FOODS, macrosFor, round1, round2, type FoodRef } from './foods';
 import { uid } from './seed';
 import { dishTitleCase } from './foodBrandDb';
@@ -578,7 +579,7 @@ export function solveCombo(c: Combo, T: Tot): FoodItem[] | null {
       if (!(per > 0)) continue;
       const step = part.step ?? 5;
       const raw = Math.max(0, (T[k] - macro(k, part.id)) / per);
-      g[part.id] = Math.min(part.max ?? 500, Math.max(part.min ?? 0, Math.round(raw / step) * step));
+      g[part.id] = Math.min(part.max ?? 500, portionCap(part.id).max, Math.max(part.min ?? 0, Math.round(raw / step) * step));
     }
   }
   const items = c.parts.filter((p) => g[p.id] > 0).map((p) => item(p.id, g[p.id]));
@@ -616,38 +617,13 @@ const err = (cur: Tot, T: Tot) => {
  * aceite / frutos secos 5-20 g (palta hasta 50 g ≈ ¼ unidad), vegetales 100-200 g y un plato del catálogo hasta 450 g.
  */
 function portionRange(it: FoodItem, role: MealRole): [number, number] {
+  // Tope: la Tabla Única de Topes por Toma (portionCaps.ts). Mínimo: lo que hace reconocible el plato.
   const id = it.foodId ?? '';
   const main = MAIN.includes(role);
-  const peri = role === 'peri' || role === 'post';
-  switch (FOOD_BY_ID[id]?.group) {
-    case 'lean-protein':
-      return [main ? 100 : 60, 250];
-    case 'starch':
-      return [main ? 100 : 60, 300];
-    case 'fat':
-      return [5, id === 'palta' ? 50 : 20];
-    case 'veg':
-      return [main ? 100 : 30, 200];
-    case 'plato':
-      return [40, 450];
-    case 'cereal':
-      return [8, id === 'pan' || id === 'pan-lactal' ? 150 : peri ? 160 : 120];
-    case 'whey':
-      return [10, 50];
-    case 'dairy-protein':
-      // Yogur hasta ~1 pote y medio; ricota / quesos untables y light en porción de comida, no de pote entero.
-      return [20, ['leche', 'leche-deslactosada', 'yogur-proteico'].includes(id) ? 500 : id === 'ricota' ? 250 : id === 'untable' ? 60 : id === 'queso-light' ? 80 : 300];
-    case 'sport-carb':
-      // Miel / dulce: endulzan (≤ 2 cdas); la bebida isotónica, hasta 1 ½ botella.
-      return [5, id === 'isotonica' ? 750 : 30];
-    case 'fruit':
-      // Pre / post-WOD de carga de glucógeno: hasta 3 bananas.
-      return [30, peri ? 360 : 250];
-    case 'eggs':
-      return [33, id === 'huevo' ? 200 : 330];
-    default:
-      return [5, 600];
-  }
+  const { max } = portionCap(id, { role });
+  const g = FOOD_BY_ID[id]?.group;
+  const lo = g === 'lean-protein' || g === 'starch' ? (main ? 100 : 60) : g === 'veg' ? (main ? 100 : 30) : g === 'plato' ? 40 : g === 'eggs' ? 33 : 5;
+  return [Math.min(lo, max), max];
 }
 const snapG = (i: FoodItem, g: number) => {
   const st = i.foodId === 'huevo' ? 50 : i.foodId === 'claras' ? 33 : 5;
