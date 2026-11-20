@@ -17,6 +17,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { expandirEstilos } = require('./estilos.js');
 
 const RAIZ = path.resolve(__dirname, '..');
 const SRC = path.join(RAIZ, 'src');
@@ -47,7 +48,11 @@ function expandir(texto, desde, pila){
   };
   /* una funcion de reemplazo evita que "$&" o "$1" dentro del contenido se interpreten.
      @@template ruta@@ = igual que @@include, pero el resultado completo se escapa para un template literal (se usa una sola vez, en el TEMPLATE_HTML del alumno) */
+  /* @@estilo ruta@@ = incluye un CSS de estilos de tarjeta con los selectores "@est" ya expandidos (ver tools/estilos.js) */
+  const estilo = rel => expandirEstilos(leer(resolver(rel, desde)));
   return texto
+    .replace(/^@@estilo ([^\s@]+)@@\n/gm, (m, rel) => estilo(rel))
+    .replace(/@@estilo ([^\s@]+)@@/g, (m, rel) => estilo(rel))
     .replace(/^@@include ([^\s@]+)@@\n/gm, (m, rel) => sub(rel, false))
     .replace(/@@template ([^\s@]+)@@/g, (m, rel) => sub(rel, true))
     .replace(/@@include ([^\s@]+)@@/g, (m, rel) => sub(rel, false));

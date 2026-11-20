@@ -667,14 +667,34 @@
       return '<li>' + (m ? '<b>' + escSB(m[1].charAt(0).toUpperCase() + m[1].slice(1)) + ':</b> ' + escSB(m[2]) : escSB(l)) + '</li>';
     }).join('\n') + '</ul>';
   }
-  /* Sports: pildora + detalle completo + boton de timer + tarjeta de registro (carga usada, score/rondas, notas) */
+  /* Sports: las estaciones de un bloque cronometrado (AMRAP / EMOM / For Time) con la MISMA fila que el resto de los circuitos: número (o minuto), nombre corto, cantidad en su pastilla y la aclaración en su línea;
+     la consigna ("las tres estaciones en orden...", descansos) va en una banda aparte. CrossFit sigue usando jpContinuoListaHtml. */
+  function jpEsBandaSB(l){
+    return jpEsConsignaSB(l) || /^\s*(?:rest|descanso)\b/i.test(l) || (!/^\s*[-\u2022*]/.test(l) && !/^\s*min(?:ute|uto)?s?\s*\d/i.test(l) && !jpPartirEstacionSB(l) && String(l).trim().length > 48);
+  }
+  function jpFilaEstacionHtml(idTxt, nm, qty, nota){
+    return '<div class="jp-sb-plain jp-sb-plain-est"><span class="jp-sb-ex-id">' + escSB(idTxt) + '</span><span class="jp-sb-plain-nombre">' + escSB(nm) + '</span>' +
+      (qty ? '<span class="jp-sb-plain-pill">' + escSB(qty) + '</span>' : '') + (nota ? '<div class="jp-sb-nota">' + escSB(nota) + '</div>' : '') + '</div>';
+  }
+  function jpContinuoEstacionesSB(c){
+    var n = 0;
+    return c.detalle.map(function(l0){
+      var l = String(l0 == null ? '' : l0).trim();
+      if(!l.replace(/^[\s\-\u2013\u2014\u2022*]+/, '')) return '';      /* una viñeta suelta ("-") que deja el corte por minutos no es una estación */
+      if(jpEsBandaSB(l)) return '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(l.replace(/^[\s\-–—•*]+/, '')) + '</span></div>';
+      var mMin = l.match(/^\s*[-•*]?\s*min(?:ute|uto)?s?\s*(\d+(?:\s*[-–]\s*\d+)?)\s*[:.\-–—)]*\s*(.*)$/i);
+      var idTxt = mMin ? 'M' + mMin[1].replace(/\s+/g, '') : jpIdx2(++n);
+      var txt = jpLimpiarNombreEstacionSB(mMin ? mMin[2] : l), est = jpPartirEstacionSB(txt);
+      return jpFilaEstacionHtml(idTxt, est ? est.nm : txt, est ? est.qty : '', est ? est.nota : '');
+    }).join('');
+  }
   function jpContinuoSportsHtml(c, block, weekIdx, dayId){
     var skey = weekIdx + '|' + dayId + '|' + block.id;
     var nk = function(k){ return skey + '|__cont_' + k; };
     var val = function(k){ return escSB((state.notes && state.notes[nk(k)]) || ''); };
     var nivel = (state.notes && state.notes[nk('nivel')]) || '';
     var tcfg = jpCfgContinuo(c);
-    return jpContinuoPillHtml(c) + jpContinuoListaHtml(c) +
+    return jpContinuoPillHtml(c) + jpContinuoEstacionesSB(c) +
       (tcfg ? '<button type="button" class="jp-cf-wodtimer jp-cont-timer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">\u23f1 INICIAR TIMER ' + escSB(c.etiqueta) + '</button>' : '') +
       '<div class="jp-cont-reg"><div class="jp-cont-reg-lb">[ REGISTRO DEL WOD ]</div>' +
         '<label class="jp-cont-f"><span>CARGA UTILIZADA</span><input type="text" class="jp-cont-in" data-nkey="' + nk('carga') + '" placeholder="Ej: KB 16 kg / 20 kg" value="' + val('carga') + '"></label>' +
@@ -760,6 +780,13 @@
       var lq = getLoad(getLoadKey(orden[q], c.d, c.b, e.idx, keyIdx));
       if(lq && lq.done !== false && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: orden[q], kg: lq.kg, reps: lq.reps };
     }
+    /* sin registro en la misma posición (bloque regenerado, ejercicios reordenados, plantilla reasignada): se busca por el NOMBRE del ejercicio */
+    try{
+      if(typeof window.jpRegistroPrevio === 'function'){
+        var rp = window.jpRegistroPrevio(c, e, keyIdx);
+        if(rp && rp.ref) return { w: rp.w, kg: rp.ref.kg, reps: rp.ref.reps > 0 ? rp.ref.reps : '' };
+      }
+    }catch(eN){}
     return null;
   }
   function regUltReg(c, e, set){ return regUltRegKey(c, e, set + (e.ko || 0)); }
@@ -883,6 +910,32 @@
     if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\s/)[0]; kind = 'OBJETIVO'; } }
     return { k: kind, t: qrCorta(hit, 130) };
   }
+  /* RIR del ejercicio: lo marca el alumno al terminar; la doble progresión de la semana siguiente solo sube la carga si hubo reservas (RIR 1 o más) */
+  function qrRirKey(c, e){ return c.w + '|' + c.d + '|' + c.b + '|' + e.idx; }
+  function qrRirHtml(c, e, m){
+    var sel = (state.rirEx || {})[qrRirKey(c, e)];
+    return '<div class="jp-qc-rir" role="group" aria-label="RIR del ejercicio (repeticiones que te sobraron)"><span class="jp-qc-rir-lb">RIR</span>' +
+      [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
+      '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
+  }
+  /* COACHING TIPS del ejercicio (Set-up · Ejecución · Cuidado): salen de las pautas del bloque; en un biset / triset, solo las líneas de ESTE ejercicio (A1 · ..., A2 · ...) */
+  function qrTipsHtml(c, e, i){
+    var lineas = String(c.tp || '').split(/\n+|<br\s*\/?>/i).map(qrPlano).filter(Boolean);
+    var L = regLetra(c, i), multi = c.ex && c.ex.length > 1;
+    var G = { su: '', ej: '', cu: '' };
+    lineas.forEach(function(l){
+      var m = /^(?:([A-F]\d)\s*\u00b7\s*)?([^:]{2,40}):\s*(.+)$/.exec(l); if(!m) return;
+      if(multi && (!m[1] || m[1].toUpperCase() !== L)) return;
+      var et = m[2].toUpperCase();
+      if(/^SET-?UP/.test(et)){ if(!G.su) G.su = m[3]; }
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO)/.test(et)){ if(!G.ej) G.ej = m[3]; }
+      else if(/^(CUIDADO|ERROR|PRECAUCI)/.test(et)){ if(!G.cu) G.cu = m[3]; }
+    });
+    if(!G.su && !G.ej && !G.cu) return '';
+    var fila = function(cls, lb, txt){ return txt ? '<div class="jp-ex-tip ' + cls + '"><b>' + lb + '</b><span>' + escSB(qrCorta(txt, 190)) + '</span></div>' : ''; };
+    return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \u00b7 Ejecuci\u00f3n \u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
+      fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -916,10 +969,11 @@
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
+      (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
-    '</div></div></div></div>';
+    '</div></div></div>' + qrTipsHtml(c, e, i) + '</div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
   function jpRegBotonHtml(cfg){
@@ -936,6 +990,99 @@
     board.classList.add('jp-tec-gate');
     board.classList.toggle('jp-tec-open', abierto);
   }
+  /* tempo del ejercicio: el de la dosis (e.tempo) o, si el coach lo dejó solo en las pautas ("TEMPO: Tempo 3010 (...)"), el que figura ahí */
+  function qrTempoDe(c, e, i){
+    var propio = tempoLimpioSB(e && e.tempo); if(propio) return propio;
+    var L = regLetra(c, i), out = '';
+    String(c.tp || '').split(/\n+|<br\s*\/?>/i).map(qrPlano).some(function(l){
+      var m = /^(?:([A-F]\d)\s*\u00b7\s*)?TEMPO\s*:\s*(?:Tempo\s*)?([0-9xX]{3,4})\b/i.exec(l); if(!m) return false;
+      if(m[1] && c.ex && c.ex.length > 1 && m[1].toUpperCase() !== L) return false;
+      out = m[2]; return true;
+    });
+    return out;
+  }
+  /* el tempo va en la fila técnica de la tarjeta (junto al RIR); si la barra de dosis no lo trae, se agrega acá */
+  function qrInyectarTempo(fila, tp){
+    var bar = fila && fila.querySelector(':scope > .jp-dose-bar'); if(!bar || !tp || bar.querySelector('.jp-db-tempo')) return;
+    var r3 = bar.querySelector('.jp-db-r3');
+    if(!r3){ r3 = document.createElement('div'); r3.className = 'jp-db-row jp-db-r3'; bar.appendChild(r3); }
+    var s = document.createElement('span'); s.className = 'jp-db-seg jp-db-tempo'; s.innerHTML = '<small>TEMPO</small> <b>' + escSB(tp) + '</b>';
+    r3.insertBefore(s, r3.firstChild);
+  }
+  /* lo que la tarjeta del ejercicio ya muestra en su COACHING TIPS (Set-up · Ejecución · Cuidado) y el tempo (ficha + caja de cadencia) no se repite en
+     "PAUTAS TÉCNICAS & TIPS DEL BLOQUE". En un bloque con varios ejercicios la tarjeta solo toma las líneas con letra de estación (A1 · ...): las demás se conservan. */
+  function quitarTipsDeTarjetaSB(texto, nEj){
+    if(!(nEj > 0)) return texto;
+    var multi = nEj > 1;
+    return String(texto || '').split('\n').filter(function(l){
+      var m = /^\s*(?:([A-F]\d)\s*·\s*)?([^:]{2,40}):\s*\S/.exec(l); if(!m) return true;
+      var et = m[2].trim();
+      if(multi && !m[1] && !/^tempo/i.test(et)) return true;
+      return !/^(set-?\s*up|cue|clave|ejecuci|control|ritmo|cuidado|error|precauci|tempo)/i.test(et);
+    }).join('\n');
+  }
+  /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
+  function jpExplicarTempoSB(tp){
+    var m = String(tp || '').match(/^([\dXx])([\dXx])([\dXx])([\dXx])$/);
+    if(!m) return '';
+    var sg = function(v, txt){ return v + ' s ' + txt; };
+    return [sg(m[1], 'bajada'), sg(m[2], 'pausa abajo'), /x/i.test(m[3]) ? 'subida explosiva' : sg(m[3], 'subida'), sg(m[4], 'pausa arriba')].join(' · ');
+  }
+  /* "OBJETIVO FISIOLÓGICO" y "TEMPO (CADENCIA)" viven en recuadros plegables al pie de la tarjeta del ejercicio (debajo de los coaching tips), no en el acordeón del bloque.
+     El objetivo es del bloque: va en la primera tarjeta. El tempo es de cada ejercicio: se explica con el que muestra su propia ficha. */
+  function jpCajasTarjetaSB(root, objetivoHtml){
+    var board = root && root.querySelector ? root.querySelector('[data-sportsboard]') : null; if(!board) return;
+    var caja = function(cls, tit, sub, cuerpo){
+      return '<details class="jp-ex-box jp-ex-box-' + cls + '"><summary><span class="jp-ex-box-t">' + tit + '</span><span class="jp-ex-box-s">' + sub + '</span></summary><div class="jp-ex-box-b">' + cuerpo + '</div></details>';
+    };
+    var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    var objetivoPendiente = !!objetivoHtml;
+    unidades.forEach(function(u){
+      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var html = '';
+      if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
+      var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
+      var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
+      if(ex) html += caja('tempo', '&#9201; ' + escSB(jpT('app.card.tempo.t')), escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
+      if(!html) return;
+      var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
+      u.appendChild(div);
+    });
+    if(objetivoPendiente){                                                       /* sin tarjetas de ejercicio en el bloque: el objetivo cierra el tablero */
+      var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml);
+      var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
+    }
+  }
+  /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
+  function jpLimpiarNombreEstacionSB(nm){
+    return String(nm || '').replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s*[x\u00d7]\s*$/i, '').trim();
+  }
+  function jpEsLineaFormatoSB(txt, hayPastilla){
+    var t = String(txt || '').trim();
+    if(!t || hayPastilla) return false;
+    return t.length > 48 || /^(?:\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\s+(?:rondas?|series?|vueltas?|intervalos?)\b|^(?:amrap|emom|for\s*time|hiit|tabata|chipper)\b/i.test(t);
+  }
+  /* consigna de formato por su arranque ("4 rondas", "AMRAP", "EMOM", "HIIT por intervalos"): nunca una estación aunque lleve "x 40 s" más adelante */
+  function jpEsConsignaSB(txt){
+    return /^\s*(?:(?:\d+|un|una|dos|tres|cuatro|cinco|seis|siete|ocho)\s+(?:rondas?|series?|vueltas?|intervalos?)\b|(?:amrap|emom|e\d+mom|for\s*time|hiit|tabata|chipper)\b)/i.test(String(txt || ''));
+  }
+  /* "SkiErg x 40 s al máximo sostenible" -> { nm: "SkiErg", qty: "40 S", nota: "Al máximo sostenible" }; sin cantidad ("x 40 s", "x 20 m", "x 12 cal", "x 10") devuelve null */
+  function jpPartirEstacionSB(txt){
+    var t = String(txt || '').trim();
+    var m = t.match(/^(.*?\S)\s+[x×]\s*(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)\s*(minutos?|min|segundos?|segs?|seg|s|mts?|metros?|km|m|cals?|calor[ií]as|repeticiones|reps?)?(?![A-Za-zÀ-ÿ])[.,:;]?\s*(.*)$/i);
+    var unidadSB = function(u0){ var u = String(u0 || '').toLowerCase(); return !u ? '' : (/^min/.test(u) ? 'MIN' : (/^seg|^s$/.test(u) ? 'S' : (/^(?:m|mt|mts|metro|metros)$/.test(u) ? 'M' : (/^km/.test(u) ? 'KM' : (/^cal/.test(u) ? 'CAL' : 'REPS'))))); };
+    if(!m){
+      /* cantidad al principio ("20 min Caminata inclinada (Zona 2)"): la cantidad va a la pastilla y el resto es el nombre */
+      var mI = t.match(/^(\d+(?:[.,]\d+)?)\s*(minutos?|min|km|cals?)\s+(\S.*)$/i);
+      return mI ? { nm: mI[3].trim(), qty: mI[1] + ' ' + unidadSB(mI[2]), nota: '' } : null;
+    }
+    var un = unidadSB(m[3]);
+    var nota = String(m[4] || '').replace(/^[\s\-–—:,;]+/, '').trim();
+    return { nm: m[1].trim(), qty: m[2].replace(/\s+/g, '') + (un ? ' ' + un : ''), nota: nota ? nota.charAt(0).toUpperCase() + nota.slice(1) : '' };
+  }
+  window.jpPartirEstacion = jpPartirEstacionSB; window.jpEsConsigna = jpEsConsignaSB;
+  window.jpLimpiarNombreEstacion = jpLimpiarNombreEstacionSB; window.jpEsLineaFormato = jpEsLineaFormatoSB;
+  window.jpQuitarTipsDeTarjeta = quitarTipsDeTarjetaSB; window.jpCajasTarjeta = jpCajasTarjetaSB;
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
     var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
@@ -951,6 +1098,7 @@
             if(idTx){ QR_LBL[cd.getAttribute('data-qk') + '|' + cd.getAttribute('data-qi')] = { id: idTx }; var spId = cd.querySelector('.jp-qc-tg-id'); if(spId) spId.textContent = '· ' + idTx; }
             var tr = filas[i].querySelector(':scope > .jp-set-tracker-tecnica');
             if(tr) filas[i].insertBefore(cd, tr); else filas[i].appendChild(cd);
+            try{ var kt = qrCtx(cd); if(kt) qrInyectarTempo(filas[i], qrTempoDe(kt.c, kt.e, parseInt(cd.getAttribute('data-qi'), 10))); }catch(eT){}
           });
           box.parentNode.removeChild(box);
         }
@@ -978,6 +1126,8 @@
     tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
     var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
+    var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
+    if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;
@@ -1002,6 +1152,7 @@
     if(v.rv) setLoadField(key, 'reps', v.rv);
     setLoadField(key, 'ex', regNombreCorto(e.nombre));           /* el historial verifica que la marca sea de ESTE ejercicio */
     if(e.u && e.u !== 'reps') setLoadField(key, 'u', e.u);       /* la unidad del segundo casillero (m / seg): el tonelaje la excluye */
+    if(e.uni) setLoadField(key, 'uni', 1);                       /* unilateral: el tonelaje cuenta los dos lados */
     setLoadField(key, 'done', true);
     qrAviso();
     var i = parseInt(card.getAttribute('data-qi'), 10), m = qrModelo(c, e, i);
@@ -1072,6 +1223,17 @@
     if(fi){ ev.preventDefault(); ev.stopPropagation(); qrFinal(fi.closest('.jp-qc')); return; }
     var ok = t.closest('.jp-qc-ok');
     if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardarSerie(ok.closest('.jp-qc'), ok.closest('.jp-qc-r')); return; }
+    var rb = t.closest('.jp-qc-rirb');
+    if(rb){
+      ev.preventDefault(); ev.stopPropagation();
+      var cardR = rb.closest('.jp-qc'), kr = cardR && qrCtx(cardR); if(!kr) return;
+      var nR = parseInt(rb.getAttribute('data-rirx'), 10), clR = qrRirKey(kr.c, kr.e);
+      state.rirEx = state.rirEx || {};
+      if(state.rirEx[clR] === nR) delete state.rirEx[clR]; else state.rirEx[clR] = nR;
+      saveProgress();
+      qrRefrescar(cardR, true);
+      return;
+    }
     var ad = t.closest('.jp-qc-add');
     if(ad){ ev.preventDefault(); ev.stopPropagation(); qrAgregar(ad.closest('.jp-qc')); return; }
     var dl = t.closest('.jp-qc-del');
@@ -1085,8 +1247,14 @@
     var row = t.closest('.jp-qc-r');
     if(row){
       row.classList.remove('falta');
-      /* una serie ya marcada que se corrige: el dato nuevo se guarda en el acto (el tonelaje y el historial no quedan desfasados) */
-      if(row.classList.contains('jp-done') && row.getAttribute('data-key')) setLoadField(row.getAttribute('data-key'), t.classList.contains('jp-qc-kg') ? 'kg' : 'reps', t.value);
+      /* lo tipeado se guarda en el acto: antes solo se guardaba al tildar ✓ y si el alumno cargaba kilos y reps y salía sin tildar, la Semana 2 quedaba sin ninguna referencia.
+         Un borrador NO cuenta como serie hecha (done sigue sin marcar: el tonelaje y el historial no lo suman) pero sí sirve de referencia para la carga sugerida de la semana siguiente. */
+      var kRow = row.getAttribute('data-key');
+      if(kRow){
+        var campoQ = t.classList.contains('jp-qc-kg') ? 'kg' : 'reps';
+        setLoadField(kRow, campoQ, t.value);
+        if(!getLoad(kRow).ex){ var cardQ = row.closest('.jp-qc'), kq = cardQ && qrCtx(cardQ); if(kq) setLoadField(kRow, 'ex', regNombreCorto(kq.e.nombre)); }
+      }
     }
   });
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
@@ -2172,7 +2340,7 @@
         /* videos en miniatura compacta y, al final, el acordeon de estrategia */
         (clips.length ? '<div class="jp-cf-vids"><div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS</div>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
         ((tieneCierre || subtituloVisible) ?
-          '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T&Eacute;CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
+          '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary>' +
             (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
             (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; FOCO DEL EST&Iacute;MULO</span><p>' + jpCfSubLabels(c.objetivo) + '</p></div>' : '') +
             (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9889; ESTRATEGIA DE PACING</span><p>' + jpCfSubLabels(c.pacing) + '</p></div>' : '') +
@@ -2364,7 +2532,7 @@
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
     if((m = t.match(/rir\s*(\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\s+/g, ' ').trim();
-    /* directiva maestra ("Parser universal y tolerante para Sports &
+  /* directiva maestra ("Parser universal y tolerante para Sports &
        Bodybuilding") -- reescritura genérica: en vez de intentar cubrir
        formas COMPUESTAS puntuales de descanso a mano (frágil, se rompe
        apenas el coach redacta distinto -- "Rest 60s entre piernas / 90s
@@ -3701,7 +3869,14 @@
       (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
   }
-  /* fila 1: volumen y esfuerzo; fila 2: pausa (1 toque = cuenta regresiva), cadencia y modificador tactico.
+  function tempoLimpioSB(tempo){
+    var s = String(tempo == null ? '' : tempo).replace(/^\s*tempo\s*[:\-]?\s*/i, '').trim();
+    return /^[0-9xX]{3,4}$|^[0-9xX](?:\s*[-\/]\s*[0-9xX]){2,3}$/.test(s) ? s.replace(/\s+/g, '') : '';
+  }
+  /* Tarjeta de ejercicio en tres filas horizontales (el estilo visual lo pone data-jp-estilo, ver shared/tarjeta-ejercicio.css):
+       fila 1 · VOLUMEN: series x repeticiones, grande y a lo largo de la tarjeta
+       fila 2 · DESCANSO: debajo del volumen (un toque = cuenta regresiva)
+       fila 3 · TÉCNICA: tempo y RIR (más la carga pautada y el modificador unilateral)
      sinPausa marca la estacion intermedia de un biset/triset (A1 -> A2 sin descanso) */
   function restBadgeSB(seg, lbl){
     seg = normRestSB(seg);
@@ -3709,28 +3884,31 @@
     return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\u23f1\ufe0e\u25b6\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
-    var r1 = [], r2 = [];
+    var r1 = '', r2 = [], r3 = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
     /* criterio único: ejercicio suelto = SERIES; estaciones encadenadas (biset / triset) = RONDAS */
-    var rotSets = rondas ? (sets == 1 ? ' RONDA' : ' RONDAS') : (sets == 1 ? ' SERIE' : ' SERIES');
-    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \u00d7 ' + escSB(reps) + ' ' + u + '</span>');
-    else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
-    else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
-    /* el tempo no se imprime en la línea principal de series: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
-    if(rir){
-      var tier = tierRirSB(rir);
-      r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
-    }
+    var rotSets = rondas ? (sets == 1 ? 'RONDA' : 'RONDAS') : (sets == 1 ? 'SERIE' : 'SERIES');
+    var vS = sets ? '<b class="jp-vn">' + sets + '</b> <span class="jp-vl">' + rotSets + '</span>' : '';
+    var vR = reps ? '<b class="jp-vr">' + escSB(reps) + '</b> <span class="jp-vl">' + u + '</span>' : '';
+    r1 = '<span class="jp-db-seg jp-db-vol">' + vS + (vS && vR ? ' <i class="jp-vx">\u00d7</i> ' : '') + vR + '</span>';
     var rb = restBadgeSB(restSeconds, restLabel);
     if(rb) r2.push(rb);
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
-    /* el tempo es un chip corto entre las series y el RIR (mismo orden que la línea de dosis del Builder: series x reps | tempo | RIR, y abajo el descanso); su explicación sigue en el acordeón de pautas */
-    if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
-    if(uni) r2.push(chipUnilateralSB(uni));
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1.join('') + '</div>' +
-      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') + '</div>';
+    var tp = tempoLimpioSB(tempo);
+    if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    if(rir){
+      var tier = tierRirSB(rir);
+      r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
+    }
+    if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\s*/, '')) + '</b></span>');
+    if(uni) r3.push(chipUnilateralSB(uni));
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
+      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
   }
+  window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
+  window.jpPizarraSports = pizarraSports;    /* idem: el runner arma un bloque y mira el DOM real de la tarjeta */
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
      unilateralidad/ejecución ("por pierna"/"por lado"): formato exacto
@@ -3836,7 +4014,17 @@
     var card = go.closest('.jp-sb-ex, .jp-sb-subex-resumen'), nm = card && card.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit');
     try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
     go.classList.add('on'); setTimeout(function(){ go.classList.remove('on'); }, 900);
-    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, 'Descanso \u00b7 ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio'));
+    var etiquetaDesc = 'Descanso \u00b7 ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio');
+    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, etiquetaDesc);
+    /* el toque en el bot\u00f3n de descanso SIEMPRE abre el reloj flotante: si por cualquier motivo el puente del m\u00f3dulo de calentamiento no lo abri\u00f3
+       (no carg\u00f3, o el motor qued\u00f3 en otro estado), se lo pide directo al motor \u00fanico de descanso. En CrossFit el descanso lo gobierna su propio widget. */
+    setTimeout(function(){
+      var h = document.getElementById('restHud');
+      if(!h || h.classList.contains('on')) return;
+      var cwt = document.getElementById('cwtWrap');
+      if((cwt && cwt.classList.contains('on')) || document.body.classList.contains('cf-disc')) return;
+      if(window.CoachTV && typeof window.CoachTV.rest === 'function') window.CoachTV.rest(seg, etiquetaDesc);
+    }, 160);
   });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){
@@ -3951,12 +4139,12 @@
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
+            '<div class="jp-sb-biset-title"><span class="jp-sb-biset-pill">' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' \u00b7 ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + '</span><span class="jp-sb-biset-sub">EJERCICIOS ENCADENADOS \u00b7 SIN PAUSA ENTRE ELLOS</span></div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -3998,7 +4186,7 @@
          línea. Nunca en calentamiento (ahí la técnica no aplica). */
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
-        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1 });
+        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1, uni: entry.unilateral || '' });
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
@@ -4042,18 +4230,34 @@
         }
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
-        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
-        filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
+        /* nombre de estación limpio: sin el guion de viñeta ni la "x" que queda colgando cuando la cantidad pasó a la pastilla ("- Sled push / Trineo x" -> "Sled push / Trineo") */
+        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : jpLimpiarNombreEstacionSB(partesPlain.nm);
+        /* la línea de formato ("Cuatro rondas: ...", AMRAP, EMOM, For Time) es una consigna, no una estación: va en una banda sin número */
+        /* estación de cardio / finisher: una línea con viñeta ("- SkiErg x 40 s al máximo sostenible") o con cantidad ("Assault bike x 40 s a un ritmo sostenible") es SIEMPRE una estación,
+           aunque sea larga: antes las de más de 48 caracteres se tomaban por consigna de formato y el circuito mezclaba filas numeradas con bandas de cronómetro. Todas las estaciones se
+           arman igual: número, nombre corto, cantidad en su pastilla y la aclaración en una línea propia. */
+        const estPartida = !esCalentamiento ? jpPartirEstacionSB(nombrePlain) : null;
+        const esEstacionPlain = !esCalentamiento && (!!pillTxt || /^\s*[\-–—•*]\s*\S/.test(partesPlain.nm) || (!!estPartida && !jpEsConsignaSB(nombrePlain)));
+        const esFormatoPlain = !esCalentamiento && !esEstacionPlain && jpEsLineaFormatoSB(nombrePlain, !!pillTxt);
+        const claseEst = !esCalentamiento && !esFormatoPlain;
+        if(esFormatoPlain){
+          filas += '<div class="jp-sb-plain jp-sb-plain-fmt"><span class="jp-sb-fmt-ic" aria-hidden="true">⏱</span><span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span></div>';
+          return;
+        }
+        const nomEst = (esEstacionPlain && estPartida) ? estPartida.nm : nombrePlain;
+        const pillEst = pillTxt || ((esEstacionPlain && estPartida) ? estPartida.qty : '');
+        const notaEst = [(esEstacionPlain && estPartida && estPartida.nota) ? estPartida.nota : ''].concat(entry.notas || []).filter(Boolean);
+        filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + (claseEst ? ' jp-sb-plain-est' : '') + '">' +
             (!esCalentamiento ? '<span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span>' : '') +
-            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
+            '<span class="jp-sb-plain-nombre">' + escSB(nomEst) + '</span>' +
+            (pillEst ? '<span class="jp-sb-plain-pill">' + escSB(pillEst) + '</span>' : '') +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
-            (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
+            (notaEst.length ? '<div class="jp-sb-nota">' + escSB(notaEst.join(' · ')) + '</div>' : '') +
           '</div>';
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '' });
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '', uni: entry.unilateral || '' });
       if(entry.tecnica === 'restpause' && !entry.tramos){
         var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
         for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\u26a1 REST-PAUSE: al fallo \u2192 pausa 15-20 s \u2192 +2-4 reps \u2192 pausa \u2192 +2-4 reps (una sola serie)' : '');
@@ -4115,7 +4319,7 @@
     });
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
       ? unirMetaSB(block.tips, sepMeta.tips)
-      : formatTipsSB((function(){
+      : formatTipsSB(quitarTipsDeTarjetaSB((function(){
           var p = String(block.tips || ''), x = String(sepMeta.tips || '');
           if(!x) return p;
           if(!p) return x;
@@ -4123,7 +4327,7 @@
           if(np.indexOf(nx) >= 0) return p;
           if(nx.indexOf(np) >= 0) return x;
           return p + '\n' + x;
-        })(), nombresTips);
+        })(), regCfg.length), nombresTips);
     /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
     const explicarTempoSB = function(tp){
       const m = String(tp || '').match(/^([\dXx])([\dXx])([\dXx])([\dXx])$/);
@@ -4144,10 +4348,9 @@
           (en.subs || []).forEach(function(sb){ if(sb.tempo) add(sb.nombre, sb.tempo); });
         }
       });
-      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
+      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 ' + escSB(jpT('app.card.tempo.t')) + '</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
-    const tieneObjTips = objetivoHtml || tipsHtml;
-    const tieneAcc = tieneObjTips || !!tempoHtml;
+    const tieneAcc = !!tipsHtml;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
        -- el énfasis muscular/técnico que el coach agrega entre paréntesis
        al título del bloque ("BLOQUE 4 | GLÚTEO (EXTENSIÓN DE CADERA &
@@ -4162,16 +4365,14 @@
        "Bloque completado") pero se oculta con CSS. El tiempo sale del "(22 MIN)" del titulo o de la duracion estimada del bloque. */
     const mMinT = tituloBloqueEnfasis.match(/^(\d+)\s*MIN/i), minutosTag = mMinT ? mMinT[1] : (duracionEstimada || '');
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
-        '<div class="jp-sb-tag">[ BIOMEC&Aacute;NICA APLICADA &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
+        '<div class="jp-sb-tag">[ ' + escSB(jpT('app.card.tag')) + ' &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
         (block.ocultaTituloTablero ? '' : tituloBloqueHtmlSB(tituloBloquePrincipal)) +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas + chipsVideoSB(videosBloque, busquedasVid) +
         (tieneAcc ?
-          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
+          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary>' +
             '<div class="jp-details-content">' +
-              (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-obj">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
-              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
-              tempoHtml +
+              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ' + escSB(jpT('app.card.tips.lb')) + '</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
             '</div>' +
           '</details>' : '') +
         (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg, obj: String(block.objective || ''), tp: String(block.tips || '') }) : '') +
@@ -4186,6 +4387,7 @@
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
     try{ jpQrAcomodar(body); }catch(eQr){ console.warn('registro 1 toque', eQr); }
+    try{ jpCajasTarjetaSB(body, objetivoHtml); }catch(eCj){ console.warn('cajas de la tarjeta', eCj); }
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
@@ -4678,8 +4880,8 @@
       const l = state.loads[k];
       if(!l || !l.done) return;
       series++;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      reps += rp; vol += kg * rp;
+      const kg = numJP(l.kg), rp = Math.round(jpRepsReales(l.reps));
+      reps += rp; vol += jpTonelajeSerie(l);
       if(kg > maxKg) maxKg = kg;
     });
     /* directiva (resumen de sesión CrossFit): score del WOD del día, si
@@ -4693,7 +4895,6 @@
       scoreWod = (state.scores && state.scores[skeyWod]) || '';
     }
     /* un solo criterio de tonelaje en toda la app: para la sesión abierta se usa el mismo cálculo del HUD (kg × reps válidas; sin metros, segundos ni acarreos) */
-    try{ if(weekIdx === state.currentWeek && day && day.id === state.currentDay && typeof calcularTonelajeSesion === 'function') vol = calcularTonelajeSesion(); }catch(eT){}
     return { vol: Math.round(vol), series: series, reps: reps, maxKg: maxKg, scoreWod: scoreWod };
   }
   /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- desglose
@@ -4864,7 +5065,7 @@
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">' + (SP ? '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]' : '\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
+            '<button class="sc-share" id="scShare" type="button">' + (SP ? '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE' :'\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>';

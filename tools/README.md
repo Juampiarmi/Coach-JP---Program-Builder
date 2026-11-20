@@ -14,12 +14,15 @@ src/
     13-dias-femenino.js     sesiones Bodybuilding femeninas + matriz de frecuencias
     14-dias-hyrox.js        sesiones Hyrox (5 sesiones x 3 niveles x hombre/mujer)
     20-armado.js            cruza sesiones y niveles, redacta el texto y lo pasa por el importador
+  shared/
+    tarjeta-ejercicio.css   CSS de los 4 estilos de tarjeta de ejercicio (lo usan la app del alumno, el Builder y el Showroom); los selectores "@est(N)" los expande tools/estilos.js
   alumno/
     index.html              app del alumno: el documento que recibe el alumno, con un @@include por bloque
     css/NNN-*.css           cada <style> (CSS real)
     js/NNN-*.js             cada <script> (JS real: se puede analizar, probar y linteaar)
 tools/
   build.js                  src/ → index.html
+  estilos.js                expande los selectores "@est(N)" de los CSS de estilos (directiva @@estilo)
   check-alumno.js           controles de la app del alumno (sintaxis de cada JS, TEMPLATE_HTML idéntico)
   split.js                  index.html → src/ (paso 1; sirve para re-partir si alguien edita index.html a mano)
   desescapar.js             paso 2 (ya aplicado): pasó los archivos de src/alumno/ de "texto del template literal" a JS/CSS real
@@ -33,7 +36,7 @@ El orden de los bloques es el orden de los `@@include` en `src/alumno/index.html
 # editar archivos en src/ ...
 node tools/build.js            # regenera index.html
 node tools/build.js --check    # falla si index.html no coincide con src/ (no escribe nada)
-node tools/check-alumno.js     # sintaxis de cada JS del alumno + TEMPLATE_HTML coherente
+node tools/check-alumno.js     # sintaxis de cada JS del alumno + TEMPLATE_HTML coherente + la sesión de audio nunca es 'playback'
 ```
 
 Después, probar (`tests/parsers/runner.html`) y commitear **`src/` e `index.html` juntos**.
@@ -44,6 +47,8 @@ Después, probar (`tests/parsers/runner.html`) y commitear **`src/` e `index.htm
 
 - `@@include ruta@@` (ruta relativa a `src/`): copia el archivo tal cual. En una línea propia consume también el salto de línea; en medio de una línea reemplaza solo la directiva.
 - `@@template ruta@@`: igual, pero el resultado completo se **escapa para un template literal** (`\` → `\\`, `` ` `` → `` \` ``, `${` → `\${`, `</script` → `<\/script`). Se usa una sola vez: `const TEMPLATE_HTML = \`@@template alumno/index.html@@\`;`
+
+- `@@estilo ruta@@`: incluye un CSS de estilos de tarjeta con los selectores `@est(N)` expandidos (`@est(2) .x{}` → `html body:not(#_):not(#__)[data-jp-estilo="2"] .x, html body:not(#_):not(#__) [data-jp-estilo="2"] .x{}`; `@est .x{}` vale para cualquier estilo). El prefijo da la especificidad necesaria para ganarle a las capas viejas con `!important` de la app del alumno; el atributo `data-jp-estilo` vive en el `<body>` del alumno o en el contenedor de la vista previa del Showroom.
 
 ## La app del alumno ya es JS y CSS real
 

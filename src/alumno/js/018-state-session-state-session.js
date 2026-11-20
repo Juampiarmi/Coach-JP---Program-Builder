@@ -170,7 +170,7 @@
       m.n++;
       var kg = parseFloat(l.kg) || 0, rp = parseFloat(l.reps) || 0;
       if(kg > 0){
-        m.vol += kg * (rp > 0 ? rp : 1);
+        m.vol += jpTonelajeSerie(l);
         if(kg > m.kg || (kg === m.kg && rp > m.reps)){ m.kg = kg; m.reps = rp > 0 ? rp : 1; }
       }
     });
@@ -190,15 +190,18 @@
     var c = {}, tot = 0;
     (det || []).forEach(function(x){ var g = grupoDe(x.ex); if(!g) return; c[g] = (c[g] || 0) + x.n; tot += x.n; });
     var lista = Object.keys(c).map(function(g){ return { nombre: g, n: c[g], pct: tot ? Math.round(c[g] / tot * 100) : 0 }; }).sort(function(a, b){ return b.n - a.n; });
-    /* si la mayoria de las series de HOY es de tren inferior, el grupo principal es PIERNA y los subgrupos (cuadriceps, gluteo, isquios, gemelos) van debajo */
-    var PIERNA = { 'CUÁDRICEPS': 1, 'ISQUIOS': 1, 'GLÚTEO': 1, 'GEMELOS': 1 }, nPierna = 0;
-    lista.forEach(function(x){ if(PIERNA[x.nombre]) nPierna += x.n; });
-    if(tot && nPierna / tot >= 0.5){
-      return [{ nombre: 'PIERNA', n: nPierna, pct: Math.round(nPierna / tot * 100) }]
-        .concat(lista.filter(function(x){ return PIERNA[x.nombre]; }), lista.filter(function(x){ return !PIERNA[x.nombre]; }));
-    }
+    /* solo los grupos específicos (cuádriceps, isquios, glúteo, gemelos...): la referencia general de "tren inferior" no se repite como un renglón más,
+       va en el texto descriptivo de la Story Card (ver esTrenInferior) */
     return lista;
   }
+  var GRUPOS_PIERNA = { 'CUÁDRICEPS': 1, 'ISQUIOS': 1, 'GLÚTEO': 1, 'GEMELOS': 1 };
+  /* true si la mayoría de las series efectivas de la lista de grupos es de tren inferior */
+  function esTrenInferior(grupos){
+    var tot = 0, inf = 0;
+    (grupos || []).forEach(function(x){ tot += x.n || 0; if(GRUPOS_PIERNA[x.nombre]) inf += x.n || 0; });
+    return tot > 0 && inf / tot >= 0.5;
+  }
+  window.jpEsTrenInferior = esTrenInferior;
   function topSetsDia(){
     var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {}, vig = bloquesVigentes();
     Object.keys(state.loads || {}).forEach(function(k){
@@ -211,7 +214,7 @@
       if(!nm) return;
       var r = rp > 0 ? rp : 1, m = mapa[nm] || (mapa[nm] = { ex: nm, kg: 0, reps: 0, vol: 0, blk: {} });
       m.blk[p[2]] = 1;
-      m.vol += kg * r;
+      m.vol += jpTonelajeSerie(l);
       if(kg > m.kg || (kg === m.kg && r > m.reps)){ m.kg = kg; m.reps = r; }
     });
     return Object.keys(mapa).map(function(k){ mapa[k].vol = Math.round(mapa[k].vol); return mapa[k]; })

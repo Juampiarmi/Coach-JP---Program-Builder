@@ -41,6 +41,16 @@
 <script src="cases-banco.js"></script>
 <script src="cases-alumno.js"></script>
 <script src="cases-ia.js"></script>
+<script src="cases-progresion.js"></script>
+<script src="cases-estilos.js"></script>
+<script src="cases-copia.js"></script>
+<script src="cases-cruce.js"></script>
+<script src="cases-metabolicos.js"></script>
+<script src="cases-elite.js"></script>
+<script src="cases-pedagogia.js"></script>
+<script src="cases-copia-plan.js"></script>
+<script src="cases-i18n.js"></script>
+<script src="cases-voz.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -78,6 +88,28 @@
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
     iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    cruceCF:      { run: function(i){ return cruceCaso(i); }, valor: function(r){ return r; } },
+    copiaCF:      { run: function(i){ return copiaCaso(i); }, valor: function(r){ return r; } },
+    showroom:     { run: function(i){ return showroomCaso(i); }, valor: function(r){ return r; } },
+    alumnoEstilo: { run: function(i){ return alumnoEstilo(i); }, valor: function(r){ return r; } },
+    alumnoTon: { run: function(i){ return alumnoTon(i); }, valor: function(r){ return r; } },
+    alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
+    bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
+    copiaPlan:    { run: function(i){ return copiaPlanCaso(i); }, valor: function(r){ return r; } },
+    pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
+    i18nBib:      { run: function(i){ return i18nCaso(i); }, valor: function(r){ return r; } },
+    alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
+    eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
+    eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
+    bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
+    alumnoPiel: { run: function(i){ return alumnoPiel(i); }, valor: function(r){ return r; } },
+    alumnoStory: { run: function(i){ return alumnoStory(i); }, valor: function(r){ return r; } },
+    alumnoCircuitos: { run: function(i){ return alumnoCircuitos(i); }, valor: function(r){ return r; } },
+    alumnoEstaciones: { run: function(i){ return alumnoEstaciones(i); }, valor: function(r){ return r; } },
+    alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
+    editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
+    bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
+    bancoRecFem:  { run: function(i){ return auditarRecFem(i); }, valor: function(r){ return r; } },
     /* app del alumno: objetivo de la semana en la información de la semana */
     alumnoObjetivo: { run: function(i){ return alumnoObjetivoSemana(i); }, valor: function(r){ return r; } },
     /* app del alumno: se compila un alumno de prueba con el compile() real, se abre en un iframe y se llaman sus funciones globales (input: { fn, args }) */
@@ -179,6 +211,1038 @@
     return P;
   }
   /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  /* ---------- cambio de alumno: estado cruzado entre modalidades ---------- */
+  function cruceCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_cr_a', 'ath_test_cr_b'];
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, act: S.activeId, ui: S.ui ? { day: S.ui.day, cfWeek: S.ui.cfWeek } : {}, dpa: S.ui && S.ui.diaPorAlumno };
+    win.save = win.guardarAhora = win.renderAthletes = function(){}; win.toast = function(){};
+    function alumno(id, nombre, cf){
+      var a = { id: id, nombre: nombre, apellido: 'Cruce', freq: 5, nivel: 'Avanzado', genero: 'F' }; S.athletes.push(a); A.push(a);
+      var p = win.newPlan(a); p.meta.mesoDisc = cf ? 'crossfit' : 'hiper'; S.plans[id] = p; return p;
+    }
+    try{
+      S.ui = S.ui || {}; S.ui.diaPorAlumno = {};
+      var pA = alumno(ids[0], 'Cecilia', false), pB = alumno(ids[1], 'Heliana', true);
+      [0, 1, 2].forEach(function(i){ pA.dias[i].bloques.push(win.nuevoBloquePizarra(false, 'strength', 'Hip thrust D' + (i + 1), ['Hip thrust con barra', '4x8 | RIR 2'])); });
+      win.jpActivarAlumno(ids[1]); var psB = win.asegurarBloquesPorSemana(pB.dias[0]); psB[0].push(win.nuevoBloquePizarra(true, 'metcon', 'WOD D1', ['AMRAP 10', '10 Burpees'])); pB.dias[0].bloques = psB[0];
+      win.jpActivarAlumno(ids[0]); S.ui.day = 2;
+      var resA = function(){ return pA.dias.map(function(d){ return d.bloques.map(function(b){ return b.titulo; }).join('+') || '-'; }).join(' | '); };
+      var resB = function(){ return pB.dias.map(function(d){ return win.asegurarBloquesPorSemana(d).map(function(x){ return x.length; }).join('/'); }).join(' | '); };
+      var a0 = resA(), b0 = resB();
+
+      if(c.caso === 'cambio'){
+        var ep0 = win.__jpEpocaAlumno;
+        win.jpActivarAlumno(ids[1]);
+        return { dia: S.ui.day, semana: S.ui.cfWeek, activo: S.activeId === ids[1], aIntacto: resA() === a0, bIntacto: resB() === b0, referencias: win.jpAuditarReferenciasCompartidas(S.plans).length,
+          epocaCambio: win.__jpEpocaAlumno > ep0, vigenteViejo: win.jpAlumnoVigente(ids[0], ep0), vigenteNuevo: win.jpAlumnoVigente(ids[1], win.__jpEpocaAlumno) };
+      }
+      if(c.caso === 'vuelta'){
+        win.jpActivarAlumno(ids[1]); S.ui.day = 0; win.jpActivarAlumno(ids[0]);
+        return { diaDeA: S.ui.day, aIntacto: resA() === a0, bIntacto: resB() === b0 };
+      }
+      if(c.caso === 'confirmaSaliente'){
+        /* alumno CrossFit saliente con un cambio sin confirmar (puntero reasignado): al cambiar de alumno ese cambio se guarda en SU semana */
+        win.jpActivarAlumno(ids[1]); S.ui.cfWeek = 0; win.sincronizarBloquesSemana(pB);
+        pB.dias[0].bloques = pB.dias[0].bloques.filter(function(b){ return b.titulo !== 'WOD D1'; });
+        win.jpActivarAlumno(ids[0]);
+        return { s1EnB: win.asegurarBloquesPorSemana(pB.dias[0])[0].length, aIntacto: resA() === a0 };
+      }
+      if(c.caso === 'estructuraNula'){
+        var out = {};
+        var casos = { diasNull: function(p){ p.dias = null; }, diasVacio: function(p){ p.dias = []; }, diaNulo: function(p){ p.dias.splice(1, 0, null); }, sinBloques: function(p){ delete p.dias[0].bloques; } };
+        Object.keys(casos).forEach(function(k){
+          var p = alumno('ath_test_cr_' + k, 'N' + k, true); casos[k](p);
+          var pp = win.plan('ath_test_cr_' + k); out[k] = pp.dias.length >= 3 && pp.dias.every(function(d){ return d && Array.isArray(d.bloques); });
+        });
+        return out;
+      }
+      if(c.caso === 'dibujo'){
+        S.activeId = ids[1]; S.ui.day = NaN; S.ui.cfWeek = 9;
+        var rotos = {};
+        var variantes = { diaNulo: function(){ pB.dias.splice(1, 0, null); }, sinBloques: function(){ delete pB.dias[2].bloques; }, semanasRotas: function(){ pB.dias[0].bloquesPorSemana = [null, 'x', [], 7]; } };
+        Object.keys(variantes).forEach(function(k){
+          var copia = JSON.parse(JSON.stringify(pB.dias)); try{ variantes[k](); win.renderBuilder = orig.rb; win.renderBuilder(); rotos[k] = true; }catch(e){ rotos[k] = String(e && e.message || e); } pB.dias = copia;
+        });
+        rotos.indices = (S.ui.day === 0 && S.ui.cfWeek === 0);
+        return rotos;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      Object.keys(S.plans).filter(function(k){ return /^ath_test_cr_/.test(k); }).forEach(function(k){ delete S.plans[k]; });
+      S.athletes = S.athletes.filter(function(a){ return !/^ath_test_cr_/.test(a.id); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast;
+      S.activeId = orig.act; if(S.ui){ S.ui.day = orig.ui.day; S.ui.cfWeek = orig.ui.cfWeek; S.ui.diaPorAlumno = orig.dpa; }
+    }
+  }
+  /* ---------- copia entre alumnos (CrossFit): plan completo · semana · día ----------
+     Se usan las funciones reales con dos alumnos de prueba en memoria; save / guardarAhora / renderBuilder / renderAthletes / toast / confirm se anulan y todo se retira al terminar. */
+  function copiaCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_cp_o', 'ath_test_cp_d', 'ath_test_cp_e'];
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, confirm: win.confirm, act: S.activeId, ui: S.ui ? JSON.parse(JSON.stringify({ cfWeek: S.ui.cfWeek, day: S.ui.day })) : {} };
+    win.save = win.guardarAhora = win.renderBuilder = win.renderAthletes = function(){}; win.toast = function(){}; win.confirm = function(){ return true; };
+    function alumno(id, nombre, cf){
+      var a = { id: id, nombre: nombre, apellido: 'Copia', freq: 3, nivel: 'Avanzado', genero: 'F' }; S.athletes.push(a); A.push(a);
+      var p = win.newPlan(a); if(cf) p.meta.mesoDisc = 'crossfit'; S.plans[id] = p; return p;
+    }
+    function bloque(tit, cat){ return win.nuevoBloquePizarra(true, cat || 'metcon', tit, ['21-15-9 For Time', 'Thrusters', 'Pull-ups']); }
+    try{
+      S.ui = S.ui || {};
+      var pO = alumno(ids[0], 'Origen', true), pD = alumno(ids[1], 'Destino', c.destCF === true), pE = alumno(ids[2], 'Otro', true);
+      S.activeId = ids[0]; S.ui.cfWeek = 0; S.ui.day = 0;
+      var d0 = pO.dias[0], d1 = pO.dias[1], ps0 = win.asegurarBloquesPorSemana(d0), ps1 = win.asegurarBloquesPorSemana(d1);
+      ps0[0].push(bloque('Squat S1', 'strength')); ps0[1].push(bloque('Squat S2', 'strength'), bloque('Fran S2')); ps0[2].push(bloque('Cindy S3'));
+      ps1[1].push(bloque('Dia2 S2')); d0.bloques = ps0[0];
+      pO.meso[1].objetivo = 'Objetivo S2'; pO.meso[1].phase = 'Pico';
+      var pareja = function(p){ return p.dias.map(function(d){ return win.asegurarBloquesPorSemana(d).map(function(a){ return a.length; }).join('/'); }).join(' | '); };
+
+      if(c.caso === 'planCF'){
+        /* edición sin commit: el coach borra un bloque de la semana 2 reasignando el puntero (sin volver a renderizar) */
+        S.ui.cfWeek = 1; win.sincronizarBloquesSemana(pO); d0.bloques = d0.bloques.filter(function(b){ return !/Fran/.test(b.titulo); });
+        var ok = win.ejecutarCopiaPlan(ids[0], ids[1]), dD = pD.dias[0];
+        dD.bloquesPorSemana[0][0].titulo = 'MUTADO';
+        return { ok: ok, esCF: win.esPlanCFActivo(pD), disc: pD.meta.mesoDisc, semanas: pareja(pD), punteroEnS1: dD.bloques === dD.bloquesPorSemana[0], sinBloqueBorrado: JSON.stringify(dD.bloquesPorSemana[1]).indexOf('Fran') < 0,
+          problemas: win.jpValidarEstructuraPlan(pD), objetivoS2: pD.meso[1].objetivo, idsNuevos: dD.bloquesPorSemana[1][0].id !== ps0[1][0].id, origenIntacto: JSON.stringify(pO.dias).indexOf('MUTADO') < 0, nombrePropio: pD.meta.footer2.indexOf('Destino') >= 0 };
+      }
+      if(c.caso === 'planUndo'){
+        var antes = JSON.stringify(pD.dias) + '|' + (pD.meta.mesoDisc || '');
+        win.ejecutarCopiaPlan(ids[0], ids[1]);
+        var cambio = win.esPlanCFActivo(pD), u = win.deshacerCopiaPlan(ids[1]);
+        return { cambio: cambio, deshecho: u, vuelveIgual: (JSON.stringify(pD.dias) + '|' + (pD.meta.mesoDisc || '')) === antes, sinMasUndo: win.deshacerCopiaPlan(ids[1]) === false };
+      }
+      if(c.caso === 'planSports'){
+        var pS = pD; pS.dias[0].bloques.push(win.nuevoBloquePizarra(false, 'strength', 'Press', ['Press de banca', '4x8 | RIR 2']));
+        pE.meta.mesoDisc = 'crossfit'; S.activeId = ids[1];
+        var ok2 = win.ejecutarCopiaPlan(ids[1], ids[2]);
+        return { ok: ok2, esCF: win.esPlanCFActivo(pE), sinSemanasIndependientes: !pE.dias[0].bloquesPorSemana, bloques: pE.dias[0].bloques.length, problemas: win.jpValidarEstructuraPlan(pE) };
+      }
+      if(c.caso === 'semana'){
+        pD.meta.mesoDisc = 'crossfit'; pD.dias.pop();
+        var otras = function(){ return [0, 1, 3].map(function(i){ return pD.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[i].length; }).join(','); }).join('|'); };
+        var otras0 = otras(), diasAntes = pD.dias.length;
+        var okS = win.ejecutarCopiaSemana(ids[0], 1, ids[1], 2, { notas: true, crearDias: true });
+        return { ok: okS, diasCreados: pD.dias.length - diasAntes, s3: pD.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[2].map(function(b){ return b.titulo; }).join('+'); }).join(' | '),
+          otrasSemanasIntactas: otras().split('|').map(function(x, k){ return x.split(',').slice(0, diasAntes).join(','); }).join('|') === otras0,
+          objetivo: pD.meso[2].objetivo, fase: pD.meso[2].phase, nombreSemanaPropio: pD.meso[2].name === pD.meso[2].name && pD.meso[2].name !== undefined, problemas: win.jpValidarEstructuraPlan(pD),
+          idDiaNuevoUnico: new Set(pD.dias.map(function(d){ return d.id; })).size === pD.dias.length };
+      }
+      if(c.caso === 'semanaMismo'){
+        var okM = win.ejecutarCopiaSemana(ids[0], 1, ids[0], 3, { notas: false, crearDias: true });
+        return { ok: okM, s4: pO.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[3].map(function(b){ return b.titulo; }).join('+'); }).join(' | '), objetivoS4: pO.meso[3].objetivo === undefined, s2Intacta: pO.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[1].length; }).join(',') === '2,1,0', semanaActiva: S.ui.cfWeek };
+      }
+      if(c.caso === 'semanaRechazos'){
+        var f0 = pareja(pO) + '#' + pareja(pD);
+        var r = { misma: win.ejecutarCopiaSemana(ids[0], 1, ids[0], 1, {}), destinoNoCF: win.ejecutarCopiaSemana(ids[0], 1, ids[1], 0, {}), origenVacio: win.ejecutarCopiaSemana(ids[0], 3, ids[2], 0, {}), semanaInvalida: win.ejecutarCopiaSemana(ids[0], 9, ids[2], 0, {}) };
+        r.nadaCambio = (pareja(pO) + '#' + pareja(pD)) === f0;
+        return r;
+      }
+      if(c.caso === 'dia'){
+        S.ui.cfWeek = 0; S.ui.day = 0;
+        var idDest = pE.dias[1].id, shortDest = pE.dias[1].short;
+        var okD = win.ejecutarCopiaDia(ids[0], 0, ids[2], '1', { semOrigen: 1, semDest: 0 });
+        var dE = pE.dias[1];
+        return { ok: okD, s1: win.asegurarBloquesPorSemana(dE)[0].map(function(b){ return b.titulo; }).join('+'), conservaId: dE.id === idDest, conservaRotulo: dE.short === shortDest, problemas: win.jpValidarEstructuraPlan(pE) };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      ids.forEach(function(id){ delete S.plans[id]; });
+      A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast; win.confirm = orig.confirm;
+      S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
+    }
+  }
+  /* ---------- copia de plan entre alumnos: "Copiar plan completo" y "Duplicar planificación / Clonar plan de otro atleta" (mismo núcleo) ---------- */
+  function copiaPlanCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_dp_o', 'ath_test_dp_d'], PB = win.__jpPB;
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, confirm: win.confirm, act: S.activeId, ui: S.ui ? JSON.parse(JSON.stringify({ cfWeek: S.ui.cfWeek, day: S.ui.day })) : {} };
+    win.save = win.guardarAhora = win.renderBuilder = win.renderAthletes = function(){}; win.toast = function(){}; win.confirm = function(){ return true; };
+    function alumno(id, nombre, extra){
+      var a = { id: id, nombre: nombre, apellido: 'Dup', freq: 3, nivel: 'Avanzado', genero: 'F' }; Object.keys(extra || {}).forEach(function(k){ a[k] = extra[k]; });
+      S.athletes.push(a); A.push(a); S.plans[id] = win.newPlan(a); return a;
+    }
+    function dias(n){ return win.newPlan({ id: 'x', freq: n }).dias; }
+    function sinRefs(){ return win.jpAuditarReferenciasCompartidas(S.plans).length; }
+    function idsBloques(p){ var o = {}; p.dias.forEach(function(d){ win.jpListasDeDia(d).forEach(function(l){ (l || []).forEach(function(b){ if(b && b.id) o[b.id] = 1; }); }); }); return o; }
+    function plantilla(id){ return JSON.parse(JSON.stringify(PB.construirDias(PB.LISTA.filter(function(t){ return t.id === id; })[0]))); }
+    /* el modal "Duplicar planificación" se maneja por su pantalla: se llenan los selectores y se toca Duplicar */
+    function duplicar(origen, destino, o){
+      var d = win.document, $ = function(i){ return d.getElementById(i); };
+      $('dupFrom').innerHTML = '<option value="' + origen + '">o</option>'; $('dupTo').innerHTML = '<option value="' + destino + '">d</option>';
+      $('dupFrom').value = origen; $('dupTo').value = destino;
+      $('dupMeso').checked = !(o && o.meso === false); $('dupFichas').checked = !(o && o.fichas === false); $('dupFix').checked = !(o && o.fix === false);
+      $('dupLog').innerHTML = ''; $('dupRun').click();
+      return $('dupLog').innerText;
+    }
+    try{
+      S.ui = S.ui || {};
+      var aO = alumno(ids[0], 'Origen'), aD = alumno(ids[1], 'Destino', { freq: 3, nivel: 'Intermedio', genero: 'M' }), pO = S.plans[ids[0]], pD = S.plans[ids[1]];
+      S.activeId = ids[0]; S.ui.day = 0; S.ui.cfWeek = 0;
+
+      if(c.caso === 'dupCF'){
+        /* CrossFit de 6 días con 4 semanas distintas -> alumno de Fuerza de 3 días: llegan los 6 días, las 4 semanas y la modalidad */
+        pO.dias = dias(6); pO.freqBase = 6; pO.meta.mesoDisc = 'crossfit';
+        pO.dias.forEach(function(d, i){ var ps = win.asegurarBloquesPorSemana(d); [0, 1, 2, 3].forEach(function(w){ ps[w] = [win.nuevoBloquePizarra(true, 'metcon', 'WOD d' + (i + 1) + ' s' + (w + 1), ['AMRAP 10', '10 Burpees'])]; }); d.bloques = ps[0]; });
+        S.ui.cfWeek = 2; win.sincronizarBloquesSemana(pO);
+        var antes = JSON.stringify(pO.dias);
+        var log = duplicar(ids[0], ids[1]), p2 = win.plan(ids[1]), o1 = idsBloques(pO), comun = 0; Object.keys(idsBloques(p2)).forEach(function(k){ if(o1[k]) comun++; });
+        return { copiado: /Plan copiado/.test(log), disc: p2.meta.mesoDisc, dias: p2.dias.length, freqBase: p2.freqBase,
+          semanasDia6: (p2.dias[5].bloquesPorSemana || []).map(function(a){ return a.map(function(b){ return b.titulo; }).join('+'); }).join(' / '),
+          punteroEnS1: p2.dias[0].bloques === p2.dias[0].bloquesPorSemana[0], idsCompartidos: comun, referencias: sinRefs(), problemas: win.jpValidarEstructuraPlan(p2),
+          origenIntacto: JSON.stringify(pO.dias) === antes, nombrePropio: p2.meta.footer2.indexOf('Destino') >= 0 };
+      }
+      if(c.caso === 'dupSports'){
+        /* Bodybuilding de 5 días (plantilla élite) -> alumno de 3 días: no se recorta; sin "fichas" el destino conserva sus títulos en los días que ya tenía */
+        pO.dias = plantilla('jp26_f5_a'); pO.freqBase = 5; pO.meta.mesoDisc = 'hiper';
+        var tit0 = pD.dias.map(function(d){ return d.title; });
+        var log2 = duplicar(ids[0], ids[1], { fichas: false }), p3 = win.plan(ids[1]);
+        var cuenta = function(p){ return p.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0); };
+        var itemsDe = function(p){ return JSON.stringify(p.dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); })); };
+        var oIds = idsBloques(pO);
+        return { copiado: /Plan copiado/.test(log2), dias: p3.dias.length, bloques: cuenta(p3) === cuenta(pO), disc: p3.meta.mesoDisc, titulosDestino: p3.dias.slice(0, 3).map(function(d){ return d.title; }).join('|') === tit0.join('|'),
+          titulosOrigen: p3.dias[3].title === pO.dias[3].title, items: itemsDe(p3) === itemsDe(pO),
+          idsPropios: Object.keys(idsBloques(p3)).every(function(k){ return !oIds[k]; }), referencias: sinRefs(), problemas: win.jpValidarEstructuraPlan(p3) };
+      }
+      if(c.caso === 'idsRotos'){
+        /* plan de origen con ids dañados (bloques repetidos o sin id, elementos nulos, días con ids inválidos o repetidos): se repara y se copia */
+        pO.dias = dias(3);
+        pO.dias[0].bloques = [win.nuevoBloquePizarra(false, 'strength', 'A', ['Sentadilla', '4x8']), win.nuevoBloquePizarra(false, 'strength', 'B', ['Press', '4x8']), null, 'texto suelto', win.nuevoBloquePizarra(false, 'accessory', 'C', ['Curl', '3x12'])];
+        pO.dias[0].bloques[1].id = pO.dias[0].bloques[0].id; delete pO.dias[0].bloques[4].id;
+        pO.dias[1].id = 'día 2|x'; pO.dias[2].id = 'dia1';
+        var res = win.jpClonarPlanEntre(ids[0], ids[1]), p4 = win.plan(ids[1]);
+        var di = p4.dias.map(function(d){ return d.id; });
+        return { ok: res.ok, reparados: res.reparados > 0, bloquesDia1: p4.dias[0].bloques.length, idsDia: di.every(function(x){ return /^[A-Za-z0-9_-]+$/.test(x); }) && new Set(di).size === di.length, problemas: win.jpValidarEstructuraPlan(p4), referencias: sinRefs() };
+      }
+      if(c.caso === 'vetados'){
+        /* el destino tiene prohibido el rumano con déficit: con "reemplazar" se cambia por una variante segura (bloque de pizarra regenerado); sin eso solo se avisa; el origen no cambia */
+        pO.dias = plantilla('jp26_f4_a'); pO.freqBase = 4; pO.meta.mesoDisc = 'hiper'; pD.dias = dias(4); pD.freqBase = 4; aD.freq = 4;
+        aD.prohibidos = ['Peso muerto rumano con déficit'];
+        var txt = function(p){ return JSON.stringify(p.dias.map(function(d){ return d.bloques.map(function(b){ return [b.titulo, b.items]; }); })); };
+        var origen = txt(pO);
+        var log3 = duplicar(ids[0], ids[1], { fix: true }), p5 = win.plan(ids[1]), conFix = txt(p5);
+        var bl0 = pO.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0), bl1 = p5.dias.reduce(function(s, d){ return s + d.bloques.length; }, 0);
+        var log4 = duplicar(ids[0], ids[1], { fix: false }), p6 = win.plan(ids[1]);
+        return { reemplazo: /→/.test(log3), sinVetado: conFix.indexOf('Peso muerto rumano con déficit') < 0, mismosBloques: bl0 === bl1, origenIntacto: txt(pO) === origen && origen.indexOf('Peso muerto rumano con déficit') >= 0,
+          soloAviso: /queda marcado como vetado/.test(log4) && txt(p6).indexOf('Peso muerto rumano con déficit') >= 0, problemas: win.jpValidarEstructuraPlan(p5) };
+      }
+      if(c.caso === 'deshacer'){
+        pO.dias = plantilla('jp26_m5_a'); pO.meta.mesoDisc = 'hiper';
+        var prev = JSON.stringify([pD.dias, pD.freqBase, pD.meta.mesoDisc]), estado = function(){ var q = win.plan(ids[1]); return JSON.stringify([q.dias, q.freqBase, q.meta.mesoDisc]); };
+        duplicar(ids[0], ids[1]);
+        var cambio = estado() !== prev;
+        win.document.querySelector('#dupLog [data-dupundo]').click();
+        return { cambio: cambio, vuelve: estado() === prev, botonSeVa: win.document.getElementById('dupLog').innerText === '' };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      ids.forEach(function(id){ delete S.plans[id]; });
+      A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast; win.confirm = orig.confirm;
+      S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
+      try{ win.document.getElementById('dupLog').innerHTML = ''; }catch(e){}
+    }
+  }
+  /* ---------- Bodybuilding 3, 4 y 5 días (hombres y mujeres, intermedio y avanzado): pautas pedagógicas y criterios de evidencia ---------- */
+  function pedagogiaCaso(c){
+    var S = getS(), PB = win.__jpPB, P = [], reg = (S.banco || []).filter(function(r){ return /^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || ''); });
+    function bloquesTrabajo(r){ var o = []; (r.dias || []).forEach(function(d, k){ (d.bloques || []).forEach(function(b){ if(b && b.sportsPizarra && b.modalidad !== 'calentamiento' && b.modalidad !== 'metcon') o.push({ d: k, b: b }); }); }); return o; }
+    function titulo(r, k){ return r.id + ' día ' + (k + 1); }
+    if(reg.length !== 12) P.push('esperaba 12 plantillas Bodybuilding y hay ' + reg.length);
+    if(c.caso === 'pautas'){
+      reg.forEach(function(r){
+        bloquesTrabajo(r).forEach(function(x){
+          var b = x.b, tips = String(b.tips || ''), items = (b.items || []).join('\n'), multi = /^A2\./m.test(items), rol = /^Fuerza principal/.test(b.titulo) ? 'F' : (/^Accesorios/.test(b.titulo) ? 'A' : (/^Core/.test(b.titulo) ? 'C' : (/Biset|Triset/.test(b.titulo) ? 'B' : 'H'))), tag = titulo(r, x.d) + ' · ' + String(b.titulo).slice(0, 48);
+          var sets = parseInt((/^(\d+)x/m.exec(items) || [])[1], 10);
+          ['POR QUÉ ESTA CANTIDAD DE SERIES:', 'OBJETIVO DE CARGA:'].forEach(function(l){ if(tips.indexOf(l) < 0) P.push(tag + ': falta «' + l + '»'); });
+          var apro = /SERIES DE APROXIMACIÓN: ([^\n]*)/.exec(tips);
+          if(!multi && (rol === 'F' || rol === 'H' || rol === 'A')){
+            if(!apro) P.push(tag + ': falta «SERIES DE APROXIMACIÓN:»');
+            else if(rol !== 'A' && (!/ANTES de las series efectivas/.test(apro[1]) || !/No se anotan ni cuentan como volumen/.test(apro[1]))) P.push(tag + ': la aproximación no aclara que va antes y que no cuenta');
+            else if(apro[1].indexOf('Las series efectivas son solo las ' + sets + ' series') < 0) P.push(tag + ': la aproximación no nombra las ' + sets + ' series efectivas del bloque');
+          }
+          if(multi && apro) P.push(tag + ': un biset no lleva series de aproximación');
+          var pq = /POR QUÉ ESTA CANTIDAD DE SERIES: ([^\n]*)/.exec(tips);
+          if(pq && pq[1].indexOf(String(sets)) !== 0) P.push(tag + ': el porqué de las series no arranca con la cantidad real (' + sets + ')');
+          if((b.items || []).some(function(l){ return /SERIES DE APROXIMACI|OBJETIVO DE CARGA|POR QU[ÉE] ESTA CANTIDAD/.test(l); })) P.push(tag + ': una pauta quedó dentro de los ejercicios');
+        });
+      });
+    } else if(c.caso === 'carga'){
+      /* el objetivo de carga usa el rango y el RIR reales del bloque, en palabras */
+      var ej = PB.textoBloque(1, { rol: 'H', ej: ['Press inclinado con mancuernas'], i: '3x8-10|0-1|90', a: '3x8-10|0-1|90' }, 'avanzado', false).txt;
+      var carga = /OBJETIVO DE CARGA: ([^\n]*)/.exec(ej)[1], apro = /SERIES DE APROXIMACIÓN: ([^\n]*)/.exec(ej)[1];
+      return { rango: carga.indexOf('entre 8 y 10 repeticiones') >= 0, rir: carga.indexOf('una repetición en reserva como mucho') >= 0, techo: carga.indexOf('(10)') >= 0, sube: carga.indexOf('13 repeticiones o más') >= 0, baja: carga.indexOf('no llegás a 8') >= 0,
+        aproxSeries: apro.indexOf('60%') >= 0 && apro.indexOf('80%') >= 0, efectivas: apro.indexOf('las 3 series de 8 a 10 repeticiones') >= 0, sinDosis: !/\d+x\d+/.test(ej.split('[COACHING TIPS & ESTRATEGIA]')[1] || '') };
+    } else if(c.caso === 'mujeres'){
+      reg.filter(function(r){ return r.genero === 'f'; }).forEach(function(r){
+        var txt = JSON.stringify(r.dias || []);
+        if(/curl femoral sentado|seated leg curl/i.test(txt)) P.push(r.id + ': tiene curl femoral sentado (no hay máquina en todos los gimnasios)');
+        var conPL = (r.dias || []).filter(function(d){ return /plancha lateral/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(conPL > 1) P.push(r.id + ': la plancha lateral está en ' + conPL + ' días (máximo 1)');
+        var nucleos = {}; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b.modalidad === 'core') nucleos[b.titulo] = (nucleos[b.titulo] || 0) + 1; }); });
+        Object.keys(nucleos).forEach(function(k){ if(nucleos[k] > 1) P.push(r.id + ': el mismo bloque de core «' + k + '» se repite ' + nucleos[k] + ' veces'); });
+        if(!/Curl de bíceps en banco inclinado/.test(txt) || !/Extensión tríceps tras nuca/.test(txt)) P.push(r.id + ': los brazos no trabajan estirados (curl inclinado y extensión sobre la cabeza)');
+      });
+      var alt = win.__jpPB.EST.alternativas('Curl femoral acostado', 'f'), altM = win.__jpPB.EST.alternativas('Curl femoral acostado', 'm');
+      if(alt.indexOf('Curl femoral sentado') >= 0) P.push('el swap ofrece el curl femoral sentado a las alumnas');
+      if(altM.indexOf('Curl femoral sentado') < 0) P.push('el swap no ofrece el curl femoral sentado a los alumnos');
+    } else if(c.caso === 'hombres'){
+      reg.filter(function(r){ return r.genero === 'm'; }).forEach(function(r){
+        var txt = JSON.stringify(r.dias || []);
+        if(!/Curl de bíceps en banco inclinado/.test(txt) || !/Extensión tríceps tras nuca/.test(txt)) P.push(r.id + ': los brazos no trabajan estirados');
+        if(!/Remo Pecho Apoyado/.test(txt)) P.push(r.id + ': sin remo con el pecho apoyado');
+        if(/Remo con barra inclinado|Remo Pendlay/.test(txt)) P.push(r.id + ': usa un remo libre con barra como ejercicio de la plantilla');
+        var lat = (r.dias || []).filter(function(d){ return /Elevaciones laterales|Elevación lateral/.test(JSON.stringify(d.bloques || [])); }).length;
+        if(lat < 2) P.push(r.id + ': deltoide lateral en ' + lat + ' día(s) (mínimo 2)');
+        var post = (r.dias || []).filter(function(d){ return /Pájaro|Face Pull|posterior/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(post < 1) P.push(r.id + ': sin deltoide posterior');
+        /* hasta 1 patrón axial pesado por día en el avanzado ya lo vigila elite.bb.01; en el intermedio no se encadenan 3 ejercicios pesados de cadera */
+        (r.dias || []).forEach(function(d, k){ var tx = JSON.stringify(d.bloques || []), n = (/Sentadilla con barra/.test(tx) ? 1 : 0) + (/Peso muerto rumano\b(?! con mancuernas)/.test(tx.replace(/Peso muerto rumano a una pierna/g, '')) ? 1 : 0) + (/Hip thrust con barra/.test(tx) ? 1 : 0); if(n >= 3) P.push(titulo(r, k) + ': sentadilla, rumano y hip thrust en el mismo día'); });
+      });
+    } else throw new Error('caso desconocido: ' + c.caso);
+    return P;
+  }
+  /* ---------- voz del timer: motor de audio de la app del alumno con un AudioContext simulado (sin sonido ni red) ---------- */
+  function alumnoVoz(c){
+    var w = alumnoWin(); if(!w || !w.jpVoz) throw new Error('no hay jpVoz en la app del alumno');
+    var V = w.jpVoz, d = w.document, plays = [], creados = {}, P = [];
+    function nodo(){ var f = function(){ return nodo(); }; return new Proxy(f, { get: function(t, p){ return p === 'then' ? undefined : nodo(); }, set: function(){ return true; } }); }
+    var ctxF = { state: 'running', currentTime: 1, destination: nodo(), resume: function(){ return Promise.resolve(); } };
+    ctxF.createBufferSource = function(){ var s = { buffer: null, connect: function(){}, start: function(){ plays.push(s.buffer && s.buffer.id); }, stop: function(){}, onended: null }; return s; };
+    ['createOscillator', 'createGain', 'createBiquadFilter', 'createWaveShaper', 'createDynamicsCompressor', 'createBuffer'].forEach(function(n){ ctxF[n] = function(){ creados[n] = (creados[n] || 0) + 1; return nodo(); }; });
+    var KEYS = ['jp_voz', 'jp_voz_lang', 'jp_audio_muted', 'coachjp_lang'], guardado = {}, origCtx = w.ensureAudioCtx, origFetch = w.fetch, idiomaApp = w.JP_I18N.lang();
+    KEYS.forEach(function(k){ guardado[k] = w.localStorage.getItem(k); });
+    function ls(k, v){ if(v == null) w.localStorage.removeItem(k); else w.localStorage.setItem(k, v); }
+    function montar(){ V.__vaciar(); plays.length = 0; creados = {}; ['es', 'en'].forEach(function(l){ ['n3', 'n2', 'n1', 'go', 'rest', 'work', 'next_round', 'last_round', 'halfway', 'finish'].forEach(function(id){ V.__poner(l, id, { id: l + ':' + id }); }); }); }
+    function ids(){ return plays.map(function(x){ return String(x).split(':')[1]; }); }
+    function dice(fn){ plays.length = 0; fn(); return ids().join(','); }
+    w.ensureAudioCtx = function(){ return ctxF; };
+    w.fetch = function(){ return Promise.reject(new Error('sin red (test)')); };
+    try{
+      ls('jp_audio_muted', '0'); ls('jp_voz_lang', null); w.JP_I18N.setLang('es');
+      if(c.caso === 'apagada'){
+        ls('jp_voz', null); montar();
+        var out = { defectoOff: V.activa() === false, noHabla: V.hablar('tick', 3) === false && plays.length === 0 };
+        w.jpBox.cuenta(3); out.tonoSuena = (creados.createOscillator || 0) > 0 && plays.length === 0;
+        return out;
+      }
+      if(c.caso === 'frases'){
+        ls('jp_voz', '1'); montar();
+        var r = { cuenta: [3, 2, 1].map(function(n){ return dice(function(){ w.jpBox.cuenta(n); }); }).join(',') };
+        r.ya = dice(function(){ w.jpBox.go(); }); r.mitad = dice(function(){ w.jpBox.mitad(); });
+        r.sinTonos = !creados.createOscillator;
+        montar(); r.sinPistaCallaTono = V.hablar('fin', 0);
+        return r;
+      }
+      if(c.caso === 'pistas'){
+        ls('jp_voz', '1'); montar();
+        var m = function(k){ montar(); V.pista(k); return dice(function(){ V.hablar('fin', 0); }); };
+        var o = { descanso: m('rest'), trabajo: m('work'), siguiente: m('next_round'), ultima: m('last_round'), fin: m('done') };
+        montar(); V.pista('tono'); o.tonoPedido = V.hablar('fin', 0);
+        montar(); o.finDeDescanso = dice(function(){ w.jpBox.gong(); });
+        plays.length = 0; var rr = V.hablar('fin', 0); o.sinTonoEncimaDelYa = rr === true && plays.length === 0;
+        return o;
+      }
+      if(c.caso === 'respaldo'){
+        ls('jp_voz', '1'); montar(); ls('jp_audio_muted', '1');
+        var q = { muteGeneral: V.hablar('tick', 3) || plays.length > 0 }; ls('jp_audio_muted', '0');
+        V.__vaciar(); q.sinClipCaeAlTono = V.hablar('tick', 3);
+        montar(); w.ensureAudioCtx = function(){ return null; }; q.sinContexto = V.hablar('tick', 3);
+        return q;
+      }
+      if(c.caso === 'idioma'){
+        ls('jp_voz', '1'); var i = {};
+        w.JP_I18N.setLang('es'); i.autoEs = V.idioma(); w.JP_I18N.setLang('en'); i.autoEn = V.idioma(); w.JP_I18N.setLang('es');
+        V.fijarIdioma('en'); w.JP_I18N.setLang('es'); i.fuerzaEn = V.idioma(); V.fijarIdioma('es'); w.JP_I18N.setLang('en'); i.fuerzaEs = V.idioma();
+        V.fijarIdioma('en'); montar(); V.hablar('tick', 3); i.habla = plays[0];
+        V.fijarIdioma('auto'); w.JP_I18N.setLang('es'); i.restaura = V.preferencia() === 'auto' && V.idioma() === 'es';
+        return i;
+      }
+      if(c.caso === 'controles'){
+        var b = function(s){ return d.querySelector(s); }, t = { filaAjustes: !!(b('#hdpVozToggle') && b('#hdpVozIdioma') && b('#hdpVozProbar')), chipTimer: !!b('#cwtVoz') };
+        ls('jp_voz', null); V.pintar();
+        b('#hdpVozToggle [data-voz="on"]').click();
+        t.activa = V.activa() && w.localStorage.getItem('jp_voz') === '1'; t.chipOn = /ON/.test(b('#cwtVoz').textContent); t.idiomaVisible = b('#hdpVozIdiomaRow').style.display !== 'none' && b('#hdpVozProbarRow').style.display !== 'none';
+        b('#hdpVozToggle [data-voz="off"]').click();
+        t.apaga = !V.activa() && w.localStorage.getItem('jp_voz') === '0'; t.chipOff = /OFF/.test(b('#cwtVoz').textContent); t.idiomaOculto = b('#hdpVozIdiomaRow').style.display === 'none' && b('#hdpVozProbarRow').style.display === 'none';
+        b('#cwtVoz').click(); t.chipActiva = V.activa(); b('#cwtVoz').click(); t.chipApaga = !V.activa();
+        return t;
+      }
+      if(c.caso === 'sw'){
+        var x = new XMLHttpRequest(); x.open('GET', '../../sw.js', false); x.send(); var sw = x.responseText, ver = /coachjp-athlete-v(\d+)/.exec(sw);
+        return { cacheVoz: /VOZ = 'coachjp-voz-v1'/.test(sw), noSeBorra: !/^coachjp-athlete-/.test('coachjp-voz-v1') && /k\.indexOf\('coachjp-athlete-'\) === 0/.test(sw), cacheFirst: /esVoz\(uV\)/.test(sw) && /k\.match\(e\.request\)\.then\(r => r \|\| fetch/.test(sw),
+          precache: /d\.tipo !== 'jp-voz'/.test(sw) && /precachear/.test(sw), versionSube: !!ver && parseInt(ver[1], 10) >= 14 };
+      }
+      if(c.caso === 'paquete'){
+        var get = function(u, met){ var h = new XMLHttpRequest(); h.open(met || 'GET', u, false); try{ h.send(); }catch(e){ return { status: 0, text: '' }; } return { status: h.status, text: h.responseText }; };
+        var fr = get('../../tools/voz/frases.json'), mf = get('../../voz/manifest.json');
+        if(fr.status !== 200) return ['no se pudo leer tools/voz/frases.json'];
+        if(mf.status !== 200) return ['no se pudo leer voz/manifest.json (correr node tools/voz/generar.js)'];
+        var frases = JSON.parse(fr.text).frases, man = JSON.parse(mf.text);
+        Object.keys(frases).forEach(function(id){ ['es', 'en'].forEach(function(l){
+          if(!frases[id][l]) P.push(id + ': falta el texto en ' + l);
+          if(!man.clips[id] || !man.clips[id][l] || !man.clips[id][l].h) P.push(id + ': ' + l + ' no está en voz/manifest.json');
+          else if(get('../../voz/' + l + '/' + id + '.mp3', 'HEAD').status !== 200) P.push(id + ': no existe voz/' + l + '/' + id + '.mp3');
+        }); });
+        Object.keys(man.clips).forEach(function(id){ if(!frases[id]) P.push('manifest: «' + id + '» ya no está en frases.json'); });
+        return P;
+      }
+      if(c.caso === 'textos'){
+        var I = w.JP_I18N, ks = I.claves('es').filter(function(k){ return /^app\.voz\./.test(k); });
+        if(ks.length < 8) P.push('faltan claves app.voz.* en español (' + ks.length + ')');
+        ks.forEach(function(k){ if(I.faltantes('en').indexOf(k) >= 0) P.push('sin inglés: ' + k); });
+        I.incoherentes('en').forEach(function(k){ if(/^app\.voz\./.test(k)) P.push('marcadores distintos: ' + k); });
+        return P;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      w.ensureAudioCtx = origCtx; w.fetch = origFetch; V.__vaciar();
+      KEYS.forEach(function(k){ ls(k, guardado[k]); }); w.JP_I18N.setLang(idiomaApp); try{ w.localStorage.removeItem('coachjp_lang'); if(guardado.coachjp_lang) w.localStorage.setItem('coachjp_lang', guardado.coachjp_lang); }catch(e){}
+      V.pintar();
+    }
+  }
+  /* ---------- dosis por lado, vocabulario rioplatense, biblioteca ampliada e i18n ---------- */
+  function i18nCaso(c){
+    var PB = win.__jpPB, I = win.JP_I18N, S = getS(), P = [], nz = PB.nzz;
+    var reg = (S.banco || []).filter(function(r){ return /^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || ''); });
+    function volver(){ I.setLang('es'); try{ win.localStorage.removeItem('coachjp_lang'); }catch(e){} }
+    function lineasBloque(b){ return (b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); }); }
+    function tx(r){ return JSON.stringify(r.dias || []); }
+    var BLOQUE_H = { rol: 'H', ej: ['Press inclinado con mancuernas'], i: '3x8-10|0-1|90', a: '3x8-10|0-1|90' };
+    if(c.caso === 'conLado'){
+      return { bulgara: PB.conLado('Sentadilla búlgara', '10-12'), yaDice: PB.conLado('Sentadilla búlgara', '10-12 por lado'), bilateral: PB.conLado('Press de banca plano con barra', '10-12'),
+        pistol: PB.conLado('Pistol squat', '8'), plancha: PB.conLado('Plancha lateral', '30s'), pallof: PB.conLado('Pallof press', '12'),
+        lateralPolea: PB.conLado('Elevaciones laterales en polea baja', '12-20'), vacio: PB.conLado('Pallof press', '') };
+    }
+    if(c.caso === 'textoLado'){
+      var t = PB.textoBloque(1, { rol: 'H', ej: ['Sentadilla búlgara'], i: '3x10-12|1|90', a: '3x10-12|1|90' }, 'intermedio', false).txt;
+      return { lineaConLado: /^3x10-12 por lado \|/m.test(t), seriesPorLado: /cada serie es un lado|hacés las repeticiones con un lado, cambiás/i.test(t) && /POR LADO/.test(t), sinInflar: t.indexOf('Las series efectivas son solo las 3 series') >= 0 && /no se duplica/i.test(t) };
+    }
+    if(c.caso === 'plantillasLado'){
+      reg.forEach(function(r){
+        (r.dias || []).forEach(function(d, k){ (d.bloques || []).forEach(function(b){
+          var L = lineasBloque(b);
+          L.forEach(function(l, j){ if(/^(Rest|\d+x)/i.test(l)) return; if(PB.esUnilateral(l) && !/por\s+(lado|pierna|brazo)/i.test(l + ' ' + (L[j + 1] || ''))) P.push(r.id + ' día ' + (k + 1) + ': «' + l + '» sin «por lado» en la dosis (' + (L[j + 1] || '') + ')'); });
+        }); });
+      });
+      reg.filter(function(r){ return /_a$/.test(r.id); }).forEach(function(r){
+        var id = r.id.replace('bkstd_', ''), t = eliteTpl(id), dias = eliteDias(id);
+        var rangos = t.g;
+        win.__jpPB.EST.volumen(dias, rangos, 'avanzado').forEach(function(x){ if(x.est !== 'ok') P.push(id + ': ' + x.g + ' ' + x.v + ' series (rango ' + x.lo + '-' + x.hi + ')'); });
+      });
+    } else if(c.caso === 'vocabulario'){
+      var MAL = /tumbad[oa]s?\b|espinillas?\b/i, textos = [];
+      reg.forEach(function(r){ textos.push([r.id, tx(r)]); });
+      (S.exercises || []).forEach(function(e){ textos.push(['biblioteca «' + e.es + '»', [e.es, e.aviso, e.patron].join(' ')]); });
+      (PB.LISTA || []).forEach(function(t){ textos.push(['plantilla ' + t.id, JSON.stringify(t.nombre || '') + JSON.stringify(t.desc || '')]); });
+      ['es', 'en'].forEach(function(l){ I.setLang(l); I.claves(l).forEach(function(k){ textos.push(['diccionario ' + l + ' ' + k, I.t(k)]); }); });
+      volver();
+      textos.forEach(function(x){ var m = MAL.exec(x[1]); if(m) P.push(x[0] + ': dice «' + m[0] + '»'); });
+    } else if(c.caso === 'alias'){
+      var lista = [{ es: 'Curl femoral tumbado' }, { es: 'Elevación posterior tumbado' }, { es: 'Press de banca plano con barra' }];
+      var n1 = win.aplicarRenombresEj(lista), a1 = JSON.stringify(lista), n2 = win.aplicarRenombresEj(lista);
+      var nuevo = win.jpExDeNombre('Curl femoral acostado'), viejo = win.jpExDeNombre('Curl femoral tumbado');
+      return { renombra: n1 === 2 && lista[0].es === 'Curl femoral acostado' && lista[1].es === 'Elevación posterior acostado' && lista[2].es === 'Press de banca plano con barra',
+        aliasViejo: lista[0].alias.length === 1 && lista[0].alias[0] === 'Curl femoral tumbado', resuelveViejo: !!viejo && viejo.es === 'Curl femoral acostado', resuelveNuevo: !!nuevo && nuevo === viejo, idempotente: n2 === 0 && JSON.stringify(lista) === a1 };
+    } else if(c.caso === 'integridad'){
+      var lib = win.seedExercises(), GRUPOS = ['Pectoral', 'Espalda', 'Hombros', 'Brazos', 'Piernas/Glúteos', 'Core', 'Full Body / Cardio', 'Multiarticular / Complejo Atlético'], vistos = {};
+      lib.forEach(function(e){
+        var k = nz(e.es) + '|' + e.grupo;
+        if(!e.es || !e.en) P.push('«' + e.es + '»: falta el nombre en español o en inglés');
+        if(GRUPOS.indexOf(e.grupo) < 0) P.push('«' + e.es + '»: grupo inválido (' + e.grupo + ')');
+        if(!e.patron) P.push('«' + e.es + '»: sin patrón de movimiento');
+        if(!e.equipo) P.push('«' + e.es + '»: sin equipo');
+        if(!e.oficial && !String(e.aviso || '').trim()) P.push('«' + e.es + '»: sin aviso de seguridad / técnica');
+        if(vistos[k]) P.push('«' + e.es + '»: nombre repetido en ' + e.grupo); vistos[k] = 1;
+      });
+      /* un alias nunca puede ser el nombre vigente de otro ejercicio */
+      lib.forEach(function(e){ (e.alias || []).forEach(function(a){ if(lib.some(function(o){ return o !== e && nz(o.es) === nz(a); })) P.push('alias «' + a + '» choca con otro ejercicio'); }); });
+      if(win.eval('LIB_VERSION') < 9) P.push('LIB_VERSION no subió: los alumnos con biblioteca guardada no recibirían los ejercicios nuevos');
+    } else if(c.caso === 'cobertura'){
+      var lb = win.seedExercises(), cnt = function(f){ return lb.filter(f).length; };
+      var MIN = [['Pectoral', 10, function(e){ return e.grupo === 'Pectoral'; }], ['Espalda', 10, function(e){ return e.grupo === 'Espalda'; }], ['Hombros', 10, function(e){ return e.grupo === 'Hombros'; }],
+        ['Brazos', 10, function(e){ return e.grupo === 'Brazos'; }], ['Piernas', 70, function(e){ return e.grupo === 'Piernas/Glúteos'; }], ['Core', 25, function(e){ return e.grupo === 'Core'; }],
+        ['Cadera dominante / glúteos', 25, function(e){ return e.patron === 'Cadera dominante'; }], ['Rodilla dominante', 25, function(e){ return e.patron === 'Rodilla dominante'; }],
+        ['Gemelos', 5, function(e){ return /gemelo|talones|pantorrilla|sóleo|soleo/i.test(e.es); }], ['Abducción / aducción', 6, function(e){ return e.patron === 'Abducción / Aducción'; }],
+        ['Glúteo (nombre)', 12, function(e){ return /gl[uú]teo|hip thrust|puente|patada/i.test(e.es); }], ['Isquios', 8, function(e){ return /femoral|rumano|n[oó]rdico|isquio/i.test(e.es); }],
+        ['Tracción vertical', 4, function(e){ return e.patron === 'Tracción vertical'; }], ['Tracción horizontal', 7, function(e){ return e.patron === 'Tracción horizontal'; }]];
+      MIN.forEach(function(m){ var n = cnt(m[2]); if(n < m[1]) P.push(m[0] + ': ' + n + ' opciones (mínimo ' + m[1] + ')'); });
+    } else if(c.caso === 'catalogoElite'){
+      var E = PB.ELITE, resuelve = function(n){ return !!win.jpExDeNombre(n); };
+      Object.keys(E.CAT).forEach(function(n){ if(!resuelve(n)) P.push('catálogo élite: «' + n + '» no existe en la biblioteca'); });
+      E.FAM.forEach(function(f, i){
+        f.forEach(function(n){ if(!resuelve(n)) P.push('familia ' + (i + 1) + ': «' + n + '» no existe en la biblioteca'); if(!E.CAT[n]) P.push('familia ' + (i + 1) + ': «' + n + '» no está en el catálogo élite'); });
+        /* cambiar un ejercicio siempre ofrece al menos 3 opciones (la familia + los de su mismo grupo y patrón de la biblioteca), para alumnos y alumnas */
+        f.forEach(function(n){ ['m', 'f'].forEach(function(g){ var a = PB.EST.alternativas(n, g); if(a.length < 3 && E.NO_FEM.indexOf(n) < 0) P.push('swap de «' + n + '» (' + g + '): solo ' + a.length + ' opciones'); }); });
+      });
+    } else if(c.caso === 'alumnas'){
+      var E2 = PB.ELITE;
+      reg.filter(function(r){ return r.genero === 'f'; }).forEach(function(r){
+        var txt = tx(r);
+        E2.NO_FEM.forEach(function(n){ if(txt.indexOf(n) >= 0) P.push(r.id + ': incluye «' + n + '» (restringido para alumnas)'); });
+        var conPL = (r.dias || []).filter(function(d){ return /plancha lateral/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(conPL > 1) P.push(r.id + ': plancha lateral en ' + conPL + ' días');
+      });
+      Object.keys(E2.CAT).forEach(function(n){ PB.EST.alternativas(n, 'f').forEach(function(a){ if(E2.NO_FEM.indexOf(a) >= 0 && E2.NO_FEM.indexOf(n) < 0) P.push('el swap de «' + n + '» ofrece «' + a + '» a las alumnas'); }); });
+    } else if(c.caso === 'runtime'){
+      I.add('es', { 't.a': 'Hola {n}', 't.p.one': '{n} cosa', 't.p.other': '{n} cosas', 't.f': 'solo en español' });
+      I.add('zz', { 't.a': 'Hello {n}' });
+      var r = {}; volver();
+      r.base = I.t('t.f') === 'solo en español'; r.interpola = I.t('t.a', { n: 5 }) === 'Hola 5'; r.plural = I.t('t.p', { n: 1 }) === '1 cosa' && I.t('t.p', { n: 3 }) === '3 cosas';
+      I.setLang('zz');
+      r.respaldo = I.t('t.f') === 'solo en español' && I.t('t.a', { n: 2 }) === 'Hello 2'; r.claveSinTraducir = I.t('t.nunca.existio') === 't.nunca.existio';
+      volver(); r.vuelve = I.lang() === 'es' && I.t('t.a', { n: 1 }) === 'Hola 1';
+      return r;
+    } else if(c.caso === 'diccionarios'){
+      var en = I.incoherentes('en'); en.forEach(function(k){ P.push('en: «' + k + '» huérfana o con marcadores distintos'); });
+      I.claves('es').forEach(function(k){ if(/^motor\.(ped|rol|tec|lbl)\./.test(k) && I.faltantes('en').indexOf(k) >= 0) P.push('sin traducir al inglés: ' + k); });
+      I.claves('es').forEach(function(k){ if(/^app\.card\./.test(k) && I.faltantes('en').indexOf(k) >= 0) P.push('sin traducir al inglés: ' + k); });
+    } else if(c.caso === 'pautasEn'){
+      try{
+        volver(); var es1 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt;
+        I.setLang('en'); var en1 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt; volver();
+        var es2 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt;
+        var ped = en1.split('\n').filter(function(l){ return /^(WARM-UP SETS|WHY THIS MANY SETS|LOAD TARGET):/.test(l); });
+        return { rotulos: ped.length === 3, sinEspanol: ped.length === 3 && !/series efectivas|repeticiones|peso de trabajo|descansando/i.test(ped.join(' ')) && !/SERIES DE APROXIMACI|POR QUÉ ESTA CANTIDAD|OBJETIVO DE CARGA/.test(en1.split('[COACHING TIPS & ESTRATEGIA]')[1] || ''),
+          dosisIntacta: /^3x8-10 \| Tempo \d{4} \| RIR 0-1$/m.test(en1) || /^3x8-10 \|/m.test(en1), vuelveEs: es1 === es2 && /SERIES DE APROXIMACIÓN:/.test(es2) };
+      } finally { volver(); }
+    } else if(c.caso === 'nombres'){
+      var ex = { es: 'Sentadilla búlgara', en: 'Bulgarian Split Squat' }, tmp = {};
+      I.setLang('en');
+      tmp.siempreEs = win.jpNombreEj(ex) === 'Sentadilla búlgara';
+      tmp.conIngles = win.jpNombreEj(ex, true) === 'Sentadilla búlgara (Bulgarian Split Squat)';
+      tmp.vacio = win.jpNombreEj(null) === '';
+      tmp.enInglesNoCambia = win.jpNombreEj({ es: 'Plancha', en: 'Plancha' }, true) === 'Plancha';
+      volver();
+      return tmp;
+    } else if(c.caso === 'alumno'){
+      var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+      var res = { runtime: !!(w.JP_I18N && typeof w.jpT === 'function') };
+      try{
+        w.JP_I18N.setLang('es'); res.es = w.jpT('app.card.tag') === 'BIOMECÁNICA APLICADA' && w.jpT('app.card.tempo.t') === 'TEMPO (CADENCIA)' && w.jpT('app.card.obj.t') === 'OBJETIVO FISIOLÓGICO';
+        w.JP_I18N.setLang('en'); res.en = w.jpT('app.card.tag') === 'APPLIED BIOMECHANICS' && w.jpT('app.card.tempo.t') === 'TEMPO (CADENCE)';
+      } finally { w.JP_I18N.setLang('es'); try{ w.localStorage.removeItem('coachjp_lang'); }catch(e){} }
+      res.tarjeta = /jpT\('app\.card\.tag'\)/.test(w.document.documentElement.innerHTML) || res.es;
+      return res;
+    } else throw new Error('caso desconocido: ' + c.caso);
+    return P;
+  }
+  /* ---------- Bodybuilding avanzado / élite: criterios de las 6 plantillas y editor estructurado del Banco ---------- */
+  function eliteTpl(id){ var t = (win.__jpPB.LISTA || []).filter(function(x){ return x.id === id; })[0]; if(!t) throw new Error('no existe ' + id); return t; }
+  function eliteDias(id){ return win.__jpPB.construirDias(eliteTpl(id)); }
+  function ejerciciosDia(d){ var out = []; (d.bloques || []).forEach(function(b){ var m = win.__jpPB.EST.parsearBloque(b); if(m) m.ex.forEach(function(e){ out.push(e); }); }); return out; }
+  function eliteCaso(c){
+    var PB = win.__jpPB, EST = PB.EST, P = [], ids = ['m3', 'm4', 'm5', 'f3', 'f4', 'f5'].map(function(x){ return 'jp26_' + x + '_a'; });
+    if(c.caso === 'criterios'){
+      /* alertas automáticas (guiados seguidos, estaciones, axial, RIR) y volumen semanal en rango en las 6 plantillas */
+      ids.forEach(function(id){
+        var t = eliteTpl(id), dias = eliteDias(id);
+        if(t.niv !== 'avanzado') P.push(id + ': no es avanzado');
+        dias.forEach(function(d, i){ EST.alertasDia(d, { niv: 'avanzado', genero: t.g }).forEach(function(a){ P.push(id + ' día ' + (i + 1) + ': ' + a.msg); }); });
+        EST.alertasPlan(dias).forEach(function(a){ P.push(id + ': ' + a.msg); });
+        EST.volumen(dias, t.g, 'avanzado').forEach(function(x){ if(x.est !== 'ok') P.push(id + ': ' + x.g + ' ' + x.v + ' series (rango ' + x.lo + '-' + x.hi + ')'); });
+        /* nomenclatura híbrida: todo ejercicio con nombre en inglés distinto lleva "(Name)" */
+        dias.forEach(function(d, i){ ejerciciosDia(d).forEach(function(e){ if(e.lib && e.lib.en && PB.nzz(e.lib.en) !== PB.nzz(e.lib.es) && !/\(.+\)\s*$/.test(e.etiqueta)) P.push(id + ' día ' + (i + 1) + ': «' + e.nombre + '» sin nombre en inglés'); }); });
+      });
+    } else if(c.caso === 'mujeres'){
+      ['f3', 'f4', 'f5'].forEach(function(f){
+        var id = 'jp26_' + f + '_a', dias = eliteDias(id), nGlu = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Glúteo' && /hip thrust/i.test(e.nombre); }); }).length;
+        if(nGlu < 2) P.push(id + ': hip thrust en ' + nGlu + ' días (mínimo 2)');
+        var minGlu = f === 'f5' ? 3 : 2, expGlu = dias.filter(function(d){ return ejerciciosDia(d).filter(function(e){ return e.g === 'Glúteo'; }).reduce(function(a, e){ return a + e.sets; }, 0) >= 6; }).length;
+        if(expGlu < minGlu) P.push(id + ': glúteo con 6 o más series en ' + expGlu + ' días (mínimo ' + minGlu + ')');
+        if(dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return /plancha lateral/i.test(e.nombre); }); }).length >= dias.length) P.push(id + ': la plancha lateral está en todos los días');
+        /* brazos esculpidos con trabajo en elongación */
+        var txt = JSON.stringify(dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); }));
+        if(!/curl de bíceps en banco inclinado/i.test(txt)) P.push(id + ': sin curl inclinado (bíceps elongado)');
+        if(!/extensión tríceps tras nuca/i.test(txt)) P.push(id + ': sin extensión de tríceps sobre la cabeza (tríceps elongado)');
+      });
+      /* 4 y 5 días no comparten ningún día (ni el título ni el contenido) */
+      var d4 = eliteTpl('jp26_f4_a').dias, d5 = eliteTpl('jp26_f5_a').dias, D = PB.D;
+      function nombres(k){ return D[k].filas.filter(function(r){ return !r.fin; }).reduce(function(a, r){ return a.concat([].concat(r.ej || [])); }, []); }
+      d4.forEach(function(a){ d5.forEach(function(b){
+        if(a === b) P.push('el día ' + a + ' está en el plan de 4 y en el de 5 días');
+        var A = nombres(a), B = nombres(b), com = A.filter(function(x){ return B.indexOf(x) >= 0; }).length, uni = A.length + B.length - com;
+        if(uni && com / uni > 0.6) P.push(a + ' y ' + b + ' (4 y 5 días) comparten ' + Math.round(com / uni * 100) + '% de los ejercicios');
+      }); });
+    } else if(c.caso === 'hombres'){
+      var rep = { jp26_m3_a: 2, jp26_m4_a: 3, jp26_m5_a: 3 };
+      Object.keys(rep).forEach(function(id){
+        var dias = eliteDias(id);
+        var dl = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Hombro lateral'; }); }).length;
+        var dp = dias.filter(function(d){ return ejerciciosDia(d).some(function(e){ return e.g === 'Hombro posterior'; }); }).length;
+        if(dl < rep[id]) P.push(id + ': deltoide lateral en ' + dl + ' días (mínimo ' + rep[id] + ')');
+        if(dp < 2) P.push(id + ': deltoide posterior en ' + dp + ' días (mínimo 2)');
+        var txt = JSON.stringify(dias.map(function(d){ return d.bloques.map(function(b){ return b.items; }); }));
+        if(!/curl de bíceps en banco inclinado/i.test(txt)) P.push(id + ': sin curl inclinado (bíceps elongado)');
+        if(!/extensión tríceps tras nuca/i.test(txt)) P.push(id + ': sin extensión de tríceps sobre la cabeza (tríceps elongado)');
+        if(/remo con barra inclinado|remo pendlay/i.test(txt)) P.push(id + ': ancla de remo con barra libre (poca estabilidad externa)');
+        if(!/remo pecho apoyado/i.test(txt)) P.push(id + ': sin remo con el pecho apoyado');
+      });
+    } else if(c.caso === 'intermedio'){
+      /* el nivel intermedio conserva sus sesiones compartidas de siempre */
+      var esp = { jp26_m3_i: ['M_PUSH', 'M_PULL', 'M_LEGS'], jp26_m4_i: ['M_UP_A', 'M_LO_A', 'M_UP_B', 'M_LO_B'], jp26_f4_i: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], jp26_f3_i: ['F_PA', 'F_PPB', 'F_PB'] };
+      Object.keys(esp).forEach(function(id){ if(JSON.stringify(eliteTpl(id).dias) !== JSON.stringify(esp[id])) P.push(id + ': cambió sus días: ' + eliteTpl(id).dias.join(',')); });
+      ids.forEach(function(id){ if(eliteTpl(id).dias.some(function(k){ return !/^E_/.test(k); })) P.push(id + ': el avanzado no usa solo sesiones élite'); });
+    }
+    return P;
+  }
+  function eliteEdit(c){
+    var PB = win.__jpPB, EST = PB.EST, dias, d, b, m, r;
+    function bloqueCon(dia, txt){ return dia.bloques.filter(function(x){ return (x.titulo || '').indexOf(txt) >= 0; })[0]; }
+    if(c.caso === 'swap'){
+      dias = eliteDias('jp26_m4_a'); d = dias[3]; b = bloqueCon(d, 'Peso muerto rumano'); var id0 = b.id, obj0 = b.objective;
+      EST.cambiarEjercicio(d, b, 0, 'Peso muerto rumano con déficit', 'avanzado');
+      m = EST.parsearBloque(b);
+      return { id: b.id === id0, titulo: /Peso muerto rumano con déficit/.test(b.titulo), nombre: m.ex[0].nombre, hibrido: /\(.+\)$/.test(m.ex[0].etiqueta), serie: m.ex[0].sets + 'x' + m.ex[0].reps, rir: m.ex[0].rir, objetivoNuevo: b.objective !== obj0 && !!b.objective, ramp: /SERIES DE APROXIMACIÓN/.test(b.tips), minutos: /\(\d+ MIN\)$/.test(b.titulo) };
+    }
+    if(c.caso === 'dosis'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; b = bloqueCon(d, 'Press de banca plano con barra'); var tips0 = b.tips, obj1 = b.objective;
+      m = EST.parsearBloque(b); m.ex[0].sets = 5; m.ex[0].reps = '4-6'; m.ex[0].rir = '0'; m.rest = 210; EST.aplicarModelo(m);
+      var n = EST.parsearBloque(b);
+      return { items: b.items.slice(1), rest: b.restSeconds, titulo: /\(23 MIN\)$/.test(b.titulo), pautasIntactas: b.tips === tips0 && b.objective === obj1, nombre: n.ex[0].nombre };
+    }
+    if(c.caso === 'bisets'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; b = bloqueCon(d, 'Biset'); var n0 = d.bloques.length;
+      var antes = EST.parsearBloque(b).ex.length;
+      var r1 = EST.quitarEjercicio(d, b, 1, 'avanzado'), m1 = EST.parsearBloque(b);
+      var r2 = EST.quitarEjercicio(d, b, 0, 'avanzado');
+      return { antes: antes, sigue: !!r1, ahora: m1.ex.length, sinA1: !b.items.some(function(l){ return /^A\d\./.test(l); }), rol: /^Accesorios/.test(b.titulo), ultimo: r2 };
+    }
+    if(c.caso === 'agregar'){
+      dias = eliteDias('jp26_m4_a'); d = dias[0]; var antesSeries = EST.volumen(dias, 'm', 'avanzado').filter(function(x){ return x.g === 'Bíceps'; })[0].v;
+      var res = EST.agregarBloque(d, 'Curl martillo', 'avanzado');
+      var m2 = EST.parsearBloque(res.bloque), sig = d.bloques[res.pos + 1];
+      return { antes: antesSeries, despues: EST.volumen(dias, 'm', 'avanzado').filter(function(x){ return x.g === 'Bíceps'; })[0].v, ejercicio: m2.ex[0].nombre, dosis: m2.ex[0].sets + 'x' + m2.ex[0].reps + '/' + m2.ex[0].rir, antesDelCore: sig && (sig.modalidad === 'core' || sig.modalidad === 'metcon') };
+    }
+    if(c.caso === 'alertas'){
+      dias = eliteDias('jp26_m3_a'); d = dias[1];
+      var tipos = function(){ return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).map(function(a){ return a.k; }).sort().join(','); };
+      var base = tipos();
+      /* dos poleas seguidas en el mismo biset */
+      b = bloqueCon(d, 'Biset Pájaro'); EST.cambiarEjercicio(d, b, 0, 'Cruce de cables deltoides posterior', 'avanzado'); EST.cambiarEjercicio(d, b, 1, 'Encogimientos en polea baja', 'avanzado');
+      var conPoleas = tipos();
+      /* dos patrones axiales */
+      var f = bloqueCon(d, 'Remo Pecho Apoyado'); EST.cambiarEjercicio(d, f, 0, 'Remo con barra inclinado', 'avanzado');
+      var h = bloqueCon(d, 'Jalón'); EST.cambiarEjercicio(d, h, 0, 'Remo Pendlay', 'avanzado');
+      var conAxial = tipos();
+      /* RIR 2 */
+      var mr = EST.parsearBloque(bloqueCon(d, 'Pull-over')); mr.ex[0].rir = '2'; EST.aplicarModelo(mr);
+      var conRir = tipos();
+      /* RIR 2 en un nivel intermedio no es un problema */
+      var rirInter = EST.alertasDia(d, { niv: 'intermedio', genero: 'm' }).filter(function(a){ return a.k === 'rir'; }).length;
+      return { base: base, conPoleas: conPoleas, conAxial: conAxial, conRir: conRir, rirInter: rirInter };
+    }
+    if(c.caso === 'estacion'){
+      dias = eliteDias('jp26_m3_a'); d = dias[1]; b = bloqueCon(d, 'Biset Curl'); EST.cambiarEjercicio(d, b, 0, 'Curl de bíceps tras la espalda', 'avanzado');
+      return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).filter(function(a){ return a.k === 'estacion'; }).map(function(a){ return a.msg; });
+    }
+    if(c.caso === 'core'){
+      dias = eliteDias('jp26_f3_a');
+      dias.forEach(function(x){ var bl = x.bloques.filter(function(y){ return y.modalidad === 'core'; })[0]; if(bl) EST.cambiarEjercicio(x, bl, 0, 'Plancha lateral', 'avanzado'); });
+      return EST.alertasPlan(dias).map(function(a){ return a.k; });
+    }
+    if(c.caso === 'alternativas'){
+      var f = EST.alternativas('Hip thrust con barra', 'f');
+      var cualquiera = EST.alternativas('Aperturas de pie con mancuernas', 'm');
+      return { hip: f.indexOf('Hip thrust en máquina') >= 0 && f.indexOf('Hip thrust a una pierna') >= 0, sinSiMismo: f.indexOf('Hip thrust con barra') < 0, sinAvanzadosEnMujeres: EST.alternativas('Elevación de piernas en banco', 'f').indexOf('Elevación de piernas colgado') < 0 && EST.alternativas('Jalón al pecho con agarre ancho', 'f').indexOf('Dominadas lastradas') < 0, conAvanzadosEnHombres: EST.alternativas('Elevación de piernas en banco', 'm').indexOf('Elevación de piernas colgado') >= 0 && EST.alternativas('Jalón al pecho con agarre ancho', 'm').indexOf('Dominadas lastradas') >= 0, respaldo: cualquiera.length >= 4 };
+    }
+    if(c.caso === 'volumen'){
+      d = { bloques: [] };
+      [['Press de banca plano con barra', '4x6'], ['Elevaciones laterales con mancuernas', '5x15'], ['Hip thrust con barra', '3x8'], ['Plancha lateral', '3x30s']].forEach(function(x){
+        var nb = EST.agregarBloque({ bloques: [] }, x[0], 'avanzado'); var mm = EST.parsearBloque(nb.bloque); mm.ex[0].sets = parseInt(x[1], 10); mm.ex[0].reps = x[1].split('x')[1]; EST.aplicarModelo(mm); d.bloques.push(nb.bloque);
+      });
+      var v = EST.volumen([d], 'f', 'avanzado'), o = {}; v.forEach(function(x){ o[x.g] = x.v; });
+      var vi = EST.volumen([d], 'f', 'intermedio').filter(function(x){ return x.g === 'Glúteo'; })[0];
+      return { pecho: o['Pecho'], lateral: o['Hombro lateral'], gluteo: o['Glúteo'], core: o['Core'], rangoInter: vi.lo + '-' + vi.hi };
+    }
+    if(c.caso === 'asignar'){
+      /* una plantilla élite editada se asigna con sus cambios y no toca a otros alumnos */
+      var S = getS(), reg = (S.banco || []).filter(function(x){ return x.id === 'bkstd_jp26_m4_a'; })[0], ids = ['ath_test_el_a', 'ath_test_el_b'], A = [];
+      var orig = { save: win.save, rb: win.renderBuilder, toast: win.toast, confirm: win.confirm, act: S.activeId, dias: reg.dias, ed: reg.editada };
+      win.save = win.renderBuilder = win.toast = function(){}; win.confirm = function(){ return true; };
+      try{
+        ids.forEach(function(id){ var a = { id: id, nombre: 'El' + id, apellido: 'Test', freq: 4, nivel: 'Avanzado', genero: 'M' }; S.athletes.push(a); A.push(a); S.plans[id] = win.newPlan(a); });
+        var otro = JSON.stringify(S.plans[ids[1]].dias);
+        reg.dias = JSON.parse(JSON.stringify(PB.construirDias(eliteTpl('jp26_m4_a'))));
+        var bb = bloqueCon(reg.dias[0], 'Press de banca plano con barra'); EST.cambiarEjercicio(reg.dias[0], bb, 0, 'Press plano con mancuernas', 'avanzado');
+        reg.editada = 1;
+        var res = win.CoachBaseJP.asignar('jp26_m4_a', A[0], { sinConfirmar: true });
+        var p = win.plan(ids[0]), blq = bloqueCon(p.dias[0], 'Press plano con mancuernas');
+        /* barra de control del Builder: volumen y alertas del plan del alumno activo */
+        S.activeId = ids[0]; if(!S.ui) S.ui = {}; S.ui.day = 0; EST.pintarBuilder();
+        var barra = win.document.getElementById('estCtlBar'), bTxt = barra ? barra.innerText : '', filas = barra ? barra.querySelectorAll('.est-v').length : 0;
+        if(barra) barra.remove();
+        return { barra: !!barra && /Control del plan/i.test(bTxt), filas: filas, asignada: !!res, dias: p.dias.length, conCambio: !!blq, sinOriginal: !bloqueCon(p.dias[0], 'Press de banca plano con barra'), semanas: !!(blq && blq.weekItems && blq.weekItems.length === 4), otroIntacto: JSON.stringify(S.plans[ids[1]].dias) === otro };
+      } finally {
+        reg.dias = orig.dias; if(orig.ed === undefined) delete reg.editada; else reg.editada = orig.ed;
+        ids.forEach(function(id){ delete S.plans[id]; }); A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+        win.save = orig.save; win.renderBuilder = orig.rb; win.toast = orig.toast; win.confirm = orig.confirm; S.activeId = orig.act;
+      }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* ---------- Showroom y estilos de tarjeta ---------- */
+  function showroomCaso(c){
+    var S = getS(), SR = win.CoachShowroom;
+    if(!SR) throw new Error('el Showroom no está cargado');
+    if(c.caso === 'estilos') return { cantidad: SR.estilos.length, numeros: SR.estilos.map(function(e){ return e.n; }).join(',') };
+    if(c.caso === 'pantalla'){
+      var host = win.document.getElementById('v-showroom'); if(!host) throw new Error('no existe #v-showroom');
+      var act0 = S.activeId, res = { estilos: [], ordenOk: true, tieneVolumen: true, tieneTempoYRir: true, tipsDesplegables: true, fijarDebajo: true, unaSola: true, tabs: 0 };
+      S.activeId = null;   /* independiente: sin alumno activo */
+      try{
+        SR.estilos.forEach(function(e){
+          SR.seleccionar(e.n);
+          var stages = host.querySelectorAll('.sr-stage'), st = stages[0];
+          res.unaSola = res.unaSola && stages.length === 1;
+          res.estilos.push(st.getAttribute('data-jp-estilo'));
+          var h = st.querySelector('.jp-dose-bar').innerHTML, i1 = h.indexOf('jp-db-r1'), i2 = h.indexOf('jp-db-r2'), i3 = h.indexOf('jp-db-r3');
+          res.ordenOk = res.ordenOk && i1 >= 0 && i2 > i1 && i3 > i2;
+          res.tieneVolumen = res.tieneVolumen && !!st.querySelector('.jp-db-vol .jp-vn') && !!st.querySelector('.jp-db-vol .jp-vr');
+          res.tieneTempoYRir = res.tieneTempoYRir && !!st.querySelector('.jp-db-tempo') && !!st.querySelector('.jp-db-rir');
+          res.tipsDesplegables = res.tipsDesplegables && !!st.querySelector('details.jp-ex-tips');
+          var fj = host.querySelector('.sr-fijar[data-sr-fijar="' + e.n + '"]');
+          res.fijarDebajo = res.fijarDebajo && !!fj && !!(st.compareDocumentPosition(fj) & 4);   /* 4 = el botón viene DESPUÉS de la tarjeta */
+        });
+        res.tabs = host.querySelectorAll('.sr-tab').length;
+      } finally { S.activeId = act0; SR.seleccionar(SR.fijado()); }
+      res.estilos = res.estilos.join(',');
+      return res;
+    }
+    if(c.caso === 'fijar'){
+      var guardar = win.save, aviso = win.toast, previo = S.ui ? S.ui.estiloTarjeta : undefined;
+      win.save = function(){}; win.toast = function(){};
+      try{
+        var antes3 = S.ui.estiloTarjeta;
+        SR.fijar(3);   /* el 3 se descartó: no se acepta y no cambia lo fijado */
+        var rechazaTres = S.ui.estiloTarjeta === antes3;
+        SR.fijar(1);
+        var enVistas = [].slice.call(win.document.querySelectorAll('.view')).filter(function(v){ return v.id !== 'v-showroom'; }).every(function(v){ return v.getAttribute('data-jp-estilo') === '1'; });
+        var showroomLimpio = !win.document.getElementById('v-showroom').getAttribute('data-jp-estilo');
+        return { fijado: S.ui.estiloTarjeta, rechazaTres: rechazaTres, enVistas: enVistas, showroomLimpio: showroomLimpio, bodySinAtributo: !win.document.body.getAttribute('data-jp-estilo') };
+      } finally {
+        if(previo === undefined) delete S.ui.estiloTarjeta; else S.ui.estiloTarjeta = previo;
+        SR.aplicar(SR.fijado()); SR.render(); win.save = guardar; win.toast = aviso;
+      }
+    }
+    if(c.caso === 'marca'){
+      var d0 = win.document, h1 = d0.querySelector('.sidebar .brand h1'), em = h1 && h1.querySelector('em'), cs = function(e){ return win.getComputedStyle(e); };
+      var ps = d0.querySelectorAll('.sidebar .brand svg path'), oro = ps[0] ? ps[0].getAttribute('fill') : '', rayo = ps[ps.length - 1] ? ps[ps.length - 1].getAttribute('fill') : '';
+      return { coachBlanco: !!h1 && cs(h1).color === 'rgb(255, 255, 255)', jpNaranja: !!em && cs(em).color === 'rgb(238, 90, 18)', textoCoachJP: !!h1 && /^COACH\s+JP$/i.test(h1.textContent.trim()),
+        escudoDorado: /jpSideShield/.test(oro), rayoNegro: /jpSideBolt/.test(rayo), sinInsigniaDuplicada: !d0.querySelector('.jp-badge') || cs(d0.querySelector('.jp-badge')).display === 'none',
+        sinGradiente: !!h1 && cs(h1).backgroundImage === 'none' };
+    }
+    if(c.caso === 'timer'){
+      SR.render();
+      var host3 = win.document.getElementById('v-showroom'), bt = host3.querySelector('.sr-stage .jp-rest-go[data-sr-rest]');
+      if(!bt) throw new Error('el botón de descanso de la muestra no tiene data-sr-rest');
+      var pe = win.getComputedStyle(bt).pointerEvents;
+      bt.click();
+      var tm = win.document.getElementById('srTimer'), abre = !!tm && tm.classList.contains('on'), txt = tm ? tm.querySelector('.srt-t').textContent : '';
+      var cerrar = tm && tm.querySelector('[data-srt="cerrar"]'); if(cerrar) cerrar.click();
+      return { botonClicable: pe !== 'none', abre: abre, tiempo: /^0[23]:[0-9][0-9]$/.test(txt), cierra: !!tm && !tm.classList.contains('on') };
+    }
+    if(c.caso === 'defecto'){
+      /* instalación nueva (nada fijado): vigente, pestaña inicial y la app exportada valen 4 */
+      var previoE = S.ui.estiloTarjeta, demo = { id: 'ath_test_def4', nombre: 'Def', apellido: 'Cuatro', freq: 3, nivel: 'Intermedio', genero: 'M', createdAt: Date.now() };
+      delete S.ui.estiloTarjeta;
+      S.athletes.push(demo); S.plans[demo.id] = win.newPlan(demo);
+      try{
+        SR.render();
+        var html = win.compile(demo), m = /estiloTarjeta["']?[ ]*:[ ]*([0-9]+)/.exec(html), tab = win.document.querySelector('#v-showroom .sr-tab.gold');
+        return { vigente: SR.fijado(), tieneFijado: SR.tieneFijado(), enExportacion: m ? parseInt(m[1], 10) : null, tabActiva: tab ? parseInt(tab.getAttribute('data-sr-sel'), 10) : null };
+      } finally {
+        delete S.plans[demo.id]; S.athletes = S.athletes.filter(function(x){ return x.id !== demo.id; });
+        if(previoE === undefined) delete S.ui.estiloTarjeta; else S.ui.estiloTarjeta = previoE; SR.seleccionar(SR.fijado());
+      }
+    }
+    if(c.caso === 'independiente'){
+      /* el Showroom se dibuja sin alumno ni plan: sin alumno activo, sin alumnos y sin planes */
+      var guardado = { act: S.activeId, ath: S.athletes, pl: S.plans };
+      S.activeId = null; S.athletes = []; S.plans = {};
+      try{
+        var host2 = win.document.getElementById('v-showroom'); SR.seleccionar(SR.estilos[0].n); SR.render();
+        var cab = host2.textContent;
+        return { dibuja: host2.querySelectorAll('.sr-stage').length === 1, sinIframe: !host2.querySelector('iframe'), sello: cab.indexOf(SR.version) >= 0 && /Azul Noche/.test(SR.version),
+          pestanas: host2.querySelectorAll('.sr-tab').length, sinTres: !/Estilo 3/.test(cab), numeros: SR.estilos.map(function(e){ return e.n; }).join(',') };
+      } finally { S.activeId = guardado.act; S.athletes = guardado.ath; S.plans = guardado.pl; SR.seleccionar(SR.fijado()); }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* app del alumno: estilo de tarjeta aplicado y barra de dosis en tres filas */
+  function alumnoEstilo(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'aplicar'){
+      var previo = w.document.body.getAttribute('data-jp-estilo');
+      var r = i.valores.map(function(v){ var n = w.jpEstiloTarjeta(v); return n + ':' + w.document.body.getAttribute('data-jp-estilo'); });
+      w.document.body.setAttribute('data-jp-estilo', previo || '4');
+      return r;
+    }
+    if(i.caso === 'dosis'){
+      var h = w.jpDosisHtml.apply(w, i.args), tmp = w.document.createElement('div'); tmp.innerHTML = h;
+      var q = function(s){ var e = tmp.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : null; };
+      return { vol: q('.jp-db-r1 .jp-db-vol'), descanso: q('.jp-db-r2 .jp-db-rest'), tempo: q('.jp-db-r3 .jp-db-tempo'), rir: q('.jp-db-r3 .jp-db-rir'), filas: tmp.querySelectorAll('.jp-db-row').length,
+        orden: (function(){ var a = h.indexOf('jp-db-r1'), b = h.indexOf('jp-db-r2'), d = h.indexOf('jp-db-r3'); return a >= 0 && b > a && d > b; })() };
+    }
+    if(i.caso === 'config'){
+      var est = w.eval('PROGRAM_CONFIG.estiloTarjeta'), bd = w.document.body.getAttribute('data-jp-estilo');
+      return { valido: est >= 1 && est <= 4, coincide: String(est) === bd };
+    }
+    if(i.caso === 'descanso'){
+      /* el toque en el botón de descanso abre el reloj flotante (#restHud) con el tiempo del botón */
+      var d1 = w.document, hud = d1.getElementById('restHud'), cwt = d1.getElementById('cwtWrap');
+      var b = d1.createElement('button'); b.type = 'button'; b.className = 'jp-db-seg jp-db-rest jp-rest-go'; b.setAttribute('data-rest-go', String(i.seg));
+      var card = d1.createElement('div'); card.className = 'jp-sb-ex'; card.innerHTML = '<span class="jp-sb-ex-nombre">Press de prueba (Test Press)</span>'; card.appendChild(b); d1.body.appendChild(card);
+      var antes = { on: hud.classList.contains('on'), cf: d1.body.classList.contains('cf-disc') };
+      try{ w.CoachTV.parar(); }catch(e){}
+      hud.classList.remove('on');
+      b.click();
+      var st = w.CoachTV.estado(), r = { abre: hud.classList.contains('on'), corre: !!st.running, total: st.total, etiqueta: /Press de prueba/.test(st.label) };
+      try{ w.CoachTV.parar(); }catch(e){} hud.classList.remove('on'); card.remove();
+      return r;
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
+     input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
+     Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */
+  function alumnoProgresion(i){
+    var w = alumnoWin(); if(!w || typeof w.jpSugerirCarga !== 'function') throw new Error('la app del alumno no expone jpSugerirCarga');
+    var st = w.eval('state'), l0 = st.loads, r0 = st.rirEx;
+    st.loads = JSON.parse(JSON.stringify(i.loads || {})); st.rirEx = JSON.parse(JSON.stringify(i.rirEx || {}));
+    try{
+      var r = w.jpSugerirCarga(i.c, i.e, i.setN || 1);
+      return r ? { kg: r.kg, origen: r.origen, pre: r.pre, txt: r.txt } : null;
+    } finally { st.loads = l0; st.rirEx = r0; }
+  }
+  /* editor del Builder: ids de día y estructura del plan, con las funciones reales; save / renderBuilder / toast se anulan y el alumno de prueba se quita al terminar */
+  function editorCaso(c){
+    var S = getS();
+    if(c.caso === 'idValido'){
+      var p0 = { dias: [{ id: 'dia1' }, { id: 'dia2' }] };
+      return c.casos.map(function(v){ var r = win.jpIdDiaValido(p0, p0.dias[0], v); return r.ok ? r.id : '✗'; });
+    }
+    if(c.caso === 'validador'){
+      var malo = { dias: [{ id: 'dia1', bloques: [{ id: 'b1' }, { id: 'b1' }] }, { id: 'dia1', bloques: [{ id: 'a|b' }] }, { id: '', bloques: [] }, { id: 'ok', bloques: 'x' }] };
+      var probs = win.jpValidarEstructuraPlan(malo).join(' · ');
+      return { repiteDia: /repetido con el Día 1/.test(probs), repiteBloque: /bloque "b1" está repetido|"b1" está repetido/.test(probs), barra: /contiene "\|"/.test(probs), sinId: /sin ID interno/.test(probs), listaRota: /dañada/.test(probs), sano: win.jpValidarEstructuraPlan({ dias: [{ id: 'dia1', bloques: [{ id: 'b1' }] }] }).length };
+    }
+    if(c.caso === 'plantillasSanas'){
+      var out = [];
+      (S.banco || []).forEach(function(r){ if(!(r.dias || []).length) return; var pr = win.jpValidarEstructuraPlan({ dias: r.dias }); if(pr.length) out.push(r.id + ': ' + pr[0]); });
+      return out;
+    }
+    if(c.caso === 'altasYBajas'){
+      var id = 'ath_test_ed', ath = { id: id, nombre: 'Prueba', apellido: 'Editor', freq: 4, nivel: 'Intermedio', genero: 'M' };
+      var guardar = win.save, render = win.renderBuilder, aviso = win.toast, act0 = S.activeId, dia0 = S.ui && S.ui.day;
+      win.save = function(){}; win.renderBuilder = function(){}; win.toast = function(){};
+      S.athletes.push(ath);
+      try{
+        var p = win.newPlan(ath); S.plans[id] = p; S.activeId = id; S.ui = S.ui || {}; S.ui.day = 0;
+        var pasos = [];
+        /* se quita el día 2, se agrega uno, se quita el 1, se agregan dos: los ids nunca se repiten */
+        S.ui.day = 1; win.eliminarDiaActivo(); win.agregarDia(); S.ui.day = 0; win.eliminarDiaActivo(); win.agregarDia(); win.agregarDia();
+        pasos.push(p.dias.map(function(d){ return d.id; }).join(','));
+        return { problemas: win.jpValidarEstructuraPlan(p), ids: pasos[0], cantidad: p.dias.length };
+      } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; win.toast = aviso; S.activeId = act0; if(S.ui) S.ui.day = dia0; }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* tonelaje de la app del alumno: un solo criterio (kg × reps hechas, unilateral x2, sin metros / segundos / acarreos, solo bloques vigentes) */
+  function alumnoTon(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var S = w.eval('state'), previo = S.loads;
+    try{
+      if(i.caso === 'serie') return w.jpTonelajeSerie(i.ld);
+      if(i.caso === 'dia'){
+        S.loads = i.loads;
+        return w.jpTonelajeDia(0, i.dia);
+      }
+      throw new Error('caso desconocido: ' + i.caso);
+    } finally { S.loads = previo; }
+  }
+  /* pautas del bloque sin repetir lo de la tarjeta, y recuadros de objetivo / tempo al pie de la tarjeta */
+  function alumnoPautas(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'quitar') return w.jpQuitarTipsDeTarjeta(i.texto, i.nEj).split('\n');
+    if(i.caso === 'cajas'){
+      var d = w.document, cont = d.createElement('div');
+      cont.innerHTML = '<div data-sportsboard="x"><div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + i.tempo + '</b></span></div></div>' +
+        (i.dos ? '<div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>2011</b></span></div></div>' : '') + '</div>';
+      w.jpCajasTarjeta(cont, i.objetivo);
+      var ex = cont.querySelectorAll('.jp-sb-ex'), q = function(u, s){ return u ? u.querySelectorAll(s).length : 0; };
+      return { objetivoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-obj'), objetivoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-obj'),
+        tempoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-tempo'), explica: /3 s bajada/.test(ex[0].textContent) && /1 s pausa abajo/.test(ex[0].textContent), tempoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-tempo') };
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* estaciones de cardio / finisher en la app del alumno: nombre limpio, consigna de formato y reglas de layout compartidas por los estilos */
+  function alumnoEstaciones(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'nombre') return w.jpLimpiarNombreEstacion(i.nm);
+    if(i.caso === 'formato') return w.jpEsLineaFormato(i.txt, !!i.pill);
+    if(i.caso === 'partir') return w.jpPartirEstacion(i.txt);
+    if(i.caso === 'consigna') return w.jpEsConsigna(i.txt);
+    if(i.caso === 'css'){
+      var css = [].slice.call(w.document.querySelectorAll('style')).map(function(s){ return s.textContent; }).join('\n');
+      /* "@est" sin número vale para cualquier estilo: se expande a [data-jp-estilo] (los 3 estilos comparten estas reglas) */
+      var ok = function(pat){ return css.indexOf('[data-jp-estilo] .jp-sb-board .jp-sb-plain' + pat) >= 0; };
+      return { grid: ok(':not(.jp-sb-plain-warmup):not(.jp-sb-plain-fmt)'), fmt: ok('-fmt') };
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* ---------- circuito de cardio / finisher en la app del alumno: todas las estaciones con la misma estructura ---------- */
+  function alumnoCircuitos(i){
+    var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('la app del alumno no expone jpPizarraSports');
+    var S = getS(), P = [], d = w.document, n = 0, vistos = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || '')) return;
+      (r.dias || []).forEach(function(dia, k){
+        var b = (dia.bloques || [])[(dia.bloques || []).length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!b || b.modalidad !== 'metcon') return;
+        var cont = d.createElement('div'); cont.innerHTML = '<div class="block"><div class="block-body"></div></div>'; d.body.appendChild(cont);
+        try{
+          n++; vistos++;
+          w.jpPizarraSports(cont.querySelector('.block'), { id: 'tcirc' + n, title: b.titulo, items: (b.items || []).slice(), category: b.category, objective: b.objective, tips: b.tips }, 0, 'dia1');
+          var filas = [].slice.call(cont.querySelectorAll('.jp-sb-board > .jp-sb-plain'));
+          if(!filas.length){ P.push(tag + ': el bloque no dibuja filas'); return; }
+          var fmt = filas.filter(function(f){ return f.classList.contains('jp-sb-plain-fmt'); }), est = filas.filter(function(f){ return f.classList.contains('jp-sb-plain-est'); });
+          if(est.length + fmt.length !== filas.length) P.push(tag + ': hay filas que no son estación ni consigna (' + filas.map(function(f){ return f.className.replace('jp-sb-plain ', ''); }).join(' | ') + ')');
+          if(fmt.length > 1) P.push(tag + ': ' + fmt.length + ' bandas de formato (debe haber una sola)');
+          if(fmt.length && filas[0] !== fmt[0]) P.push(tag + ': la consigna de formato no es la primera fila');
+          if(est.length < 1) P.push(tag + ': sin estaciones');
+          est.forEach(function(f, j){
+            var id = f.querySelector('.jp-sb-ex-id'), nm = f.querySelector('.jp-sb-plain-nombre'), pill = f.querySelector('.jp-sb-plain-pill'), t = nm ? nm.textContent.trim() : '';
+            var porMin = !!(est[0].querySelector('.jp-sb-ex-id') && /^M\d/.test(est[0].querySelector('.jp-sb-ex-id').textContent.trim()));      /* EMOM: la estación lleva su minuto (M1, M2...) en vez del número */
+            if(!id || (porMin ? !/^M\d+$/.test(id.textContent.trim()) : id.textContent.trim() !== ('0' + (j + 1)).slice(-2))) P.push(tag + ' · estación ' + (j + 1) + ': sin su número (' + (porMin ? 'minuto' : ('0' + (j + 1)).slice(-2)) + ')');
+            if(!t || t.length > 42 || /\s[x×]\s*\d/i.test(t)) P.push(tag + ' · estación ' + (j + 1) + ': el nombre no está limpio («' + t + '»)');
+            if(!pill || !pill.textContent.trim()) P.push(tag + ' · estación ' + (j + 1) + ': sin la cantidad en su pastilla');
+            if(f.querySelector('.jp-sb-fmt-ic')) P.push(tag + ' · estación ' + (j + 1) + ': lleva el ícono de cronómetro');
+          });
+          var ob = cont.querySelector('.jp-ex-box-obj .jp-ex-box-b'), tp = cont.querySelector('.jp-details-content');
+          if(!ob || ob.textContent.trim().length < 40) P.push(tag + ': el objetivo fisiológico está vacío o es muy corto');
+          if(!tp || tp.textContent.trim().length < 80) P.push(tag + ': las pautas del bloque están vacías o son muy cortas');
+        } finally { d.body.removeChild(cont); }
+      });
+    });
+    if(vistos < 12) P.push('esperaba revisar al menos 12 cierres metabólicos y revisé ' + vistos);
+    return P;
+  }
+  /* piel de la app del alumno: íconos a color y barra de Activación sin segundo borde ni relleno que la pegue al bloque siguiente */
+  function alumnoPiel(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, cont = d.createElement('div');
+    d.body.appendChild(cont);
+    try{
+      if(i.caso === 'emoji'){
+        cont.innerHTML = '<div class="jp-ex-box-t"><span class="jp-emo">🎯</span></div><div class="jp-wk-btn"><span class="jp-emo">📅</span></div><button class="jp-close-cta"><span class="jp-emo">✅</span></button>';
+        var f = function(s){ return w.getComputedStyle(cont.querySelector(s)).filter; };
+        return { objetivo: f('.jp-ex-box-t .jp-emo'), calendario: f('.jp-wk-btn .jp-emo'), cierreNegro: f('.jp-close-cta .jp-emo').indexOf('brightness(0)') >= 0 };
+      }
+      if(i.caso === 'activacion'){
+        cont.innerHTML = '<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary><span class="jp-warm-lb">ACTIVACIÓN</span></summary></details></div></div>';
+        var cs = function(s){ return w.getComputedStyle(cont.querySelector(s)); };
+        var acc = cs('.jp-warm-acc'), body = cs('.block-body'), sm = cs('summary');
+        return { sinBordeDoble: parseFloat(acc.borderTopWidth) === 0, sinRelleno: parseFloat(body.paddingBottom) === 0, altoMinimo: parseFloat(sm.minHeight) >= 48 };
+      }
+      if(i.caso === 'crossfit'){
+        /* la piel de CrossFit & Hyrox: pizarra, filas, chips, campos, dock y cronómetro con la paleta azul noche (no negro neutro ni celeste / naranja eléctricos) */
+        var hadCF = d.body.classList.contains('cf-disc'); d.body.classList.add('cf-disc');
+        cont.innerHTML = '<div class="wod-board jp-cfboard jp-cf-fase-metcon" id="t1"><div class="jp-cf-tag">[ CROSSFIT ]</div><div class="jp-cf-rows"><div class="jp-cf-row"><span class="jp-cf-pct">80%</span><span class="jp-cf-rv">21</span></div></div></div>' +
+          '<div class="wod-board jp-cfboard jp-cf-fase-strength" id="t2"><div class="jp-cf-tag">[ STRENGTH ]</div></div>' +
+          '<div class="block" id="t3"><div class="wod-board jp-cfboard"></div></div>' +
+          '<div class="hd-dock" id="t4"></div><input class="jp-sc-a" id="t5"><button class="cwt-start" id="t6"></button><button class="sa-x" id="t7"></button><div class="cwt-screen" id="t8"></div>';
+        var g = function(id, p){ return w.getComputedStyle(cont.querySelector('#' + id))[p]; }, q = function(s, p){ return w.getComputedStyle(cont.querySelector(s))[p]; };
+        var neutro = function(c){ var m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(c); if(!m) return false; var a = [+m[1], +m[2], +m[3]]; return Math.max.apply(null, a) - Math.min.apply(null, a) < 14 && Math.max.apply(null, a) < 60; };
+        var res = { tarjeta: g('t1', 'backgroundColor'), bordeMetcon: g('t1', 'borderTopColor'), bordeStrength: g('t2', 'borderTopColor'), etiqueta: q('#t2 .jp-cf-tag', 'color'), filas: q('.jp-cf-rows', 'backgroundColor'),
+          chip: q('.jp-cf-pct', 'backgroundColor'), campo: g('t5', 'backgroundColor'), cta: g('t6', 'backgroundColor'), cierre: g('t7', 'backgroundColor'),
+          sinMarcoDoble: parseFloat(g('t3', 'borderTopWidth')) === 0 && g('t3', 'backgroundImage') === 'none',
+          sinNegro: ['t1', 't4', 't5', 't7', 't8'].concat([]).every(function(id){ return !neutro(g(id, 'backgroundColor')); }) && !neutro(q('.jp-cf-pct', 'backgroundColor')) && !neutro(q('.jp-cf-rows', 'backgroundColor')) };
+        if(!hadCF) d.body.classList.remove('cf-disc');
+        return res;
+      }
+      throw new Error('caso desconocido: ' + i.caso);
+    } finally { d.body.removeChild(cont); }
+  }
+  /* Story Card: énfasis muscular sin el renglón general "PIERNA" junto a sus subgrupos */
+  function alumnoStory(i){
+    var w = alumnoWin(); if(!w || !w.CoachMetricas) throw new Error('no hay app del alumno');
+    var det = i.det.map(function(x){ return { ex: x.ex, n: x.n, vol: 0, kg: 0, reps: 0 }; });
+    var gs = w.CoachMetricas.grupos(det);
+    if(i.caso === 'grupos') return gs.map(function(g){ return g.nombre; });
+    if(i.caso === 'texto'){ var tx = w.jpTextoEnfasis(gs); return { inferior: /tren inferior/.test(tx), sinPierna: !/pierna/i.test(tx), texto: tx }; }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
+  /* cierres metabólicos del Banco BB: estaciones y formato de competición, alineados al día */
+  function auditarMetabolicos(){
+    var P = [], S = getS(), n = 0;
+    var FORMATO = /emom|amrap|for time|por tiempo|hiit|intervalos/i, ESTACION = /skierg|ski erg|sled|trineo|wall ball|assault bike|remo erg|burpee broad/i;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || '')) return;
+      (r.dias || []).forEach(function(d, k){
+        var bl = d.bloques || [], b = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!b) return;
+        var dia = String(d.title || d.titulo || '') + ' ' + String(d.label || '') + ' ' + String(d.short || '');
+        var txt = String(b.titulo || '') + ' ' + (b.items || []).join(' ');
+        if(/zona 2/i.test(txt)) return;                                                   /* el día corto de recuperación cierra con cardio suave */
+        n++;
+        if(!/cierre metab/i.test(String(b.titulo || ''))) { P.push(tag + ': el último bloque no es un cierre metabólico'); return; }
+        if(!FORMATO.test(txt)) P.push(tag + ': el cierre no tiene formato de competición (EMOM, AMRAP, For Time o intervalos)');
+        if(!ESTACION.test(txt)) P.push(tag + ': el cierre no usa estaciones de competición');
+        if(/battle\s*rope/i.test(txt)) P.push(tag + ': tiene battle ropes');
+        var empuje = /^(push|hombro y pecho)\b|\bpush\b/i.test(dia) && !/pull/i.test(dia), traccion = /\bpull\b/i.test(dia) && !/push/i.test(dia);
+        var pierna = /pierna|cuádriceps|cuadriceps|glúteo|gluteo|cadera/i.test(dia) && !empuje && !traccion;
+        if(empuje && /flexion|press|slam|face pull/i.test(txt)) P.push(tag + ': día de empuje con estaciones de empuje en el cierre');
+        if(traccion && /remo erg|skierg|ski erg|arrastre|sled pull|farmer/i.test(txt)) P.push(tag + ': día de tracción con estaciones de tracción o agarre en el cierre');
+        if(pierna && /sled push|trineo x|escaladora|zancada|burpee|wall ball/i.test(txt)) P.push(tag + ': día de pierna o glúteo con estaciones de pierna en el cierre');
+        if(pierna && !/skierg|ski erg|sled pull|arrastre/i.test(txt)) P.push(tag + ': día de pierna o glúteo sin tren superior en el cierre (SkiErg o arrastre)');
+      });
+    });
+    if(n < 30) P.push('esperaba auditar al menos 30 cierres y revisé ' + n);
+    return P;
+  }
+  /* Constructor de Glúteos: sin movimientos avanzados poco aplicables y con la metodología del tren inferior femenino */
+  function auditarGluteos(){
+    var P = [], S = getS(), n = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/^bkstd_jp26_f\d_[ia]$/.test(r.id || '')) return;
+      n++;
+      var txt = JSON.stringify(r.dias || []);
+      if(/weighted pull|dominadas lastradas/i.test(txt)) P.push(r.id + ': tiene dominadas lastradas');
+      if(/rueda abdominal|ab wheel|piernas colgado|hanging leg|toes to bar/i.test(txt)) P.push(r.id + ': tiene ejercicios de core avanzados (rueda o colgado)');
+      if(/back squat|sentadilla con barra/i.test(txt)) P.push(r.id + ': todavía usa la sentadilla con barra (fatiga axial)');
+      if(!/hip thrust|barbell hip thrust/i.test(txt)) P.push(r.id + ': no tiene hip thrust');
+      if(!/Tempo 2012/.test(txt)) P.push(r.id + ': el hip thrust no lleva pausa de 2 segundos arriba (Tempo 2012)');
+      if(!/d[eé]ficit|deficit romanian/i.test(txt)) P.push(r.id + ': no tiene peso muerto rumano con déficit');
+      if(!/torso inclinado|forward-lean/i.test(txt)) P.push(r.id + ': no tiene sentadilla búlgara con el torso inclinado');
+      if(!/cruzada|cross-body/i.test(txt)) P.push(r.id + ': no tiene patada de glúteo en polea cruzada');
+      if(!/a una pierna|single-leg/i.test(txt)) P.push(r.id + ': no tiene trabajo unilateral de cadera (puente o hip thrust a una pierna)');
+    });
+    if(n < 6) P.push('esperaba 6 plantillas de bodybuilding femenino y hay ' + n);
+    return P;
+  }
+  /* ningún battle rope en ninguna plantilla del Banco (sistema, Banco Pro ni copias guardadas) */
+  function auditarSinRopes(){
+    var P = [];
+    (getS().banco || []).forEach(function(r){ if(/battle\s*rope/i.test(JSON.stringify(r.dias || []))) P.push(r.id + ' · ' + r.nombre + ': todavía tiene battle ropes'); });
+    return P;
+  }
+  /* recomposición femenina: abre con cardio de baja intensidad en cinta con inclinación (10 a 15 min) y cierra con una máquina de cardio al fallo; sin dominadas lastradas */
+  function auditarRecFem(){
+    var P = [], S = getS(), n = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/Recomposici/i.test(r.nombre || '') || r.genero !== 'f') return;
+      n++;
+      var txt = JSON.stringify(r.dias || []);
+      if(/weighted pull|dominadas lastradas/i.test(txt)) P.push(r.id + ': tiene dominadas lastradas');
+      (r.dias || []).forEach(function(d, k){
+        var bl = d.bloques || [], a = bl[0], z = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!a || !/cinta/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' ')) || !/inclinaci/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' '))) P.push(tag + ': no abre con cardio en cinta con inclinación');
+        else { var m = /(\d+)\s*min/i.exec((a.items || []).join(' ') + ' ' + (a.titulo || '')); var mins = m ? parseInt(m[1], 10) : 0; if(mins < 10 || mins > 15) P.push(tag + ': el cardio pre-entreno dura ' + mins + ' min (tiene que ser de 10 a 15)'); }
+        if(!z || !/echo bike|concept2|skierg|ski erg|ciclismo|bicicleta/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': no cierra con una máquina de cardio (Echo Bike, Concept2, SkiErg o ciclismo)');
+        else if(!/fallo/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': el cierre en máquina no se lleva al fallo');
+      });
+    });
+    if(n < 8) P.push('esperaba 8 plantillas de recomposición femenina y hay ' + n);
+    return P;
+  }
   function auditarSplit3(){
     var P = [], S = getS(), ESP = {
       m: [/^Push\b/, /^Pull\b/, /^Pierna Completa\b/],
@@ -221,16 +1285,19 @@
         return { bloques: r.bloques, dias: r.dias, tieneSquat: /Back Squat/.test(r.texto), tieneFran: /Fran/.test(r.texto), sinWarmup: !/Remo 500/.test(r.texto), sinVacio: !/Vacío/.test(r.texto) };
       }
       /* handlers: con el motor sin clave NO se arma contexto ni se pide nada a la red, el botón queda libre y se avisa */
-      if(c.caso === 'handlerObjetivo' || c.caso === 'handlerTips'){
+      if(c.caso === 'handlerObjetivo' || c.caso === 'handlerTips' || c.caso === 'handlerObjetivoSB' || c.caso === 'handlerTipsSB' || c.caso === 'handlerFichaSB'){
         AIx.hayClave = function(){ return false; };
-        var id = 'ath_test_ia', bl = win.nuevoBloquePizarra(true, 'metcon', 'Fran', ['21-15-9 Thrusters', 'Pull-ups']);
+        var esSB = /SB$/.test(c.caso), id = 'ath_test_ia', bl = esSB ? win.nuevoBloquePizarra(false, 'strength', 'Press de banca', ['Press de banca con barra', '4x8-10 | RIR 2']) : win.nuevoBloquePizarra(true, 'metcon', 'Fran', ['21-15-9 Thrusters', 'Pull-ups']);
         ath = { id: id, nombre: 'Prueba', apellido: 'IA', freq: 3, nivel: 'Avanzado', genero: 'F' };
         var guardar = win.save, render = win.renderBuilder; win.save = function(){}; win.renderBuilder = function(){};
         S.athletes.push(ath);
         try{
-          var p = win.newPlan(ath); p.meta.mesoDisc = 'crossfit'; p.dias[0].bloques.push(bl); S.plans[id] = p; S.activeId = id;
+          var p = win.newPlan(ath); if(!esSB) p.meta.mesoDisc = 'crossfit'; p.dias[0].bloques.push(bl); S.plans[id] = p; S.activeId = id;
           var btn = { dataset: {}, isConnected: false, innerHTML: 'x', disabled: false };
-          if(c.caso === 'handlerObjetivo') win.generarObjetivoSemanaCF(btn); else win.generarTipsPacingIA(bl.id, btn);
+          if(c.caso === 'handlerObjetivo' || c.caso === 'handlerObjetivoSB') win.generarObjetivoSemanaCF(btn);
+          else if(c.caso === 'handlerTipsSB') win.generarTipsSports(bl.id, btn);
+          else if(c.caso === 'handlerFichaSB') win.generarFocoDiaConIA(btn);
+          else win.generarTipsPacingIA(bl.id, btn);
           return { llamadas: llamadas, avisoClave: toasts.some(function(x){ return /Configurá una clave/.test(x); }), botonLibre: !btn.disabled && !btn.dataset.iaBusy, sinFalsoError: !toasts.some(function(x){ return /revisá la conexión|Error en API/.test(x); }) };
         } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; }
       }

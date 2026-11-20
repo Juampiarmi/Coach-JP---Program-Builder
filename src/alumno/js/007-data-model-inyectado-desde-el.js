@@ -332,6 +332,9 @@ window.COACH_DISCIPLINA = PROGRAM_CONFIG.modoSemanal ? 'crossfit' : 'sports';
    vez, apenas se conoce la disciplina) en vez de depender de body.cf-modo,
    que sólo se activa en días 100% CrossFit y nunca en días híbridos. */
 if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
+/* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 4 Compacto de élite; el 3 se descartó; el 4 es el estilo por defecto): lo aplica el atributo data-jp-estilo del body */
+window.jpEstiloTarjeta = function(n){ n = parseInt(n, 10); if(!(n === 1 || n === 2 || n === 4)) n = 4; document.body.setAttribute('data-jp-estilo', String(n)); return n; };
+try{ window.jpEstiloTarjeta(PROGRAM_CONFIG.estiloTarjeta); }catch(eEst){ document.body.setAttribute('data-jp-estilo', '4'); }
 /* historialCargas (directiva "Memoria de Cargas Históricas"): índice por
    nombre de ejercicio (normalizado) -> {kg, reps, ts}, independiente de
    semana/día/bloque (a diferencia de state.loads, que vive atado a un
@@ -343,7 +346,7 @@ if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
    el "@ 76%" de una fila) -- gana siempre sobre la marca del coach que
    compile() ya haya resuelto en el texto, para recalcular todo el
    bloque al instante con el 1RM real del día. Clave nueva, aditiva. */
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[] };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[], rirEx:{}, rir:{}, dolor:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -395,6 +398,8 @@ function loadProgress(){
         state.historialCargas = _objOk(parsed.historialCargas);
         state.oneRM = _objOk(parsed.oneRM);
         state.customBenchmarks = Array.isArray(parsed.customBenchmarks) ? parsed.customBenchmarks : [];
+        /* RIR que el alumno marca por ejercicio (alimenta la doble progresión de la semana siguiente) y RIR / dolor por bloque: antes no se guardaban y se perdían al recargar */
+        state.rirEx = _objOk(parsed.rirEx); state.rir = _objOk(parsed.rir); state.dolor = _objOk(parsed.dolor);
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
@@ -402,7 +407,7 @@ function loadProgress(){
   }catch(e){
     /* JSON dañado: se conserva una copia intacta (clave ":corrupto") antes de que el próximo guardado la pise, y se arranca limpio */
     try{ if(raw) localStorage.setItem(STORAGE_KEY + ':corrupto', raw); }catch(e2){}
-    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = [];
+    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = []; state.rirEx = {}; state.rir = {}; state.dolor = {};
   }
 }
 let _spT = null, _spDirty = false, _spFallos = 0, _spAvisado = false;
@@ -416,7 +421,7 @@ function _spReintentar(){
   _spT = setTimeout(function(){ try{ _spFlush(); }catch(e){} }, Math.min(15000, 2000 * _spFallos));
 }
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks, rirEx: state.rirEx, rir: state.rir, dolor: state.dolor });
 }
 function _spFlush(){
   if(!_spDirty) return;
@@ -531,27 +536,49 @@ function lineaSetWA(i, ld){
    getLoadKey más arriba) -- filtrar por el prefijo "weekIdx|dayId|"
    basta para aislar sólo el día/semana que el alumno tiene abiertos
    ahora mismo, sin tocar el resto del historial guardado. */
-function calcularTonelajeSesion(){
-  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+/* TONELAJE · UN SOLO CRITERIO PARA TODA LA APP
+   Tonelaje de una serie = kg × repeticiones realmente hechas, solo si la serie está tildada (✓) y es trabajo de carga:
+     · reps "12+4+3" (Myo-Reps / Rest-Pause) suman todos los tramos; un rango "8-10" toma el primer número
+     · ejercicios UNILATERALES ("por pierna" / "por lado"): se registran las reps de UN lado, pero la carga se movió con los dos: cuentan por 2
+     · fuera: series sin kilos o sin reps, ejercicios medidos en metros / segundos / minutos, bandas, acarreos y trineo (kg × metros no es tonelaje)
+   Tonelaje de un día = suma de sus series, contando solo los bloques que existen HOY en ese día (el progreso guardado puede traer restos de un plan anterior
+   con el mismo id de día). Lo usan el HUD en vivo, el resumen de sesión, el reporte al coach, la Story Card, el historial y el reporte del mesociclo. */
+var JP_RX_ACARREO = /\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\b/i;
+var JP_RX_UNILATERAL = /\b(unilateral|a una pierna|una pierna|single[\s-]?leg|one[\s-]?leg|single[\s-]?arm|one[\s-]?arm|un brazo|b[uú]lgara|bulgarian|split squat|pistol)\b/i;
+function jpRepsReales(v){
+  var s = String(v == null ? '' : v).replace(',', '.').trim();
+  if(/^\d+(\.\d+)?(\s*\+\s*\d+(\.\d+)?)+$/.test(s)) return s.split('+').reduce(function(a, x){ return a + (parseFloat(x) || 0); }, 0);
+  return numJP(s);
+}
+function jpTonelajeSerie(ld){
+  if(!ld || !ld.done) return 0;
+  var kg = numJP(ld.kg), reps = jpRepsReales(ld.reps);
+  if(!(kg > 0) || !(reps > 0)) return 0;
+  if(ld.u && ld.u !== 'reps') return 0;                          /* el ejercicio se prescribió en metros / segundos / minutos */
+  var nm = String(ld.ex || '');
+  if(nm){
+    var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(nm); }catch(eM){}
+    if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return 0;
+    if(JP_RX_ACARREO.test(nm)) return 0;
+  }
+  var lados = (ld.uni || (nm && JP_RX_UNILATERAL.test(nm))) ? 2 : 1;
+  return kg * reps * lados;
+}
+function jpTonelajeDia(weekIdx, day){
   if(!day) return 0;
-  var prefix = state.currentWeek + '|' + day.id + '|';
+  var pref = weekIdx + '|' + day.id + '|', validos = {}, hay = false;
+  ((day && day.blocks) || []).forEach(function(b){ if(b && b.id != null){ validos[b.id] = 1; hay = true; } });
   var total = 0;
-  Object.keys(state.loads).forEach(function(k){
-    if(k.indexOf(prefix) !== 0) return;
-    var ld = state.loads[k];
-    if(!ld || !ld.done) return;
-    var kg = numJP(ld.kg), reps = numJP(ld.reps);
-    if(!(kg > 0) || !(reps > 0)) return;
-    /* ejercicios medidos en tiempo, distancia o con banda: ahí el segundo casillero NO son repeticiones (segundos / metros), kg × eso inflaría el total */
-    if(ld.u && ld.u !== 'reps') return;                          /* el ejercicio se prescribió en metros / segundos / minutos */
-    if(ld.ex){
-      var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(ld.ex); }catch(eM){}
-      if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return;
-      if(/\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
-    }
-    total += kg * reps;
+  Object.keys(state.loads || {}).forEach(function(k){
+    if(k.indexOf(pref) !== 0) return;
+    if(hay && !validos[k.split('|')[2]]) return;
+    total += jpTonelajeSerie(state.loads[k]);
   });
   return isFinite(total) ? Math.round(total) : 0;
+}
+function calcularTonelajeSesion(){
+  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+  return day ? jpTonelajeDia(state.currentWeek, day) : 0;
 }
 var _tonelajeAnimId = null, _tonelajeActual = 0, _tonelajeMostrado = 0, _tonelajeFinT = null;
 function _tonFmt(n){ return Number(n || 0).toLocaleString('es-AR'); }
@@ -1318,12 +1345,14 @@ var jpPerfilSonido = (function(){
       tocar();
     }catch(e){ console.warn('sonido de timer', e); }
   }
-  function reproducir(ev, sinVib, num){
+  function reproducir(ev, sinVib, num, clip){
     vibrar(ev, sinVib);
     if(isAudioMuted()) return;
     var n = 0;
     if(ev === 'tick') n = (num >= 1 && num <= 3) ? Math.round(num) : siguiente();
     else if(ev === 'inicio' || ev === 'fin') seqN = 0;
+    /* voz del timer (088-voz-del-timer.js): si habló (o corresponde callar el tono) no suena el tono; sin voz activa / sin clips / sin red suena el de siempre */
+    try{ if(window.jpVoz && window.jpVoz.hablar(ev, n, clip)) return; }catch(eV){}
     emitir(ev, n);
   }
   function calentar(){ try{ salida(ensureAudioCtx()); }catch(e){} }
@@ -1335,7 +1364,10 @@ var jpPerfilSonido = (function(){
   return {
     actual: function(){ return 'ascendente'; },
     reproducir: reproducir,
-    hint: function(){},
+    /* el timer anuncia hacia dónde va la transición ('go' | 'rest' | 'work' | 'next_round' | 'last_round' | 'done') antes de la chicharra: la voz dice la frase que corresponde */
+    hint: function(k){ try{ if(window.jpVoz) window.jpVoz.pista(k); }catch(e){} },
+    /* salida común (compresor) para que la voz pase por el mismo bus que los tonos */
+    bus: function(){ try{ var c = ensureAudioCtx(true); return c ? salida(c) : null; }catch(e){ return null; } },
     probar: probar,
     calentar: calentar,
     hz: HZ,
@@ -1348,7 +1380,7 @@ var jpBox = (function(){
   var ultimaChicharra = 0;
   return {
     tickSeco: function(n){ jpPerfilSonido.reproducir('tick', false, n); },
-    gong:     function(){ jpPerfilSonido.reproducir('fin', true); },     /* fin del descanso: la vibración la dispara vibrateTimerEnd */
+    gong:     function(){ jpPerfilSonido.reproducir('fin', true, 0, 'work'); },     /* fin del descanso (la voz dice "¡A trabajar!"): la vibración la dispara vibrateTimerEnd */
     cuenta:   function(n){ jpPerfilSonido.reproducir('tick', false, n); },
     go:       function(){ jpPerfilSonido.reproducir('inicio'); },
     aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
@@ -1769,7 +1801,7 @@ function buildQuickTimer(root, seconds, label){
       remaining -= (ts-lastTs)/1000; lastTs = ts;
       if(remaining<=0){
         remaining = 0; display.textContent = fmt(0); running = false;
-        btn.textContent = 'Reiniciar'; beepFinish(); vibrate([80,50,80,50,200]);
+        btn.textContent = 'Reiniciar'; try{ jpPerfilSonido.hint('done'); }catch(eH){} beepFinish(); vibrate([80,50,80,50,200]);
         WakeLockManager.release();
         return;
       }
@@ -1865,6 +1897,8 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     if(remaining <= 0){
       remaining = 0; updateDisplay();
       running = false; round++; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+      /* voz: fin del descanso entre series = "¡A trabajar!"; la última serie cierra con "Stop, buen trabajo" */
+      try{ jpPerfilSonido.hint(round >= rounds ? 'done' : 'work'); }catch(eH){}
       beepFinish(); CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       WakeLockManager.release();
       if(round >= rounds){
@@ -1905,6 +1939,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     endTs = Date.now() + remaining * 1000;
     playBtn.textContent = '❚❚'; playBtn.classList.add('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
+    try{ jpPerfilSonido.hint('rest'); }catch(eH){}    /* voz: al empezar este timer arranca el descanso */
     beepGo(); vibrate(60);
     WakeLockManager.acquire();
     activeTimerId = tid;
@@ -2604,8 +2639,8 @@ function datosStoryCF(weekIdx, day){
       const l = state.loads[k];
       if(!l || !l.done) return;
       huboLoads = true;
-      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
-      vol += kg * rp;
+      const kg = numJP(l.kg);
+      vol += jpTonelajeSerie(l);
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
@@ -2997,7 +3032,7 @@ function renderMain(){
      ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
-  html += '<button type="button" class="story-cta" id="storyCtaBtn">[ 📸 GENERAR STORY CARD ]</button>';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 GENERAR STORY CARD</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -3009,7 +3044,7 @@ function renderMain(){
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
   html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
-    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE ]' : '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]') + '</button>';
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '\u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE' : '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);

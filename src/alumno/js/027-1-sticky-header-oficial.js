@@ -204,9 +204,10 @@
       var kg = parseFloat(l && l.kg), reps = parseInt(l && l.reps, 10) || 0;
       if(!(kg > 0)) return;
       if(l.done){
-        vol += kg * (reps || 1); series++;
+        var tn = jpTonelajeSerie(l);
+        vol += tn; series++;
         var wIdx = parseInt(String(k).split('|')[0], 10);
-        if(!isNaN(wIdx) && volPorSemana[wIdx] !== undefined) volPorSemana[wIdx] += kg * (reps || 1);
+        if(!isNaN(wIdx) && volPorSemana[wIdx] !== undefined) volPorSemana[wIdx] += tn;
       }
       if(kg > topKg){ topKg = kg; topEx = l.__ex || ''; }
     });

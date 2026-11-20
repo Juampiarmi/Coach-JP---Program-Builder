@@ -13,7 +13,7 @@
   function w(n){ return NUM[n] != null ? NUM[n] : String(n); }
   function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
   function nivDe(c){ return c.lv === 0 ? 'intermedio' : (c.lv === 1 ? 'avanzado' : 'pro'); }
-  function cargas(c){ return { farmer: c.f ? '2 x 16-24 kg' : '2 x 24-32 kg', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
+  function cargas(c){ return { farmer: c.f ? '16 a 24 kg en cada mano' : '24 a 32 kg en cada mano', bolsa: c.f ? '10-20 kg' : '20-30 kg', wall: c.f ? '4-6 kg' : '6-9 kg' }; }
   function Fin(tag, t, min, l, obj, tips){ return { tag: tag, t: t, i: { min: min, l: l }, obj: obj, tips: tips }; }
 
   var HX = {};
@@ -26,7 +26,7 @@
       filas: [
         R('F', 'Sentadilla con barra', '4x5-6|2|180', '5x4-5|1|210', { p: '5x3-5|1|240', n: 'La sentadilla es la base de todo lo que pasa en una carrera Hyrox: empuje de trineo, zancadas con bolsa y wall balls. Pesada y rápida, sin dejarte sin piernas para los intervalos que vienen después.' }),
         R('H', 'Zancadas caminando', '3x8 por lado|1|90', '4x8 por lado|0-1|90', { p: '4x10 por lado|0-1|90', n: 'Es el patrón de la estación de zancadas con bolsa: paso largo, torso erguido y la rodilla de atrás cerca del piso. Con mancuernas o barra, la carga más alta con la que mantengas la técnica.' }),
-        R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+        R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop'),
         R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
         R('B', ['Curl nórdico', 'Elevación de talones a una pierna'], '3x5/12|2|75', '3x6/12|1|75', { n: 'Resiliencia de isquios y pantorrilla: son las dos zonas que primero se quejan cuando suma el volumen de carrera. En el nórdico bajá lento (cinco segundos) y ayudate con las manos para subir.' }),
         R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
@@ -71,7 +71,7 @@
           [w(rr).charAt(0).toUpperCase() + w(rr).slice(1) + ' rondas: sin pausa entre estaciones y 90 segundos de descanso al cerrar cada ronda',
            '- Farmer carry x 40 m con ' + k.farmer,
            '- Zancadas con bolsa de arena x 20 m con ' + k.bolsa,
-           '- Battle ropes x 30 s'],
+           '- SkiErg x 30 s a ritmo fuerte'],
           'Agarre, estabilidad del tronco y piernas bajo carga: las estaciones de transporte y de zancadas con bolsa se limitan más por el agarre y la postura que por el cardio, así que se entrenan con el cansancio ya presente.',
           ['POR QUÉ ESTÁ ACÁ: el agarre y el tronco son lo primero que se rompe en una carrera Hyrox. Acá se entrenan con cargas reales y con cansancio.',
            'CARGA DE ENTRENAMIENTO: farmer carry con ' + k.farmer + ' y bolsa de ' + k.bolsa + '; ajustá para llegar a esfuerzo 8 sobre 10 sin romper la postura.',

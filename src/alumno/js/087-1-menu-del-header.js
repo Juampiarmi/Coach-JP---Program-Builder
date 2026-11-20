@@ -520,6 +520,11 @@
   }
   function redondear(kg, paso){ paso = paso || 2.5; return Math.round(kg / paso) * paso; }
   function fmtKg(n){ return String(Math.round(n * 100) / 100).replace('.', ','); }
+  function fmtPct(n){ return String(Math.round(n * 10) / 10).replace('.', ','); }
+  /* progresión porcentual sobre la Semana 1: S2 +2,5%, S3 +5%, y +2,5% por cada semana de acumulación siguiente; descarga: −15% */
+  var JP_PCT_DESCARGA = 15;
+  function jpPctProgresion(w){ return w <= 1 ? 2.5 : 5 + 2.5 * (w - 2); }
+  window.jpPctProgresion = jpPctProgresion; window.JP_PCT_DESCARGA = JP_PCT_DESCARGA;
   function carga(w, d, b, idx, set){ try{ return getLoad(getLoadKey(w, d, b, idx, set)) || {}; }catch(e){ return {}; } }
   /* id de cada ejercicio de la rutina (dia|bloque|indice) -> nombre */
   var mapaNom = null;
@@ -566,25 +571,85 @@
     }catch(e2){}
     return mejor;
   }
+  /* ---------- registro previo de un ejercicio (enlace entre semanas) ----------
+     Antes la referencia se buscaba SOLO por posición exacta (semana|día|bloque|ejercicio|serie): si el coach regeneraba un bloque, reordenaba ejercicios o reasignaba
+     la plantilla entre semana, la clave de la Semana 2 ya no coincidía con la que el alumno había usado en la Semana 1 y no había ninguna carga sugerida.
+     Ahora se busca primero por posición y, si no hay nada, por NOMBRE del ejercicio (cada serie registrada guarda el nombre en l.ex), así el registro siempre se encuentra. */
+  /* semanas donde buscar, en orden de prioridad: la Semana 1 manda (base de la progresión); después la anterior más cercana */
+  function ordenSemanas(w){
+    var orden = [], pw;
+    if(w > 0) orden.push(0);
+    for(pw = w - 1; pw >= 1; pw--) orden.push(pw);
+    return orden;
+  }
+  /* una serie cuenta como registro si tiene kilos (las reps pueden faltar) y no fue desmarcada a propósito (done === false) */
+  function serieValida(l){
+    var kg = parseFloat(l && l.kg), rp = parseFloat(l && l.reps);
+    return (kg > 0 && l.done !== false) ? { kg: kg, reps: rp > 0 ? rp : 0 } : null;
+  }
+  function nombreDeCarga(k, l){
+    if(l && l.ex) return l.ex;
+    var p = String(k).split('|');
+    return mapaNombres()[p[1] + '|' + p[2] + '|' + p[3]] || '';
+  }
+  function elegirRef(sets, setN){
+    var mismo = sets.filter(function(x){ return x.s === setN; })[0];
+    var mejor = sets.reduce(function(a, x){ return (x.kg * (1 + x.reps / 30) > a.kg * (1 + a.reps / 30)) ? x : a; }, sets[0]);
+    return mismo || mejor;
+  }
+  /* registro de UNA semana: por posición exacta y, si no hay, por nombre del ejercicio */
+  function registroSemana(c, e, setN, pw){
+    var sets = [], s;
+    for(s = 1; s <= 12; s++){
+      var v = serieValida(carga(pw, c.d, c.b, e.idx, s));
+      if(v) sets.push({ s: s, kg: v.kg, reps: v.reps });
+    }
+    if(sets.length) return { w: pw, ref: elegirRef(sets, setN), sets: sets, clave: { w: pw, d: c.d, b: c.b, idx: e.idx }, porNombre: false };
+    var obj = nrm2(e.nombre); if(!obj) return null;
+    var grupos = {};
+    Object.keys(state.loads || {}).forEach(function(k){
+      var p = k.split('|'); if(p.length < 5 || parseInt(p[0], 10) !== pw) return;
+      var n = parseInt(p[4], 10); if(!(n >= 1)) return;                         /* las micro-series de Myo-Reps ('m1'...) no son series de trabajo */
+      var l = state.loads[k] || {}, v2 = serieValida(l); if(!v2) return;
+      if(nrm2(nombreDeCarga(k, l)) !== obj) return;
+      var gk = p[1] + '|' + p[2] + '|' + p[3];
+      var g = grupos[gk] = grupos[gk] || { d: p[1], b: p[2], idx: p[3], sets: [], ts: 0 };
+      g.sets.push({ s: n, kg: v2.kg, reps: v2.reps }); g.ts = Math.max(g.ts, l.ts || 0);
+    });
+    var lista = Object.keys(grupos).map(function(k2){ return grupos[k2]; });
+    if(!lista.length) return null;
+    /* el mismo día primero; si no, el registro más reciente */
+    lista.sort(function(a, b){ return ((b.d === c.d) - (a.d === c.d)) || (b.ts - a.ts); });
+    var g0 = lista[0];
+    return { w: pw, ref: elegirRef(g0.sets, setN), sets: g0.sets, clave: { w: pw, d: g0.d, b: g0.b, idx: g0.idx }, porNombre: true };
+  }
   /* la Semana 1 es la base estricta: se busca primero ahí; si esa serie no tiene marca, la semana anterior más cercana. Solo series completadas (done !== false) */
   function ultimoRegistro(c, e, setN){
-    var orden = [], pw;
-    if(c.w > 0) orden.push(0);
-    for(pw = c.w - 1; pw >= 1; pw--) orden.push(pw);
+    var orden = ordenSemanas(c.w);
     for(var q = 0; q < orden.length; q++){
-      pw = orden[q];
-      var sets = [];
-      for(var s = 1; s <= 12; s++){
-        var l = carga(pw, c.d, c.b, e.idx, s), kg = parseFloat(l.kg), rp = parseFloat(l.reps);
-        if(kg > 0 && rp > 0 && l.done !== false) sets.push({ s: s, kg: kg, reps: rp });
-      }
-      if(!sets.length) continue;
-      var mismo = sets.filter(function(x){ return x.s === setN; })[0];
-      var mejor = sets.reduce(function(a, x){ return (x.kg * (1 + x.reps / 30) > a.kg * (1 + a.reps / 30)) ? x : a; }, sets[0]);
-      return { w: pw, ref: mismo || mejor };
+      var r = registroSemana(c, e, setN, orden[q]);
+      if(r) return r;
     }
     return null;
   }
+  /* RIR que el alumno marcó para ese ejercicio de esa semana (chips de la tarjeta) o, en bloques clásicos, el RIR de hoy del bloque. null = no lo marcó */
+  function rirRegistrado(clave){
+    try{
+      var v = (state.rirEx || {})[clave.w + '|' + clave.d + '|' + clave.b + '|' + clave.idx];
+      if(typeof v !== 'number') v = (state.rir || {})[clave.w + '|' + clave.d + '|' + clave.b];
+      return typeof v === 'number' ? v : null;
+    }catch(e){ return null; }
+  }
+  /* doble progresión pura (sin DOM): ref = lo hecho la semana de referencia; rr = rango de reps; rirReg = RIR marcado por el alumno o null. Devuelve { kg, sube, motivo } */
+  function progresion(ref, rr, rirReg, fac){
+    var llego = ref.reps >= rr.max, holgado = (rirReg == null) || rirReg >= 1;
+    if(llego && holgado){
+      var kgN = Math.max(redondear(ref.kg * (fac || 1.025)), ref.kg + 2.5);
+      return { kg: kgN, sube: true, motivo: 'tope' };
+    }
+    return { kg: ref.kg, sube: false, motivo: llego ? 'fallo' : 'rango' };
+  }
+  window.jpProgresionCarga = progresion;
   /* devuelve { kg, pre, origen, txt } — pre = se escribe en el casillero para confirmar con un toque */
   window.jpSugerirCarga = function(c, e, setN){
     try{
@@ -593,34 +658,51 @@
       if(rir == null){ var mr = /RIR\s*(\d+)/i.exec(meta.rpe || ''); rir = mr ? +mr[1] : 2; }
       var ult = ultimoRegistro(c, e, setN || 1);
       if(ult && !deload){
-        var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg × ' + ref.reps;
-        if(!rr) return { kg: ref.kg, pre: false, origen: 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg × ' + ref.reps };
-        /* Semanas 2, 3 y siguientes: la sobrecarga sale SIEMPRE de lo registrado en la Semana 1 (S2 sube si en S1 llegaste al tope de reps; S3 sube más) */
+        var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '');
+        if(!rr || !(ref.reps > 0)) return { kg: ref.kg, pre: !!rr, origen: rr ? 'progresion' : 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '') };
+        var rirReg = rirRegistrado(ult.clave), nota = '', pr, calc = '';
         if(ult.w === 0 && c.w >= 1){
-          var llego = ref.reps >= rr.max, fac = c.w === 1 ? (llego ? 1.025 : 1) : (llego ? 1.05 : 1.025);
-          if(fac === 1) return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (base ' + previo + ')' };
-          var kgN = Math.max(redondear(ref.kg * fac), ref.kg + 2.5);
-          return { kg: kgN, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(kgN) + ' kg (+' + fmtKg(kgN - ref.kg) + ' sobre tu base de ' + previo + ')' };
+          /* Semanas 2, 3 y siguientes: progresión PORCENTUAL calculada sobre lo registrado en la Semana 1 (S2 +2,5%, S3 +5%, y +2,5% más por cada semana siguiente).
+             Solo se frena si en S1 no llegaste al mínimo del rango o marcaste RIR 0: ahí se mantiene la carga de S1 */
+          var pctP = jpPctProgresion(c.w), llegoMin = ref.reps >= rr.min, holgado = (rirReg == null || rirReg >= 1);
+          if(llegoMin && holgado){
+            pr = { kg: redondear(ref.kg * (1 + pctP / 100), 1.25), sube: true, motivo: 'tope' };
+            if(pr.kg <= ref.kg) pr.kg = redondear(ref.kg + 1.25, 1.25);
+            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg';
+            nota = ' · ' + calc;
+          } else {
+            pr = { kg: ref.kg, sube: false, motivo: holgado ? 'rango' : 'fallo' };
+          }
+          /* ...pero nunca por debajo de lo que el alumno YA hizo en la semana inmediatamente anterior, ni por encima de lo que no pudo completar ahí */
+          if(c.w >= 2){
+            var prev = registroSemana(c, e, setN || 1, c.w - 1);
+            if(prev && prev.ref.reps > 0){
+              var pk = prev.ref.kg, sem = 'S' + (prev.w + 1);
+              if(prev.ref.reps < rr.min){
+                if(pr.kg > pk){ pr = { kg: pk, sube: false, motivo: 'rango' }; nota = ' · en ' + sem + ' no llegaste a ' + rr.min + ' reps con ' + fmtKg(pk) + ' kg: mantené'; }
+              } else {
+                var pp = progresion(prev.ref, rr, rirRegistrado(prev.clave), 1.025);
+                if(pp.kg > pr.kg){ pr = { kg: pp.kg, sube: pp.sube, motivo: pp.motivo }; nota = ' · sobre lo que hiciste en ' + sem + ' (' + fmtKg(pk) + ' kg × ' + prev.ref.reps + ')'; }
+                else if(pk > pr.kg){ pr = { kg: pk, sube: false, motivo: 'rango' }; nota = ' · no menos que lo que ya hiciste en ' + sem; }
+              }
+            }
+          }
+        } else {
+          pr = progresion(ref, rr, rirReg, 1.025);
         }
-        if(ref.reps >= rr.max){
-          var sube = Math.max(redondear(ref.kg * 1.025), ref.kg + 2.5);
-          return { kg: sube, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(sube) + ' kg (+' + fmtKg(sube - ref.kg) + ') · llegaste a ' + ref.reps + ' reps con ' + fmtKg(ref.kg) + ' kg (' + previo + ')' };
-        }
-        return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (' + previo + ')' };
+        if(!pr.sube) return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(pr.kg) + ' kg y buscá ' + rr.max + ' reps' + (pr.motivo === 'fallo' ? ' (marcaste RIR 0: sumá reservas antes de subir)' : '') + ' (' + previo + ')' + nota };
+        if(calc && nota === ' · ' + calc) return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(pr.kg) + ' kg × ' + (rr.min === rr.max ? rr.max : rr.min + '-' + rr.max) + ' reps · ' + calc + (rirReg != null ? ' (RIR ' + rirReg + ' en S1)' : '') };
+        return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(pr.kg) + ' kg (+' + fmtKg(Math.max(0, pr.kg - ref.kg)) + ')' + (ref.reps >= rr.max ? ' · llegaste a ' + ref.reps + ' reps' + (rirReg != null ? ' con RIR ' + rirReg : '') : '') + ' (' + previo + ')' + nota };
       }
-      /* descarga: ~85% de la carga de la Semana 1 (va antes de la marca real, que ignoraría la base de la semana) */
+      /* descarga: 85% de la carga registrada en la Semana 1 (−15%); va antes de la marca real, que ignoraría la base de la semana */
       if(ult && deload){
-        var kgD0 = redondear(ult.ref.kg * 0.85);
-        return { kg: kgD0, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu base de S' + (ult.w + 1) + ' (' + fmtKg(ult.ref.kg) + ' kg)' };
+        var kgD0 = redondear(ult.ref.kg * (1 - JP_PCT_DESCARGA / 100), 1.25);
+        return { kg: kgD0, pre: true, origen: 'descarga', txt: 'Descarga S' + (c.w + 1) + ' · −' + JP_PCT_DESCARGA + '% de tu base de S' + (ult.w + 1) + ' (' + fmtKg(ult.ref.kg) + ' kg) = ' + fmtKg(kgD0) + ' kg' + (ult.ref.reps ? ' × ' + ult.ref.reps + ' reps' : '') + ' con RIR 4' };
       }
       var real = e1rmReal(e.nombre);
       if(real > 0 && rr){
         var rm = (rr.min + rr.max) / 2, kg2 = redondear(real / (1 + (rm + rir) / 30));
         if(kg2 > 0) return { kg: kg2, pre: true, origen: 'real', txt: 'Según tu marca real · 1RM est. ' + fmtKg(Math.round(real)) + ' kg → ' + fmtKg(kg2) + ' kg para ' + e.reps + ' reps a RIR ' + (e.rir || rir) };
-      }
-      if(ult && deload){
-        var kgD = redondear(ult.ref.kg * 0.85);
-        return { kg: kgD, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu carga habitual (' + fmtKg(ult.ref.kg) + ' kg)' };
       }
       var mc = String(e.carga || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*(?:kgs?)?\s*$/i);
       if(mc) return { kg: parseFloat(mc[1].replace(',', '.')), pre: true, origen: 'coach', txt: 'Carga pautada · tocá ✓ para confirmar' };
@@ -628,6 +710,8 @@
     }catch(err){ console.warn('sugerir carga', err); }
     return null;
   };
+  /* para los módulos de la tarjeta (referencia "Sem N: kg × reps"): mismo registro previo, también por nombre */
+  window.jpRegistroPrevio = function(c, e, setN){ try{ return ultimoRegistro(c, e, setN || 1); }catch(err){ return null; } };
   /* ejercicio de una fila nativa: lo reconstruye del bloque de ESA semana */
   var cacheMeta = {};
   function metaEjercicio(w, dayId, blockId, idx){

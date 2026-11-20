@@ -259,7 +259,13 @@
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
-      try{ jpPerfilSonido.hint(!hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work')); }catch(e){}
+      try{
+        var pista = !hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work');
+        /* voz: la preparación termina con "¡Ya!"; al abrirse una ronda nueva dice "Siguiente ronda" y, en la última, "Última ronda" */
+        if(fase === 'prep') pista = 'go';
+        else if(pista === 'work') pista = (ronda + 1 >= rondas) ? 'last_round' : 'next_round';
+        jpPerfilSonido.hint(pista);
+      }catch(e){}
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
       if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
@@ -350,6 +356,7 @@
     document.getElementById('cwtGo').textContent = '⏸︎ Pausar';
     /* primer toque real del alumno: acá se desbloquea el AudioContext
        (iOS/Chrome móvil) y se pide, una sola vez, el permiso de notificaciones */
+    if(fase === 'prep'){ try{ jpPerfilSonido.hint('tono'); }catch(eH){} }    /* voz: durante la preparación el "¡Ya!" lo dice el final de la cuenta, no este toque */
     jpBox.inicio(); vibrar([30]);
     try{ jpBgTimer.pedirPermiso(); }catch(e){}
     if(tick) tick.stop();
@@ -403,7 +410,7 @@
     /* chicharra larga de fin de round. Si el fin ocurrió hace rato (el
        celular estuvo bloqueado), ya avisó la notificación: no se hace sonar
        el buzzer "viejo" al volver a la app. */
-    if(!silencioso){ jpBox.chicharra(1.2); vibAl([100, 50, 100, 50, 220]); }
+    if(!silencioso){ try{ jpPerfilSonido.hint('done'); }catch(eH){} jpBox.chicharra(1.2); vibAl([100, 50, 100, 50, 220]); }
     try{ jpBgTimer.finalizado(); }catch(e){}
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }
