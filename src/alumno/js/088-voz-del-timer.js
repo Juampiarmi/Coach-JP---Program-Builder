@@ -1,18 +1,20 @@
 /* =========================================================
    VOZ DEL TIMER · frases fijas pregeneradas (ElevenLabs) sobre el motor de audio de siempre
    ---------------------------------------------------------
-   · La app NUNCA llama a la API: las frases (3-2-1, Ya, Descanso, A trabajar, Siguiente ronda, Última ronda, Mitad, Stop buen trabajo) se generan una vez con
-     tools/voz/generar.js y viven en voz/<es|en>/<id>.mp3 + voz/manifest.json.
-   · Al activarse (o al arrancar con la voz activa) se descargan y se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una
-     frase es un start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
-   · El service worker guarda los mp3 en su propia caché (coachjp-voz-v1) para que sigan disponibles sin conexión.
-   · Contrato con jpPerfilSonido.reproducir: jpVoz.hablar(ev, n, clip) devuelve true si habló (o si corresponde callar el tono). Sin voz activa, sin clips, sin red o
-     con el mute general, devuelve false y suena el tono de siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · La app NUNCA llama a la API: las frases (3-2-1, Ya, Descanso, Siguiente ronda, Última ronda, Mitad, Stop buen trabajo) se generan una vez con tools/voz/generar.js.
+   · El paquete viaja DENTRO de la app: 089-voz-paquete.js (window.JP_VOZ_PACK, mp3 en base64). La app que se exporta es un archivo autónomo (blob:, file://, cualquier hosting),
+     así que no puede depender de una carpeta voz/ al lado; con el paquete incrustado la voz suena en cualquier lado y sin conexión. Los archivos voz/<idioma>/<id>.mp3 quedan
+     como respaldo (si algún día la app se publica con la carpeta al lado) y como fuente del paquete.
+   · Al activarse (o al arrancar con la voz activa) los clips se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una frase es un
+     start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
+   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NO suena (la voz reemplaza al pitido; si el
+     clip todavía se está cargando, ese aviso queda en silencio). Solo si el paquete no se pudo cargar (estado "fallo") devuelve false y suena el tono de siempre para que el timer
+     no quede mudo. Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
    · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('auto' | 'es' | 'en'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
-  var BUF = {}, cargas = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0;
+  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000;
   /* pista del timer -> frase: lo que el timer anuncia antes de la transición ('done' = fin de todo) */
   var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
@@ -51,30 +53,44 @@ var jpVoz = (function(){
     }catch(e){}
     return 0;
   }
-  function cargar(lang){
-    lang = lang || idioma();
-    if(BUF[lang] && BUF[lang].__listo) return Promise.resolve(true);
-    if(cargas[lang]) return cargas[lang];
-    var ctx = null; try{ ctx = ensureAudioCtx(true); }catch(e){}
-    if(!ctx || typeof fetch !== 'function'){ return Promise.resolve(false); }
-    cargas[lang] = leerManifest().then(function(m){
+  function bytesDe(b64){
+    var bin = atob(b64), n = bin.length, u = new Uint8Array(n);
+    for(var i = 0; i < n; i++) u[i] = bin.charCodeAt(i);
+    return u.buffer;
+  }
+  function guardar(lang, id, b){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: b, off: inicioUtil(b) }; }
+  /* 1) paquete incrustado en la app: sin red, sin rutas */
+  function desdePaquete(ctx, lang, pack){
+    return Promise.all(Object.keys(pack).map(function(id){ return decodificar(ctx, bytesDe(pack[id])).then(function(b){ guardar(lang, id, b); }); }));
+  }
+  /* 2) respaldo: archivos voz/<idioma>/<id>.mp3 junto a la app (+ aviso al service worker para el caché offline) */
+  function desdeArchivos(ctx, lang){
+    return leerManifest().then(function(m){
       var ids = Object.keys(m.clips || {}).filter(function(id){ return m.clips[id] && m.clips[id][lang]; });
       /* ?v=<hash del manifest>: si una frase se regenera cambia la URL y el service worker (cache-first) trae la nueva */
       var urls = ids.map(function(id){ return base + lang + '/' + id + '.mp3?v=' + encodeURIComponent(m.clips[id][lang].h || '0'); });
       return Promise.all(ids.map(function(id, k){
-        return pedir(urls[k]).then(function(r){ return r.arrayBuffer(); }).then(function(ab){ return decodificar(ctx, ab); }).then(function(b){
-          BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: b, off: inicioUtil(b) };
-        });
+        return pedir(urls[k]).then(function(r){ return r.arrayBuffer(); }).then(function(ab){ return decodificar(ctx, ab); }).then(function(b){ guardar(lang, id, b); });
       })).then(function(){
-        BUF[lang] = BUF[lang] || {}; BUF[lang].__listo = true;
         try{
           if(navigator.serviceWorker && navigator.serviceWorker.controller){
             navigator.serviceWorker.controller.postMessage({ tipo: 'jp-voz', accion: 'precachear', urls: [new URL(base + 'manifest.json', document.baseURI).href].concat(urls.map(function(u){ return new URL(u, document.baseURI).href; })) });
           }
         }catch(e){}
-        return true;
       });
-    }).catch(function(e){ cargas[lang] = null; return false; });    /* sin paquete / sin red: se reintenta la próxima vez y mientras tanto suenan los tonos */
+    });
+  }
+  function cargar(lang){
+    lang = lang || idioma();
+    if(ESTADO[lang] === 'ok') return Promise.resolve(true);
+    if(cargas[lang]) return cargas[lang];
+    var ctx = null; try{ ctx = ensureAudioCtx(true); }catch(e){}
+    function fallo(){ ESTADO[lang] = 'fallo'; falloT[lang] = Date.now(); cargas[lang] = null; return false; }
+    if(!ctx) return Promise.resolve(fallo());
+    ESTADO[lang] = 'cargando';
+    var pack = window.JP_VOZ_PACK && window.JP_VOZ_PACK[lang], hay = pack && Object.keys(pack).length;
+    var p = hay ? desdePaquete(ctx, lang, pack).catch(function(){ return desdeArchivos(ctx, lang); }) : (typeof fetch === 'function' ? desdeArchivos(ctx, lang) : Promise.reject(new Error('sin fetch')));
+    cargas[lang] = p.then(function(){ BUF[lang] = BUF[lang] || {}; BUF[lang].__listo = true; ESTADO[lang] = 'ok'; return true; }, fallo);
     return cargas[lang];
   }
 
@@ -102,23 +118,35 @@ var jpVoz = (function(){
   /* el timer anuncia hacia dónde va la transición antes de llamar a la chicharra / al "YA" */
   function pista(k){ pistaTxt = PISTAS[k] || null; pistaT = Date.now(); }
   function tomarPista(){ var k = (pistaTxt && Date.now() - pistaT < VIGENCIA_PISTA) ? pistaTxt : null; pistaTxt = null; return k; }
-  /* true = habló (o corresponde callar el tono). false = que suene el tono de siempre */
+  /* Con la voz activa devuelve true SIEMPRE (la voz reemplaza al pitido). false solo si el paquete falló (el timer no queda mudo) o la voz está apagada / silenciada. */
   function hablar(ev, n, clip){
     if(!activa() || silenciada()) return false;
+    var lang = idioma(), st = ESTADO[lang];
+    if(st === 'fallo'){
+      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, tonos */
+      return false;
+    }
+    if(!st) cargar(lang);
     var id = null;
     if(ev === 'tick') id = (n >= 1 && n <= 3) ? 'n' + n : null;
     else {
       var p = tomarPista();
-      if(p === '_tono') return false;    /* el timer pidió el tono de siempre para este aviso */
+      if(p === '_tono') return true;    /* el timer pidió callar este aviso (la preparación ya tiene su cuenta) */
       id = clip || p || (ev === 'inicio' ? 'go' : (ev === 'mitad' ? 'halfway' : null));
-      if(!id && ev === 'fin' && Date.now() - hablaT < 1500) return true;    /* ya habló hace un instante ("Ya" y fin de la preparación): sin tono encima */
+      if(!id && ev === 'fin' && Date.now() - hablaT < 1500) return true;    /* ya habló hace un instante ("Ya" y fin de la preparación) */
     }
-    return id ? decir(id) : false;
+    if(id) decir(id);    /* si el clip todavía se está cargando, ese aviso queda en silencio: nunca el pitido */
+    return true;
   }
+
   function probar(){
     try{ gestoAudio(); }catch(e){}
     cargar().then(function(ok){
-      if(!ok) return;
+      if(!ok){
+        var pr = document.getElementById('hdpVozProbar');
+        if(pr){ pr.textContent = '⚠ ' + T('app.voz.sinpaquete', 'Sin paquete de voz'); setTimeout(pintar, 2500); }
+        return;
+      }
       [['n3', 0], ['n2', 1000], ['n1', 2000], ['go', 3000]].forEach(function(p){ setTimeout(function(){ decir(p[0], true); }, p[1]); });
     });
   }
@@ -158,7 +186,7 @@ var jpVoz = (function(){
     if(t.closest('#cwtVoz')){ activar(!activa()); try{ if(navigator.vibrate) navigator.vibrate([15]); }catch(x){} }
   });
   document.addEventListener('jp-voz-cambio', pintar);
-  function iniciar(){ pintar(); if(activa()) setTimeout(function(){ cargar(); }, 1200); }
+  function iniciar(){ pintar(); if(activa()) setTimeout(function(){ cargar(); }, 300); }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 
   return {
@@ -166,8 +194,12 @@ var jpVoz = (function(){
     /* clips ya decodificados por idioma (QA / tests) */
     listos: function(lang){ var b = BUF[lang || idioma()] || {}; return Object.keys(b).filter(function(k){ return k !== '__listo'; }); },
     /* tests: sin red ni sonido real */
-    __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; },
-    __vaciar: function(){ BUF = {}; cargas = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
+    estado: function(lang){ return ESTADO[lang || idioma()] || null; },
+    paquete: function(){ var o = {}, pk = window.JP_VOZ_PACK || {}; Object.keys(pk).forEach(function(l){ o[l] = Object.keys(pk[l]); }); return o; },
+    __bytes: bytesDe,
+    __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; ESTADO[lang] = 'ok'; },
+    __fallo: function(lang){ ESTADO[lang] = 'fallo'; falloT[lang] = Date.now(); },
+    __vaciar: function(){ BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
   };
 })();
 window.jpVoz = jpVoz;

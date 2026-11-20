@@ -505,6 +505,8 @@
     var V = w.jpVoz, d = w.document, plays = [], creados = {}, P = [];
     function nodo(){ var f = function(){ return nodo(); }; return new Proxy(f, { get: function(t, p){ return p === 'then' ? undefined : nodo(); }, set: function(){ return true; } }); }
     var ctxF = { state: 'running', currentTime: 1, destination: nodo(), resume: function(){ return Promise.resolve(); } };
+    var decodificados = [], fetchs = 0;
+    ctxF.decodeAudioData = function(ab, ok){ decodificados.push(ab); ok({ getChannelData: function(){ return new Float32Array(4); }, sampleRate: 44100 }); };
     ctxF.createBufferSource = function(){ var s = { buffer: null, connect: function(){}, start: function(){ plays.push(s.buffer && s.buffer.id); }, stop: function(){}, onended: null }; return s; };
     ['createOscillator', 'createGain', 'createBiquadFilter', 'createWaveShaper', 'createDynamicsCompressor', 'createBuffer'].forEach(function(n){ ctxF[n] = function(){ creados[n] = (creados[n] || 0) + 1; return nodo(); }; });
     var KEYS = ['jp_voz', 'jp_voz_lang', 'jp_audio_muted', 'coachjp_lang'], guardado = {}, origCtx = w.ensureAudioCtx, origFetch = w.fetch, idiomaApp = w.JP_I18N.lang();
@@ -514,7 +516,7 @@
     function ids(){ return plays.map(function(x){ return String(x).split(':')[1]; }); }
     function dice(fn){ plays.length = 0; fn(); return ids().join(','); }
     w.ensureAudioCtx = function(){ return ctxF; };
-    w.fetch = function(){ return Promise.reject(new Error('sin red (test)')); };
+    w.fetch = function(){ fetchs++; return Promise.reject(new Error('sin red (test)')); };
     try{
       ls('jp_audio_muted', '0'); ls('jp_voz_lang', null); w.JP_I18N.setLang('es');
       if(c.caso === 'apagada'){
@@ -528,14 +530,14 @@
         var r = { cuenta: [3, 2, 1].map(function(n){ return dice(function(){ w.jpBox.cuenta(n); }); }).join(',') };
         r.ya = dice(function(){ w.jpBox.go(); }); r.mitad = dice(function(){ w.jpBox.mitad(); });
         r.sinTonos = !creados.createOscillator;
-        montar(); r.sinPistaCallaTono = V.hablar('fin', 0);
+        montar(); r.finSinFraseEsSilencio = V.hablar('fin', 0) === true && plays.length === 0 && !creados.createOscillator;
         return r;
       }
       if(c.caso === 'pistas'){
         ls('jp_voz', '1'); montar();
         var m = function(k){ montar(); V.pista(k); return dice(function(){ V.hablar('fin', 0); }); };
         var o = { descanso: m('rest'), trabajo: m('work'), siguiente: m('next_round'), ultima: m('last_round'), fin: m('done') };
-        montar(); V.pista('tono'); o.tonoPedido = V.hablar('fin', 0);
+        montar(); V.pista('tono'); o.preparacionCalla = V.hablar('fin', 0) === true && plays.length === 0 && !creados.createOscillator;
         montar(); o.finDeDescanso = dice(function(){ w.jpBox.gong(); });
         plays.length = 0; var rr = V.hablar('fin', 0); o.sinTonoEncimaDelYa = rr === true && plays.length === 0;
         return o;
@@ -543,8 +545,8 @@
       if(c.caso === 'respaldo'){
         ls('jp_voz', '1'); montar(); ls('jp_audio_muted', '1');
         var q = { muteGeneral: V.hablar('tick', 3) || plays.length > 0 }; ls('jp_audio_muted', '0');
-        V.__vaciar(); q.sinClipCaeAlTono = V.hablar('tick', 3);
-        montar(); w.ensureAudioCtx = function(){ return null; }; q.sinContexto = V.hablar('tick', 3);
+        V.__vaciar(); q.cargandoCalla = V.hablar('tick', 3) === true && plays.length === 0 && !creados.createOscillator; V.__vaciar(); V.__fallo('es'); q.paqueteFalloCaeAlTono = V.hablar('tick', 3);
+        V.__vaciar(); w.ensureAudioCtx = function(){ return null; }; V.hablar('tick', 3); q.sinContexto = V.estado('es') === 'fallo' && V.hablar('tick', 3) === false;
         return q;
       }
       if(c.caso === 'idioma'){
@@ -583,6 +585,43 @@
         }); });
         Object.keys(man.clips).forEach(function(id){ if(!frases[id]) P.push('manifest: «' + id + '» ya no está en frases.json'); });
         return P;
+      }
+      if(c.caso === 'incrustado'){
+        var xr = new XMLHttpRequest(); xr.open('GET', '../../tools/voz/frases.json', false); xr.send();
+        var xm = new XMLHttpRequest(); xm.open('GET', '../../voz/manifest.json', false); xm.send();
+        if(xr.status !== 200 || xm.status !== 200) return ['no se pudo leer frases.json / manifest.json'];
+        var fz = JSON.parse(xr.responseText).frases, mn = JSON.parse(xm.responseText), pk = w.JP_VOZ_PACK;
+        if(!pk) return ['la app no trae JP_VOZ_PACK (089-voz-paquete.js)'];
+        Object.keys(fz).forEach(function(id){ ['es', 'en'].forEach(function(l){
+          var b64 = pk[l] && pk[l][id]; if(!b64){ P.push(l + '/' + id + ': falta en el paquete incrustado'); return; }
+          var u = new Uint8Array(V.__bytes(b64)), mp3 = (u[0] === 0x49 && u[1] === 0x44 && u[2] === 0x33) || (u[0] === 0xFF && (u[1] & 0xE0) === 0xE0);
+          if(!mp3) P.push(l + '/' + id + ': no decodifica a un mp3');
+          if(mn.clips[id] && mn.clips[id][l] && u.length !== mn.clips[id][l].bytes) P.push(l + '/' + id + ': el paquete incrustado no coincide con voz/ (' + u.length + ' vs ' + mn.clips[id][l].bytes + ' bytes): correr node tools/voz/generar.js --empaquetar');
+        }); });
+        return P;
+      }
+      if(c.caso === 'autonoma'){
+        ls('jp_voz', '1'); V.__vaciar(); ls('jp_voz_lang', 'es'); decodificados.length = 0; fetchs = 0;
+        V.cargar('es');
+        var pkEs = Object.keys(w.JP_VOZ_PACK && w.JP_VOZ_PACK.es || {}).length;
+        return { sinRed: fetchs === 0, decodificaTodos: pkEs >= 10 && decodificados.length === pkEs,
+          bytesMp3: decodificados.length > 0 && decodificados.every(function(ab){ var u = new Uint8Array(ab); return (u[0] === 0x49 && u[1] === 0x44 && u[2] === 0x33) || (u[0] === 0xFF && (u[1] & 0xE0) === 0xE0); }), cargando: V.estado('es') === 'cargando' };
+      }
+      if(c.caso === 'hud'){
+        var el = d.getElementById('cwtVoz'), tocados = [];
+        for(var a = el; a && a !== d.body; a = a.parentElement){
+          var cs = w.getComputedStyle(a);
+          if(cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0'){ tocados.push([a, a.getAttribute('style')]); a.style.setProperty('display', 'flex', 'important'); a.style.setProperty('visibility', 'visible', 'important'); a.style.setProperty('opacity', '1', 'important'); }
+        }
+        try{
+          var R = function(s){ var e2 = d.querySelector(s); return e2 ? e2.getBoundingClientRect() : null; };
+          var piezas = { titulo: R('#cwtWrap .hud-branding'), audio: R('#cwtMute'), voz: R('#cwtVoz'), minimizar: R('#cwtMin'), cerrar: R('#cwtX') }, ks = Object.keys(piezas).filter(function(k){ return piezas[k] && piezas[k].width > 0; });    /* minimizar está oculto en este HUD (sin tamaño): no cuenta */
+          var cruzan = function(p, q){ return p.left < q.right - 0.5 && q.left < p.right - 0.5 && p.top < q.bottom - 0.5 && q.top < p.bottom - 0.5; }, solapes = [];
+          ks.forEach(function(k1, i1){ ks.forEach(function(k2, i2){ if(i2 > i1 && piezas[k1] && piezas[k2] && cruzan(piezas[k1], piezas[k2])) solapes.push(k1 + '/' + k2); }); });
+          var anchoVentana = w.innerWidth;
+          return { controlesDebajoDelTitulo: ['audio', 'voz', 'cerrar'].every(function(k){ return piezas[k] && piezas[k].width > 0 && piezas[k].top >= piezas.titulo.bottom - 1; }),
+            sinSolapes: solapes.length === 0, dentroDelAncho: ks.every(function(k){ return piezas[k] && piezas[k].left >= 0 && piezas[k].right <= anchoVentana + 0.5; }), detalle: solapes.join(',') + ' · ancho ' + anchoVentana };
+        } finally { tocados.forEach(function(t){ if(t[1] == null) t[0].removeAttribute('style'); else t[0].setAttribute('style', t[1]); }); }
       }
       if(c.caso === 'textos'){
         var I = w.JP_I18N, ks = I.claves('es').filter(function(k){ return /^app\.voz\./.test(k); });

@@ -41,16 +41,28 @@ async function generar(id, idioma, key){
   if(!res.ok) throw new Error('ElevenLabs respondió ' + res.status + ' en ' + idioma + '/' + id + ': ' + (await res.text()).slice(0, 300));
   return Buffer.from(await res.arrayBuffer());
 }
+/* Paquete incrustado: los mp3 van como base64 dentro de la app del alumno (src/alumno/js/089-voz-paquete.js). La app que se exporta es un ARCHIVO AUTÓNOMO (puede abrirse desde
+   un blob:, un file:// o cualquier hosting), así que no puede depender de una carpeta voz/ al lado: con el paquete incrustado la voz suena en cualquier lado y sin conexión. */
+const PAQUETE = path.join(RAIZ, 'src', 'alumno', 'js', '089-voz-paquete.js');
+function armarPaquete(){
+  const pack = {};
+  IDIOMAS.forEach(i => { pack[i] = {}; Object.keys(cfg.frases).forEach(id => { try{ pack[i][id] = fs.readFileSync(ruta(id, i)).toString('base64'); }catch(e){} }); });
+  return '/* GENERADO por tools/voz/generar.js a partir de voz/<idioma>/*.mp3 (base64): no editar a mano. Lo lee jpVoz (088-voz-del-timer.js). */\nwindow.JP_VOZ_PACK = ' + JSON.stringify(pack) + ';\n';
+}
 (async function(){
   const pendientes = [];
   ids.forEach(id => IDIOMAS.forEach(i => { if(flag('force') || !vigente(id, i)) pendientes.push([id, i]); }));
+  if(flag('empaquetar')){ fs.writeFileSync(PAQUETE, armarPaquete()); console.log('Paquete incrustado: ' + path.relative(RAIZ, PAQUETE)); return; }
   if(flag('check')){
     if(pendientes.length){ console.error('Faltan o están desactualizados ' + pendientes.length + ' clips: ' + pendientes.map(p => p[1] + '/' + p[0]).join(', ')); process.exit(1); }
-    console.log('OK · ' + ids.length * IDIOMAS.length + ' clips vigentes (' + IDIOMAS.join(', ') + ')'); return;
+    let actual = ''; try{ actual = fs.readFileSync(PAQUETE, 'utf8'); }catch(e){}
+    if(actual !== armarPaquete()){ console.error('El paquete incrustado (' + path.relative(RAIZ, PAQUETE) + ') no coincide con voz/: correr node tools/voz/generar.js --empaquetar'); process.exit(1); }
+    console.log('OK · ' + ids.length * IDIOMAS.length + ' clips vigentes (' + IDIOMAS.join(', ') + ') y paquete incrustado al día'); return;
   }
   const chars = pendientes.reduce((a, p) => a + cfg.frases[p[0]][p[1]].length, 0);
   console.log(pendientes.length + ' clips a generar (' + chars + ' caracteres) · voces ' + IDIOMAS.map(i => i + ': ' + (conf(i).vozNombre || conf(i).voz)).join(', ') + ' · ' + cfg.modelo);
-  if(flag('dry') || !pendientes.length){ pendientes.forEach(p => console.log('  ' + p[1] + '/' + p[0] + '  «' + cfg.frases[p[0]][p[1]] + '»')); return; }
+  if(flag('dry')){ pendientes.forEach(p => console.log('  ' + p[1] + '/' + p[0] + '  «' + cfg.frases[p[0]][p[1]] + '»')); return; }
+  if(!pendientes.length){ fs.writeFileSync(PAQUETE, armarPaquete()); console.log('Nada para generar. Paquete incrustado al día: ' + path.relative(RAIZ, PAQUETE)); return; }
   const key = claveApi(); if(!key){ console.error('Falta ELEVENLABS_API_KEY (variable de entorno o .env).'); process.exit(1); }
   for(const [id, idioma] of pendientes){
     const buf = await generar(id, idioma, key);
@@ -62,5 +74,6 @@ async function generar(id, idioma, key){
   /* ids que ya no están en frases.json salen del manifest (el mp3 viejo queda para borrarlo a mano) */
   Object.keys(manifest.clips).forEach(id => { if(!cfg.frases[id]) delete manifest.clips[id]; });
   fs.writeFileSync(path.join(SALIDA, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-  console.log('Listo: ' + path.relative(RAIZ, SALIDA) + '/manifest.json');
+  fs.writeFileSync(PAQUETE, armarPaquete());
+  console.log('Listo: ' + path.relative(RAIZ, SALIDA) + '/manifest.json y ' + path.relative(RAIZ, PAQUETE));
 })().catch(e => { console.error('Error: ' + e.message); process.exit(1); });

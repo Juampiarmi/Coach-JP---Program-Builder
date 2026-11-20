@@ -12,6 +12,7 @@ JP_I18N.add('es', {
   'app.voz.idioma': 'Idioma de la voz',
   'app.voz.auto': 'AUTO',
   'app.voz.probar': 'Probar',
+  'app.voz.sinpaquete': 'Sin paquete de voz',
   'app.voz.ejemplo': '3 - 2 - 1 - ¡Ya!',
   'app.voz.chip.on': 'VOZ: ON',
   'app.voz.chip.off': 'VOZ: OFF',
