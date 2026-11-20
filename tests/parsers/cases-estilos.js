@@ -58,9 +58,9 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Sin tempo ni RIR no se inventa la fila técnica; una estación intermedia de biset muestra "sin descanso" debajo del volumen' },
 
   /* ---- Story Card: énfasis muscular sin repetir PIERNA ---- */
-  { id: 'story.enf.01', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'grupos', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral tumbado', n: 3 }] }, expect: ['CUÁDRICEPS', 'GEMELOS', 'ISQUIOS'],
+  { id: 'story.enf.01', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'grupos', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral acostado', n: 3 }] }, expect: ['CUÁDRICEPS', 'GEMELOS', 'ISQUIOS'],
     nota: 'Un día de pierna lista solo los músculos específicos (cuádriceps, isquios, gemelos): ya no aparece un renglón general PIERNA encima de ellos' },
-  { id: 'story.enf.02', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'texto', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral tumbado', n: 3 }] }, expect: { inferior: true, sinPierna: true }, modo: 'subset',
+  { id: 'story.enf.02', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'texto', det: [{ ex: 'Sentadilla con barra', n: 4 }, { ex: 'Elevación de talones de pie', n: 3 }, { ex: 'Curl femoral acostado', n: 3 }] }, expect: { inferior: true, sinPierna: true }, modo: 'subset',
     nota: 'La referencia general al tren inferior queda en el texto descriptivo, sin nombrar "pierna" como un grupo más' },
   { id: 'story.enf.03', area: 'Story Card · énfasis muscular', fn: 'alumnoStory', input: { caso: 'grupos', det: [{ ex: 'Press de banca plano con barra', n: 4 }, { ex: 'Remo con barra', n: 3 }] }, expect: ['PECHO', 'ESPALDA'], nota: 'Un día de torso no cambia' },
   /* ---- piel: íconos a color y barra de activación ---- */

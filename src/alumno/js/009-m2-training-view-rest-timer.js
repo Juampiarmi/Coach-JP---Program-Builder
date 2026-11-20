@@ -1040,16 +1040,16 @@
     unidades.forEach(function(u){
       if(u.querySelector(':scope > .jp-ex-cajas')) return;
       var html = '';
-      if(objetivoPendiente){ html += caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml); objetivoPendiente = false; }
+      if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
       var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
-      if(ex) html += caja('tempo', '&#9201; TEMPO (CADENCIA)', escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
+      if(ex) html += caja('tempo', '&#9201; ' + escSB(jpT('app.card.tempo.t')), escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
       if(!html) return;
       var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
       u.appendChild(div);
     });
     if(objetivoPendiente){                                                       /* sin tarjetas de ejercicio en el bloque: el objetivo cierra el tablero */
-      var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; OBJETIVO FISIOL&Oacute;GICO', 'Qu&eacute; trabaj&aacute;s y por qu&eacute;', objetivoHtml);
+      var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml);
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
   }
@@ -2340,7 +2340,7 @@
         /* videos en miniatura compacta y, al final, el acordeon de estrategia */
         (clips.length ? '<div class="jp-cf-vids"><div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS</div>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
         ((tieneCierre || subtituloVisible) ?
-          '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T&Eacute;CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
+          '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary>' +
             (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
             (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; FOCO DEL EST&Iacute;MULO</span><p>' + jpCfSubLabels(c.objetivo) + '</p></div>' : '') +
             (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9889; ESTRATEGIA DE PACING</span><p>' + jpCfSubLabels(c.pacing) + '</p></div>' : '') +
@@ -4348,7 +4348,7 @@
           (en.subs || []).forEach(function(sb){ if(sb.tempo) add(sb.nombre, sb.tempo); });
         }
       });
-      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
+      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 ' + escSB(jpT('app.card.tempo.t')) + '</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
     const tieneAcc = !!tipsHtml;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
@@ -4365,14 +4365,14 @@
        "Bloque completado") pero se oculta con CSS. El tiempo sale del "(22 MIN)" del titulo o de la duracion estimada del bloque. */
     const mMinT = tituloBloqueEnfasis.match(/^(\d+)\s*MIN/i), minutosTag = mMinT ? mMinT[1] : (duracionEstimada || '');
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
-        '<div class="jp-sb-tag">[ BIOMEC&Aacute;NICA APLICADA &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
+        '<div class="jp-sb-tag">[ ' + escSB(jpT('app.card.tag')) + ' &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
         (block.ocultaTituloTablero ? '' : tituloBloqueHtmlSB(tituloBloquePrincipal)) +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas + chipsVideoSB(videosBloque, busquedasVid) +
         (tieneAcc ?
-          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
+          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary>' +
             '<div class="jp-details-content">' +
-              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
+              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ' + escSB(jpT('app.card.tips.lb')) + '</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
             '</div>' +
           '</details>' : '') +
         (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg, obj: String(block.objective || ''), tp: String(block.tips || '') }) : '') +

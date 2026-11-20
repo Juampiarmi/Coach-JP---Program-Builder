@@ -26,7 +26,7 @@
       filas: [
         R('F', 'Sentadilla con barra', '4x5-6|2|180', '5x4-5|1|210', { p: '5x3-5|1|240', n: 'La sentadilla es la base de todo lo que pasa en una carrera Hyrox: empuje de trineo, zancadas con bolsa y wall balls. Pesada y rápida, sin dejarte sin piernas para los intervalos que vienen después.' }),
         R('H', 'Zancadas caminando', '3x8 por lado|1|90', '4x8 por lado|0-1|90', { p: '4x10 por lado|0-1|90', n: 'Es el patrón de la estación de zancadas con bolsa: paso largo, torso erguido y la rodilla de atrás cerca del piso. Con mancuernas o barra, la carga más alta con la que mantengas la técnica.' }),
-        R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+        R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop'),
         R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
         R('B', ['Curl nórdico', 'Elevación de talones a una pierna'], '3x5/12|2|75', '3x6/12|1|75', { n: 'Resiliencia de isquios y pantorrilla: son las dos zonas que primero se quejan cuando suma el volumen de carrera. En el nórdico bajá lento (cinco segundos) y ayudate con las manos para subir.' }),
         R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),

@@ -49,6 +49,7 @@
 <script src="cases-elite.js"></script>
 <script src="cases-pedagogia.js"></script>
 <script src="cases-copia-plan.js"></script>
+<script src="cases-i18n.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -95,6 +96,7 @@
     bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
     copiaPlan:    { run: function(i){ return copiaPlanCaso(i); }, valor: function(r){ return r; } },
     pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
+    i18nBib:      { run: function(i){ return i18nCaso(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -476,7 +478,7 @@
         Object.keys(nucleos).forEach(function(k){ if(nucleos[k] > 1) P.push(r.id + ': el mismo bloque de core «' + k + '» se repite ' + nucleos[k] + ' veces'); });
         if(!/Curl de bíceps en banco inclinado/.test(txt) || !/Extensión tríceps tras nuca/.test(txt)) P.push(r.id + ': los brazos no trabajan estirados (curl inclinado y extensión sobre la cabeza)');
       });
-      var alt = win.__jpPB.EST.alternativas('Curl femoral tumbado', 'f'), altM = win.__jpPB.EST.alternativas('Curl femoral tumbado', 'm');
+      var alt = win.__jpPB.EST.alternativas('Curl femoral acostado', 'f'), altM = win.__jpPB.EST.alternativas('Curl femoral acostado', 'm');
       if(alt.indexOf('Curl femoral sentado') >= 0) P.push('el swap ofrece el curl femoral sentado a las alumnas');
       if(altM.indexOf('Curl femoral sentado') < 0) P.push('el swap no ofrece el curl femoral sentado a los alumnos');
     } else if(c.caso === 'hombres'){
@@ -492,6 +494,132 @@
         /* hasta 1 patrón axial pesado por día en el avanzado ya lo vigila elite.bb.01; en el intermedio no se encadenan 3 ejercicios pesados de cadera */
         (r.dias || []).forEach(function(d, k){ var tx = JSON.stringify(d.bloques || []), n = (/Sentadilla con barra/.test(tx) ? 1 : 0) + (/Peso muerto rumano\b(?! con mancuernas)/.test(tx.replace(/Peso muerto rumano a una pierna/g, '')) ? 1 : 0) + (/Hip thrust con barra/.test(tx) ? 1 : 0); if(n >= 3) P.push(titulo(r, k) + ': sentadilla, rumano y hip thrust en el mismo día'); });
       });
+    } else throw new Error('caso desconocido: ' + c.caso);
+    return P;
+  }
+  /* ---------- dosis por lado, vocabulario rioplatense, biblioteca ampliada e i18n ---------- */
+  function i18nCaso(c){
+    var PB = win.__jpPB, I = win.JP_I18N, S = getS(), P = [], nz = PB.nzz;
+    var reg = (S.banco || []).filter(function(r){ return /^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || ''); });
+    function volver(){ I.setLang('es'); try{ win.localStorage.removeItem('coachjp_lang'); }catch(e){} }
+    function lineasBloque(b){ return (b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); }); }
+    function tx(r){ return JSON.stringify(r.dias || []); }
+    var BLOQUE_H = { rol: 'H', ej: ['Press inclinado con mancuernas'], i: '3x8-10|0-1|90', a: '3x8-10|0-1|90' };
+    if(c.caso === 'conLado'){
+      return { bulgara: PB.conLado('Sentadilla búlgara', '10-12'), yaDice: PB.conLado('Sentadilla búlgara', '10-12 por lado'), bilateral: PB.conLado('Press de banca plano con barra', '10-12'),
+        pistol: PB.conLado('Pistol squat', '8'), plancha: PB.conLado('Plancha lateral', '30s'), pallof: PB.conLado('Pallof press', '12'),
+        lateralPolea: PB.conLado('Elevaciones laterales en polea baja', '12-20'), vacio: PB.conLado('Pallof press', '') };
+    }
+    if(c.caso === 'textoLado'){
+      var t = PB.textoBloque(1, { rol: 'H', ej: ['Sentadilla búlgara'], i: '3x10-12|1|90', a: '3x10-12|1|90' }, 'intermedio', false).txt;
+      return { lineaConLado: /^3x10-12 por lado \|/m.test(t), seriesPorLado: /cada serie es un lado|hacés las repeticiones con un lado, cambiás/i.test(t) && /POR LADO/.test(t), sinInflar: t.indexOf('Las series efectivas son solo las 3 series') >= 0 && /no se duplica/i.test(t) };
+    }
+    if(c.caso === 'plantillasLado'){
+      reg.forEach(function(r){
+        (r.dias || []).forEach(function(d, k){ (d.bloques || []).forEach(function(b){
+          var L = lineasBloque(b);
+          L.forEach(function(l, j){ if(/^(Rest|\d+x)/i.test(l)) return; if(PB.esUnilateral(l) && !/por\s+(lado|pierna|brazo)/i.test(l + ' ' + (L[j + 1] || ''))) P.push(r.id + ' día ' + (k + 1) + ': «' + l + '» sin «por lado» en la dosis (' + (L[j + 1] || '') + ')'); });
+        }); });
+      });
+      reg.filter(function(r){ return /_a$/.test(r.id); }).forEach(function(r){
+        var id = r.id.replace('bkstd_', ''), t = eliteTpl(id), dias = eliteDias(id);
+        var rangos = t.g;
+        win.__jpPB.EST.volumen(dias, rangos, 'avanzado').forEach(function(x){ if(x.est !== 'ok') P.push(id + ': ' + x.g + ' ' + x.v + ' series (rango ' + x.lo + '-' + x.hi + ')'); });
+      });
+    } else if(c.caso === 'vocabulario'){
+      var MAL = /tumbad[oa]s?\b|espinillas?\b/i, textos = [];
+      reg.forEach(function(r){ textos.push([r.id, tx(r)]); });
+      (S.exercises || []).forEach(function(e){ textos.push(['biblioteca «' + e.es + '»', [e.es, e.aviso, e.patron].join(' ')]); });
+      (PB.LISTA || []).forEach(function(t){ textos.push(['plantilla ' + t.id, JSON.stringify(t.nombre || '') + JSON.stringify(t.desc || '')]); });
+      ['es', 'en'].forEach(function(l){ I.setLang(l); I.claves(l).forEach(function(k){ textos.push(['diccionario ' + l + ' ' + k, I.t(k)]); }); });
+      volver();
+      textos.forEach(function(x){ var m = MAL.exec(x[1]); if(m) P.push(x[0] + ': dice «' + m[0] + '»'); });
+    } else if(c.caso === 'alias'){
+      var lista = [{ es: 'Curl femoral tumbado' }, { es: 'Elevación posterior tumbado' }, { es: 'Press de banca plano con barra' }];
+      var n1 = win.aplicarRenombresEj(lista), a1 = JSON.stringify(lista), n2 = win.aplicarRenombresEj(lista);
+      var nuevo = win.jpExDeNombre('Curl femoral acostado'), viejo = win.jpExDeNombre('Curl femoral tumbado');
+      return { renombra: n1 === 2 && lista[0].es === 'Curl femoral acostado' && lista[1].es === 'Elevación posterior acostado' && lista[2].es === 'Press de banca plano con barra',
+        aliasViejo: lista[0].alias.length === 1 && lista[0].alias[0] === 'Curl femoral tumbado', resuelveViejo: !!viejo && viejo.es === 'Curl femoral acostado', resuelveNuevo: !!nuevo && nuevo === viejo, idempotente: n2 === 0 && JSON.stringify(lista) === a1 };
+    } else if(c.caso === 'integridad'){
+      var lib = win.seedExercises(), GRUPOS = ['Pectoral', 'Espalda', 'Hombros', 'Brazos', 'Piernas/Glúteos', 'Core', 'Full Body / Cardio', 'Multiarticular / Complejo Atlético'], vistos = {};
+      lib.forEach(function(e){
+        var k = nz(e.es) + '|' + e.grupo;
+        if(!e.es || !e.en) P.push('«' + e.es + '»: falta el nombre en español o en inglés');
+        if(GRUPOS.indexOf(e.grupo) < 0) P.push('«' + e.es + '»: grupo inválido (' + e.grupo + ')');
+        if(!e.patron) P.push('«' + e.es + '»: sin patrón de movimiento');
+        if(!e.equipo) P.push('«' + e.es + '»: sin equipo');
+        if(!e.oficial && !String(e.aviso || '').trim()) P.push('«' + e.es + '»: sin aviso de seguridad / técnica');
+        if(vistos[k]) P.push('«' + e.es + '»: nombre repetido en ' + e.grupo); vistos[k] = 1;
+      });
+      /* un alias nunca puede ser el nombre vigente de otro ejercicio */
+      lib.forEach(function(e){ (e.alias || []).forEach(function(a){ if(lib.some(function(o){ return o !== e && nz(o.es) === nz(a); })) P.push('alias «' + a + '» choca con otro ejercicio'); }); });
+      if(win.eval('LIB_VERSION') < 9) P.push('LIB_VERSION no subió: los alumnos con biblioteca guardada no recibirían los ejercicios nuevos');
+    } else if(c.caso === 'cobertura'){
+      var lb = win.seedExercises(), cnt = function(f){ return lb.filter(f).length; };
+      var MIN = [['Pectoral', 10, function(e){ return e.grupo === 'Pectoral'; }], ['Espalda', 10, function(e){ return e.grupo === 'Espalda'; }], ['Hombros', 10, function(e){ return e.grupo === 'Hombros'; }],
+        ['Brazos', 10, function(e){ return e.grupo === 'Brazos'; }], ['Piernas', 70, function(e){ return e.grupo === 'Piernas/Glúteos'; }], ['Core', 25, function(e){ return e.grupo === 'Core'; }],
+        ['Cadera dominante / glúteos', 25, function(e){ return e.patron === 'Cadera dominante'; }], ['Rodilla dominante', 25, function(e){ return e.patron === 'Rodilla dominante'; }],
+        ['Gemelos', 5, function(e){ return /gemelo|talones|pantorrilla|sóleo|soleo/i.test(e.es); }], ['Abducción / aducción', 6, function(e){ return e.patron === 'Abducción / Aducción'; }],
+        ['Glúteo (nombre)', 12, function(e){ return /gl[uú]teo|hip thrust|puente|patada/i.test(e.es); }], ['Isquios', 8, function(e){ return /femoral|rumano|n[oó]rdico|isquio/i.test(e.es); }],
+        ['Tracción vertical', 4, function(e){ return e.patron === 'Tracción vertical'; }], ['Tracción horizontal', 7, function(e){ return e.patron === 'Tracción horizontal'; }]];
+      MIN.forEach(function(m){ var n = cnt(m[2]); if(n < m[1]) P.push(m[0] + ': ' + n + ' opciones (mínimo ' + m[1] + ')'); });
+    } else if(c.caso === 'catalogoElite'){
+      var E = PB.ELITE, resuelve = function(n){ return !!win.jpExDeNombre(n); };
+      Object.keys(E.CAT).forEach(function(n){ if(!resuelve(n)) P.push('catálogo élite: «' + n + '» no existe en la biblioteca'); });
+      E.FAM.forEach(function(f, i){
+        f.forEach(function(n){ if(!resuelve(n)) P.push('familia ' + (i + 1) + ': «' + n + '» no existe en la biblioteca'); if(!E.CAT[n]) P.push('familia ' + (i + 1) + ': «' + n + '» no está en el catálogo élite'); });
+        /* cambiar un ejercicio siempre ofrece al menos 3 opciones (la familia + los de su mismo grupo y patrón de la biblioteca), para alumnos y alumnas */
+        f.forEach(function(n){ ['m', 'f'].forEach(function(g){ var a = PB.EST.alternativas(n, g); if(a.length < 3 && E.NO_FEM.indexOf(n) < 0) P.push('swap de «' + n + '» (' + g + '): solo ' + a.length + ' opciones'); }); });
+      });
+    } else if(c.caso === 'alumnas'){
+      var E2 = PB.ELITE;
+      reg.filter(function(r){ return r.genero === 'f'; }).forEach(function(r){
+        var txt = tx(r);
+        E2.NO_FEM.forEach(function(n){ if(txt.indexOf(n) >= 0) P.push(r.id + ': incluye «' + n + '» (restringido para alumnas)'); });
+        var conPL = (r.dias || []).filter(function(d){ return /plancha lateral/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(conPL > 1) P.push(r.id + ': plancha lateral en ' + conPL + ' días');
+      });
+      Object.keys(E2.CAT).forEach(function(n){ PB.EST.alternativas(n, 'f').forEach(function(a){ if(E2.NO_FEM.indexOf(a) >= 0 && E2.NO_FEM.indexOf(n) < 0) P.push('el swap de «' + n + '» ofrece «' + a + '» a las alumnas'); }); });
+    } else if(c.caso === 'runtime'){
+      I.add('es', { 't.a': 'Hola {n}', 't.p.one': '{n} cosa', 't.p.other': '{n} cosas', 't.f': 'solo en español' });
+      I.add('zz', { 't.a': 'Hello {n}' });
+      var r = {}; volver();
+      r.base = I.t('t.f') === 'solo en español'; r.interpola = I.t('t.a', { n: 5 }) === 'Hola 5'; r.plural = I.t('t.p', { n: 1 }) === '1 cosa' && I.t('t.p', { n: 3 }) === '3 cosas';
+      I.setLang('zz');
+      r.respaldo = I.t('t.f') === 'solo en español' && I.t('t.a', { n: 2 }) === 'Hello 2'; r.claveSinTraducir = I.t('t.nunca.existio') === 't.nunca.existio';
+      volver(); r.vuelve = I.lang() === 'es' && I.t('t.a', { n: 1 }) === 'Hola 1';
+      return r;
+    } else if(c.caso === 'diccionarios'){
+      var en = I.incoherentes('en'); en.forEach(function(k){ P.push('en: «' + k + '» huérfana o con marcadores distintos'); });
+      I.claves('es').forEach(function(k){ if(/^motor\.(ped|rol|tec|lbl)\./.test(k) && I.faltantes('en').indexOf(k) >= 0) P.push('sin traducir al inglés: ' + k); });
+      I.claves('es').forEach(function(k){ if(/^app\.card\./.test(k) && I.faltantes('en').indexOf(k) >= 0) P.push('sin traducir al inglés: ' + k); });
+    } else if(c.caso === 'pautasEn'){
+      try{
+        volver(); var es1 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt;
+        I.setLang('en'); var en1 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt; volver();
+        var es2 = PB.textoBloque(1, BLOQUE_H, 'intermedio', false).txt;
+        var ped = en1.split('\n').filter(function(l){ return /^(WARM-UP SETS|WHY THIS MANY SETS|LOAD TARGET):/.test(l); });
+        return { rotulos: ped.length === 3, sinEspanol: ped.length === 3 && !/series efectivas|repeticiones|peso de trabajo|descansando/i.test(ped.join(' ')) && !/SERIES DE APROXIMACI|POR QUÉ ESTA CANTIDAD|OBJETIVO DE CARGA/.test(en1.split('[COACHING TIPS & ESTRATEGIA]')[1] || ''),
+          dosisIntacta: /^3x8-10 \| Tempo \d{4} \| RIR 0-1$/m.test(en1) || /^3x8-10 \|/m.test(en1), vuelveEs: es1 === es2 && /SERIES DE APROXIMACIÓN:/.test(es2) };
+      } finally { volver(); }
+    } else if(c.caso === 'nombres'){
+      var ex = { es: 'Sentadilla búlgara', en: 'Bulgarian Split Squat' }, tmp = {};
+      I.setLang('en');
+      tmp.siempreEs = win.jpNombreEj(ex) === 'Sentadilla búlgara';
+      tmp.conIngles = win.jpNombreEj(ex, true) === 'Sentadilla búlgara (Bulgarian Split Squat)';
+      tmp.vacio = win.jpNombreEj(null) === '';
+      tmp.enInglesNoCambia = win.jpNombreEj({ es: 'Plancha', en: 'Plancha' }, true) === 'Plancha';
+      volver();
+      return tmp;
+    } else if(c.caso === 'alumno'){
+      var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+      var res = { runtime: !!(w.JP_I18N && typeof w.jpT === 'function') };
+      try{
+        w.JP_I18N.setLang('es'); res.es = w.jpT('app.card.tag') === 'BIOMECÁNICA APLICADA' && w.jpT('app.card.tempo.t') === 'TEMPO (CADENCIA)' && w.jpT('app.card.obj.t') === 'OBJETIVO FISIOLÓGICO';
+        w.JP_I18N.setLang('en'); res.en = w.jpT('app.card.tag') === 'APPLIED BIOMECHANICS' && w.jpT('app.card.tempo.t') === 'TEMPO (CADENCE)';
+      } finally { w.JP_I18N.setLang('es'); try{ w.localStorage.removeItem('coachjp_lang'); }catch(e){} }
+      res.tarjeta = /jpT\('app\.card\.tag'\)/.test(w.document.documentElement.innerHTML) || res.es;
+      return res;
     } else throw new Error('caso desconocido: ' + c.caso);
     return P;
   }

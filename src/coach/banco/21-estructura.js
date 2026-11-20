@@ -173,6 +173,18 @@
     var out = [], vistos = {}; vistos[nombre] = 1;
     var fem = String(genero || '').toLowerCase() === 'f';
     FAM.forEach(function(f){ if(f.indexOf(nombre) >= 0) f.forEach(function(n){ if(!vistos[n]){ vistos[n] = 1; if(!(fem && NO_FEM.indexOf(n) >= 0)) out.push(n); } }); });
+    /* familias cortas (2-3 variantes casi equivalentes): se completan hasta 3 opciones con ejercicios del catálogo para el MISMO músculo, primero los del mismo patrón de movimiento */
+    if(out.length < 3 && CAT[nombre]){
+      var mi = CAT[nombre].g, pat = (PB.exLib(nombre) || {}).patron;
+      [true, false].forEach(function(mismoPatron){
+        Object.keys(CAT).forEach(function(n){
+          if(out.length >= 4 || vistos[n] || CAT[n].g !== mi) return;
+          if(fem && NO_FEM.indexOf(n) >= 0) return;
+          if(mismoPatron && ((PB.exLib(n) || {}).patron !== pat)) return;
+          vistos[n] = 1; out.push(n);
+        });
+      });
+    }
     if(out.length < 2){
       var lib = PB.exLib(nombre);
       var lista = (typeof S !== 'undefined' && S.exercises) ? S.exercises : [];

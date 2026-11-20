@@ -48,7 +48,7 @@
   c('Cuádriceps', 'L', ['Bulgarian split squat', 'Zancadas caminando', 'Step up al cajón', 'Zancada inversa', 'Zancada lateral', 'Split squat estático', 'Sentadilla sissy'], 0, 'H');
   c('Isquios', 'L', ['Peso muerto rumano', 'Peso muerto rumano con déficit'], 1, 'H');
   c('Isquios', 'L', ['Peso muerto rumano con mancuernas', 'Curl nórdico'], 0, 'H');
-  c('Isquios', 'M', ['Curl femoral sentado', 'Curl femoral tumbado', 'Curl femoral a una pierna tumbado']);
+  c('Isquios', 'M', ['Curl femoral sentado', 'Curl femoral acostado', 'Curl femoral a una pierna acostado']);
   c('Glúteo', 'L', ['Hip thrust con barra', 'Hip thrust a una pierna', 'Puente de glúteo a una pierna', 'Puente de glúteo con banda', 'Patada de glúteo con banda', 'Sentadilla búlgara con torso inclinado', 'Hiperextensiones en banco a 45°', 'Abducción con banda (monster walk)'], 0, 'H');
   c('Glúteo', 'M', ['Hip thrust en máquina', 'Patada de glúteo en máquina', 'Abducción sentado en máquina', 'Abducción de cadera en máquina']);
   c('Glúteo', 'P', ['Patada de glúteo en polea cruzada', 'Pull-through con cuerda en polea', 'Extensión de cadera en polea de pie']);
@@ -58,8 +58,61 @@
   c('Core', 'L', ['Rueda abdominal', 'Elevación de piernas colgado', 'Elevación de piernas en banco', 'Crunch abdominal', 'Plancha lateral', 'Plancha frontal', 'Dead bug', 'Hollow body']);
   c('Core', 'P', ['Crunch en polea alta', 'Pallof press', 'Woodchopper en polea']);
 
+  /* ampliación v8 de la biblioteca */
+  c('Glúteo', 'L', ['Hip thrust con mancuerna', 'Puente de glúteo con barra', 'Patada de glúteo en cuadrupedia con mancuerna', 'Abducción de cadera acostada con banda', 'Puente de rana', 'Zancada con paso largo (énfasis glúteo)'], 0, 'H');
+  c('Glúteo', 'M', ['Hip thrust en multipower', 'Hiperextensión inversa'], 0, 'H');
+  c('Glúteo', 'P', ['Abducción de cadera en polea baja']);
+  c('Isquios', 'M', ['Peso muerto rumano en multipower'], 0, 'H');
+  c('Isquios', 'P', ['Curl femoral de pie en polea']);
+  c('Isquios', 'L', ['Curl femoral con pelota suiza']);
+  c('Cuádriceps', 'M', ['Sentadilla péndulo (pendulum squat)', 'Sentadilla con cinturón (belt squat)'], 0, 'H');
+  c('Cuádriceps', 'L', ['Sentadilla frontal con mancuernas', 'Zancada inversa con déficit'], 0, 'H');
+  c('Gemelos', 'M', ['Elevación de talones en multipower', 'Elevación de talones en burro (donkey)']);
+  c('Gemelos', 'L', ['Elevación de talones sentado con mancuerna', 'Elevación de puntas de pie (tibial anterior)']);
+  c('Core', 'L', ['Crunch inverso', 'Rueda abdominal de rodillas', 'Plancha con elevación de pierna', 'Hollow rock (balancín)', 'Plancha lateral con elevación de cadera']);
+  c('Core', 'M', ['Crunch en máquina']);
+  c('Core', 'P', ['Pallof press de rodillas', 'Leñador en polea baja a alta']);
+  c('Bíceps', 'M', ['Curl de bíceps en máquina']);
+  c('Bíceps', 'L', ['Curl martillo en banco inclinado']);
+  c('Tríceps', 'M', ['Extensión de tríceps en máquina']);
+  c('Tríceps', 'P', ['Extensión de tríceps acostado con soga en polea baja']);
+  c('Hombro lateral', 'M', ['Elevaciones laterales en máquina']);
+  c('Hombro anterior', 'M', ['Press de hombros en multipower'], 0, 'H');
+  c('Hombro anterior', 'L', ['Press de hombros a una mano con mancuerna'], 0, 'H');
+  c('Hombro posterior', 'L', ['Pájaro con pecho apoyado en banco inclinado']);
+  c('Espalda', 'L', ['Remo Seal con mancuernas'], 0, 'H');
+  c('Espalda', 'P', ['Jalón al pecho agarre neutro', 'Remo en polea baja con apoyo de pecho'], 0, 'H');
+  c('Espalda', 'M', ['Pullover en máquina']);
+  c('Pecho', 'M', ['Press de pecho inclinado en máquina', 'Press de pecho declinado en máquina', 'Press inclinado en multipower'], 0, 'H');
+  c('Pecho', 'L', ['Flexiones con pausa']);
+
   /* ---------- familias de swaps: cualquier miembro puede reemplazar a otro de su familia ---------- */
   var FAM = [
+    /* v8: familias de los ejercicios nuevos (se suman a las de abajo: las alternativas de un ejercicio son la unión de todas sus familias) */
+    ['Hip thrust con barra', 'Hip thrust con mancuerna', 'Hip thrust en multipower', 'Puente de glúteo con barra', 'Puente de rana'],
+    ['Patada de glúteo en polea cruzada', 'Patada de glúteo en cuadrupedia con mancuerna'],
+    ['Abducción con banda (monster walk)', 'Abducción de cadera en polea baja', 'Abducción de cadera acostada con banda'],
+    ['Peso muerto rumano', 'Peso muerto rumano en multipower', 'Hiperextensión inversa'],
+    ['Curl femoral acostado', 'Curl femoral de pie en polea', 'Curl femoral con pelota suiza'],
+    ['Hack squat', 'Sentadilla péndulo (pendulum squat)', 'Sentadilla con cinturón (belt squat)'],
+    ['Bulgarian split squat', 'Zancada inversa con déficit', 'Zancada con paso largo (énfasis glúteo)'],
+    ['Elevación de gemelos de pie', 'Elevación de talones en multipower', 'Elevación de talones en burro (donkey)', 'Elevación de talones sentado con mancuerna'],
+    ['Crunch abdominal', 'Crunch inverso', 'Crunch en máquina'],
+    ['Rueda abdominal', 'Rueda abdominal de rodillas'],
+    ['Pallof press', 'Pallof press de rodillas', 'Woodchopper en polea', 'Leñador en polea baja a alta'],
+    ['Plancha lateral', 'Plancha lateral con elevación de cadera', 'Plancha con elevación de pierna', 'Hollow rock (balancín)'],
+    ['Curl de bíceps con barra Z', 'Curl de bíceps en máquina'],
+    ['Curl martillo', 'Curl martillo en banco inclinado'],
+    ['Extensión tríceps tras nuca a 2 manos', 'Extensión de tríceps en máquina', 'Extensión de tríceps acostado con soga en polea baja'],
+    ['Elevaciones laterales en polea baja', 'Elevaciones laterales en máquina'],
+    ['Press de hombros sentado', 'Press de hombros en multipower', 'Press de hombros a una mano con mancuerna'],
+    ['Pájaro / Elevaciones posteriores inclinado', 'Pájaro con pecho apoyado en banco inclinado'],
+    ['Remo Pecho Apoyado en banco inclinado', 'Remo Seal con mancuernas', 'Remo en polea baja con apoyo de pecho'],
+    ['Jalón al pecho con agarre ancho', 'Jalón al pecho agarre neutro'],
+    ['Pull-over en polea alta brazos extendidos', 'Pullover en máquina'],
+    ['Press inclinado con mancuernas', 'Press de pecho inclinado en máquina', 'Press inclinado en multipower'],
+    ['Press de banca plano con barra', 'Press de pecho declinado en máquina'],
+    ['Flexiones diamante', 'Flexiones con pausa'],
     ['Press de banca plano con barra', 'Press plano con mancuernas', 'Press de pecho convergente en máquina'],
     ['Press inclinado con mancuernas', 'Press de banca inclinado con barra', 'Press de pecho inclinado en polea', 'Press de pecho convergente en máquina'],
     ['Cruce de cables en polea baja', 'Cruce de cables en polea alta', 'Aperturas en banco inclinado', 'Pec Deck / Contractor de pecho'],
@@ -77,7 +130,7 @@
     ['Bulgarian split squat', 'Sentadilla búlgara con torso inclinado', 'Zancadas caminando', 'Step up al cajón', 'Zancada inversa', 'Split squat estático'],
     ['Extensión de cuádriceps', 'Extensión de cuádriceps a una pierna', 'Sentadilla sissy'],
     ['Peso muerto rumano', 'Peso muerto rumano con mancuernas', 'Peso muerto rumano con déficit', 'Hiperextensiones en banco a 45°', 'Curl nórdico', 'Pull-through con cuerda en polea'],
-    ['Curl femoral sentado', 'Curl femoral tumbado', 'Curl femoral a una pierna tumbado', 'Curl nórdico'],
+    ['Curl femoral sentado', 'Curl femoral acostado', 'Curl femoral a una pierna acostado', 'Curl nórdico'],
     ['Hip thrust con barra', 'Hip thrust en máquina', 'Hip thrust a una pierna', 'Puente de glúteo a una pierna'],
     ['Patada de glúteo en polea cruzada', 'Patada de glúteo en máquina', 'Pull-through con cuerda en polea', 'Extensión de cadera en polea de pie', 'Patada de glúteo con banda'],
     ['Abducción con banda (monster walk)', 'Abducción sentado en máquina', 'Abducción de cadera en máquina', 'Puente de glúteo con banda'],
@@ -113,7 +166,7 @@
       E('F', 'Press de banca plano con barra', '4x5-7|1|180', { n: 'Barra al pecho una fracción de segundo, sin rebote y con las escápulas fijas en el banco. Es el marcador de fuerza de empuje de tu semana: anotá los kilos y superá lo de la semana anterior aunque sea por una repetición.' }),
       E('H', 'Press inclinado con mancuernas', '3x8-10|0-1|120', { tp: ['3110'], n: 'Bajá hasta sentir el pecho estirado y subí sin chocar las mancuernas. Banco a 30°: más alto y el hombro roba el trabajo.' }),
       E('H', 'Press de hombros sentado', '3x8-10|1|120'),
-      E('A', 'Elevaciones laterales en polea baja', '6x12-20|0-1|45', { n: 'La polea mantiene tensión desde abajo, donde la mancuerna no la da. Subí los codos, no las manos, y bajá en 2 segundos.' }),
+      E('A', 'Elevaciones laterales en polea baja', '5x12-20|0-1|45', { n: 'Cada brazo por separado: la cifra es por lado. La polea mantiene tensión desde abajo, donde la mancuerna no la da. Subí los codos, no las manos, y bajá en 2 segundos.' }),
       E('A', 'Cruce de cables en polea baja', '3x12-15|0|60|drop', { tp: ['3011'] }),
       E('A', 'Face Pull con cuerda', '3x15-20|0|45', { n: 'El empuje carga el hombro por delante: el face pull equilibra con el deltoide posterior y cuida la articulación. Codos altos y escápulas juntas al final.' }),
       E('B', ['Extensión tríceps tras nuca a 2 manos', 'Flexiones diamante'], '3x10-12/10-15|0|75|drop', { n: 'Cierre de tríceps: la extensión sobre la cabeza lo trabaja estirado (cabeza larga) y las flexiones diamante lo terminan de vaciar. Sin pausa entre las dos.' }),
@@ -142,7 +195,7 @@
       E('H', 'Peso muerto rumano', '4x6-8|1|150', { tp: ['3210'], n: 'Único patrón axial pesado del día: cadera atrás, barra pegada a las piernas y pausa corta abajo en el estiramiento. Si la espalda pierde su forma, ahí terminó el rango.' }),
       E('H', 'Bulgarian split squat', '3x8-10 por lado|1|90', { tp: ['3110'] }),
       E('A', 'Extensión de cuádriceps', '3x12-15|0|60|drop'),
-      E('A', 'Curl femoral sentado', '3x10-12|0|75', { n: 'Sentado el isquio queda más estirado que tumbado: es la versión que más hipertrofia da. Bajá en 3 segundos.' }),
+      E('A', 'Curl femoral sentado', '3x10-12|0|75', { n: 'Sentado el isquio queda más estirado que acostado: es la versión que más hipertrofia da. Bajá en 3 segundos.' }),
       E('A', 'Elevación de gemelos de pie', '5x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
       E('A', 'Elevaciones laterales con mancuernas', '3x15-20|0|45'),
       E('B', ['Curl de bíceps con barra Z', 'Press francés en banco plano'], '2x8-10/8-10|0|60', { n: 'Biset de brazos con la misma barra Z: bíceps y tríceps antagonistas, sin pausa entre uno y otro.' }),
@@ -199,7 +252,7 @@
       E('F', 'Peso muerto rumano', '4x6-8|1|150', { tp: ['3210'], n: 'Cadera atrás, barra pegada a las piernas y pausa de 1 a 2 segundos abajo en el estiramiento máximo. Subí empujando el piso, sin hiperextender la espalda.' }),
       E('H', 'Prensa 45°', '3x10-12|0-1|120', { tp: ['3110'] }),
       E('H', 'Hip thrust con barra', '3x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba con el glúteo apretado y las costillas abajo: el movimiento termina en el glúteo, no en la lumbar.' }),
-      E('A', 'Curl femoral tumbado', '4x10-12|0|75|drop'),
+      E('A', 'Curl femoral acostado', '4x10-12|0|75|drop'),
       E('A', 'Elevación de talones sentado', '5x12-20|0|60', { tp: ['2211'] }),
       E('B', ['Peso muerto rumano a una pierna', 'Puente de glúteo a una pierna'], '3x10 por lado/10 por lado|0|60', { n: 'Cierre de cadena posterior: el rumano a una pierna estira isquios y glúteo con poca carga y el puente a una pierna termina de congestionar el glúteo. Sin pausa entre las dos.' }),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
@@ -229,7 +282,7 @@
       E('H', 'Peso muerto rumano con déficit', '4x6-8|1|150', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm, cadera hacia atrás y pausa de 2 segundos abajo en el estiramiento máximo del glúteo y los isquios. El rango termina donde la espalda pierde su forma.' }),
       E('H', 'Sentadilla búlgara con torso inclinado', '4x8-10 por lado|1|90', { tp: ['3110'], n: 'Arrancá siempre por la pierna más débil. Torso inclinado unos 30°, bajada de 3 segundos y pausa de 1 segundo abajo con el glúteo estirado: el peso lo lleva la pierna de adelante.' }),
       E('A', 'Patada de glúteo en polea cruzada', '4x12-15 por lado|0|60|drop', { tp: ['3011'], n: 'La polea cruza el cuerpo: llevá la pierna atrás y apenas hacia afuera, sostené 1 segundo apretando el glúteo y volvé lento cruzando la línea media para estirarlo.' }),
-      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
+      E('A', 'Curl femoral acostado', '4x10-12|0|75'),
       E('B', ['Puente de glúteo a una pierna', 'Abducción con banda (monster walk)'], '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo: el puente a una pierna activa el glúteo mayor con la pelvis estable y la abducción con banda termina de congestionar el glúteo medio. Sin pausa entre las dos.' }),
       E('C', 'Crunch en polea alta', '3x12-15|1|45'),
       R('M', null, null, null, { fin: FIN.glute })
@@ -269,7 +322,7 @@
       E('F', 'Hack squat', '4x6-8|1|150', { tp: ['3110'], n: 'Espalda apoyada, pies a la altura media de la plataforma y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: usala para cargar fuerte sin pagar con la espalda baja.' }),
       E('H', 'Bulgarian split squat', '3x8-10 por lado|1|90', { tp: ['3110'] }),
       E('A', 'Extensión de cuádriceps', '3x12-15|0|60|drop'),
-      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
+      E('A', 'Curl femoral acostado', '4x10-12|0|75'),
       E('A', 'Elevación de gemelos de pie', '5x10-15|0|60', { tp: ['2211'] }),
       E('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|0|60'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
@@ -295,7 +348,7 @@
     filas: [
       E('F', 'Peso muerto rumano con déficit', '5x6-8|1|150', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta el estiramiento máximo, pausa de 2 segundos y subí sin perder la espalda neutra.' }),
       E('H', 'Hip thrust con barra', '4x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba y costillas abajo. Llegás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
-      E('H', 'Curl femoral tumbado', '4x10-12|0|75', { tp: ['3110'] }),
+      E('H', 'Curl femoral acostado', '4x10-12|0|75', { tp: ['3110'] }),
       E('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|0|60', { tp: ['3011'] }),
       E('A', 'Abducción sentado en máquina', '4x15-20|0|60'),
       E('A', 'Elevación de gemelos de pie', '6x10-15|0|60', { tp: ['2211'] }),
@@ -313,7 +366,7 @@
       E('H', 'Hiperextensiones en banco a 45°', '3x10-12|0-1|90', { tp: ['3110'] }),
       E('H', 'Step up al cajón', '4x8-10 por lado|1|90', { tp: ['2110'], n: 'Cajón alto: la rodilla por encima de la cadera. Empujá con el talón de la pierna de arriba y no con la de abajo.' }),
       E('A', 'Patada de glúteo en máquina', '3x12-15 por lado|0|60|drop'),
-      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
+      E('A', 'Curl femoral acostado', '4x10-12|0|75'),
       E('B', ['Puente de glúteo con banda', 'Patada de glúteo con banda'], '3x12/12 por lado|0|45|drop'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
       R('M', null, null, null, { fin: FIN.glute })
@@ -346,12 +399,12 @@
     ] };
 
   D.E_F_QUAD5 = { short: 'PIERNA', label: 'Cuádriceps y Glúteo Medio', title: 'Cuádriceps y Glúteo Medio · Prensa y Unilateral', wu: 'legs', chips: ['🦵 Pierna', '🎯 Prensa + búlgara + glúteo medio', '🔥 Cierre metabólico'],
-    foco: 'Piernas sólidas con la máxima estabilidad externa: la prensa es el ancla (pies altos y apenas abiertos para repartir el trabajo con el glúteo), la sentadilla búlgara con el torso inclinado lleva el glúteo a trabajar estirado de a una pierna y la extensión a una pierna corrige diferencias entre lados. El curl femoral tumbado y el gemelo sentado completan, y un biset de zancada lateral con puente de banda trabaja el glúteo medio y los aductores. Pierna armónica: ningún grupo se descuida.',
+    foco: 'Piernas sólidas con la máxima estabilidad externa: la prensa es el ancla (pies altos y apenas abiertos para repartir el trabajo con el glúteo), la sentadilla búlgara con el torso inclinado lleva el glúteo a trabajar estirado de a una pierna y la extensión a una pierna corrige diferencias entre lados. El curl femoral acostado y el gemelo sentado completan, y un biset de zancada lateral con puente de banda trabaja el glúteo medio y los aductores. Pierna armónica: ningún grupo se descuida.',
     filas: [
       E('F', 'Prensa 45°', '4x8-10|1|150', { tp: ['3110'], n: 'Pies altos y apenas abiertos: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil. La máquina te deja cargar fuerte sin fatiga lumbar.' }),
       E('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', { tp: ['3110'], n: 'Torso inclinado unos 30° para cargar el glúteo estirado y pausa de 1 segundo abajo. Arrancá por la pierna más débil.' }),
       E('A', 'Extensión de cuádriceps a una pierna', '3x12-15 por lado|0|60|drop'),
-      E('A', 'Curl femoral tumbado', '3x10-12|0|75'),
+      E('A', 'Curl femoral acostado', '3x10-12|0|75'),
       E('A', 'Elevación de talones sentado', '6x12-20|0|60', { tp: ['2211'] }),
       E('A', 'Abducción de cadera en máquina', '3x15-20|0|60'),
       E('B', ['Zancada lateral', 'Puente de glúteo con banda'], '3x10 por lado/12|0|60', { n: 'Zancada lateral con mancuerna para el glúteo medio y los aductores y puente con banda para terminar. Sin pausa entre las dos.' }),
