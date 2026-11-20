@@ -56,6 +56,10 @@ Cada día de cada plantilla tiene que cumplir: entrada en calor primero (5+ ejer
 
 Adaptador `i18nBib` (runner.html). 12 casos: la dosis de todo ejercicio unilateral dice «por lado» sin inflar el volumen (`uni.*`); el vocabulario es rioplatense, sin «tumbado» ni «espinillas», y los nombres viejos siguen resolviendo por alias (`voc.*`); la biblioteca no tiene nombres repetidos, cubre cada zona y todo el catálogo élite existe y ofrece 3+ swaps, también para alumnas (`lib.*`); el runtime `JP_I18N`/`jpT`, los diccionarios en inglés, las pautas en inglés y los nombres de video siempre en español (`i18n.*`). Un texto nuevo se agrega primero al diccionario (ver `src/shared/i18n/LEEME.md`).
 
+## Voz del timer (`cases-voz.js`)
+
+Adaptador `alumnoVoz` (runner.html): corre la app del alumno con un `AudioContext` simulado (sin sonido ni red) y cuenta qué frase se reproduce y si suena el tono de siempre. 9 casos: voz apagada por defecto, frases del 3-2-1 / arranque / mitad, pistas de transición (descanso, a trabajar, siguiente y última ronda, stop), mute general y respaldo a tonos, idioma, controles (Ajustes y chip del timer), service worker (caché propia `coachjp-voz-v1`), paquete de audio (`voz/manifest.json` + mp3 de cada frase de `tools/voz/frases.json`) y textos `app.voz.*`. Para regenerar o verificar el audio: `node tools/voz/generar.js [--check]` (ver `tools/voz/LEEME.md`).
+
 ## Fuera de alcance por ahora
 
 - Parsers de CrossFit del alumno que todavía no son públicos (`jpCfFila` y los formatos del HUD): se vuelven testeables al sacarlos de los bloques autoejecutables (siguiente paso de la modularización).

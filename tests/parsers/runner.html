@@ -50,6 +50,7 @@
 <script src="cases-pedagogia.js"></script>
 <script src="cases-copia-plan.js"></script>
 <script src="cases-i18n.js"></script>
+<script src="cases-voz.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -97,6 +98,7 @@
     copiaPlan:    { run: function(i){ return copiaPlanCaso(i); }, valor: function(r){ return r; } },
     pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
     i18nBib:      { run: function(i){ return i18nCaso(i); }, valor: function(r){ return r; } },
+    alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -496,6 +498,105 @@
       });
     } else throw new Error('caso desconocido: ' + c.caso);
     return P;
+  }
+  /* ---------- voz del timer: motor de audio de la app del alumno con un AudioContext simulado (sin sonido ni red) ---------- */
+  function alumnoVoz(c){
+    var w = alumnoWin(); if(!w || !w.jpVoz) throw new Error('no hay jpVoz en la app del alumno');
+    var V = w.jpVoz, d = w.document, plays = [], creados = {}, P = [];
+    function nodo(){ var f = function(){ return nodo(); }; return new Proxy(f, { get: function(t, p){ return p === 'then' ? undefined : nodo(); }, set: function(){ return true; } }); }
+    var ctxF = { state: 'running', currentTime: 1, destination: nodo(), resume: function(){ return Promise.resolve(); } };
+    ctxF.createBufferSource = function(){ var s = { buffer: null, connect: function(){}, start: function(){ plays.push(s.buffer && s.buffer.id); }, stop: function(){}, onended: null }; return s; };
+    ['createOscillator', 'createGain', 'createBiquadFilter', 'createWaveShaper', 'createDynamicsCompressor', 'createBuffer'].forEach(function(n){ ctxF[n] = function(){ creados[n] = (creados[n] || 0) + 1; return nodo(); }; });
+    var KEYS = ['jp_voz', 'jp_voz_lang', 'jp_audio_muted', 'coachjp_lang'], guardado = {}, origCtx = w.ensureAudioCtx, origFetch = w.fetch, idiomaApp = w.JP_I18N.lang();
+    KEYS.forEach(function(k){ guardado[k] = w.localStorage.getItem(k); });
+    function ls(k, v){ if(v == null) w.localStorage.removeItem(k); else w.localStorage.setItem(k, v); }
+    function montar(){ V.__vaciar(); plays.length = 0; creados = {}; ['es', 'en'].forEach(function(l){ ['n3', 'n2', 'n1', 'go', 'rest', 'work', 'next_round', 'last_round', 'halfway', 'finish'].forEach(function(id){ V.__poner(l, id, { id: l + ':' + id }); }); }); }
+    function ids(){ return plays.map(function(x){ return String(x).split(':')[1]; }); }
+    function dice(fn){ plays.length = 0; fn(); return ids().join(','); }
+    w.ensureAudioCtx = function(){ return ctxF; };
+    w.fetch = function(){ return Promise.reject(new Error('sin red (test)')); };
+    try{
+      ls('jp_audio_muted', '0'); ls('jp_voz_lang', null); w.JP_I18N.setLang('es');
+      if(c.caso === 'apagada'){
+        ls('jp_voz', null); montar();
+        var out = { defectoOff: V.activa() === false, noHabla: V.hablar('tick', 3) === false && plays.length === 0 };
+        w.jpBox.cuenta(3); out.tonoSuena = (creados.createOscillator || 0) > 0 && plays.length === 0;
+        return out;
+      }
+      if(c.caso === 'frases'){
+        ls('jp_voz', '1'); montar();
+        var r = { cuenta: [3, 2, 1].map(function(n){ return dice(function(){ w.jpBox.cuenta(n); }); }).join(',') };
+        r.ya = dice(function(){ w.jpBox.go(); }); r.mitad = dice(function(){ w.jpBox.mitad(); });
+        r.sinTonos = !creados.createOscillator;
+        montar(); r.sinPistaCallaTono = V.hablar('fin', 0);
+        return r;
+      }
+      if(c.caso === 'pistas'){
+        ls('jp_voz', '1'); montar();
+        var m = function(k){ montar(); V.pista(k); return dice(function(){ V.hablar('fin', 0); }); };
+        var o = { descanso: m('rest'), trabajo: m('work'), siguiente: m('next_round'), ultima: m('last_round'), fin: m('done') };
+        montar(); V.pista('tono'); o.tonoPedido = V.hablar('fin', 0);
+        montar(); o.finDeDescanso = dice(function(){ w.jpBox.gong(); });
+        plays.length = 0; var rr = V.hablar('fin', 0); o.sinTonoEncimaDelYa = rr === true && plays.length === 0;
+        return o;
+      }
+      if(c.caso === 'respaldo'){
+        ls('jp_voz', '1'); montar(); ls('jp_audio_muted', '1');
+        var q = { muteGeneral: V.hablar('tick', 3) || plays.length > 0 }; ls('jp_audio_muted', '0');
+        V.__vaciar(); q.sinClipCaeAlTono = V.hablar('tick', 3);
+        montar(); w.ensureAudioCtx = function(){ return null; }; q.sinContexto = V.hablar('tick', 3);
+        return q;
+      }
+      if(c.caso === 'idioma'){
+        ls('jp_voz', '1'); var i = {};
+        w.JP_I18N.setLang('es'); i.autoEs = V.idioma(); w.JP_I18N.setLang('en'); i.autoEn = V.idioma(); w.JP_I18N.setLang('es');
+        V.fijarIdioma('en'); w.JP_I18N.setLang('es'); i.fuerzaEn = V.idioma(); V.fijarIdioma('es'); w.JP_I18N.setLang('en'); i.fuerzaEs = V.idioma();
+        V.fijarIdioma('en'); montar(); V.hablar('tick', 3); i.habla = plays[0];
+        V.fijarIdioma('auto'); w.JP_I18N.setLang('es'); i.restaura = V.preferencia() === 'auto' && V.idioma() === 'es';
+        return i;
+      }
+      if(c.caso === 'controles'){
+        var b = function(s){ return d.querySelector(s); }, t = { filaAjustes: !!(b('#hdpVozToggle') && b('#hdpVozIdioma') && b('#hdpVozProbar')), chipTimer: !!b('#cwtVoz') };
+        ls('jp_voz', null); V.pintar();
+        b('#hdpVozToggle [data-voz="on"]').click();
+        t.activa = V.activa() && w.localStorage.getItem('jp_voz') === '1'; t.chipOn = /ON/.test(b('#cwtVoz').textContent); t.idiomaVisible = b('#hdpVozIdiomaRow').style.display !== 'none' && b('#hdpVozProbarRow').style.display !== 'none';
+        b('#hdpVozToggle [data-voz="off"]').click();
+        t.apaga = !V.activa() && w.localStorage.getItem('jp_voz') === '0'; t.chipOff = /OFF/.test(b('#cwtVoz').textContent); t.idiomaOculto = b('#hdpVozIdiomaRow').style.display === 'none' && b('#hdpVozProbarRow').style.display === 'none';
+        b('#cwtVoz').click(); t.chipActiva = V.activa(); b('#cwtVoz').click(); t.chipApaga = !V.activa();
+        return t;
+      }
+      if(c.caso === 'sw'){
+        var x = new XMLHttpRequest(); x.open('GET', '../../sw.js', false); x.send(); var sw = x.responseText, ver = /coachjp-athlete-v(\d+)/.exec(sw);
+        return { cacheVoz: /VOZ = 'coachjp-voz-v1'/.test(sw), noSeBorra: !/^coachjp-athlete-/.test('coachjp-voz-v1') && /k\.indexOf\('coachjp-athlete-'\) === 0/.test(sw), cacheFirst: /esVoz\(uV\)/.test(sw) && /k\.match\(e\.request\)\.then\(r => r \|\| fetch/.test(sw),
+          precache: /d\.tipo !== 'jp-voz'/.test(sw) && /precachear/.test(sw), versionSube: !!ver && parseInt(ver[1], 10) >= 14 };
+      }
+      if(c.caso === 'paquete'){
+        var get = function(u, met){ var h = new XMLHttpRequest(); h.open(met || 'GET', u, false); try{ h.send(); }catch(e){ return { status: 0, text: '' }; } return { status: h.status, text: h.responseText }; };
+        var fr = get('../../tools/voz/frases.json'), mf = get('../../voz/manifest.json');
+        if(fr.status !== 200) return ['no se pudo leer tools/voz/frases.json'];
+        if(mf.status !== 200) return ['no se pudo leer voz/manifest.json (correr node tools/voz/generar.js)'];
+        var frases = JSON.parse(fr.text).frases, man = JSON.parse(mf.text);
+        Object.keys(frases).forEach(function(id){ ['es', 'en'].forEach(function(l){
+          if(!frases[id][l]) P.push(id + ': falta el texto en ' + l);
+          if(!man.clips[id] || !man.clips[id][l] || !man.clips[id][l].h) P.push(id + ': ' + l + ' no está en voz/manifest.json');
+          else if(get('../../voz/' + l + '/' + id + '.mp3', 'HEAD').status !== 200) P.push(id + ': no existe voz/' + l + '/' + id + '.mp3');
+        }); });
+        Object.keys(man.clips).forEach(function(id){ if(!frases[id]) P.push('manifest: «' + id + '» ya no está en frases.json'); });
+        return P;
+      }
+      if(c.caso === 'textos'){
+        var I = w.JP_I18N, ks = I.claves('es').filter(function(k){ return /^app\.voz\./.test(k); });
+        if(ks.length < 8) P.push('faltan claves app.voz.* en español (' + ks.length + ')');
+        ks.forEach(function(k){ if(I.faltantes('en').indexOf(k) >= 0) P.push('sin inglés: ' + k); });
+        I.incoherentes('en').forEach(function(k){ if(/^app\.voz\./.test(k)) P.push('marcadores distintos: ' + k); });
+        return P;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      w.ensureAudioCtx = origCtx; w.fetch = origFetch; V.__vaciar();
+      KEYS.forEach(function(k){ ls(k, guardado[k]); }); w.JP_I18N.setLang(idiomaApp); try{ w.localStorage.removeItem('coachjp_lang'); if(guardado.coachjp_lang) w.localStorage.setItem('coachjp_lang', guardado.coachjp_lang); }catch(e){}
+      V.pintar();
+    }
   }
   /* ---------- dosis por lado, vocabulario rioplatense, biblioteca ampliada e i18n ---------- */
   function i18nCaso(c){

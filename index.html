@@ -10321,7 +10321,17 @@ JP_I18N.add('es', {
   'app.card.tips.lb': 'ESTRATEGIA BIOMECÁNICA & TIPS',
   'app.card.obj.t': 'OBJETIVO FISIOLÓGICO',
   'app.card.obj.s': 'Qué trabajás y por qué',
-  'app.card.tempo.t': 'TEMPO (CADENCIA)'
+  'app.card.tempo.t': 'TEMPO (CADENCIA)',
+  /* voz del timer (088-voz-del-timer.js) */
+  'app.voz.lb': 'Voz del timer',
+  'app.voz.idioma': 'Idioma de la voz',
+  'app.voz.auto': 'AUTO',
+  'app.voz.probar': 'Probar',
+  'app.voz.ejemplo': '3 - 2 - 1 - ¡Ya!',
+  'app.voz.chip.on': 'VOZ: ON',
+  'app.voz.chip.off': 'VOZ: OFF',
+  'app.voz.chip.t.on': 'Apagar la voz del timer',
+  'app.voz.chip.t.off': 'Activar la voz del timer'
 });
 <\/script>
 <script>
@@ -10332,7 +10342,16 @@ JP_I18N.add('en', {
   'app.card.tips.lb': 'BIOMECHANICAL STRATEGY & TIPS',
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
-  'app.card.tempo.t': 'TEMPO (CADENCE)'
+  'app.card.tempo.t': 'TEMPO (CADENCE)',
+  'app.voz.lb': 'Timer voice',
+  'app.voz.idioma': 'Voice language',
+  'app.voz.auto': 'AUTO',
+  'app.voz.probar': 'Test',
+  'app.voz.ejemplo': '3 - 2 - 1 - Go!',
+  'app.voz.chip.on': 'VOICE: ON',
+  'app.voz.chip.off': 'VOICE: OFF',
+  'app.voz.chip.t.on': 'Turn timer voice off',
+  'app.voz.chip.t.off': 'Turn timer voice on'
 });
 <\/script>
 <meta name="description" content="{{META_DESC}}" />
@@ -12209,6 +12228,26 @@ JP_I18N.add('en', {
           <button type="button" class="hdp-uni-b" data-audio="off">OFF</button>
         </div>
       </div>
+      <!-- voz del timer (frases pregeneradas, ver 088-voz-del-timer.js): por defecto apagada; el mute de arriba silencia voz y tonos -->
+      <div class="hdp-row hdp-row-uni">
+        <span class="hdp-row-lb" id="hdpVozLb">🗣 Voz del timer</span>
+        <div class="hdp-uni-toggle" id="hdpVozToggle">
+          <button type="button" class="hdp-uni-b" data-voz="on">ON</button>
+          <button type="button" class="hdp-uni-b" data-voz="off">OFF</button>
+        </div>
+      </div>
+      <div class="hdp-row hdp-row-uni" id="hdpVozIdiomaRow" style="display:none">
+        <span class="hdp-row-lb" id="hdpVozIdiomaLb">Idioma de la voz</span>
+        <div class="hdp-uni-toggle" id="hdpVozIdioma">
+          <button type="button" class="hdp-uni-b" data-vlang="auto" id="hdpVozAuto">AUTO</button>
+          <button type="button" class="hdp-uni-b" data-vlang="es">ES</button>
+          <button type="button" class="hdp-uni-b" data-vlang="en">EN</button>
+        </div>
+      </div>
+      <div class="hdp-row hdp-row-uni" id="hdpVozProbarRow" style="display:none">
+        <span class="hdp-row-lb" id="hdpVozEjemploLb">3 - 2 - 1 - ¡Ya!</span>
+        <div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b" id="hdpVozProbar">▶ Probar</button></div>
+      </div>
       <!-- directiva de accesibilidad (2026-09, seguimiento) -- mismo
            diagnóstico que el switch Aa de acá abajo: el botón "🧰
            Herramientas" (Marcas, Manual de uso, Cambiar vista) se armaba
@@ -13913,12 +13952,14 @@ var jpPerfilSonido = (function(){
       tocar();
     }catch(e){ console.warn('sonido de timer', e); }
   }
-  function reproducir(ev, sinVib, num){
+  function reproducir(ev, sinVib, num, clip){
     vibrar(ev, sinVib);
     if(isAudioMuted()) return;
     var n = 0;
     if(ev === 'tick') n = (num >= 1 && num <= 3) ? Math.round(num) : siguiente();
     else if(ev === 'inicio' || ev === 'fin') seqN = 0;
+    /* voz del timer (088-voz-del-timer.js): si habló (o corresponde callar el tono) no suena el tono; sin voz activa / sin clips / sin red suena el de siempre */
+    try{ if(window.jpVoz && window.jpVoz.hablar(ev, n, clip)) return; }catch(eV){}
     emitir(ev, n);
   }
   function calentar(){ try{ salida(ensureAudioCtx()); }catch(e){} }
@@ -13930,7 +13971,10 @@ var jpPerfilSonido = (function(){
   return {
     actual: function(){ return 'ascendente'; },
     reproducir: reproducir,
-    hint: function(){},
+    /* el timer anuncia hacia dónde va la transición ('go' | 'rest' | 'work' | 'next_round' | 'last_round' | 'done') antes de la chicharra: la voz dice la frase que corresponde */
+    hint: function(k){ try{ if(window.jpVoz) window.jpVoz.pista(k); }catch(e){} },
+    /* salida común (compresor) para que la voz pase por el mismo bus que los tonos */
+    bus: function(){ try{ var c = ensureAudioCtx(true); return c ? salida(c) : null; }catch(e){ return null; } },
     probar: probar,
     calentar: calentar,
     hz: HZ,
@@ -13943,7 +13987,7 @@ var jpBox = (function(){
   var ultimaChicharra = 0;
   return {
     tickSeco: function(n){ jpPerfilSonido.reproducir('tick', false, n); },
-    gong:     function(){ jpPerfilSonido.reproducir('fin', true); },     /* fin del descanso: la vibración la dispara vibrateTimerEnd */
+    gong:     function(){ jpPerfilSonido.reproducir('fin', true, 0, 'work'); },     /* fin del descanso (la voz dice "¡A trabajar!"): la vibración la dispara vibrateTimerEnd */
     cuenta:   function(n){ jpPerfilSonido.reproducir('tick', false, n); },
     go:       function(){ jpPerfilSonido.reproducir('inicio'); },
     aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
@@ -14364,7 +14408,7 @@ function buildQuickTimer(root, seconds, label){
       remaining -= (ts-lastTs)/1000; lastTs = ts;
       if(remaining<=0){
         remaining = 0; display.textContent = fmt(0); running = false;
-        btn.textContent = 'Reiniciar'; beepFinish(); vibrate([80,50,80,50,200]);
+        btn.textContent = 'Reiniciar'; try{ jpPerfilSonido.hint('done'); }catch(eH){} beepFinish(); vibrate([80,50,80,50,200]);
         WakeLockManager.release();
         return;
       }
@@ -14460,6 +14504,8 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     if(remaining <= 0){
       remaining = 0; updateDisplay();
       running = false; round++; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+      /* voz: fin del descanso entre series = "¡A trabajar!"; la última serie cierra con "Stop, buen trabajo" */
+      try{ jpPerfilSonido.hint(round >= rounds ? 'done' : 'work'); }catch(eH){}
       beepFinish(); CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       WakeLockManager.release();
       if(round >= rounds){
@@ -14500,6 +14546,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     endTs = Date.now() + remaining * 1000;
     playBtn.textContent = '❚❚'; playBtn.classList.add('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
+    try{ jpPerfilSonido.hint('rest'); }catch(eH){}    /* voz: al empezar este timer arranca el descanso */
     beepGo(); vibrate(60);
     WakeLockManager.acquire();
     activeTimerId = tid;
@@ -16257,6 +16304,181 @@ if(document.readyState === 'loading'){
 }else{
   init();
 }
+<\/script>
+<script>
+/* =========================================================
+   VOZ DEL TIMER · frases fijas pregeneradas (ElevenLabs) sobre el motor de audio de siempre
+   ---------------------------------------------------------
+   · La app NUNCA llama a la API: las frases (3-2-1, Ya, Descanso, A trabajar, Siguiente ronda, Última ronda, Mitad, Stop buen trabajo) se generan una vez con
+     tools/voz/generar.js y viven en voz/<es|en>/<id>.mp3 + voz/manifest.json.
+   · Al activarse (o al arrancar con la voz activa) se descargan y se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una
+     frase es un start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
+   · El service worker guarda los mp3 en su propia caché (coachjp-voz-v1) para que sigan disponibles sin conexión.
+   · Contrato con jpPerfilSonido.reproducir: jpVoz.hablar(ev, n, clip) devuelve true si habló (o si corresponde callar el tono). Sin voz activa, sin clips, sin red o
+     con el mute general, devuelve false y suena el tono de siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('auto' | 'es' | 'en'). 'auto' sigue el idioma de la app (JP_I18N).
+   ========================================================= */
+var jpVoz = (function(){
+  var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
+  var BUF = {}, cargas = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0;
+  /* pista del timer -> frase: lo que el timer anuncia antes de la transición ('done' = fin de todo) */
+  var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+  function activa(){ return lsGet(KEY) === '1'; }
+  function silenciada(){ try{ return typeof isAudioMuted === 'function' && isAudioMuted(); }catch(e){ return false; } }
+  function pref(){ var p = lsGet(KEY_L); return (p === 'es' || p === 'en') ? p : 'auto'; }
+  function idioma(){
+    var p = pref(); if(p !== 'auto') return p;
+    var l = 'es'; try{ if(window.JP_I18N && JP_I18N.lang) l = JP_I18N.lang(); }catch(e){}
+    return l === 'en' ? 'en' : 'es';
+  }
+  function T(k, d){ try{ return (typeof window.jpT === 'function') ? window.jpT(k) : d; }catch(e){ return d; } }
+  function avisarCambio(){ try{ document.dispatchEvent(new CustomEvent('jp-voz-cambio')); }catch(e){} }
+
+  /* ---------- carga: manifest -> mp3 -> AudioBuffer (+ aviso al service worker para el caché offline) ---------- */
+  function pedir(url){ return fetch(url, { cache: 'no-cache' }).then(function(r){ if(!r.ok) throw new Error(url + ' ' + r.status); return r; }); }
+  function leerManifest(){
+    if(manifest) return Promise.resolve(manifest);
+    var i = 0;
+    function probar(){
+      if(i >= BASES.length) return Promise.reject(new Error('sin paquete de voz'));
+      var b = BASES[i++];
+      return pedir(b + 'manifest.json').then(function(r){ return r.json(); }).then(function(m){ base = b; manifest = m; return m; }, probar);
+    }
+    return probar();
+  }
+  function decodificar(ctx, ab){
+    return new Promise(function(res, rej){ var p = ctx.decodeAudioData(ab, res, rej); if(p && p.then) p.then(res, rej); });
+  }
+  /* silencio inicial de la síntesis: se salta al reproducir para que la palabra arranque pegada al segundo exacto */
+  function inicioUtil(buf){
+    try{
+      var d = buf.getChannelData(0), n = Math.min(d.length, Math.round(buf.sampleRate * 0.4));
+      for(var i = 0; i < n; i++){ if(Math.abs(d[i]) > 0.02) return Math.max(0, i / buf.sampleRate - 0.008); }
+    }catch(e){}
+    return 0;
+  }
+  function cargar(lang){
+    lang = lang || idioma();
+    if(BUF[lang] && BUF[lang].__listo) return Promise.resolve(true);
+    if(cargas[lang]) return cargas[lang];
+    var ctx = null; try{ ctx = ensureAudioCtx(true); }catch(e){}
+    if(!ctx || typeof fetch !== 'function'){ return Promise.resolve(false); }
+    cargas[lang] = leerManifest().then(function(m){
+      var ids = Object.keys(m.clips || {}).filter(function(id){ return m.clips[id] && m.clips[id][lang]; });
+      /* ?v=<hash del manifest>: si una frase se regenera cambia la URL y el service worker (cache-first) trae la nueva */
+      var urls = ids.map(function(id){ return base + lang + '/' + id + '.mp3?v=' + encodeURIComponent(m.clips[id][lang].h || '0'); });
+      return Promise.all(ids.map(function(id, k){
+        return pedir(urls[k]).then(function(r){ return r.arrayBuffer(); }).then(function(ab){ return decodificar(ctx, ab); }).then(function(b){
+          BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: b, off: inicioUtil(b) };
+        });
+      })).then(function(){
+        BUF[lang] = BUF[lang] || {}; BUF[lang].__listo = true;
+        try{
+          if(navigator.serviceWorker && navigator.serviceWorker.controller){
+            navigator.serviceWorker.controller.postMessage({ tipo: 'jp-voz', accion: 'precachear', urls: [new URL(base + 'manifest.json', document.baseURI).href].concat(urls.map(function(u){ return new URL(u, document.baseURI).href; })) });
+          }
+        }catch(e){}
+        return true;
+      });
+    }).catch(function(e){ cargas[lang] = null; return false; });    /* sin paquete / sin red: se reintenta la próxima vez y mientras tanto suenan los tonos */
+    return cargas[lang];
+  }
+
+  /* ---------- reproducción ---------- */
+  function decir(id, forzar){
+    if(!forzar && (!activa() || silenciada())) return false;
+    if(forzar && silenciada()) return false;
+    var lang = idioma(), e = BUF[lang] && BUF[lang][id];
+    if(!e){ cargar(lang); return false; }
+    var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
+    if(!ctx) return false;
+    function tocar(){
+      try{
+        if(actual){ try{ actual.stop(); }catch(z){} actual = null; }
+        var s = ctx.createBufferSource(); s.buffer = e.b;
+        var out = (window.jpPerfilSonido && jpPerfilSonido.bus && jpPerfilSonido.bus()) || ctx.destination;
+        s.connect(out); s.onended = function(){ if(actual === s) actual = null; };
+        s.start(ctx.currentTime + 0.006, e.off); actual = s; hablaT = Date.now();
+      }catch(x){ console.warn('voz del timer', x); }
+    }
+    if(ctx.state !== 'running'){ var p = ctx.resume(); if(p && p.then) p.then(tocar).catch(function(){}); else tocar(); }
+    else tocar();
+    return true;
+  }
+  /* el timer anuncia hacia dónde va la transición antes de llamar a la chicharra / al "YA" */
+  function pista(k){ pistaTxt = PISTAS[k] || null; pistaT = Date.now(); }
+  function tomarPista(){ var k = (pistaTxt && Date.now() - pistaT < VIGENCIA_PISTA) ? pistaTxt : null; pistaTxt = null; return k; }
+  /* true = habló (o corresponde callar el tono). false = que suene el tono de siempre */
+  function hablar(ev, n, clip){
+    if(!activa() || silenciada()) return false;
+    var id = null;
+    if(ev === 'tick') id = (n >= 1 && n <= 3) ? 'n' + n : null;
+    else {
+      var p = tomarPista();
+      if(p === '_tono') return false;    /* el timer pidió el tono de siempre para este aviso */
+      id = clip || p || (ev === 'inicio' ? 'go' : (ev === 'mitad' ? 'halfway' : null));
+      if(!id && ev === 'fin' && Date.now() - hablaT < 1500) return true;    /* ya habló hace un instante ("Ya" y fin de la preparación): sin tono encima */
+    }
+    return id ? decir(id) : false;
+  }
+  function probar(){
+    try{ gestoAudio(); }catch(e){}
+    cargar().then(function(ok){
+      if(!ok) return;
+      [['n3', 0], ['n2', 1000], ['n1', 2000], ['go', 3000]].forEach(function(p){ setTimeout(function(){ decir(p[0], true); }, p[1]); });
+    });
+  }
+  function activar(on){
+    lsSet(KEY, on ? '1' : '0');
+    if(on){ try{ gestoAudio(); }catch(e){} cargar(); }
+    avisarCambio();
+  }
+  function fijarIdioma(v){ lsSet(KEY_L, (v === 'es' || v === 'en') ? v : 'auto'); if(activa()) cargar(); avisarCambio(); }
+
+  /* ---------- controles: fila de Ajustes (hdpVozToggle / hdpVozIdioma / hdpVozProbar) y chip del timer de WOD (cwtVoz) ---------- */
+  function pintar(){
+    var on = activa();
+    var fila = document.getElementById('hdpVozToggle');
+    if(fila) Array.prototype.forEach.call(fila.querySelectorAll('[data-voz]'), function(b){ b.classList.toggle('on', b.dataset.voz === (on ? 'on' : 'off')); });
+    var idi = document.getElementById('hdpVozIdioma');
+    if(idi) Array.prototype.forEach.call(idi.querySelectorAll('[data-vlang]'), function(b){ b.classList.toggle('on', b.dataset.vlang === pref()); });
+    var rowI = document.getElementById('hdpVozIdiomaRow'); if(rowI) rowI.style.display = on ? '' : 'none';
+    var rowP = document.getElementById('hdpVozProbarRow'); if(rowP) rowP.style.display = on ? '' : 'none';
+    var ej = document.getElementById('hdpVozEjemploLb'); if(ej) ej.textContent = T('app.voz.ejemplo', '3 - 2 - 1 - ¡Ya!');
+    var lb = document.getElementById('hdpVozLb'); if(lb) lb.textContent = '🗣 ' + T('app.voz.lb', 'Voz del timer');
+    var lbI = document.getElementById('hdpVozIdiomaLb'); if(lbI) lbI.textContent = T('app.voz.idioma', 'Idioma de la voz');
+    var au = document.getElementById('hdpVozAuto'); if(au) au.textContent = T('app.voz.auto', 'AUTO');
+    var pr = document.getElementById('hdpVozProbar'); if(pr) pr.textContent = '▶ ' + T('app.voz.probar', 'Probar');
+    var chip = document.getElementById('cwtVoz');
+    if(chip){
+      chip.textContent = on ? '🗣 ' + T('app.voz.chip.on', 'VOZ: ON') : '🗣 ' + T('app.voz.chip.off', 'VOZ: OFF');
+      chip.classList.toggle('off', !on);
+      chip.title = on ? T('app.voz.chip.t.on', 'Apagar la voz del timer') : T('app.voz.chip.t.off', 'Activar la voz del timer');
+    }
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    var b = t.closest('#hdpVozToggle [data-voz]'); if(b){ activar(b.dataset.voz === 'on'); return; }
+    b = t.closest('#hdpVozIdioma [data-vlang]'); if(b){ fijarIdioma(b.dataset.vlang); return; }
+    if(t.closest('#hdpVozProbar')){ probar(); return; }
+    if(t.closest('#cwtVoz')){ activar(!activa()); try{ if(navigator.vibrate) navigator.vibrate([15]); }catch(x){} }
+  });
+  document.addEventListener('jp-voz-cambio', pintar);
+  function iniciar(){ pintar(); if(activa()) setTimeout(function(){ cargar(); }, 1200); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+
+  return {
+    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar,
+    /* clips ya decodificados por idioma (QA / tests) */
+    listos: function(lang){ var b = BUF[lang || idioma()] || {}; return Object.keys(b).filter(function(k){ return k !== '__listo'; }); },
+    /* tests: sin red ni sonido real */
+    __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; },
+    __vaciar: function(){ BUF = {}; cargas = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
+  };
+})();
+window.jpVoz = jpVoz;
 <\/script>
 <style>
 /* =========================================================
@@ -25505,6 +25727,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       <div class="hud-actions">
         <button type="button" class="cwt-hud-min" id="cwtMin" title="Minimizar" aria-label="Minimizar">&#10515;</button>
         <button type="button" class="cwt-mute btn-sound-toggle" id="cwtMute" title="Silenciar sonidos">🔊 AUDIO: ON</button>
+        <button type="button" class="cwt-mute btn-sound-toggle off" id="cwtVoz" title="Activar la voz del timer">🗣 VOZ: OFF</button>
         <button type="button" class="cwt-hud-close btn-close-circle" id="cwtX" aria-label="Cerrar">&#10005;</button>
       </div>
     </div>
@@ -25879,7 +26102,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
-      try{ jpPerfilSonido.hint(!hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work')); }catch(e){}
+      try{
+        var pista = !hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work');
+        /* voz: la preparación termina con "¡Ya!"; al abrirse una ronda nueva dice "Siguiente ronda" y, en la última, "Última ronda" */
+        if(fase === 'prep') pista = 'go';
+        else if(pista === 'work') pista = (ronda + 1 >= rondas) ? 'last_round' : 'next_round';
+        jpPerfilSonido.hint(pista);
+      }catch(e){}
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
       if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
@@ -25970,6 +26199,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     document.getElementById('cwtGo').textContent = '⏸︎ Pausar';
     /* primer toque real del alumno: acá se desbloquea el AudioContext
        (iOS/Chrome móvil) y se pide, una sola vez, el permiso de notificaciones */
+    if(fase === 'prep'){ try{ jpPerfilSonido.hint('tono'); }catch(eH){} }    /* voz: durante la preparación el "¡Ya!" lo dice el final de la cuenta, no este toque */
     jpBox.inicio(); vibrar([30]);
     try{ jpBgTimer.pedirPermiso(); }catch(e){}
     if(tick) tick.stop();
@@ -26023,7 +26253,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     /* chicharra larga de fin de round. Si el fin ocurrió hace rato (el
        celular estuvo bloqueado), ya avisó la notificación: no se hace sonar
        el buzzer "viejo" al volver a la app. */
-    if(!silencioso){ jpBox.chicharra(1.2); vibAl([100, 50, 100, 50, 220]); }
+    if(!silencioso){ try{ jpPerfilSonido.hint('done'); }catch(eH){} jpBox.chicharra(1.2); vibAl([100, 50, 100, 50, 220]); }
     try{ jpBgTimer.finalizado(); }catch(e){}
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }

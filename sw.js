@@ -7,7 +7,12 @@
      notificación local "tiempo cumplido" SÓLO si ninguna ventana de la app
      está visible (si el alumno la está mirando, el propio timer ya avisó).
      Best effort: el sistema operativo puede dormir el SW antes de tiempo. */
-const CACHE = 'coachjp-athlete-v13';   /* v13: rótulos de la tarjeta del bloque desde el diccionario (i18n), vocabulario acostado/tibias. v12: invalida las cachés v11 al activarse (circuitos de cardio / metabólico con todas las estaciones iguales: número, nombre, cantidad y aclaración) */
+/* Voz del timer (voz/manifest.json + voz/<idioma>/<frase>.mp3?v=<hash>): caché PROPIA, que no se borra al subir de versión (su nombre no empieza con "coachjp-athlete-").
+   Los mp3 se sirven cache-first (el hash ?v= del manifest cambia la URL cuando una frase cambia); el manifest, network-first con respaldo en esta caché.
+   La página manda { tipo:'jp-voz', accion:'precachear', urls:[...] } al activar la voz: se guardan todos los clips del idioma y se descartan los que ya no están en la lista. */
+const VOZ = 'coachjp-voz-v1';
+const esVoz = u => /\/voz\/(manifest\.json|[a-z]{2}\/[\w-]+\.mp3)$/.test(u.pathname);
+const CACHE = 'coachjp-athlete-v14';   /* v14: voz del timer (caché propia coachjp-voz-v1). v13: rótulos de la tarjeta del bloque desde el diccionario (i18n), vocabulario acostado/tibias. v12: invalida las cachés v11 al activarse (circuitos de cardio / metabólico con todas las estaciones iguales: número, nombre, cantidad y aclaración) */
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(Promise.all([
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k.indexOf('coachjp-athlete-') === 0).map(k => caches.delete(k)))),
@@ -15,6 +20,21 @@ self.addEventListener('activate', e => e.waitUntil(Promise.all([
 ])));
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) return;
+  const uV = new URL(e.request.url);
+  if (esVoz(uV)) {
+    if (/manifest\.json$/.test(uV.pathname)) {
+      e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(res => {
+        if (res && res.status === 200) { const c = res.clone(); caches.open(VOZ).then(k => k.put(e.request, c)); }
+        return res;
+      }).catch(() => caches.open(VOZ).then(k => k.match(e.request)).then(r => r || Response.error())));
+    } else {
+      e.respondWith(caches.open(VOZ).then(k => k.match(e.request).then(r => r || fetch(e.request).then(res => {
+        if (res && res.status === 200) k.put(e.request, res.clone());
+        return res;
+      }))));
+    }
+    return;
+  }
   /* cache:'no-cache' = revalidar siempre contra el servidor (ETag): así nunca se sirve del caché HTTP una versión vieja de la app mientras arranca */
   e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(res => {
     if(!res || res.status !== 200 || res.type === 'opaque') return res;
@@ -32,6 +52,17 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     for (const c of list) { if ('focus' in c) return c.focus(); }
     if (self.clients.openWindow) return self.clients.openWindow('./');
+  }));
+});
+self.addEventListener('message', e => {
+  const d = e.data || {};
+  if (d.tipo !== 'jp-voz' || d.accion !== 'precachear' || !Array.isArray(d.urls)) return;
+  e.waitUntil(caches.open(VOZ).then(async k => {
+    for (const u of d.urls) { try { if (!(await k.match(u))) { const r = await fetch(u); if (r && r.status === 200) await k.put(u, r); } } catch (err) {} }
+    /* clips de versiones anteriores (otro ?v=) o frases que ya no existen: se descartan (los de otros idiomas ya guardados se conservan) */
+    const base = u => u.split('?')[0];
+    const vivos = new Set(d.urls), porBase = new Map(d.urls.map(u => [base(u), u]));
+    for (const r of await k.keys()) { if (porBase.has(base(r.url)) && !vivos.has(r.url)) await k.delete(r); }
   }));
 });
 let jpT = null, jpRes = null;

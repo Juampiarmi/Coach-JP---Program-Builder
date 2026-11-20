@@ -1345,12 +1345,14 @@ var jpPerfilSonido = (function(){
       tocar();
     }catch(e){ console.warn('sonido de timer', e); }
   }
-  function reproducir(ev, sinVib, num){
+  function reproducir(ev, sinVib, num, clip){
     vibrar(ev, sinVib);
     if(isAudioMuted()) return;
     var n = 0;
     if(ev === 'tick') n = (num >= 1 && num <= 3) ? Math.round(num) : siguiente();
     else if(ev === 'inicio' || ev === 'fin') seqN = 0;
+    /* voz del timer (088-voz-del-timer.js): si habló (o corresponde callar el tono) no suena el tono; sin voz activa / sin clips / sin red suena el de siempre */
+    try{ if(window.jpVoz && window.jpVoz.hablar(ev, n, clip)) return; }catch(eV){}
     emitir(ev, n);
   }
   function calentar(){ try{ salida(ensureAudioCtx()); }catch(e){} }
@@ -1362,7 +1364,10 @@ var jpPerfilSonido = (function(){
   return {
     actual: function(){ return 'ascendente'; },
     reproducir: reproducir,
-    hint: function(){},
+    /* el timer anuncia hacia dónde va la transición ('go' | 'rest' | 'work' | 'next_round' | 'last_round' | 'done') antes de la chicharra: la voz dice la frase que corresponde */
+    hint: function(k){ try{ if(window.jpVoz) window.jpVoz.pista(k); }catch(e){} },
+    /* salida común (compresor) para que la voz pase por el mismo bus que los tonos */
+    bus: function(){ try{ var c = ensureAudioCtx(true); return c ? salida(c) : null; }catch(e){ return null; } },
     probar: probar,
     calentar: calentar,
     hz: HZ,
@@ -1375,7 +1380,7 @@ var jpBox = (function(){
   var ultimaChicharra = 0;
   return {
     tickSeco: function(n){ jpPerfilSonido.reproducir('tick', false, n); },
-    gong:     function(){ jpPerfilSonido.reproducir('fin', true); },     /* fin del descanso: la vibración la dispara vibrateTimerEnd */
+    gong:     function(){ jpPerfilSonido.reproducir('fin', true, 0, 'work'); },     /* fin del descanso (la voz dice "¡A trabajar!"): la vibración la dispara vibrateTimerEnd */
     cuenta:   function(n){ jpPerfilSonido.reproducir('tick', false, n); },
     go:       function(){ jpPerfilSonido.reproducir('inicio'); },
     aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
@@ -1796,7 +1801,7 @@ function buildQuickTimer(root, seconds, label){
       remaining -= (ts-lastTs)/1000; lastTs = ts;
       if(remaining<=0){
         remaining = 0; display.textContent = fmt(0); running = false;
-        btn.textContent = 'Reiniciar'; beepFinish(); vibrate([80,50,80,50,200]);
+        btn.textContent = 'Reiniciar'; try{ jpPerfilSonido.hint('done'); }catch(eH){} beepFinish(); vibrate([80,50,80,50,200]);
         WakeLockManager.release();
         return;
       }
@@ -1892,6 +1897,8 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     if(remaining <= 0){
       remaining = 0; updateDisplay();
       running = false; round++; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+      /* voz: fin del descanso entre series = "¡A trabajar!"; la última serie cierra con "Stop, buen trabajo" */
+      try{ jpPerfilSonido.hint(round >= rounds ? 'done' : 'work'); }catch(eH){}
       beepFinish(); CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       WakeLockManager.release();
       if(round >= rounds){
@@ -1932,6 +1939,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     endTs = Date.now() + remaining * 1000;
     playBtn.textContent = '❚❚'; playBtn.classList.add('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
+    try{ jpPerfilSonido.hint('rest'); }catch(eH){}    /* voz: al empezar este timer arranca el descanso */
     beepGo(); vibrate(60);
     WakeLockManager.acquire();
     activeTimerId = tid;
