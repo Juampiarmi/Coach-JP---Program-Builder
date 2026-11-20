@@ -27,24 +27,10 @@
      desde el valor viejo, sin reflejar el tiempo real que pasó bloqueado. */
   var faseTargetEnd = 0, transcurridoBase = 0, transcurridoStart = 0;
 
-  var CWT_MUTE_KEY = 'jp_audio_muted';
-  var muted = false;
-  try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; }catch(e){}
+  /* El botón "AUDIO: ON/OFF" del HUD se quitó: el HUD solo tiene el chip VOZ (088-voz-del-timer.js) y el silencio general vive en Ajustes ("Sonido & Haptic", clave jp_audio_muted). */
   /* un solo AudioContext para toda la app (ensureAudioCtx): el timer de WOD ya no abre uno propio */
   function desbloquearAudio(){
     try{ unlockAudio(); }catch(e){}
-  }
-  function pintarMute(){
-    var b = document.getElementById('cwtMute'); if(!b) return;
-    b.textContent = muted ? '🔇 AUDIO: OFF' : '🔊 AUDIO: ON';
-    b.classList.toggle('off', muted);
-    b.title = muted ? 'Sonido silenciado — tocá para activar' : 'Silenciar sonidos';
-  }
-  function toggleMute(){
-    muted = !muted;
-    try{ localStorage.setItem(CWT_MUTE_KEY, muted ? '1' : '0'); }catch(e){}
-    pintarMute();
-    vibrar([15]);
   }
   function vibrar(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
   function vibAl(p){ try{ if(window.jpPerfilSonido && jpPerfilSonido.silencio()) return; }catch(e){} vibrar(p); }
@@ -436,8 +422,8 @@
   function abrirTimer(){
     var w = document.getElementById('cwtWrap');
     if(!w) return;
-    /* el interruptor de Ajustes puede haber cambiado jp_audio_muted desde la última vez */
-    try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; pintarMute(); }catch(e){}
+    /* el chip VOZ refleja el silencio general (jp_audio_muted) que se pudo cambiar en Ajustes desde la última vez */
+    try{ if(window.jpVoz) window.jpVoz.pintar(); }catch(e){}
     /* si ya estaba abierto y minimizado (motor corriendo en background,
        ver minimizar() más abajo), sólo se restaura la vista completa --
        nunca se resetea un WOD en curso por re-abrir el timer. */
@@ -541,8 +527,6 @@
       mostrarPantalla('config');
     });
     document.getElementById('cwtCfg').addEventListener('input', function(){ if(!corriendo) reset(); });
-    var muteBtn = document.getElementById('cwtMute');
-    if(muteBtn) muteBtn.addEventListener('click', toggleMute);
     /* directiva ("Pantallas de Configuración Específica") -- arranca
        desde la pantalla de config: arrancar() es el MISMO gatillo que ya
        usa #cwtGo (nunca se duplica la lógica de start/pause), sólo se le
@@ -592,7 +576,6 @@
       var miniX = document.getElementById('cwtMiniX');
       if(miniX) miniX.addEventListener('click', function(e){ e.stopPropagation(); cerrarTimer(); });
     }
-    pintarMute();
     pintarCampos();
     /* directiva10 -- Page Visibility API: apenas la app vuelve a primer
        plano (se destraba la pantalla, se vuelve de otra app, o simplemente

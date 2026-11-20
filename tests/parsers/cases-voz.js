@@ -18,11 +18,11 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { muteGeneral: false, cargandoCalla: true, paqueteFalloCaeAlTono: false, sinContexto: true }, modo: 'subset',
     nota: 'El mute general silencia la voz; mientras el paquete se está cargando el aviso queda en silencio (sin pitido); solo si el paquete falló del todo (o no hay Web Audio) el timer cae a los tonos de siempre para no quedar mudo' },
   { id: 'voz.05', area: 'Voz del timer · idioma', fn: 'alumnoVoz', input: { caso: 'idioma' },
-    expect: { autoEs: 'es', autoEn: 'en', fuerzaEs: 'es', fuerzaEn: 'en', habla: 'en:n3', restaura: true }, modo: 'subset',
-    nota: 'La voz sigue el idioma de la app (AUTO) o el que se fuerza en Ajustes, y reproduce los clips de ese idioma' },
+    expect: { defectoEn: true, autoEs: 'es', autoEn: 'en', fuerzaEs: 'es', fuerzaEn: 'en', habla: 'en:n3', restaura: true }, modo: 'subset',
+    nota: 'La voz arranca en INGLÉS por defecto (aunque la app esté en español); en Ajustes se puede forzar español o inglés, o seguir el idioma de la app (AUTO), y se reproducen los clips de ese idioma' },
   { id: 'voz.06', area: 'Voz del timer · controles', fn: 'alumnoVoz', input: { caso: 'controles' },
-    expect: { filaAjustes: true, chipTimer: true, activa: true, chipOn: true, idiomaVisible: true, apaga: true, chipOff: true, idiomaOculto: true }, modo: 'subset',
-    nota: 'Ajustes tiene la fila «Voz del timer» (ON/OFF, idioma y Probar) y el timer de WOD un chip VOZ junto al mute: los dos activan y apagan lo mismo, se repintan y guardan la preferencia' },
+    expect: { filaAjustes: true, chipTimer: true, sinBotonAudio: true, chipSilencio: true, chipLevantaSilencio: true, activa: true, chipOn: true, idiomaVisible: true, apaga: true, chipOff: true, idiomaOculto: true }, modo: 'subset',
+    nota: 'Ajustes tiene la fila «Voz del timer» (ON/OFF, idioma y Probar) y el timer de WOD un único chip VOZ (el botón AUDIO duplicado se quitó): los dos activan y apagan lo mismo, se repintan y guardan la preferencia; con el sonido silenciado en Ajustes el chip lo muestra y un toque lo levanta' },
   { id: 'voz.07', area: 'Voz del timer · PWA offline', fn: 'alumnoVoz', input: { caso: 'sw' },
     expect: { cacheVoz: true, noSeBorra: true, cacheFirst: true, precache: true, versionSube: true }, modo: 'subset',
     nota: 'El service worker guarda los clips en su propia caché (coachjp-voz-v1) que no se borra al subir de versión, los sirve cache-first, acepta el precache que manda la app y su versión subió' },
@@ -34,6 +34,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'La app lleva los clips adentro (JP_VOZ_PACK, base64): cada frase de tools/voz/frases.json está en español e inglés, decodifica a un mp3 real del tamaño que dice voz/manifest.json y no depende de ninguna ruta (la app exportada se abre desde un blob:, un archivo o cualquier hosting)' },
   { id: 'voz.11', area: 'Voz del timer · app autónoma', fn: 'alumnoVoz', input: { caso: 'autonoma' }, expect: { sinRed: true, decodificaTodos: true, bytesMp3: true, cargando: true }, modo: 'subset',
     nota: 'Reproduce el fallo reportado (app abierta desde un blob:, donde una ruta relativa voz/ no existe): al cargar la voz se decodifican todos los clips del paquete incrustado sin hacer ninguna petición de red' },
+  { id: 'voz.13', area: 'Voz del timer · HUD minimizado', fn: 'alumnoVoz', input: { caso: 'minimizado' }, expect: { sinVelo: true, sinDesenfoque: true, dejaPasarToques: true, barraPorEncima: true, barraVisible: true }, modo: 'subset',
+    nota: 'Al minimizar el HUD Timer (botón junto a la X) la app queda a la vista: sin velo azul ni desenfoque encima y con la barra mini por encima. La piel azul noche dejaba un velo del 90% sobre TODA la app y tapaba la barra mini' },
   { id: 'voz.12', area: 'Voz del timer · HUD', fn: 'alumnoVoz', input: { caso: 'hud' }, expect: { controlesDebajoDelTitulo: true, sinSolapes: true, dentroDelAncho: true }, modo: 'subset',
-    nota: 'En el HUD Timer el título queda arriba y AUDIO, VOZ, minimizar y cerrar van en su propia fila, sin solaparse entre sí ni con el título y sin salirse del ancho (también en 360 px)' }
+    nota: 'En el HUD Timer el título queda arriba y VOZ, minimizar y cerrar van en su propia fila, sin solaparse entre sí ni con el título y sin salirse del ancho (también en 360 px)' }
 ]);
