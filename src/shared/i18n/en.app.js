@@ -10,6 +10,7 @@ JP_I18N.add('en', {
   'app.voz.idioma': 'Voice language',
   'app.voz.auto': 'AUTO',
   'app.voz.probar': 'Test',
+  'app.voz.sinpaquete': 'Voice pack unavailable',
   'app.voz.ejemplo': '3 - 2 - 1 - Go!',
   'app.voz.chip.on': 'VOICE: ON',
   'app.voz.chip.off': 'VOICE: OFF',
