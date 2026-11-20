@@ -8,7 +8,7 @@ import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
-import { applyBankPlan, goalOf, type BankSelection } from '@/lib/planBank';
+import { applyBankPlan, goalOf, type BankMainTimes, type BankSelection } from '@/lib/planBank';
 import { friendlyMealName, modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -404,7 +404,14 @@ export const usePlanStore = create<PlanState>()(
           disabledSlots: [],
         };
         const base = { ...s.plan, anamnesis };
-        const next = applyBankPlan(base, sel, (meals) => retimeMeals(meals, base.profile, anamnesis));
+        // Horarios: agenda argentina según el entreno del alumno; si el coach fijó desayuno / almuerzo / cena, esos.
+        const fixed: BankMainTimes = {};
+        if (!anamnesis.mealTimesAuto)
+          (['breakfast', 'lunch', 'dinner'] as const).forEach((k) => {
+            const m = /^(\d{2}):(\d{2})$/.exec(anamnesis.mealTimes?.[k] ?? '');
+            if (m) fixed[k] = +m[1] * 60 + +m[2];
+          });
+        const next = applyBankPlan(base, sel, fixed);
         set({ plan: touch(next), builderTab: 'meals' });
       },
       applyAnamnesisToMeals: () => {

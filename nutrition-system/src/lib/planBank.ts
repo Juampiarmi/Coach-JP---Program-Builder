@@ -124,7 +124,7 @@ export const sexOf = (id: BankPlanId) => id.split('-')[0] as Sex;
 // Recetas (4-5 opciones por comida y variante). r: macro que ajusta ese ingrediente; x: cantidad fija.
 // ---------------------------------------------------------------------------------------------------------
 
-type SlotKind = 'breakfast' | 'mid' | 'lunch' | 'pre' | 'merienda' | 'dinner' | 'night' | 'extra';
+type SlotKind = 'breakfast' | 'mid' | 'lunch' | 'pre' | 'merienda' | 'dinner' | 'dessert' | 'extra';
 type R = Omit<Combo, 'roles'>;
 const P = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'p', ...extra });
 const C = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'c', ...extra });
@@ -145,6 +145,8 @@ const STD: Record<SlotKind, R[]> = {
     { title: 'Sándwich integral de atún con tomate', parts: [P('atun'), C('pan'), X('vegetales', 50)], steps: ['Escurrí {atun} de atún al natural.', 'Armá el sándwich con {pan} de pan integral, el atún y {vegetales} de tomate y lechuga.'] },
     { title: 'Mate con galletas de arroz, pasta de maní y banana', parts: [C('galletas-arroz'), F('mani'), X('banana', 120)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {banana} de banana. Con mate.'] },
     { title: 'Frutos secos, fruta y un vaso de leche', parts: [P('leche', { min: 200 }), F('nueces'), X('manzana', 180)], steps: ['Serví {nueces} de nueces y {manzana} de manzana.', 'Tomá {leche} de leche descremada.'] },
+    { title: 'Yogur bebible y una banana', parts: [P('yogur-proteico', { min: 150 }), C('banana')], steps: ['Llevá {yogur-proteico} de yogur bebible y {banana} de banana: se toma en cualquier lado.'] },
+    { title: 'Barra proteica y una manzana', parts: [X('barra-proteica', 46), C('manzana')], steps: ['Llevá {barra-proteica} de barra proteica y {manzana} de manzana en la mochila.'] },
   ],
   lunch: [
     { title: 'Pechuga grillada con arroz yamaní y ensalada mixta', parts: [P('pollo'), C('yamani'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {pollo} de pechuga 5-6 min por lado.', 'Serví con {yamani} de arroz yamaní cocido.', 'Ensalada mixta con {vegetales} de verduras y {oliva} de aceite de oliva.'] },
@@ -174,17 +176,16 @@ const STD: Record<SlotKind, R[]> = {
     { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
     { title: 'Wok de lomo con arroz y verduras', parts: [P('lomo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {lomo} de lomo en tiras con {oliva} de aceite a fuego fuerte.', 'Sumá {vegetales} de verduras y salsa de soja.', 'Serví con {arroz} de arroz.'] },
   ],
-  night: [
-    { title: 'Yogur griego[ con nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces')], steps: ['Serví {yogur} de yogur[ con {nueces} de nueces].'] },
-    { title: 'Leche con proteína', parts: [P('whey'), X('leche', 250)], steps: ['Mezclá {leche} de leche con {whey} de proteína en polvo.'] },
-    { title: 'Huevos duros con tostada integral', parts: [P('huevo'), C('pan', { max: 30 })], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {pan} de pan integral.'] },
-    { title: 'Ricota con canela y miel', parts: [P('ricota'), X('miel', 10)], steps: ['Serví {ricota} de ricota con canela y {miel} de miel.'] },
+  // Postre saludable: va dentro de la cena (nunca una comida suelta a la noche); sólo se suma en volumen alto.
+  dessert: [
+    { title: 'Yogur con frutillas y granola', parts: [P('yogur', { min: 150 }), C('granola'), X('frutillas', 100)], steps: ['De postre: {yogur} de yogur con {frutillas} de frutillas y {granola} de granola.'] },
+    { title: 'Banana con pasta de maní', parts: [C('banana'), F('mani')], steps: ['De postre: {banana} de banana en rodajas con {mani} de pasta de maní.'] },
   ],
   extra: [
-    { title: 'Colación extra: sándwich integral de jamón y queso', parts: [P('jamon'), C('pan'), X('queso-light', 30)], steps: ['Armá el sándwich con {pan} de pan integral, {jamon} de jamón y {queso-light} de queso light.'] },
-    { title: 'Colación extra: yogur con granola y banana', parts: [P('yogur', { min: 150 }), C('granola'), X('banana', 100)], steps: ['Serví {yogur} de yogur con {granola} de granola y {banana} de banana.'] },
-    { title: 'Colación extra: frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
-    { title: 'Colación extra: licuado de leche, banana y avena', parts: [P('leche', { min: 200 }), C('avena'), X('banana', 120)], steps: ['Licuá {leche} de leche con {banana} de banana y {avena} de avena.'] },
+    { title: 'Sándwich integral de jamón y queso', parts: [P('jamon'), C('pan'), X('queso-light', 30)], steps: ['Armá el sándwich con {pan} de pan integral, {jamon} de jamón y {queso-light} de queso light.'] },
+    { title: 'Yogur con granola y banana', parts: [P('yogur', { min: 150 }), C('granola'), X('banana', 100)], steps: ['Serví {yogur} de yogur con {granola} de granola y {banana} de banana.'] },
+    { title: 'Frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
+    { title: 'Licuado de leche, banana y avena', parts: [P('leche', { min: 200 }), C('avena'), X('banana', 120)], steps: ['Licuá {leche} de leche con {banana} de banana y {avena} de avena.'] },
   ],
 };
 
@@ -201,6 +202,8 @@ const STACC: Record<SlotKind, R[]> = {
     { title: 'Galletas de arroz con queso untable y fruta', parts: [C('galletas-arroz'), X('untable', 30), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {untable} de queso untable.', 'Acompañá con {naranja} de mandarina.', SELLO] },
     { title: 'Mate con frutos secos y fruta', parts: [F('nueces'), C('manzana')], steps: ['Comé {nueces} de nueces con {manzana} de manzana. Con mate.'] },
     { title: 'Leche con cacao amargo y tostadas de arroz', parts: [P('leche', { min: 200 }), C('tostadas-arroz')], steps: ['Tomá {leche} de leche con cacao amargo.', 'Acompañá con {tostadas-arroz} de tostadas de arroz.', SELLO] },
+    { title: 'Sándwich chico de pan sin TACC con jamón y queso', parts: [P('jamon'), C('pan-sin-tacc'), X('queso-light', 30)], steps: ['Armá el sándwich con {pan-sin-tacc} de pan sin TACC, {jamon} de jamón y {queso-light} de queso light.', 'Llevalo en un táper propio.', SELLO] },
+    { title: 'Yogur bebible y una banana', parts: [P('yogur-proteico', { min: 150 }), C('banana')], steps: ['Llevá {yogur-proteico} de yogur bebible y {banana} de banana.', SELLO] },
   ],
   lunch: [
     { title: 'Pechuga grillada con arroz y ensalada mixta', parts: [P('pollo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {pollo} de pechuga 5-6 min por lado.', 'Serví con {arroz} de arroz cocido.', 'Ensalada mixta con {vegetales} de verduras y {oliva} de aceite de oliva.'] },
@@ -228,17 +231,15 @@ const STACC: Record<SlotKind, R[]> = {
     { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
     { title: 'Omelette con queso y verduras + pan sin TACC', parts: [P('claras', { min: 66 }), C('pan-sin-tacc'), X('huevo', 100), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras y {queso-light} de queso light.', 'Acompañá con {pan-sin-tacc} de pan sin TACC.', SELLO] },
   ],
-  night: [
-    { title: 'Yogur griego[ con nueces|nueces]', parts: [P('yogur', { min: 150 }), F('nueces')], steps: ['Serví {yogur} de yogur con {nueces} de nueces.', SELLO] },
-    { title: 'Leche con proteína', parts: [P('whey'), X('leche', 250)], steps: ['Mezclá {leche} de leche con {whey} de proteína en polvo con sello Sin TACC.'] },
-    { title: 'Huevos duros con galletas de arroz', parts: [P('huevo'), C('galletas-arroz', { max: 27 })], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {galletas-arroz} de galletas de arroz.'] },
-    { title: 'Ricota con canela y miel', parts: [P('ricota'), X('miel', 10)], steps: ['Serví {ricota} de ricota con canela y {miel} de miel.', SELLO] },
+  dessert: [
+    { title: 'Yogur con frutillas y banana', parts: [P('yogur', { min: 150 }), C('banana'), X('frutillas', 100)], steps: ['De postre: {yogur} de yogur con {frutillas} de frutillas y {banana} de banana.', SELLO] },
+    { title: 'Banana con pasta de maní', parts: [C('banana'), F('mani')], steps: ['De postre: {banana} de banana en rodajas con {mani} de pasta de maní.', SELLO] },
   ],
   extra: [
-    { title: 'Colación extra: yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana.', SELLO] },
-    { title: 'Colación extra: galletas de arroz con pasta de maní y fruta', parts: [C('galletas-arroz'), F('mani'), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {naranja} de mandarina.'] },
-    { title: 'Colación extra: frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
-    { title: 'Colación extra: licuado de leche y banana', parts: [P('leche', { min: 200 }), C('banana')], steps: ['Licuá {leche} de leche con {banana} de banana.'] },
+    { title: 'Yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana.', SELLO] },
+    { title: 'Galletas de arroz con pasta de maní y fruta', parts: [C('galletas-arroz'), F('mani'), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {naranja} de mandarina.'] },
+    { title: 'Frutos secos y fruta', parts: [C('banana'), F('nueces')], steps: ['Comé {nueces} de nueces con {banana} de banana.'] },
+    { title: 'Licuado de leche y banana', parts: [P('leche', { min: 200 }), C('banana')], steps: ['Licuá {leche} de leche con {banana} de banana.'] },
   ],
 };
 
@@ -255,6 +256,8 @@ const VEG: Record<SlotKind, R[]> = {
     { title: 'Sándwich integral de huevo duro y tomate', parts: [P('huevo'), C('pan'), X('vegetales', 50)], steps: ['Herví {huevo} 9-10 min y cortalo en rodajas.', 'Armá el sándwich con {pan} de pan integral y {vegetales} de tomate y lechuga.'] },
     STD.mid[2],
     STD.mid[3],
+    STD.mid[4],
+    STD.mid[5],
   ],
   lunch: [
     { title: 'Guiso de lentejas con arroz y huevo duro + yogur de postre', parts: [P('huevo'), C('lentejas'), F('oliva', { max: 10 }), X('arroz', 80), X('vegetales', 150), X('yogur', 150)], steps: ['Cociná {lentejas} de lentejas con {vegetales} de cebolla, morrón y zanahoria[ y {oliva} de aceite].', 'Serví con {arroz} de arroz y {huevo} de huevo duro.', 'De postre, {yogur} de yogur (suma la proteína que le falta a la legumbre).'] },
@@ -272,9 +275,9 @@ const VEG: Record<SlotKind, R[]> = {
     { title: 'Guiso de porotos y calabaza con huevo', parts: [P('huevo'), C('porotos'), F('oliva', { max: 10 }), X('calabaza', 150), X('vegetales', 100)], steps: ['Cociná {porotos} de porotos con {calabaza} de calabaza y {vegetales} de verduras[ con {oliva} de aceite].', 'Serví con {huevo} de huevo duro o poché.'] },
     { title: 'Ñoquis de papa con salsa de tomate y ricota', parts: [P('ricota'), C('noquis'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Herví {noquis} de ñoquis hasta que floten.', 'Serví con {vegetales} de salsa de tomate[, {oliva} de aceite] y {ricota} de ricota por encima.'] },
   ],
-  night: STD.night,
+  dessert: STD.dessert,
   extra: [
-    { title: 'Colación extra: sándwich integral de queso y tomate', parts: [P('queso-light'), C('pan'), X('vegetales', 50)], steps: ['Armá el sándwich con {pan} de pan integral, {queso-light} de queso light y {vegetales} de tomate.'] },
+    { title: 'Sándwich integral de queso y tomate', parts: [P('queso-light'), C('pan'), X('vegetales', 50)], steps: ['Armá el sándwich con {pan} de pan integral, {queso-light} de queso light y {vegetales} de tomate.'] },
     STD.extra[1],
     STD.extra[2],
     STD.extra[3],
@@ -297,23 +300,115 @@ interface SlotDef {
 }
 const SLOT: Record<SlotKind, SlotDef> = {
   breakfast: { kind: 'breakfast', name: 'Desayuno', role: 'breakfast', time: '07:30', w: [1, 1, 1] },
-  mid: { kind: 'mid', name: 'Media mañana', role: 'snack', time: '10:30', w: [0.5, 0.5, 0.6] },
+  mid: { kind: 'mid', name: 'Colación de media mañana', role: 'snack', time: '10:30', w: [0.5, 0.5, 0.6] },
   lunch: { kind: 'lunch', name: 'Almuerzo', role: 'lunch', time: '13:00', w: [1.3, 1.2, 1.2] },
-  pre: { kind: 'pre', name: 'Antes de entrenar', role: 'peri', time: '17:00', w: [0.5, 1, 0.2] },
+  pre: { kind: 'pre', name: 'Antes de entrenar', role: 'peri', time: '17:15', w: [0.5, 1, 0.2] },
   merienda: { kind: 'merienda', name: 'Merienda', role: 'snack', time: '17:00', w: [0.6, 0.5, 0.7] },
   dinner: { kind: 'dinner', name: 'Cena', role: 'dinner', time: '21:00', w: [1.3, 1.1, 1.1] },
-  night: { kind: 'night', name: 'Antes de dormir', role: 'snack', time: '22:30', w: [0.6, 0.2, 0.6] },
-  extra: { kind: 'extra', name: 'Colación extra', role: 'snack', time: '16:00', w: [0.4, 0.5, 0.4] },
+  dessert: { kind: 'dessert', name: 'Postre', role: 'dinner', time: '21:00', w: [0.2, 0.3, 0.2] },
+  extra: { kind: 'extra', name: 'Colación de tarde', role: 'snack', time: '16:00', w: [0.4, 0.5, 0.4] },
 };
 
-function structure(sex: Sex, tierB: boolean, day: MealDay): SlotKind[] {
+/** Cantidad de comidas del día: 4 (mujer, escalón base), 5, o 6 sólo el día de entreno del hombre en escalón denso. */
+function mealCount(sex: Sex, tierB: boolean, day: MealDay) {
+  if (sex === 'F') return tierB ? 5 : 4;
+  return tierB && day === 'on' ? 6 : 5;
+}
+
+/** Franja de entreno del alumno (minutos desde las 00:00). */
+export interface BankTraining {
+  start: number;
+  end: number;
+}
+export const DEFAULT_TRAINING: BankTraining = { start: 18 * 60, end: 19 * 60 };
+export function trainingOf(p: { trainingTime?: string; sessionMinutes?: number }): BankTraining {
+  const [h, m] = (p.trainingTime || '18:00').split(':').map(Number);
+  const start = (h || 0) * 60 + (m || 0);
+  return { start, end: start + Math.min(300, Math.max(30, Number(p.sessionMinutes) || 60)) };
+}
+/** Horarios de desayuno / almuerzo / cena fijados por el coach en la anamnesis (minutos). */
+export type BankMainTimes = Partial<Record<'breakfast' | 'lunch' | 'dinner', number>>;
+
+const hhmm = (min: number) => {
+  const t = ((Math.round(min) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+const r15 = (x: number) => Math.round(x / 15) * 15;
+/** Separación mínima entre dos comidas (min). */
+const GAP = 90;
+
+interface Placed extends SlotDef {
+  at: number;
+}
+
+/**
+ * Agenda argentina del día: Desayuno · Colación de media mañana · Almuerzo · Merienda · Antes de entrenar · Cena.
+ * La cena siempre cierra el día (nunca hay una comida suelta después). Las colaciones se ubican según el entreno:
+ * a la mañana, el desayuno pasa a después de entrenar y la colación queda a media mañana; a la tarde-noche, la merienda
+ * se refuerza como «antes de entrenar». Ninguna comida cae durante el entreno y entre dos tomas hay al menos 1 h 30.
+ */
+function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}): Placed[] {
   const on = day === 'on';
-  if (sex === 'F') {
-    if (!tierB) return on ? ['breakfast', 'lunch', 'pre', 'dinner'] : ['breakfast', 'lunch', 'merienda', 'dinner'];
-    return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner'];
+  const at = (kind: SlotKind, t: number, name = SLOT[kind].name): Placed => ({ ...SLOT[kind], name, time: hhmm(t), at: t });
+  // Desayuno: después de entrenar si entrena muy temprano; si no, antes (al menos 1 h 30 antes de entrenar).
+  let B = fixed.breakfast ?? 7 * 60 + 30;
+  let bName = SLOT.breakfast.name;
+  if (on && fixed.breakfast === undefined) {
+    if (tr.start < 8 * 60 + 30) {
+      B = r15(tr.end + 30);
+      bName = 'Desayuno (después de entrenar)';
+    } else if (tr.start - GAP < B) B = Math.max(6 * 60, tr.start - GAP);
   }
-  if (!tierB) return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner'];
-  return on ? ['breakfast', 'mid', 'lunch', 'pre', 'dinner', 'night'] : ['breakfast', 'mid', 'lunch', 'merienda', 'dinner', 'night'];
+  // Almuerzo: 13:00; si choca con el entreno, antes (si da) o después de entrenar.
+  let L = fixed.lunch ?? 13 * 60;
+  let lName = SLOT.lunch.name;
+  if (on && fixed.lunch === undefined && L > tr.start - GAP && L < tr.end + 15) {
+    if (tr.start - GAP >= 12 * 60) L = tr.start - GAP;
+    else {
+      L = r15(tr.end + 30);
+      lName = 'Almuerzo (después de entrenar)';
+    }
+  }
+  // Cena: 21:00, o 45 min después de entrenar si termina tarde (como mucho 22:30). Siempre la última comida.
+  let D = fixed.dinner ?? 21 * 60;
+  if (on && fixed.dinner === undefined && tr.end + 60 > D) D = Math.min(22 * 60 + 30, r15(tr.end + 45));
+  const mains = [at('breakfast', B, bName), at('lunch', L, lName), at('dinner', D)];
+
+  const busy = (t: number) => on && t > tr.start - 30 && t < tr.end + 15;
+  const fits = (t: number, taken: Placed[]) => t >= 6 * 60 && t <= D - 120 && !busy(t) && taken.every((x) => Math.abs(x.at - t) >= GAP);
+  const tries: Record<'mid' | 'merienda' | 'pre', [number[], number, number]> = {
+    mid: [[10 * 60 + 30, 11 * 60, 10 * 60, 11 * 60 + 30, 9 * 60 + 30, r15(tr.end + 30)], B, L],
+    merienda: [[17 * 60, 17 * 60 + 30, 16 * 60 + 30, 16 * 60, 15 * 60 + 45, 18 * 60, 18 * 60 + 30, r15(tr.end + 30)], L, D],
+    pre: [[tr.start - 45, tr.start - 60, tr.start - 75], 0, tr.start],
+  };
+  const evening = on && tr.start >= 15 * 60;
+  const n0 = n - 3;
+  let order: ('mid' | 'merienda' | 'pre')[] = n0 === 1 ? (evening ? ['pre', 'merienda'] : ['merienda', 'mid']) : n0 === 2 ? (evening ? ['mid', 'pre', 'merienda'] : ['mid', 'merienda']) : evening ? ['mid', 'pre', 'merienda'] : ['mid', 'merienda', 'pre'];
+  if (!on) order = order.filter((k) => k !== 'pre');
+  const taken = [...mains];
+  let left = n0;
+  for (const kind of order) {
+    if (!left) break;
+    const [ts, lo, hi] = tries[kind];
+    const t = ts.find((x) => x > lo && x < hi && fits(x, taken));
+    if (t === undefined) continue;
+    taken.push(at(kind, t));
+    left--;
+  }
+  return taken
+    .map((p) => {
+      if (p.kind === 'pre') {
+        const solo = !taken.some((x) => x.kind === 'merienda') && p.at >= 15 * 60 + 30 && p.at <= 19 * 60;
+        const morning = !taken.some((x) => x.kind === 'mid') && p.at >= 9 * 60 && p.at < 12 * 60;
+        return { ...p, name: solo ? 'Merienda (antes de entrenar)' : morning ? 'Colación de media mañana (antes de entrenar)' : p.name };
+      }
+      if ((p.kind === 'mid' || p.kind === 'merienda') && on) {
+        if (p.at >= tr.end && p.at <= tr.end + 120) return { ...p, name: `${p.name} (después de entrenar)` };
+        if (p.at < tr.start && p.at >= tr.start - 120) return { ...p, name: `${p.name} (antes de entrenar)` };
+      }
+      return p;
+    })
+    .sort((a, b) => a.at - b.at);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -408,7 +503,7 @@ const MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
   pre: { c: ['banana'], f: [] },
   merienda: { c: ['manzana'], f: ['nueces'] },
   dinner: { c: ['naranja'], f: ['oliva'] },
-  night: { c: [], f: ['nueces'] },
+  dessert: { c: [], f: [] },
   extra: { c: [], f: [] },
 };
 const moduleTitle = (id: string, kind: SlotKind) =>
@@ -475,6 +570,8 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
     ...ws.flatMap((w) =>
       MODULES[w.slot.kind][k]
         .filter((id) => !adjustable(w, k).includes(id) && !(k === 'f' && w.recipes[0].parts.some((p) => p.r === 'f' && FOOD_BY_ID[p.id].group === 'fat')))
+        // Con postre en la cena, nada de fruta de postre aparte (un solo postre).
+        .filter((id) => !(w.slot.kind === 'dinner' && ws.some((d) => d.slot.kind === 'dessert')))
         .map((id): Move => [w, id, { allowNew: true, max: MODULE_MAX[id] }]),
     ),
   ];
@@ -576,62 +673,88 @@ function fitAlt(rec: R, g: Record<string, number>, kcal: number, slot: SlotDef, 
  * colaciones arrancan por las livianas en proteína; en definición y recomposición, por las proteicas (saciedad).
  */
 function ordered(goal: BankGoal, kind: SlotKind, recs: R[]): R[] {
-  if (!['pre', 'mid', 'merienda'].includes(kind)) return recs;
+  if (!['pre', 'mid', 'merienda', 'dessert'].includes(kind)) return recs;
   const lean = (r: R) => (r.parts.some((p) => p.r === 'p' && (p.min ?? 1) > 0) || r.parts.some((p) => p.r === 'x' && /alfajor|yogur|whey/.test(p.id)) ? 1 : 0);
   const carbFirst = goal === 'hip' || goal === 'ren';
   return [...recs].sort((a, b) => (carbFirst ? lean(a) - lean(b) : lean(b) - lean(a)));
 }
 
-function buildDay(sel: BankSelection, weightKg: number, day: MealDay, tierB: boolean, target: Tot): Meal[] {
+function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot, tr: BankTraining, fixed: BankMainTimes): Meal[] {
   const sex = sexOf(sel.plan);
   const ctx: Ctx = { sex, veg: sel.variant === 'veg' };
   const goalId = goalOf(sel.plan).id;
   const base = RECIPES[sel.variant];
   const recipes = Object.fromEntries((Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, base[k])])) as Record<SlotKind, R[]>;
-  const kinds = structure(sex, tierB, day);
-  const wsum = kinds.reduce((a, k) => [a[0] + SLOT[k].w[0], a[1] + SLOT[k].w[1], a[2] + SLOT[k].w[2]], [0, 0, 0]);
-  const mkWork = (kind: SlotKind, share?: [number, number, number]): Work => {
-    const slot = SLOT[kind];
+  const slots = daySlots(mealCount(sex, tierB, day), day, tr, fixed);
+  const wsum = slots.reduce((a, k) => [a[0] + k.w[0], a[1] + k.w[1], a[2] + k.w[2]], [0, 0, 0]);
+  const mkWork = (slot: SlotDef, share?: [number, number, number], only?: R[]): Work => {
     const s = share ?? [slot.w[0] / wsum[0], slot.w[1] / wsum[1], slot.w[2] / wsum[2]];
     const T = { p: target.p * s[0], c: target.c * s[1], f: target.f * s[2], kcal: 0 };
     T.kcal = kcalOf(T);
-    const recs = recipes[kind];
+    const recs = only ?? recipes[slot.kind];
     return { slot, T, recipes: recs, grams: recs.map((r) => solve(r, T, { ...ctx, role: slot.role })), added: new Set() };
   };
-  const ws = kinds.map((k) => mkWork(k));
-  // Colación extra (hasta 2) para atletas grandes que con los topes no llegan: ~400-500 kcal de comida real.
+  const ws = slots.map((k) => mkWork(k));
+  // Atletas grandes que con los topes no llegan: primero una colación de tarde (o de media mañana) donde entre en la
+  // agenda; si no hay lugar, un postre saludable dentro de la cena. Nunca una comida suelta después de cenar.
   const extraLeft = { n: 2 };
-  const mkExtra = () => {
-    const ex = mkWork('extra', [0.12, 0.12, 0.1]);
-    ex.slot = { ...ex.slot, name: extraLeft.n === 2 ? 'Colación extra' : 'Segunda colación extra', time: extraLeft.n === 2 ? '16:00' : '11:30' };
-    return ex;
+  const busy = (t: number) => day === 'on' && t > tr.start - 30 && t < tr.end + 15;
+  const dinnerAt = slots.find((x) => x.kind === 'dinner')!.at;
+  const mkExtra = (): Work | null => {
+    const placed = ws.map((w) => (w.slot as Placed).at).filter((x) => x !== undefined);
+    const lunchAt = slots.find((x) => x.kind === 'lunch')!.at;
+    const t = [16 * 60, 15 * 60 + 30, 11 * 60, 11 * 60 + 30, 18 * 60 + 30, r15(tr.end + 30)].find(
+      (x) => x >= 9 * 60 && x <= dinnerAt - 120 && !busy(x) && placed.every((y) => Math.abs(y - x) >= GAP),
+    );
+    if (t !== undefined) {
+      const name = t < lunchAt ? 'Colación de media mañana' : 'Colación de tarde';
+      return mkWork({ ...SLOT.extra, name, time: hhmm(t), at: t } as Placed, [0.12, 0.12, 0.1]);
+    }
+    if (ws.some((w) => w.slot.kind === 'dessert')) return null;
+    // Postre: si la cena ya tenía fruta de postre, la reemplaza (un solo postre).
+    const dinner = ws.find((w) => w.slot.kind === 'dinner')!;
+    if (dinner.added.has('naranja')) {
+      delete dinner.grams[0].naranja;
+      dinner.added.delete('naranja');
+    }
+    return mkWork({ ...SLOT.dessert, at: dinnerAt, time: hhmm(dinnerAt) } as Placed, [0.08, 0.1, 0.08], [recipes.dessert[0]]);
   };
   closeDay(ws, target, ctx, extraLeft, mkExtra);
 
-  return ws.map((w) => {
-    const main = toItems(w.grams[0]);
-    const kcal = totals(main).kcal;
-    const suffix = [...w.added].map((id) => moduleTitle(id, w.slot.kind)).join('');
-    const opts = w.recipes.map((rec, i) => {
-      const g = i === 0 ? w.grams[0] : { ...w.grams[i] };
-      if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role });
-      const items = toItems(g);
-      const combo: Combo = { ...rec, roles: [w.slot.role] };
-      return { title: titleFor(rec.title, g) + (i === 0 ? suffix : ''), items, steps: comboSteps(combo, items) };
-    });
-    const [first, ...alts] = opts;
-    return {
-      id: uid(),
-      name: w.slot.name,
-      time: w.slot.time,
-      day,
-      role: w.slot.role,
-      items: first.items,
-      title: first.title,
-      steps: first.steps,
-      alts: alts.map((a) => ({ title: a.title, items: a.items, steps: a.steps })),
-    } satisfies Meal;
-  });
+  const dessert = ws.find((w) => w.slot.kind === 'dessert');
+  const dItems = dessert ? toItems(dessert.grams[0]) : [];
+  const dTitle = dessert ? titleFor(dessert.recipes[0].title, dessert.grams[0]) : '';
+  const dSteps = dessert ? comboSteps({ ...dessert.recipes[0], roles: ['dinner'] }, dItems) : [];
+  return ws
+    .filter((w) => w.slot.kind !== 'dessert')
+    .map((w) => {
+      const main = toItems(w.grams[0]);
+      const kcal = totals(main).kcal;
+      const suffix = [...w.added].map((id) => moduleTitle(id, w.slot.kind)).join('');
+      const withDessert = w.slot.kind === 'dinner' && dessert;
+      const opts = w.recipes.map((rec, i) => {
+        const g = i === 0 ? w.grams[0] : { ...w.grams[i] };
+        if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role });
+        const items = toItems(g);
+        const combo: Combo = { ...rec, roles: [w.slot.role] };
+        const title = titleFor(rec.title, g) + (i === 0 ? suffix : '');
+        if (!withDessert) return { title, items, steps: comboSteps(combo, items) };
+        return { title: `${title} + postre: ${dTitle.charAt(0).toLowerCase()}${dTitle.slice(1)}`, items: [...items, ...dItems.map((it) => ({ ...it, id: uid() }))], steps: [...comboSteps(combo, items), ...dSteps] };
+      });
+      const [first, ...alts] = opts;
+      return {
+        id: uid(),
+        name: w.slot.name,
+        time: w.slot.time,
+        day,
+        role: w.slot.role,
+        items: first.items,
+        title: first.title,
+        steps: first.steps,
+        alts: alts.map((a) => ({ title: a.title, items: a.items, steps: a.steps })),
+      } satisfies Meal;
+    })
+    .sort((a, b) => a.time.localeCompare(b.time));
 }
 
 export interface BankPlan {
@@ -643,13 +766,16 @@ export interface BankPlan {
   meals: Meal[];
 }
 
-/** Arma el plan completo (día de entreno + día de descanso) para un peso. */
-export function buildBankPlan(sel: BankSelection, weightKg: number): BankPlan {
+/**
+ * Arma el plan completo (día de entreno + día de descanso) para un peso. Los horarios siguen la agenda argentina y
+ * el horario de entreno del alumno (por defecto 18:00, 1 h); `fixed`: desayuno / almuerzo / cena fijados por el coach.
+ */
+export function buildBankPlan(sel: BankSelection, weightKg: number, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}): BankPlan {
   const sex = sexOf(sel.plan);
   const goal = goalOf(sel.plan);
   const t = dayTargets(goal, sex, weightKg);
   const tierB = t.on.kcal > TIER_B[sex];
-  const meals = [...buildDay(sel, weightKg, 'on', tierB, t.on), ...buildDay(sel, weightKg, 'off', tierB, t.off)];
+  const meals = [...buildDay(sel, 'on', tierB, t.on, tr, fixed), ...buildDay(sel, 'off', tierB, t.off, tr, fixed)];
   return { sel, weightKg, tier: tierB ? 'B' : 'A', gkg: t.gkg, target: { on: t.on, off: t.off }, meals };
 }
 
@@ -664,30 +790,30 @@ export const planLabel = (sel: BankSelection) => `${goalOf(sel.plan).label} · $
  * la Tabla Única de Topes), la matriz de macros del objetivo y los horarios según su entreno.
  * Perfil, suplementos, anamnesis y nota del coach se conservan (Sin TACC suma su aviso fijo).
  */
-export function applyBankPlan<T extends { profile: { weightKg: number; phase: Phase }; periodization: { on: Macros; off: Macros }; meals: Meal[]; coachNote: string }>(
+export function applyBankPlan<T extends { profile: { weightKg: number; phase: Phase; trainingTime?: string; sessionMinutes?: number }; periodization: { on: Macros; off: Macros }; meals: Meal[]; coachNote: string }>(
   base: T,
   sel: BankSelection,
-  retime: (meals: Meal[]) => Meal[] = (m) => m,
+  fixed: BankMainTimes = {},
 ): T {
   const goal = goalOf(sel.plan);
-  const bp = buildBankPlan(sel, base.profile.weightKg);
+  const bp = buildBankPlan(sel, base.profile.weightKg, trainingOf(base.profile), fixed);
   const note = [base.coachNote.trim() || goal.rationale, sel.variant === 'stacc' && !base.coachNote.includes('SIN TACC') ? STACC_WARNING : ''].filter(Boolean).join('\n\n');
   return {
     ...base,
     profile: { ...base.profile, phase: goal.phase },
     periodization: { ...base.periodization, on: bp.gkg.on, off: bp.gkg.off },
-    meals: retime(bp.meals),
+    meals: bp.meals,
     coachNote: note,
   };
 }
 
 /** Resumen para la tarjeta del banco (sin armar las comidas): macros, calorías y cantidad de comidas por día. */
-export function planSummary(sel: BankSelection, weightKg: number) {
+export function planSummary(sel: BankSelection, weightKg: number, tr: BankTraining = DEFAULT_TRAINING) {
   const sex = sexOf(sel.plan);
   const t = dayTargets(goalOf(sel.plan), sex, weightKg);
   const tierB = t.on.kcal > TIER_B[sex];
   const opts = (kinds: SlotKind[]) => kinds.reduce((a, k) => a + RECIPES[sel.variant][k].length, 0) / kinds.length;
-  const on = structure(sex, tierB, 'on');
-  const off = structure(sex, tierB, 'off');
+  const on = daySlots(mealCount(sex, tierB, 'on'), 'on', tr).map((x) => x.kind);
+  const off = daySlots(mealCount(sex, tierB, 'off'), 'off', tr).map((x) => x.kind);
   return { gkg: t.gkg, kcal: { on: Math.round(t.on.kcal), off: Math.round(t.off.kcal) }, tier: tierB ? 'B' : 'A', meals: { on: on.length, off: off.length }, optionsPerMeal: Math.round(Math.min(opts(on), opts(off))) };
 }

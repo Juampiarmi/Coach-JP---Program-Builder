@@ -16,6 +16,7 @@ import {
   SEX_LABEL,
   SEX_RANGE,
   sexOf,
+  trainingOf,
   STACC_WARNING,
   type BankGoal,
   type BankSelection,
@@ -58,6 +59,7 @@ export function TemplateBank() {
   // Vista con el peso del alumno si el sexo coincide; si no, con un peso de referencia (al aplicar se recalcula).
   const sameSex = sex === athlete.profile.sex;
   const weight = sameSex ? athlete.profile.weightKg : REF_W[sex];
+  const training = trainingOf(athlete.profile);
   const r = KCAL_RANGES.find((x) => x.id === range)!;
 
   const cards = useMemo(
@@ -65,17 +67,17 @@ export function TemplateBank() {
       BANK_PLAN_IDS.filter((id) => sexOf(id) === sex && (goal === 'all' || goalOf(id).id === goal))
         .map((id) => {
           const sel: BankSelection = { plan: id, variant };
-          return { sel, sum: planSummary(sel, weight) };
+          return { sel, sum: planSummary(sel, weight, training) };
         })
         .filter((c) => c.sum.kcal.on >= r.lo && c.sum.kcal.on < r.hi || (c.sum.kcal.off >= r.lo && c.sum.kcal.off < r.hi)),
-    [sex, goal, variant, weight, r.lo, r.hi],
+    [sex, goal, variant, weight, training.start, training.end, r.lo, r.hi], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const current = picked && sexOf(picked.plan) === sex ? { ...picked, variant } : null;
-  const preview = useMemo(() => (current ? buildBankPlan(current, weight) : null), [current?.plan, current?.variant, weight]); // eslint-disable-line react-hooks/exhaustive-deps
+  const preview = useMemo(() => (current ? buildBankPlan(current, weight, training) : null), [current?.plan, current?.variant, weight, training.start, training.end]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = () => {
     if (!current) return;
-    const sum = planSummary(current, athlete.profile.weightKg);
+    const sum = planSummary(current, athlete.profile.weightKg, training);
     const mismatch = sexOf(current.plan) !== athlete.profile.sex ? `\n\nOjo: es un plan de ${SEX_LABEL[sexOf(current.plan)].toLowerCase()} y ${athlete.profile.name} está cargado con el otro sexo.` : '';
     if (
       !window.confirm(
@@ -227,7 +229,7 @@ export function TemplateBank() {
               />
             </div>
             <span className="text-[12px] text-mute">
-              Escalón {preview.tier === 'B' ? 'denso' : 'base'} · porciones para {fmt1(weight)} kg
+              Escalón {preview.tier === 'B' ? 'denso' : 'base'} · porciones para {fmt1(weight)} kg · horarios para entrenar a las {athlete.profile.trainingTime || '18:00'}
             </span>
           </div>
 
