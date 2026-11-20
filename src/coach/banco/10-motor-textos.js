@@ -202,6 +202,60 @@
     return { txt: L.join('\n'), sets: 0, grupos: [], mins: v.min };
   }
 
+  /* ---------- pautas pedagógicas por bloque: series de aproximación, por qué esa cantidad de series y cómo elegir la carga ----------
+     Se escriben con los números reales del bloque (series, repeticiones, RIR) y sin "NxM" dentro del texto (el importador lo leería como una dosis). */
+  function rangoRepsTxt(reps){
+    var s = String(reps == null ? '' : reps).trim(), m = /^(\d+)(?:\s*[-–]\s*(\d+))?/.exec(s);
+    if(!m) return { lo: 0, hi: 0, tiempo: false, lado: false, txt: s };
+    var lado = /por\s+(lado|pierna|brazo)/i.test(s), tiempo = /^\d+(?:\s*[-–]\s*\d+)?\s*(?:s|seg|segundos)\b/i.test(s) && !lado;
+    var lo = parseInt(m[1], 10), hi = parseInt(m[2] || m[1], 10);
+    return { lo: lo, hi: hi, tiempo: tiempo, lado: lado, txt: lo === hi ? String(lo) : lo + ' a ' + hi };
+  }
+  function rirTexto(rir){
+    var n = String(rir == null ? '' : rir).match(/\d+/g);
+    if(!n) return 'una o dos repeticiones en reserva';
+    var lo = Math.min.apply(null, n.map(Number)), hi = Math.max.apply(null, n.map(Number));
+    if(lo === 0 && hi === 0) return 'ninguna repetición en reserva (pero con la técnica intacta)';
+    if(lo === 0 && hi === 1) return 'una repetición en reserva como mucho (o ninguna, siempre con la técnica intacta)';
+    if(lo === hi) return (lo === 1 ? 'una repetición' : (lo === 2 ? 'dos repeticiones' : lo + ' repeticiones')) + ' en reserva';
+    return 'entre ' + lo + ' y ' + hi + ' repeticiones en reserva';
+  }
+  function seriesTxt(n){ return n + (n === 1 ? ' serie efectiva' : ' series efectivas'); }
+  function lineasPedagogia(fila, d, ejs, av){
+    var L = [], rol = fila.rol, rr = rangoRepsTxt(d.reps[0]), rir = d.rir[0], multi = ejs.length > 1;
+    var libs = ejs.map(function(e){ return exLib(e); }), grupo = (libs[0] && libs[0].grupo) ? String(libs[0].grupo).toLowerCase() : '';
+    var musculo = grupo === 'piernas/glúteos' ? 'tren inferior' : (grupo ? grupo : 'el músculo');
+    var dosisTxt = d.sets + ' series' + (rr.tiempo ? ' de ' + rr.txt + ' segundos' : (rr.hi ? ' de ' + rr.txt + ' repeticiones' + (rr.lado ? ' por lado' : '') : ''));
+    var efectivas = 'Las series efectivas son solo las ' + dosisTxt + ' que pide este bloque, con ' + rirTexto(rir) + ' al terminar cada una.';
+    if(!multi && (rol === 'F' || rol === 'H')){
+      var lado = rr.lado ? ' En ejercicios por lado, hacé las aproximaciones con cada pierna o brazo.' : '';
+      if(rol === 'F'){
+        L.push('SERIES DE APROXIMACIÓN: son tu calentamiento específico, van ANTES de las series efectivas y son siempre livianas. Hacé 3: la primera con la mitad del peso de trabajo y 8 repeticiones fáciles, la segunda con el 70% y 5 repeticiones, la tercera con el 85% y 2 o 3 repeticiones. Descansá 1 minuto entre ellas y no te acerques nunca al fallo: tienen que dejarte listo, no cansado. No se anotan ni cuentan como volumen. ' + efectivas + lado);
+      } else {
+        L.push('SERIES DE APROXIMACIÓN: son calentamiento específico y van ANTES de las series efectivas. Hacé 2: la primera con el 60% del peso de trabajo y 6 repeticiones, la segunda con el 80% y 3 repeticiones, descansando un minuto entre ellas. Si recién hiciste otro ejercicio que trabaja el mismo músculo, alcanza con una sola al 80%. No se anotan ni cuentan como volumen. ' + efectivas + lado);
+      }
+    } else if(!multi && rol === 'A'){
+      L.push('SERIES DE APROXIMACIÓN: acá casi no hacen falta porque el músculo ya está caliente de los ejercicios anteriores. Si es el primer ejercicio que hacés para ese grupo, hacé una serie liviana con la mitad del peso y 10 repeticiones antes de empezar. ' + efectivas);
+    }
+    var porQue;
+    if(rol === 'F') porQue = seriesTxt(d.sets) + ': es el ejercicio donde más peso movés y donde se gana la fuerza que sostiene el resto de la sesión. Esa cantidad alcanza para estimular las fibras más grandes con la mejor calidad posible; sumar más series acá solo traería fatiga que te quitaría rendimiento en los bloques que siguen, y el resto del volumen de la semana lo ponen los otros ejercicios.';
+    else if(rol === 'H') porQue = seriesTxt(d.sets) + ' para ' + musculo + ': este bloque aporta el volumen principal del día con carga seria y un recorrido largo. Sumado a los demás ejercicios del grupo, esa cantidad te lleva al volumen semanal que hace crecer el músculo (más o menos de 10 a 20 series por semana) sin pasarte de lo que podés recuperar entre sesiones.';
+    else if(rol === 'A') porQue = seriesTxt(d.sets) + ': es un aislamiento, así que cada serie es corta en esfuerzo total pero muy exigente para el músculo puntual. Suma volumen donde los ejercicios compuestos ya no llegan, casi sin fatiga general; por eso se hacen pocas series, bien cerca del fallo, en vez de muchas "de relleno".';
+    else if(rol === 'B' || rol === 'T') porQue = d.sets + ' rondas: cada ronda encadena ' + (ejs.length === 2 ? 'los dos ejercicios' : 'los ' + ejs.length + ' ejercicios') + ' sin pausa, así que cada estación suma ' + d.sets + ' series efectivas en pocos minutos. Es un cierre de congestión: con esa cantidad el músculo recibe volumen extra y no se acumula fatiga que te arruine la próxima sesión.';
+    else porQue = seriesTxt(d.sets) + ': el abdomen se recupera rápido, pero lo que importa es la calidad. Con esas series bien hechas, con el tronco firme, alcanza para fortalecerlo y marcarlo sin cargar la zona lumbar.';
+    L.push('POR QUÉ ESTA CANTIDAD DE SERIES: ' + porQue);
+    var carga;
+    if(rol === 'C' || rr.tiempo){
+      carga = 'elegí la variante más difícil con la que puedas sostener ' + (rr.tiempo ? 'los ' + rr.txt + ' segundos' : 'las ' + rr.txt + ' repeticiones') + ' sin arquear la zona lumbar ni perder la posición, y terminar con ' + rirTexto(rir) + '. Si te sobra mucho, sumá palanca o peso; si se rompe la técnica antes, pasá a una versión más fácil.';
+    } else if(multi){
+      carga = 'en cada estación elegí un peso con el que llegues al techo de las repeticiones (' + rr.txt + ') con la técnica limpia y termines la ronda con ' + rirTexto(rir) + '. Como no hay descanso entre estaciones, arrancá un poco más liviano que si hicieras el ejercicio solo y ajustá desde la segunda ronda.';
+    } else {
+      carga = 'buscá un peso exigente pero técnico: el que te permite hacer entre ' + rr.txt.replace(' a ', ' y ') + ' repeticiones' + (rr.lado ? ' por lado' : '') + ' con el movimiento completo y que al terminar cada serie te deje con ' + rirTexto(rir) + '. RIR es la cantidad de repeticiones que todavía podrías hacer. Si en la primera serie hacés ' + (rr.hi + 3) + ' repeticiones o más, el peso es liviano: subí 2,5 kg (1 kg en brazos y hombros). Si no llegás a ' + rr.lo + ' repeticiones, bajá entre 5 y 10%. Cuando completás todas las series en el techo del rango (' + rr.hi + '), sumá peso y volvé al piso.';
+    }
+    L.push('OBJETIVO DE CARGA: ' + carga.charAt(0).toUpperCase() + carga.slice(1));
+    return L;
+  }
+
   /* texto de un bloque; devuelve { txt, sets, grupos:[{ej,sets}] } */
   function textoBloque(n, fila, niv, esPrimeroFuerza){
     if(fila.fin) return textoEspecial(n, fila, niv);
@@ -233,7 +287,7 @@
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
       var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
-      if(esPrimeroFuerza) L.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2). No cuentan como volumen.');
+      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
@@ -243,6 +297,7 @@
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
+      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
     }
     if(av && d.tec && TEC[d.tec]) L.push(TEC[d.tec].tip);
     nr.pos.forEach(function(x){ L.push(x); });

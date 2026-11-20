@@ -81352,6 +81352,60 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return { txt: L.join('\n'), sets: 0, grupos: [], mins: v.min };
   }
 
+  /* ---------- pautas pedagógicas por bloque: series de aproximación, por qué esa cantidad de series y cómo elegir la carga ----------
+     Se escriben con los números reales del bloque (series, repeticiones, RIR) y sin "NxM" dentro del texto (el importador lo leería como una dosis). */
+  function rangoRepsTxt(reps){
+    var s = String(reps == null ? '' : reps).trim(), m = /^(\d+)(?:\s*[-–]\s*(\d+))?/.exec(s);
+    if(!m) return { lo: 0, hi: 0, tiempo: false, lado: false, txt: s };
+    var lado = /por\s+(lado|pierna|brazo)/i.test(s), tiempo = /^\d+(?:\s*[-–]\s*\d+)?\s*(?:s|seg|segundos)\b/i.test(s) && !lado;
+    var lo = parseInt(m[1], 10), hi = parseInt(m[2] || m[1], 10);
+    return { lo: lo, hi: hi, tiempo: tiempo, lado: lado, txt: lo === hi ? String(lo) : lo + ' a ' + hi };
+  }
+  function rirTexto(rir){
+    var n = String(rir == null ? '' : rir).match(/\d+/g);
+    if(!n) return 'una o dos repeticiones en reserva';
+    var lo = Math.min.apply(null, n.map(Number)), hi = Math.max.apply(null, n.map(Number));
+    if(lo === 0 && hi === 0) return 'ninguna repetición en reserva (pero con la técnica intacta)';
+    if(lo === 0 && hi === 1) return 'una repetición en reserva como mucho (o ninguna, siempre con la técnica intacta)';
+    if(lo === hi) return (lo === 1 ? 'una repetición' : (lo === 2 ? 'dos repeticiones' : lo + ' repeticiones')) + ' en reserva';
+    return 'entre ' + lo + ' y ' + hi + ' repeticiones en reserva';
+  }
+  function seriesTxt(n){ return n + (n === 1 ? ' serie efectiva' : ' series efectivas'); }
+  function lineasPedagogia(fila, d, ejs, av){
+    var L = [], rol = fila.rol, rr = rangoRepsTxt(d.reps[0]), rir = d.rir[0], multi = ejs.length > 1;
+    var libs = ejs.map(function(e){ return exLib(e); }), grupo = (libs[0] && libs[0].grupo) ? String(libs[0].grupo).toLowerCase() : '';
+    var musculo = grupo === 'piernas/glúteos' ? 'tren inferior' : (grupo ? grupo : 'el músculo');
+    var dosisTxt = d.sets + ' series' + (rr.tiempo ? ' de ' + rr.txt + ' segundos' : (rr.hi ? ' de ' + rr.txt + ' repeticiones' + (rr.lado ? ' por lado' : '') : ''));
+    var efectivas = 'Las series efectivas son solo las ' + dosisTxt + ' que pide este bloque, con ' + rirTexto(rir) + ' al terminar cada una.';
+    if(!multi && (rol === 'F' || rol === 'H')){
+      var lado = rr.lado ? ' En ejercicios por lado, hacé las aproximaciones con cada pierna o brazo.' : '';
+      if(rol === 'F'){
+        L.push('SERIES DE APROXIMACIÓN: son tu calentamiento específico, van ANTES de las series efectivas y son siempre livianas. Hacé 3: la primera con la mitad del peso de trabajo y 8 repeticiones fáciles, la segunda con el 70% y 5 repeticiones, la tercera con el 85% y 2 o 3 repeticiones. Descansá 1 minuto entre ellas y no te acerques nunca al fallo: tienen que dejarte listo, no cansado. No se anotan ni cuentan como volumen. ' + efectivas + lado);
+      } else {
+        L.push('SERIES DE APROXIMACIÓN: son calentamiento específico y van ANTES de las series efectivas. Hacé 2: la primera con el 60% del peso de trabajo y 6 repeticiones, la segunda con el 80% y 3 repeticiones, descansando un minuto entre ellas. Si recién hiciste otro ejercicio que trabaja el mismo músculo, alcanza con una sola al 80%. No se anotan ni cuentan como volumen. ' + efectivas + lado);
+      }
+    } else if(!multi && rol === 'A'){
+      L.push('SERIES DE APROXIMACIÓN: acá casi no hacen falta porque el músculo ya está caliente de los ejercicios anteriores. Si es el primer ejercicio que hacés para ese grupo, hacé una serie liviana con la mitad del peso y 10 repeticiones antes de empezar. ' + efectivas);
+    }
+    var porQue;
+    if(rol === 'F') porQue = seriesTxt(d.sets) + ': es el ejercicio donde más peso movés y donde se gana la fuerza que sostiene el resto de la sesión. Esa cantidad alcanza para estimular las fibras más grandes con la mejor calidad posible; sumar más series acá solo traería fatiga que te quitaría rendimiento en los bloques que siguen, y el resto del volumen de la semana lo ponen los otros ejercicios.';
+    else if(rol === 'H') porQue = seriesTxt(d.sets) + ' para ' + musculo + ': este bloque aporta el volumen principal del día con carga seria y un recorrido largo. Sumado a los demás ejercicios del grupo, esa cantidad te lleva al volumen semanal que hace crecer el músculo (más o menos de 10 a 20 series por semana) sin pasarte de lo que podés recuperar entre sesiones.';
+    else if(rol === 'A') porQue = seriesTxt(d.sets) + ': es un aislamiento, así que cada serie es corta en esfuerzo total pero muy exigente para el músculo puntual. Suma volumen donde los ejercicios compuestos ya no llegan, casi sin fatiga general; por eso se hacen pocas series, bien cerca del fallo, en vez de muchas "de relleno".';
+    else if(rol === 'B' || rol === 'T') porQue = d.sets + ' rondas: cada ronda encadena ' + (ejs.length === 2 ? 'los dos ejercicios' : 'los ' + ejs.length + ' ejercicios') + ' sin pausa, así que cada estación suma ' + d.sets + ' series efectivas en pocos minutos. Es un cierre de congestión: con esa cantidad el músculo recibe volumen extra y no se acumula fatiga que te arruine la próxima sesión.';
+    else porQue = seriesTxt(d.sets) + ': el abdomen se recupera rápido, pero lo que importa es la calidad. Con esas series bien hechas, con el tronco firme, alcanza para fortalecerlo y marcarlo sin cargar la zona lumbar.';
+    L.push('POR QUÉ ESTA CANTIDAD DE SERIES: ' + porQue);
+    var carga;
+    if(rol === 'C' || rr.tiempo){
+      carga = 'elegí la variante más difícil con la que puedas sostener ' + (rr.tiempo ? 'los ' + rr.txt + ' segundos' : 'las ' + rr.txt + ' repeticiones') + ' sin arquear la zona lumbar ni perder la posición, y terminar con ' + rirTexto(rir) + '. Si te sobra mucho, sumá palanca o peso; si se rompe la técnica antes, pasá a una versión más fácil.';
+    } else if(multi){
+      carga = 'en cada estación elegí un peso con el que llegues al techo de las repeticiones (' + rr.txt + ') con la técnica limpia y termines la ronda con ' + rirTexto(rir) + '. Como no hay descanso entre estaciones, arrancá un poco más liviano que si hicieras el ejercicio solo y ajustá desde la segunda ronda.';
+    } else {
+      carga = 'buscá un peso exigente pero técnico: el que te permite hacer entre ' + rr.txt.replace(' a ', ' y ') + ' repeticiones' + (rr.lado ? ' por lado' : '') + ' con el movimiento completo y que al terminar cada serie te deje con ' + rirTexto(rir) + '. RIR es la cantidad de repeticiones que todavía podrías hacer. Si en la primera serie hacés ' + (rr.hi + 3) + ' repeticiones o más, el peso es liviano: subí 2,5 kg (1 kg en brazos y hombros). Si no llegás a ' + rr.lo + ' repeticiones, bajá entre 5 y 10%. Cuando completás todas las series en el techo del rango (' + rr.hi + '), sumá peso y volvé al piso.';
+    }
+    L.push('OBJETIVO DE CARGA: ' + carga.charAt(0).toUpperCase() + carga.slice(1));
+    return L;
+  }
+
   /* texto de un bloque; devuelve { txt, sets, grupos:[{ej,sets}] } */
   function textoBloque(n, fila, niv, esPrimeroFuerza){
     if(fila.fin) return textoEspecial(n, fila, niv);
@@ -81383,7 +81437,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
       var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
-      if(esPrimeroFuerza) L.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2). No cuentan como volumen.');
+      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
@@ -81393,6 +81447,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
+      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
     }
     if(av && d.tec && TEC[d.tec]) L.push(TEC[d.tec].tip);
     nr.pos.forEach(function(x){ L.push(x); });
@@ -81666,7 +81721,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('H', 'Press militar sentado', '3x8-10|1|120', '4x6-8|1|150'),
       R('A', 'Aperturas en banco inclinado con poleas', '3x12-15|1|75', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|60', '5x15-20|0|45'),
-      R('B', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', null, { soloI: true, n: 'Cierre de tríceps: la primera estación trabaja la cabeza larga estirada y la segunda busca la congestión. Sin pausa entre las dos.' }),
+      R('B', ['Extensión tríceps tras nuca a 2 manos', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', null, { soloI: true, n: 'Cierre de tríceps: la primera estación trabaja la cabeza larga estirada y la segunda busca la congestión. Sin pausa entre las dos.' }),
       R('T', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna', 'Flexiones diamante'], null, '4x10-12/12-15/10-15|0|75|drop', { soloA: true, n: 'Triset de tríceps: tres estaciones seguidas, sin pausa. Las flexiones diamante son para terminar de vaciar el músculo: si no salen, apoyá las rodillas.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.push })
@@ -81675,26 +81730,27 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   D.M_PULL = { short: 'PULL', label: 'Pull', title: 'Pull · Espalda, Deltoide Posterior y Bíceps', wu: 'pull', chips: ['💪 Tracción', '🎯 Dorsal + espalda alta + bíceps', '🔥 Cierre metabólico'],
     foco: 'Día de tracción con un remo pesado como ancla y el dorsal trabajado en vertical y horizontal. El deltoide posterior y el pull-over en polea (con el músculo estirado) refinan el ancho y la densidad de la espalda, y el bíceps cierra con un biset sin pausa. Tirá con los codos, no con las manos, y controlá la bajada de cada repetición: es en la bajada donde la espalda crece.',
     filas: [
-      R('F', 'Remo con barra inclinado', '4x5-7|2|180', '5x4-6|1|210', { n: 'Remo estricto: torso fijo a 45 grados y la barra sube al ombligo. Si la cadera se mueve para ayudar, bajá el peso: este es el ejercicio que construye densidad en la espalda.' }),
+      R('F', 'Remo Pecho Apoyado en banco inclinado', '4x6-8|2|150', '5x5-7|1|180', { n: 'Pecho pegado al banco, codos hacia atrás y escápulas juntas medio segundo arriba. El apoyo te saca la espalda baja de la ecuación: toda la carga la lleva la espalda alta, y por eso podés empujar fuerte sin pagar fatiga de más.' }),
       R('H', 'Jalón al pecho con agarre ancho', '4x8-10|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
       R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Pull-over en polea alta brazos extendidos', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '4x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', null, { soloI: true, n: 'Cierre de bíceps: la primera estación va supinando y la segunda busca el braquial. Sin pausa entre las dos.' }),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Curl martillo'], '3x10-12/10-12|1|75', null, { soloI: true, n: 'Cierre de bíceps: el banco inclinado deja el brazo detrás del torso y trabaja el bíceps estirado, y el martillo busca el braquial. Sin pausa entre las dos.' }),
       R('T', ['Curl de bíceps con barra Z', 'Curl martillo', 'Curl con agarre inverso'], null, '3x8-10/10-12/12-15|0|75|drop', { soloA: true, n: 'Triset de brazos: bíceps, braquial y antebrazo seguidos. Es el bloque que más se siente en la manga de la camiseta.' }),
       R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.pull })
     ] };
 
   D.M_LEGS = { short: 'PIERNA', label: 'Pierna Completa', title: 'Pierna Completa · Cuádriceps, Femorales, Glúteos y Core', wu: 'legs', chips: ['🦵 Pierna', '🎯 Sentadilla + cadena posterior', '🔥 Cierre metabólico'],
-    foco: 'Día de pierna completa: la sentadilla marca la carga de la semana, la prensa suma volumen de cuádriceps sin fatiga lumbar, el peso muerto rumano carga los femorales estirados y el hip thrust cierra el trabajo de glúteo con pausa arriba. Curl femoral, extensión y gemelo aíslan con tensión constante, y el core termina el día. Es el día más duro de la semana y el que más recuperación pide: dormí bien y comé antes de entrenar. Respetá la profundidad asignada: la serie que no la alcanza no cuenta como efectiva.',
+    foco: 'Día de pierna completa: la sentadilla marca la carga de la semana, la prensa suma volumen de cuádriceps sin fatiga lumbar, el peso muerto rumano carga los femorales estirados y la cadena posterior ya queda cubierta sin sumar un tercer ejercicio pesado de cadera. Curl femoral, extensión y gemelo con pausa aíslan con tensión constante, y el core termina el día. Es el día más duro de la semana y el que más recuperación pide: dormí bien y comé antes de entrenar. Respetá la profundidad asignada: la serie que no la alcanza no cuenta como efectiva.',
     filas: [
       R('F', 'Sentadilla con barra', '4x5-7|2|180', '5x4-6|1|240', { n: 'La sentadilla marca el ritmo de toda la pierna. Profundidad pareja en todas las series y los talones clavados: si el talón se levanta, el rango se acortó.' }),
       R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120'),
       R('H', 'Peso muerto rumano', '3x8-10|2|150', '4x6-8|1|180'),
-      R('H', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120', { n: 'Pausa de un segundo arriba con el glúteo apretado y las costillas abajo. Cerrá la cadera sin hiperextender la zona lumbar: el movimiento termina en el glúteo.' }),
       R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
+      R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
+      R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15|0|45|drop', { n: 'Segunda exposición semanal del deltoide lateral: es el músculo que más ensancha el hombro y responde mejor a la frecuencia que al volumen concentrado en un solo día.' }),
       R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: la zancada inversa descarga el cuádriceps y el glúteo y el talón a una pierna trabaja el gemelo sin pausa. Pausa de un segundo abajo, en el estiramiento: ahí está el estímulo.' }),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
@@ -81704,11 +81760,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     foco: 'Sesión de fuerza de torso: dos básicos pesados (press de banca y remo) abren el día cuando el sistema nervioso está fresco, seguidos de un press de hombro y una tracción vertical. Los deltoides y el biset de brazos cierran con volumen controlado. Las series pesadas llevan descansos largos: es lo que te permite sostener la carga de la primera a la última serie.',
     filas: [
       R('F', 'Press de banca plano con barra', '4x5-7|2|180', '5x4-6|1|210'),
-      R('F', 'Remo con barra inclinado', '4x6-8|2|150', '4x5-7|1|180', { ea: 'Remo Pendlay' }),
+      R('F', 'Remo Pecho Apoyado en banco inclinado', '4x6-8|2|150', '4x6-8|1|150', { n: 'Pecho apoyado y torso fijo: acá el dorsal manda y la espalda baja descansa.' }),
       R('H', 'Press militar de pie', '3x6-8|2|150', '3x6-8|1|150'),
-      R('H', 'Jalón al pecho con agarre estrecho', '3x8-12|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
+      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
-      R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Los dos se recuperan mientras el otro trabaja, así que podés cargar fuerte.' }),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos con los dos músculos estirados: el curl con el codo detrás del torso y la extensión con el codo arriba de la cabeza. Antagonistas sin pausa: mientras uno trabaja el otro se recupera.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -81736,7 +81792,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Cruce de cables en polea alta', '4x12-15|1|60', '4x12-15|0|45|drop'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|60', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos para que el deltoide quede redondo desde todos los ángulos.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones frontales con mancuernas'], null, '4x15/15-20/12-15|0|60|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y face pull sin pausa. Cargas livianas y rango completo: acá manda la congestión.' }),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
       R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/40s|1|45', '3x15/50s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -81748,7 +81804,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('H', 'Remo unilateral a una mano', '3x8-12|1|90', '4x8-10|0-1|90'),
       R('A', 'Elevaciones laterales con mancuernas', '4x12-15|1|60', '5x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', null, { soloI: true }),
+      R('B', ['Curl martillo', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', null, { soloI: true }),
       R('T', ['Curl martillo', 'Press francés en banco inclinado', 'Flexiones cerradas para tríceps'], null, '3x10-12/10-12/10-15|0|75|drop', { soloA: true }),
       R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('K', null, null, null, { fin: FIN.zona2 })
@@ -81812,11 +81868,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120', { tp: ['3110'], n: 'Pies altos y apenas abiertos para sumar glúteo: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil.' }),
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '3x8-10 por lado|0-1|90', { tp: ['3110'] }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
       R('A', 'Aducción en máquina', '3x12-15|1|60', '4x15|0|45'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: el step up trabaja cuádriceps y glúteo y el talón a una pierna completa la pantorrilla, sin pausa entre las dos.' }),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
@@ -81829,8 +81885,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Abducción sentado en máquina', '4x15-20|1|45', '4x15-20|0|45|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '3x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15-20|0|45'),
-      R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Elevación de piernas en banco', 'Plancha frontal'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
@@ -81844,7 +81900,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
       R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Bird dog', 'Plancha frontal'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
 
@@ -81858,8 +81914,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true }),
-      R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Dead bug', 'Hollow body'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
 
@@ -81871,8 +81927,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90'),
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('B', ['Extensión tríceps tras nuca a 2 manos', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
+      R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/30s|1|45', '3x15/40s|0|45'),
       R('M', null, null, null, { fin: FIN.push })
     ] };
 
@@ -81884,8 +81940,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Face Pull con cuerda', '3x15|1|45', '4x15-20|0|45'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Curl martillo'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Crunch abdominal', 'Dead bug'], '3x12/8 por lado|1|45', '3x15/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pull })
     ] };
 
@@ -81899,7 +81955,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Curl femoral tumbado', '3x10-12|1|75', '3x10-12|0|60'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
       R('B', ['Abducción de cadera en máquina', 'Aducción en máquina'], '3x15/15|1|45', '4x15-20/15|0|45|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Hollow body', 'Bird dog'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
@@ -81927,8 +81983,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, con cargas livianas y rango completo, para que el deltoide quede redondo desde todos los ángulos.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y W seguidos sin pausa. Acá manda la congestión, no la carga.' }),
-      R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
+      R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
 
@@ -81938,12 +81994,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       R('F', 'Peso muerto rumano con déficit', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta sentir el estiramiento máximo de glúteo e isquios, pausa de 2 segundos y subí sin perder la espalda neutra: ahí termina el rango útil.' }),
       R('H', 'Hip thrust con barra', '4x8-10|1|120', '5x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba, costillas abajo y mentón al pecho. En esta sesión trabajás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Torso inclinado unos 30° para cargar el glúteo estirado y pausa de 1 segundo abajo. Arrancá por la pierna más débil.' }),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '4x10-12|0-1|90', { n: 'Refuerzo de torso: no es el día para buscar el máximo sino estímulo de calidad con poca fatiga. Codos a las costillas y pausa de medio segundo abajo.' }),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, livianos y con rango completo.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: tres estaciones sin pausa para redondear el deltoide. La congestión es el objetivo.' }),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('C', ['Elevación de piernas en banco', 'Plancha frontal'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
@@ -82255,13 +82311,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     M: { 'Pecho': [10, 16], 'Espalda': [14, 22], 'Hombro lateral': [10, 20], 'Hombro posterior': [6, 14], 'Hombro anterior': [0, 8], 'Bíceps': [8, 14], 'Tríceps': [8, 14], 'Cuádriceps': [10, 20], 'Isquios': [8, 14], 'Glúteo': [0, 9], 'Gemelos': [6, 14], 'Core': [6, 15] },
     F: { 'Pecho': [3, 9], 'Espalda': [10, 16], 'Hombro lateral': [8, 14], 'Hombro posterior': [4, 12], 'Hombro anterior': [0, 8], 'Bíceps': [6, 12], 'Tríceps': [6, 12], 'Cuádriceps': [8, 14], 'Isquios': [8, 14], 'Glúteo': [20, 36], 'Gemelos': [6, 12], 'Core': [6, 15] }
   };
-  /* movimientos que no se ofrecen a la base de alumnas como opción por defecto (poco aplicables): se siguen pudiendo elegir a mano */
+  /* movimientos que no se ofrecen a la base de alumnas como opción por defecto (poco aplicables o que no hay en todos los gimnasios, como el curl femoral sentado): se siguen pudiendo elegir a mano */
   /* planes de 3 días: con una sola exposición semanal por grupo y 3 sesiones largas, el piso de los grupos secundarios baja un poco para que cada sesión siga siendo recuperable */
   var RANGOS3 = {
     M: { 'Hombro lateral': [8, 20], 'Bíceps': [6, 14], 'Tríceps': [6, 14], 'Isquios': [6, 14], 'Gemelos': [5, 14], 'Cuádriceps': [9, 20] },
     F: { 'Bíceps': [5, 12], 'Tríceps': [5, 12], 'Gemelos': [5, 12] }
   };
-  var NO_FEM = ['Dominadas lastradas', 'Rueda abdominal', 'Elevación de piernas colgado'];
+  var NO_FEM = ['Dominadas lastradas', 'Rueda abdominal', 'Elevación de piernas colgado', 'Curl femoral sentado'];
 
   /* tempo propio de las variantes de hip thrust (pausa de 2 segundos arriba): se conserva al cambiar de variante */
   var TP = { 'Hip thrust con barra': '2012', 'Hip thrust en máquina': '2012', 'Hip thrust a una pierna': '2012' };
@@ -82433,7 +82489,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       E('F', 'Hack squat', '4x6-8|1|150', { tp: ['3110'], n: 'Espalda apoyada, pies a la altura media de la plataforma y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: usala para cargar fuerte sin pagar con la espalda baja.' }),
       E('H', 'Bulgarian split squat', '3x8-10 por lado|1|90', { tp: ['3110'] }),
       E('A', 'Extensión de cuádriceps', '3x12-15|0|60|drop'),
-      E('A', 'Curl femoral sentado', '4x10-12|0|75'),
+      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
       E('A', 'Elevación de gemelos de pie', '5x10-15|0|60', { tp: ['2211'] }),
       E('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|0|60'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
@@ -82455,11 +82511,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ] };
 
   D.E_F_GLIS = { short: 'PIERNA B', label: 'Pierna B', title: 'Pierna B · Glúteos e Isquiotibiales', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Cadena posterior en elongación', '🔥 Cierre metabólico'],
-    foco: 'Pierna B del split de 3 días, con énfasis en glúteos e isquiotibiales: el peso muerto rumano con déficit abre con la cadena posterior en su máximo estiramiento, el hip thrust con pausa y el curl femoral sentado la cargan en dos longitudes distintas, y la patada cruzada y la abducción cierran con tensión constante. Los gemelos reciben volumen con pausa abajo y una dosis de deltoide lateral cuida la silueta. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
+    foco: 'Pierna B del split de 3 días, con énfasis en glúteos e isquiotibiales: el peso muerto rumano con déficit abre con la cadena posterior en su máximo estiramiento, el hip thrust con pausa y el curl femoral la cargan en dos longitudes distintas, y la patada cruzada y la abducción cierran con tensión constante. Los gemelos reciben volumen con pausa abajo y una dosis de deltoide lateral cuida la silueta. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
     filas: [
       E('F', 'Peso muerto rumano con déficit', '5x6-8|1|150', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta el estiramiento máximo, pausa de 2 segundos y subí sin perder la espalda neutra.' }),
       E('H', 'Hip thrust con barra', '4x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba y costillas abajo. Llegás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
-      E('H', 'Curl femoral sentado', '4x10-12|0|75', { tp: ['3110'] }),
+      E('H', 'Curl femoral tumbado', '4x10-12|0|75', { tp: ['3110'] }),
       E('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|0|60', { tp: ['3011'] }),
       E('A', 'Abducción sentado en máquina', '4x15-20|0|60'),
       E('A', 'Elevación de gemelos de pie', '6x10-15|0|60', { tp: ['2211'] }),
@@ -82477,7 +82533,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       E('H', 'Hiperextensiones en banco a 45°', '3x10-12|0-1|90', { tp: ['3110'] }),
       E('H', 'Step up al cajón', '4x8-10 por lado|1|90', { tp: ['2110'], n: 'Cajón alto: la rodilla por encima de la cadera. Empujá con el talón de la pierna de arriba y no con la de abajo.' }),
       E('A', 'Patada de glúteo en máquina', '3x12-15 por lado|0|60|drop'),
-      E('A', 'Curl femoral sentado', '4x10-12|0|75'),
+      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
       E('B', ['Puente de glúteo con banda', 'Patada de glúteo con banda'], '3x12/12 por lado|0|45|drop'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
       R('M', null, null, null, { fin: FIN.glute })
@@ -82533,7 +82589,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       E('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|0|60|drop', { tp: ['3011'] }),
       E('A', 'Elevaciones laterales con mancuernas', '4x15-20|0|45'),
       E('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x12-15/12-15|0|60|drop'),
-      E('C', 'Hollow body', '3x30s|1|45'),
+      E('C', 'Plancha frontal', '3x30-45s|1|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
@@ -83160,7 +83216,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       var tl = tempoLinea(b.tempo || kb.t); if(tl) tips.push(tl);
     } else if(tv){ tips.push(tv); }
     if(b.subtitulo && /\bS[1-4]\b|RIR|%/.test(b.subtitulo)) tips.push('PROGRESIÓN: ' + b.subtitulo);
-    if(o.primeroFuerza && b.tipo === 'block' && !/RAMP-UP/i.test(tips.join('\n'))) tips.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2).');
+    if(o.primeroFuerza && b.tipo === 'block' && !/RAMP-UP|SERIES DE APROXIMACI/i.test(tips.join('\n'))) tips.push('SERIES DE APROXIMACIÓN: son tu calentamiento específico y van antes de las series efectivas, siempre livianas: la primera con la mitad del peso de trabajo y 8 repeticiones, la segunda con el 70% y 5, la tercera con el 85% y 2 o 3. No se anotan ni cuentan como volumen.');
 
     b.titulo = titulo + ' (' + mins(sets, est, rest) + ' MIN)';
     b.objective = String(b.objective || '').trim() || (kb ? kb.o : '');
@@ -89402,7 +89458,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     var out = [];
     String(b.tips || '').split(/\n+/).forEach(function(l){
       var m = /^(?:[A-F]\d\s*·\s*)?([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 \-\/+()'.]{2,60}):/.exec(l.trim()); if(!m) return;
-      if(/^(?:SET-UP|CUE EFICIENTE|CUIDADO|TEMPO|RAMP-UP|NOTA|TRANSICI|PROGRESI|GESTI|TIP|OJO|ERROR)/.test(m[1])) return;
+      if(/^(?:SET-UP|CUE EFICIENTE|CUIDADO|TEMPO|RAMP-UP|SERIES DE APROXIMACI|POR QU[ÉE] ESTA CANTIDAD|OBJETIVO DE CARGA|NOTA|TRANSICI|PROGRESI|GESTI|TIP|OJO|ERROR)/.test(m[1])) return;
       var ex = (typeof jpExDeNombre === 'function') ? jpExDeNombre(m[1].toLowerCase()) : null; if(ex && out.indexOf(ex) < 0) out.push(ex);
     });
     return out;

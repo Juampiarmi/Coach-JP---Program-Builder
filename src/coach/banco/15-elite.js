@@ -91,13 +91,13 @@
     M: { 'Pecho': [10, 16], 'Espalda': [14, 22], 'Hombro lateral': [10, 20], 'Hombro posterior': [6, 14], 'Hombro anterior': [0, 8], 'Bíceps': [8, 14], 'Tríceps': [8, 14], 'Cuádriceps': [10, 20], 'Isquios': [8, 14], 'Glúteo': [0, 9], 'Gemelos': [6, 14], 'Core': [6, 15] },
     F: { 'Pecho': [3, 9], 'Espalda': [10, 16], 'Hombro lateral': [8, 14], 'Hombro posterior': [4, 12], 'Hombro anterior': [0, 8], 'Bíceps': [6, 12], 'Tríceps': [6, 12], 'Cuádriceps': [8, 14], 'Isquios': [8, 14], 'Glúteo': [20, 36], 'Gemelos': [6, 12], 'Core': [6, 15] }
   };
-  /* movimientos que no se ofrecen a la base de alumnas como opción por defecto (poco aplicables): se siguen pudiendo elegir a mano */
+  /* movimientos que no se ofrecen a la base de alumnas como opción por defecto (poco aplicables o que no hay en todos los gimnasios, como el curl femoral sentado): se siguen pudiendo elegir a mano */
   /* planes de 3 días: con una sola exposición semanal por grupo y 3 sesiones largas, el piso de los grupos secundarios baja un poco para que cada sesión siga siendo recuperable */
   var RANGOS3 = {
     M: { 'Hombro lateral': [8, 20], 'Bíceps': [6, 14], 'Tríceps': [6, 14], 'Isquios': [6, 14], 'Gemelos': [5, 14], 'Cuádriceps': [9, 20] },
     F: { 'Bíceps': [5, 12], 'Tríceps': [5, 12], 'Gemelos': [5, 12] }
   };
-  var NO_FEM = ['Dominadas lastradas', 'Rueda abdominal', 'Elevación de piernas colgado'];
+  var NO_FEM = ['Dominadas lastradas', 'Rueda abdominal', 'Elevación de piernas colgado', 'Curl femoral sentado'];
 
   /* tempo propio de las variantes de hip thrust (pausa de 2 segundos arriba): se conserva al cambiar de variante */
   var TP = { 'Hip thrust con barra': '2012', 'Hip thrust en máquina': '2012', 'Hip thrust a una pierna': '2012' };
@@ -269,7 +269,7 @@
       E('F', 'Hack squat', '4x6-8|1|150', { tp: ['3110'], n: 'Espalda apoyada, pies a la altura media de la plataforma y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: usala para cargar fuerte sin pagar con la espalda baja.' }),
       E('H', 'Bulgarian split squat', '3x8-10 por lado|1|90', { tp: ['3110'] }),
       E('A', 'Extensión de cuádriceps', '3x12-15|0|60|drop'),
-      E('A', 'Curl femoral sentado', '4x10-12|0|75'),
+      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
       E('A', 'Elevación de gemelos de pie', '5x10-15|0|60', { tp: ['2211'] }),
       E('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|0|60'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
@@ -291,11 +291,11 @@
     ] };
 
   D.E_F_GLIS = { short: 'PIERNA B', label: 'Pierna B', title: 'Pierna B · Glúteos e Isquiotibiales', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Cadena posterior en elongación', '🔥 Cierre metabólico'],
-    foco: 'Pierna B del split de 3 días, con énfasis en glúteos e isquiotibiales: el peso muerto rumano con déficit abre con la cadena posterior en su máximo estiramiento, el hip thrust con pausa y el curl femoral sentado la cargan en dos longitudes distintas, y la patada cruzada y la abducción cierran con tensión constante. Los gemelos reciben volumen con pausa abajo y una dosis de deltoide lateral cuida la silueta. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
+    foco: 'Pierna B del split de 3 días, con énfasis en glúteos e isquiotibiales: el peso muerto rumano con déficit abre con la cadena posterior en su máximo estiramiento, el hip thrust con pausa y el curl femoral la cargan en dos longitudes distintas, y la patada cruzada y la abducción cierran con tensión constante. Los gemelos reciben volumen con pausa abajo y una dosis de deltoide lateral cuida la silueta. Cuidá la espalda neutra en cada repetición del rumano: es mejor una repetición menos que una espalda redondeada.',
     filas: [
       E('F', 'Peso muerto rumano con déficit', '5x6-8|1|150', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta el estiramiento máximo, pausa de 2 segundos y subí sin perder la espalda neutra.' }),
       E('H', 'Hip thrust con barra', '4x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba y costillas abajo. Llegás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
-      E('H', 'Curl femoral sentado', '4x10-12|0|75', { tp: ['3110'] }),
+      E('H', 'Curl femoral tumbado', '4x10-12|0|75', { tp: ['3110'] }),
       E('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|0|60', { tp: ['3011'] }),
       E('A', 'Abducción sentado en máquina', '4x15-20|0|60'),
       E('A', 'Elevación de gemelos de pie', '6x10-15|0|60', { tp: ['2211'] }),
@@ -313,7 +313,7 @@
       E('H', 'Hiperextensiones en banco a 45°', '3x10-12|0-1|90', { tp: ['3110'] }),
       E('H', 'Step up al cajón', '4x8-10 por lado|1|90', { tp: ['2110'], n: 'Cajón alto: la rodilla por encima de la cadera. Empujá con el talón de la pierna de arriba y no con la de abajo.' }),
       E('A', 'Patada de glúteo en máquina', '3x12-15 por lado|0|60|drop'),
-      E('A', 'Curl femoral sentado', '4x10-12|0|75'),
+      E('A', 'Curl femoral tumbado', '4x10-12|0|75'),
       E('B', ['Puente de glúteo con banda', 'Patada de glúteo con banda'], '3x12/12 por lado|0|45|drop'),
       E('C', 'Dead bug', '3x8 por lado|1|45'),
       R('M', null, null, null, { fin: FIN.glute })
@@ -369,7 +369,7 @@
       E('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|0|60|drop', { tp: ['3011'] }),
       E('A', 'Elevaciones laterales con mancuernas', '4x15-20|0|45'),
       E('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x12-15/12-15|0|60|drop'),
-      E('C', 'Hollow body', '3x30s|1|45'),
+      E('C', 'Plancha frontal', '3x30-45s|1|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 

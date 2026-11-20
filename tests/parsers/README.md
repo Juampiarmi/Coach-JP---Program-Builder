@@ -14,6 +14,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-copia-plan.js` | Copiar el plan de un alumno a otro con "Duplicar planificación / Clonar plan de otro atleta" (mismo núcleo que "Copiar plan completo"): sin recortar días, 4 semanas de CrossFit, ids propios, ids dañados, ejercicios vetados y deshacer |
 | `cases-cruce.js` | Cambio de alumno en el Builder: estado cruzado entre modalidades, día y semana propios de cada alumno, procesos asíncronos de un alumno que no caen en otro, estructuras de días nulas o rotas |
 | `cases-elite.js` | Bodybuilding avanzado / élite integrado al Builder: criterios de las 6 plantillas (3, 4 y 5 días · hombres y mujeres), editor estructurado del Banco (swap, series / RIR / descanso, agregar y quitar ejercicios), alertas automáticas, volumen semanal por grupo, asignación al alumno y barra de control del Builder |
+| `cases-pedagogia.js` | Bodybuilding 3, 4 y 5 días (hombres y mujeres, intermedio y avanzado): series de aproximación, por qué esa cantidad de series, objetivo de carga y criterios de selección de ejercicios (brazos estirados, remo apoyado, deltoide lateral en frecuencia 2, sin curl femoral sentado para ellas, core variado) |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr

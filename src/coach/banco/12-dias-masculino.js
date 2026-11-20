@@ -17,7 +17,7 @@
       R('H', 'Press militar sentado', '3x8-10|1|120', '4x6-8|1|150'),
       R('A', 'Aperturas en banco inclinado con poleas', '3x12-15|1|75', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|60', '5x15-20|0|45'),
-      R('B', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', null, { soloI: true, n: 'Cierre de tríceps: la primera estación trabaja la cabeza larga estirada y la segunda busca la congestión. Sin pausa entre las dos.' }),
+      R('B', ['Extensión tríceps tras nuca a 2 manos', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', null, { soloI: true, n: 'Cierre de tríceps: la primera estación trabaja la cabeza larga estirada y la segunda busca la congestión. Sin pausa entre las dos.' }),
       R('T', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna', 'Flexiones diamante'], null, '4x10-12/12-15/10-15|0|75|drop', { soloA: true, n: 'Triset de tríceps: tres estaciones seguidas, sin pausa. Las flexiones diamante son para terminar de vaciar el músculo: si no salen, apoyá las rodillas.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.push })
@@ -26,26 +26,27 @@
   D.M_PULL = { short: 'PULL', label: 'Pull', title: 'Pull · Espalda, Deltoide Posterior y Bíceps', wu: 'pull', chips: ['💪 Tracción', '🎯 Dorsal + espalda alta + bíceps', '🔥 Cierre metabólico'],
     foco: 'Día de tracción con un remo pesado como ancla y el dorsal trabajado en vertical y horizontal. El deltoide posterior y el pull-over en polea (con el músculo estirado) refinan el ancho y la densidad de la espalda, y el bíceps cierra con un biset sin pausa. Tirá con los codos, no con las manos, y controlá la bajada de cada repetición: es en la bajada donde la espalda crece.',
     filas: [
-      R('F', 'Remo con barra inclinado', '4x5-7|2|180', '5x4-6|1|210', { n: 'Remo estricto: torso fijo a 45 grados y la barra sube al ombligo. Si la cadera se mueve para ayudar, bajá el peso: este es el ejercicio que construye densidad en la espalda.' }),
+      R('F', 'Remo Pecho Apoyado en banco inclinado', '4x6-8|2|150', '5x5-7|1|180', { n: 'Pecho pegado al banco, codos hacia atrás y escápulas juntas medio segundo arriba. El apoyo te saca la espalda baja de la ecuación: toda la carga la lleva la espalda alta, y por eso podés empujar fuerte sin pagar fatiga de más.' }),
       R('H', 'Jalón al pecho con agarre ancho', '4x8-10|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
       R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Pull-over en polea alta brazos extendidos', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '4x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', null, { soloI: true, n: 'Cierre de bíceps: la primera estación va supinando y la segunda busca el braquial. Sin pausa entre las dos.' }),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Curl martillo'], '3x10-12/10-12|1|75', null, { soloI: true, n: 'Cierre de bíceps: el banco inclinado deja el brazo detrás del torso y trabaja el bíceps estirado, y el martillo busca el braquial. Sin pausa entre las dos.' }),
       R('T', ['Curl de bíceps con barra Z', 'Curl martillo', 'Curl con agarre inverso'], null, '3x8-10/10-12/12-15|0|75|drop', { soloA: true, n: 'Triset de brazos: bíceps, braquial y antebrazo seguidos. Es el bloque que más se siente en la manga de la camiseta.' }),
       R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.pull })
     ] };
 
   D.M_LEGS = { short: 'PIERNA', label: 'Pierna Completa', title: 'Pierna Completa · Cuádriceps, Femorales, Glúteos y Core', wu: 'legs', chips: ['🦵 Pierna', '🎯 Sentadilla + cadena posterior', '🔥 Cierre metabólico'],
-    foco: 'Día de pierna completa: la sentadilla marca la carga de la semana, la prensa suma volumen de cuádriceps sin fatiga lumbar, el peso muerto rumano carga los femorales estirados y el hip thrust cierra el trabajo de glúteo con pausa arriba. Curl femoral, extensión y gemelo aíslan con tensión constante, y el core termina el día. Es el día más duro de la semana y el que más recuperación pide: dormí bien y comé antes de entrenar. Respetá la profundidad asignada: la serie que no la alcanza no cuenta como efectiva.',
+    foco: 'Día de pierna completa: la sentadilla marca la carga de la semana, la prensa suma volumen de cuádriceps sin fatiga lumbar, el peso muerto rumano carga los femorales estirados y la cadena posterior ya queda cubierta sin sumar un tercer ejercicio pesado de cadera. Curl femoral, extensión y gemelo con pausa aíslan con tensión constante, y el core termina el día. Es el día más duro de la semana y el que más recuperación pide: dormí bien y comé antes de entrenar. Respetá la profundidad asignada: la serie que no la alcanza no cuenta como efectiva.',
     filas: [
       R('F', 'Sentadilla con barra', '4x5-7|2|180', '5x4-6|1|240', { n: 'La sentadilla marca el ritmo de toda la pierna. Profundidad pareja en todas las series y los talones clavados: si el talón se levanta, el rango se acortó.' }),
       R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120'),
       R('H', 'Peso muerto rumano', '3x8-10|2|150', '4x6-8|1|180'),
-      R('H', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120', { n: 'Pausa de un segundo arriba con el glúteo apretado y las costillas abajo. Cerrá la cadera sin hiperextender la zona lumbar: el movimiento termina en el glúteo.' }),
       R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
+      R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
+      R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15|0|45|drop', { n: 'Segunda exposición semanal del deltoide lateral: es el músculo que más ensancha el hombro y responde mejor a la frecuencia que al volumen concentrado en un solo día.' }),
       R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: la zancada inversa descarga el cuádriceps y el glúteo y el talón a una pierna trabaja el gemelo sin pausa. Pausa de un segundo abajo, en el estiramiento: ahí está el estímulo.' }),
       R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
@@ -55,11 +56,11 @@
     foco: 'Sesión de fuerza de torso: dos básicos pesados (press de banca y remo) abren el día cuando el sistema nervioso está fresco, seguidos de un press de hombro y una tracción vertical. Los deltoides y el biset de brazos cierran con volumen controlado. Las series pesadas llevan descansos largos: es lo que te permite sostener la carga de la primera a la última serie.',
     filas: [
       R('F', 'Press de banca plano con barra', '4x5-7|2|180', '5x4-6|1|210'),
-      R('F', 'Remo con barra inclinado', '4x6-8|2|150', '4x5-7|1|180', { ea: 'Remo Pendlay' }),
+      R('F', 'Remo Pecho Apoyado en banco inclinado', '4x6-8|2|150', '4x6-8|1|150', { n: 'Pecho apoyado y torso fijo: acá el dorsal manda y la espalda baja descansa.' }),
       R('H', 'Press militar de pie', '3x6-8|2|150', '3x6-8|1|150'),
-      R('H', 'Jalón al pecho con agarre estrecho', '3x8-12|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
+      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
-      R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Los dos se recuperan mientras el otro trabaja, así que podés cargar fuerte.' }),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|drop', { n: 'Biset de brazos con los dos músculos estirados: el curl con el codo detrás del torso y la extensión con el codo arriba de la cabeza. Antagonistas sin pausa: mientras uno trabaja el otro se recupera.' }),
       R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -87,7 +88,7 @@
       R('A', 'Cruce de cables en polea alta', '4x12-15|1|60', '4x12-15|0|45|drop'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|60', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos para que el deltoide quede redondo desde todos los ángulos.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones frontales con mancuernas'], null, '4x15/15-20/12-15|0|60|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y face pull sin pausa. Cargas livianas y rango completo: acá manda la congestión.' }),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop'),
       R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/40s|1|45', '3x15/50s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -99,7 +100,7 @@
       R('H', 'Remo unilateral a una mano', '3x8-12|1|90', '4x8-10|0-1|90'),
       R('A', 'Elevaciones laterales con mancuernas', '4x12-15|1|60', '5x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', null, { soloI: true }),
+      R('B', ['Curl martillo', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', null, { soloI: true }),
       R('T', ['Curl martillo', 'Press francés en banco inclinado', 'Flexiones cerradas para tríceps'], null, '3x10-12/10-12/10-15|0|75|drop', { soloA: true }),
       R('C', ['Elevación de piernas colgado', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
       R('K', null, null, null, { fin: FIN.zona2 })

@@ -47,6 +47,7 @@
 <script src="cases-cruce.js"></script>
 <script src="cases-metabolicos.js"></script>
 <script src="cases-elite.js"></script>
+<script src="cases-pedagogia.js"></script>
 <script src="cases-copia-plan.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
@@ -93,6 +94,7 @@
     alumnoPautas: { run: function(i){ return alumnoPautas(i); }, valor: function(r){ return r; } },
     bancoGluteos: { run: function(){ return auditarGluteos(); }, valor: function(r){ return r; } },
     copiaPlan:    { run: function(i){ return copiaPlanCaso(i); }, valor: function(r){ return r; } },
+    pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -434,6 +436,65 @@
       try{ win.document.getElementById('dupLog').innerHTML = ''; }catch(e){}
     }
   }
+  /* ---------- Bodybuilding 3, 4 y 5 días (hombres y mujeres, intermedio y avanzado): pautas pedagógicas y criterios de evidencia ---------- */
+  function pedagogiaCaso(c){
+    var S = getS(), PB = win.__jpPB, P = [], reg = (S.banco || []).filter(function(r){ return /^bkstd_jp26_[mf]\d_[ia]$/.test(r.id || ''); });
+    function bloquesTrabajo(r){ var o = []; (r.dias || []).forEach(function(d, k){ (d.bloques || []).forEach(function(b){ if(b && b.sportsPizarra && b.modalidad !== 'calentamiento' && b.modalidad !== 'metcon') o.push({ d: k, b: b }); }); }); return o; }
+    function titulo(r, k){ return r.id + ' día ' + (k + 1); }
+    if(reg.length !== 12) P.push('esperaba 12 plantillas Bodybuilding y hay ' + reg.length);
+    if(c.caso === 'pautas'){
+      reg.forEach(function(r){
+        bloquesTrabajo(r).forEach(function(x){
+          var b = x.b, tips = String(b.tips || ''), items = (b.items || []).join('\n'), multi = /^A2\./m.test(items), rol = /^Fuerza principal/.test(b.titulo) ? 'F' : (/^Accesorios/.test(b.titulo) ? 'A' : (/^Core/.test(b.titulo) ? 'C' : (/Biset|Triset/.test(b.titulo) ? 'B' : 'H'))), tag = titulo(r, x.d) + ' · ' + String(b.titulo).slice(0, 48);
+          var sets = parseInt((/^(\d+)x/m.exec(items) || [])[1], 10);
+          ['POR QUÉ ESTA CANTIDAD DE SERIES:', 'OBJETIVO DE CARGA:'].forEach(function(l){ if(tips.indexOf(l) < 0) P.push(tag + ': falta «' + l + '»'); });
+          var apro = /SERIES DE APROXIMACIÓN: ([^\n]*)/.exec(tips);
+          if(!multi && (rol === 'F' || rol === 'H' || rol === 'A')){
+            if(!apro) P.push(tag + ': falta «SERIES DE APROXIMACIÓN:»');
+            else if(rol !== 'A' && (!/ANTES de las series efectivas/.test(apro[1]) || !/No se anotan ni cuentan como volumen/.test(apro[1]))) P.push(tag + ': la aproximación no aclara que va antes y que no cuenta');
+            else if(apro[1].indexOf('Las series efectivas son solo las ' + sets + ' series') < 0) P.push(tag + ': la aproximación no nombra las ' + sets + ' series efectivas del bloque');
+          }
+          if(multi && apro) P.push(tag + ': un biset no lleva series de aproximación');
+          var pq = /POR QUÉ ESTA CANTIDAD DE SERIES: ([^\n]*)/.exec(tips);
+          if(pq && pq[1].indexOf(String(sets)) !== 0) P.push(tag + ': el porqué de las series no arranca con la cantidad real (' + sets + ')');
+          if((b.items || []).some(function(l){ return /SERIES DE APROXIMACI|OBJETIVO DE CARGA|POR QU[ÉE] ESTA CANTIDAD/.test(l); })) P.push(tag + ': una pauta quedó dentro de los ejercicios');
+        });
+      });
+    } else if(c.caso === 'carga'){
+      /* el objetivo de carga usa el rango y el RIR reales del bloque, en palabras */
+      var ej = PB.textoBloque(1, { rol: 'H', ej: ['Press inclinado con mancuernas'], i: '3x8-10|0-1|90', a: '3x8-10|0-1|90' }, 'avanzado', false).txt;
+      var carga = /OBJETIVO DE CARGA: ([^\n]*)/.exec(ej)[1], apro = /SERIES DE APROXIMACIÓN: ([^\n]*)/.exec(ej)[1];
+      return { rango: carga.indexOf('entre 8 y 10 repeticiones') >= 0, rir: carga.indexOf('una repetición en reserva como mucho') >= 0, techo: carga.indexOf('(10)') >= 0, sube: carga.indexOf('13 repeticiones o más') >= 0, baja: carga.indexOf('no llegás a 8') >= 0,
+        aproxSeries: apro.indexOf('60%') >= 0 && apro.indexOf('80%') >= 0, efectivas: apro.indexOf('las 3 series de 8 a 10 repeticiones') >= 0, sinDosis: !/\d+x\d+/.test(ej.split('[COACHING TIPS & ESTRATEGIA]')[1] || '') };
+    } else if(c.caso === 'mujeres'){
+      reg.filter(function(r){ return r.genero === 'f'; }).forEach(function(r){
+        var txt = JSON.stringify(r.dias || []);
+        if(/curl femoral sentado|seated leg curl/i.test(txt)) P.push(r.id + ': tiene curl femoral sentado (no hay máquina en todos los gimnasios)');
+        var conPL = (r.dias || []).filter(function(d){ return /plancha lateral/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(conPL > 1) P.push(r.id + ': la plancha lateral está en ' + conPL + ' días (máximo 1)');
+        var nucleos = {}; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b.modalidad === 'core') nucleos[b.titulo] = (nucleos[b.titulo] || 0) + 1; }); });
+        Object.keys(nucleos).forEach(function(k){ if(nucleos[k] > 1) P.push(r.id + ': el mismo bloque de core «' + k + '» se repite ' + nucleos[k] + ' veces'); });
+        if(!/Curl de bíceps en banco inclinado/.test(txt) || !/Extensión tríceps tras nuca/.test(txt)) P.push(r.id + ': los brazos no trabajan estirados (curl inclinado y extensión sobre la cabeza)');
+      });
+      var alt = win.__jpPB.EST.alternativas('Curl femoral tumbado', 'f'), altM = win.__jpPB.EST.alternativas('Curl femoral tumbado', 'm');
+      if(alt.indexOf('Curl femoral sentado') >= 0) P.push('el swap ofrece el curl femoral sentado a las alumnas');
+      if(altM.indexOf('Curl femoral sentado') < 0) P.push('el swap no ofrece el curl femoral sentado a los alumnos');
+    } else if(c.caso === 'hombres'){
+      reg.filter(function(r){ return r.genero === 'm'; }).forEach(function(r){
+        var txt = JSON.stringify(r.dias || []);
+        if(!/Curl de bíceps en banco inclinado/.test(txt) || !/Extensión tríceps tras nuca/.test(txt)) P.push(r.id + ': los brazos no trabajan estirados');
+        if(!/Remo Pecho Apoyado/.test(txt)) P.push(r.id + ': sin remo con el pecho apoyado');
+        if(/Remo con barra inclinado|Remo Pendlay/.test(txt)) P.push(r.id + ': usa un remo libre con barra como ejercicio de la plantilla');
+        var lat = (r.dias || []).filter(function(d){ return /Elevaciones laterales|Elevación lateral/.test(JSON.stringify(d.bloques || [])); }).length;
+        if(lat < 2) P.push(r.id + ': deltoide lateral en ' + lat + ' día(s) (mínimo 2)');
+        var post = (r.dias || []).filter(function(d){ return /Pájaro|Face Pull|posterior/i.test(JSON.stringify(d.bloques || [])); }).length;
+        if(post < 1) P.push(r.id + ': sin deltoide posterior');
+        /* hasta 1 patrón axial pesado por día en el avanzado ya lo vigila elite.bb.01; en el intermedio no se encadenan 3 ejercicios pesados de cadera */
+        (r.dias || []).forEach(function(d, k){ var tx = JSON.stringify(d.bloques || []), n = (/Sentadilla con barra/.test(tx) ? 1 : 0) + (/Peso muerto rumano\b(?! con mancuernas)/.test(tx.replace(/Peso muerto rumano a una pierna/g, '')) ? 1 : 0) + (/Hip thrust con barra/.test(tx) ? 1 : 0); if(n >= 3) P.push(titulo(r, k) + ': sentadilla, rumano y hip thrust en el mismo día'); });
+      });
+    } else throw new Error('caso desconocido: ' + c.caso);
+    return P;
+  }
   /* ---------- Bodybuilding avanzado / élite: criterios de las 6 plantillas y editor estructurado del Banco ---------- */
   function eliteTpl(id){ var t = (win.__jpPB.LISTA || []).filter(function(x){ return x.id === id; })[0]; if(!t) throw new Error('no existe ' + id); return t; }
   function eliteDias(id){ return win.__jpPB.construirDias(eliteTpl(id)); }
@@ -500,7 +561,7 @@
       dias = eliteDias('jp26_m4_a'); d = dias[3]; b = bloqueCon(d, 'Peso muerto rumano'); var id0 = b.id, obj0 = b.objective;
       EST.cambiarEjercicio(d, b, 0, 'Peso muerto rumano con déficit', 'avanzado');
       m = EST.parsearBloque(b);
-      return { id: b.id === id0, titulo: /Peso muerto rumano con déficit/.test(b.titulo), nombre: m.ex[0].nombre, hibrido: /\(.+\)$/.test(m.ex[0].etiqueta), serie: m.ex[0].sets + 'x' + m.ex[0].reps, rir: m.ex[0].rir, objetivoNuevo: b.objective !== obj0 && !!b.objective, ramp: /RAMP-UP/.test(b.tips), minutos: /\(\d+ MIN\)$/.test(b.titulo) };
+      return { id: b.id === id0, titulo: /Peso muerto rumano con déficit/.test(b.titulo), nombre: m.ex[0].nombre, hibrido: /\(.+\)$/.test(m.ex[0].etiqueta), serie: m.ex[0].sets + 'x' + m.ex[0].reps, rir: m.ex[0].rir, objetivoNuevo: b.objective !== obj0 && !!b.objective, ramp: /SERIES DE APROXIMACIÓN/.test(b.tips), minutos: /\(\d+ MIN\)$/.test(b.titulo) };
     }
     if(c.caso === 'dosis'){
       dias = eliteDias('jp26_m4_a'); d = dias[0]; b = bloqueCon(d, 'Press de banca plano con barra'); var tips0 = b.tips, obj1 = b.objective;

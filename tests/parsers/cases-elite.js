@@ -16,7 +16,7 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
 
   { id: 'elite.ed.01', area: 'Builder · editor estructurado', fn: 'eliteEd', input: { caso: 'swap' },
     expect: { id: true, titulo: true, nombre: 'Peso muerto rumano con déficit', hibrido: true, serie: '4x6-8', rir: '1', objetivoNuevo: true, ramp: true, minutos: true }, modo: 'subset',
-    nota: 'Cambiar el ejercicio de un bloque con el desplegable regenera título, objetivo, pautas y tempo del ejercicio nuevo, conserva el id del bloque y la dosis (4x6-8, RIR 1) y mantiene el ramp-up del primer ejercicio de fuerza' },
+    nota: 'Cambiar el ejercicio de un bloque con el desplegable regenera título, objetivo, pautas y tempo del ejercicio nuevo, conserva el id del bloque y la dosis (4x6-8, RIR 1) y mantiene las series de aproximación del primer ejercicio de fuerza' },
   { id: 'elite.ed.02', area: 'Builder · editor estructurado', fn: 'eliteEd', input: { caso: 'dosis' },
     expect: { items: ['5x4-6 | Tempo 3010 | RIR 0', 'Rest 210s'], rest: 210, titulo: true, pautasIntactas: true, nombre: 'Press de banca plano con barra' }, modo: 'subset',
     nota: 'Editar series, repeticiones, RIR y descanso reescribe las líneas, recalcula los minutos del título (5 series con 210 s = 23 min) y no toca el objetivo ni las pautas' },

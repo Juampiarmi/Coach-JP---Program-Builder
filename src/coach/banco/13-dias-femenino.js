@@ -33,11 +33,11 @@
       R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120', { tp: ['3110'], n: 'Pies altos y apenas abiertos para sumar glúteo: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil.' }),
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '3x8-10 por lado|0-1|90', { tp: ['3110'] }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
       R('A', 'Aducción en máquina', '3x12-15|1|60', '4x15|0|45'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: el step up trabaja cuádriceps y glúteo y el talón a una pierna completa la pantorrilla, sin pausa entre las dos.' }),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
@@ -50,8 +50,8 @@
       R('A', 'Abducción sentado en máquina', '4x15-20|1|45', '4x15-20|0|45|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '3x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15-20|0|45'),
-      R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Elevación de piernas en banco', 'Plancha frontal'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
@@ -65,7 +65,7 @@
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
       R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Bird dog', 'Plancha frontal'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
 
@@ -79,8 +79,8 @@
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true }),
-      R('B', ['Curl martillo', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Dead bug', 'Hollow body'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
 
@@ -92,8 +92,8 @@
       R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90'),
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Press francés con mancuernas plano', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('B', ['Extensión tríceps tras nuca a 2 manos', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
+      R('C', ['Crunch abdominal', 'Plancha frontal'], '3x12/30s|1|45', '3x15/40s|0|45'),
       R('M', null, null, null, { fin: FIN.push })
     ] };
 
@@ -105,8 +105,8 @@
       R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Face Pull con cuerda', '3x15|1|45', '4x15-20|0|45'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Curl martillo'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('C', ['Crunch abdominal', 'Dead bug'], '3x12/8 por lado|1|45', '3x15/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pull })
     ] };
 
@@ -120,7 +120,7 @@
       R('A', 'Curl femoral tumbado', '3x10-12|1|75', '3x10-12|0|60'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
       R('B', ['Abducción de cadera en máquina', 'Aducción en máquina'], '3x15/15|1|45', '4x15-20/15|0|45|drop'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('C', ['Hollow body', 'Bird dog'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
@@ -148,8 +148,8 @@
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, con cargas livianas y rango completo, para que el deltoide quede redondo desde todos los ángulos.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y W seguidos sin pausa. Acá manda la congestión, no la carga.' }),
-      R('B', ['Curl de bíceps con mancuernas', 'Press francés con mancuernas plano'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
+      R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
 
@@ -159,12 +159,12 @@
       R('F', 'Peso muerto rumano con déficit', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['3210'], n: 'Parada sobre un disco de 3 a 5 cm: la cadera se va hacia atrás, las rodillas apenas flexionadas y la barra pegada a las piernas. Bajá hasta sentir el estiramiento máximo de glúteo e isquios, pausa de 2 segundos y subí sin perder la espalda neutra: ahí termina el rango útil.' }),
       R('H', 'Hip thrust con barra', '4x8-10|1|120', '5x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba, costillas abajo y mentón al pecho. En esta sesión trabajás con la cadena posterior ya activada por el rumano: ajustá la carga si el glúteo llega cansado.' }),
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Torso inclinado unos 30° para cargar el glúteo estirado y pausa de 1 segundo abajo. Arrancá por la pierna más débil.' }),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '4x10-12|0-1|90', { n: 'Refuerzo de torso: no es el día para buscar el máximo sino estímulo de calidad con poca fatiga. Codos a las costillas y pausa de medio segundo abajo.' }),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, livianos y con rango completo.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: tres estaciones sin pausa para redondear el deltoide. La congestión es el objetivo.' }),
-      R('C', ['Elevación de piernas en banco', 'Plancha lateral'], '3x10/30s|1|45', '3x12/40s|0|45'),
+      R('C', ['Elevación de piernas en banco', 'Plancha frontal'], '3x10/30s|1|45', '3x12/40s|0|45'),
       R('M', null, null, null, { fin: FIN.gluteB })
     ] };
 
