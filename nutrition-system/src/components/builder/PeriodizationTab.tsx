@@ -4,6 +4,8 @@ import { BatteryCharging, Flame, Moon, PauseCircle } from 'lucide-react';
 import { computeTelemetry, fmt0, fmt1, RANGES, signed } from '@/lib/bioenergetics';
 import { CITES } from '@/lib/evidence';
 import type { DayMode, Macros } from '@/lib/types';
+import { planLabel } from '@/lib/planBank';
+import { precalc } from '@/lib/precalc';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, Label, Panel, Readout, Segmented, Slider, Toggle } from '../hud/primitives';
 
@@ -40,7 +42,7 @@ function DayColumn({ day }: { day: DayMode }) {
   const pct = (kcal / tdee - 1) * 100;
 
   return (
-    <Panel
+    <Panel block="macros"
       title={isOn ? 'DÍA DE ENTRENO (ON) · MÁS CARBOHIDRATOS' : 'DÍA DE DESCANSO (OFF) · MENOS CARBOS, MÁS GRASAS'}
       right={isOn ? <Flame className="h-4 w-4 text-fire" /> : <Moon className="h-4 w-4 text-cyan-hud" />}
     >
@@ -91,7 +93,8 @@ export function PeriodizationTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="PASO 1 · MACROS DE ENTRENO Y DESCANSO">
+      <PrecalcStrip />
+      <Panel block="macros" title="PASO 1 · MACROS DE ENTRENO Y DESCANSO">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-line bg-carbon p-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -122,7 +125,7 @@ export function PeriodizationTab() {
         <DayColumn day="off" />
       </div>
 
-      <Panel title="BALANCE SEMANAL · PROYECCIÓN">
+      <Panel block="macros" title="BALANCE SEMANAL · PROYECCIÓN">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Readout label="Ingesta media" value={fmt0(t.kcalWeekly)} unit="kcal/d" />
           <Readout label="TDEE medio" value={fmt0(t.tdeeWeekly)} unit="kcal/d" />
@@ -142,7 +145,7 @@ export function PeriodizationTab() {
       </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="REFEED" tone="fire" right={<BatteryCharging className="h-4 w-4 text-fire" />}>
+        <Panel block="macros" title="REFEED" tone="fire" right={<BatteryCharging className="h-4 w-4 text-fire" />}>
           <p className="mb-4 text-[13px] leading-relaxed text-steel">
             Carga estratégica de carbohidratos (48 a 72 hs) para resensibilizar leptina y rellenar glucógeno sin acumular grasa.
           </p>
@@ -170,7 +173,7 @@ export function PeriodizationTab() {
           </div>
         </Panel>
 
-        <Panel title="DIET BREAK" tone="fire" right={<PauseCircle className="h-4 w-4 text-fire" />}>
+        <Panel block="macros" title="DIET BREAK" tone="fire" right={<PauseCircle className="h-4 w-4 text-fire" />}>
           <p className="mb-4 text-[13px] leading-relaxed text-steel">
             Pausa en mantenimiento (7 a 14 días) para prevenir la ralentización metabólica tras un déficit prolongado (estudio MATADOR).
           </p>
@@ -184,6 +187,33 @@ export function PeriodizationTab() {
           </div>
         </Panel>
       </div>
+    </div>
+  );
+}
+
+/** Macros precalculados desde el perfil (sexo, peso, deporte y objetivo): un toque los copia a los deslizadores. */
+function PrecalcStrip() {
+  const plan = usePlanStore((s) => s.plan);
+  const applyPrecalcMacros = usePlanStore((s) => s.applyPrecalcMacros);
+  const pc = precalc(plan);
+  const same = (['on', 'off'] as const).every((d) => (['p', 'c', 'f'] as const).every((k) => Math.abs(plan.periodization[d][k] - pc.gkg[d][k]) < 0.01));
+  const g = (d: 'on' | 'off') => `P ${fmt1(pc.gkg[d].p)} · C ${fmt1(pc.gkg[d].c)} · G ${fmt1(pc.gkg[d].f)} g/kg (${fmt0(pc.kcal[d])} kcal)`;
+  return (
+    <div data-precalc-strip className="flex flex-wrap items-center gap-3 rounded-xl border border-[#A78BFA]/30 bg-[#A78BFA]/[0.06] px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-[9.5px] font-bold tracking-[0.16em] text-[#A78BFA]">PRECALCULADO DESDE EL PERFIL · {planLabel(pc.sel).toUpperCase()}</div>
+        <div className="tnum mt-1 text-[12.5px] text-steel">
+          <b className="text-fire">Entreno</b> {g('on')} · <b className="text-cyan-hud">Descanso</b> {g('off')}
+        </div>
+      </div>
+      <button
+        type="button"
+        disabled={same}
+        onClick={applyPrecalcMacros}
+        className="rounded-lg border border-[#A78BFA]/50 px-3 py-2 text-[12.5px] font-semibold text-[#C4B5FD] hover:bg-[#A78BFA]/10 disabled:cursor-default disabled:border-line disabled:text-mute"
+      >
+        {same ? '✓ En uso' : 'Usar estos macros'}
+      </button>
     </div>
   );
 }

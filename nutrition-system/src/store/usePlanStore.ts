@@ -8,7 +8,10 @@ import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
-import { applyBankPlan, goalOf, type BankMainTimes, type BankSelection } from '@/lib/planBank';
+import { fixedFromAnamnesis } from '@/lib/agenda';
+import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
+import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
+import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
 import { friendlyMealName, modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -27,6 +30,7 @@ import type {
   Phase,
   Profile,
   SkinfoldSite,
+  Sport,
   Supplement,
 } from '@/lib/types';
 import { MAX_OPTIONS } from '@/lib/types';
@@ -38,6 +42,8 @@ interface PlanState {
   plan: AthletePlan;
   /** Base local de atletas (snapshots). El activo vive en `plan` y pisa su entrada al listar. */
   roster: Record<string, AthletePlan>;
+  /** Plantillas propias del coach (planes guardados desde Comidas para reutilizar con otros atletas). */
+  templates: PlanTemplate[];
   ai: AiSettings;
   builderTab: BuilderTab;
   deployTab: DeployTab;
@@ -65,6 +71,17 @@ interface PlanState {
   setSkinfold: (site: SkinfoldSite, mm: number) => void;
   setMeasuredFfm: (kg: number) => void;
   applyPhasePreset: (phase: Phase) => void;
+  /** Deporte principal: fija la disciplina y el gasto de la sesión según el peso y la duración. */
+  setSport: (sport: Sport) => void;
+  /** Objetivo del banco (definición, recomposición, hipertrofia, rendimiento): fase + objetivo de la anamnesis. */
+  setObjective: (goal: BankGoal) => void;
+  /** Usa los macros g/kg del plan sugerido por el precálculo (entreno y descanso). */
+  applyPrecalcMacros: () => void;
+  /** Guarda el plan del atleta activo como plantilla propia. */
+  saveTemplate: (name: string) => void;
+  deleteTemplate: (id: string) => void;
+  /** Aplica un plan ajeno (plantilla u otro alumno) adaptado al atleta activo: porciones, topes, horarios y macros. */
+  applyAdapted: (src: PlanSource) => void;
   setMacro: (day: DayMode, key: keyof Macros, value: number) => void;
   setPeriodization: (p: Partial<Periodization>) => void;
   setCoachNote: (s: string) => void;
@@ -177,6 +194,7 @@ export const usePlanStore = create<PlanState>()(
     (set, get) => ({
       plan: seedPlan(),
       roster: {},
+      templates: [],
       ai: { provider: 'claude', model: 'claude-opus-5', apiKey: '' },
       builderTab: 'profile',
       deployTab: 'preview',
@@ -218,6 +236,9 @@ export const usePlanStore = create<PlanState>()(
             const band = BODY_FAT_BANDS[p.sex].find((b) => b.id === profile.bodyFatBand);
             if (band) profile.bodyFatPct = band.pct;
           }
+          // Con deporte elegido, el gasto de la sesión sigue al peso y a la duración (precálculo en vivo).
+          const sp = sportOf(profile.sport);
+          if (sp && p.sessionKcal === undefined && (p.weightKg !== undefined || p.sessionMinutes !== undefined)) profile.sessionKcal = sessionKcalFor(sp, profile.weightKg, profile.sessionMinutes);
           let supplements = s.plan.supplements;
           if (p.weightKg && p.weightKg !== s.plan.profile.weightKg) {
             const fresh = Object.fromEntries(aisGroupA(p.weightKg).map((x) => [x.id, x]));
@@ -257,6 +278,25 @@ export const usePlanStore = create<PlanState>()(
           return { plan: touch({ ...s.plan, profile: { ...pr, measuredFfmKg, bodyFatPct } }) };
         }),
 
+      setSport: (sport) =>
+        set((s) => {
+          const def = sportOf(sport)!;
+          const pr = s.plan.profile;
+          return { plan: touch({ ...s.plan, profile: { ...pr, sport, discipline: def.discipline, sessionKcal: sessionKcalFor(def, pr.weightKg, pr.sessionMinutes) } }) };
+        }),
+      setObjective: (goal) =>
+        set((s) => {
+          const g = BANK_GOALS.find((x) => x.id === goal)!;
+          return { plan: touch({ ...s.plan, profile: { ...s.plan.profile, phase: g.phase }, anamnesis: { ...sanitizeAnamnesis(s.plan.anamnesis), goal: g.anamnesisGoal } }) };
+        }),
+      applyPrecalcMacros: () =>
+        set((s) => {
+          const pc = precalc(s.plan);
+          return { plan: touch({ ...s.plan, profile: { ...s.plan.profile, phase: pc.goal.phase }, periodization: { ...s.plan.periodization, on: pc.gkg.on, off: pc.gkg.off } }) };
+        }),
+      saveTemplate: (name) => set((s) => ({ templates: [templateFromPlan(s.plan, name), ...s.templates] })),
+      deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((t) => t.id !== id) })),
+      applyAdapted: (src) => set((s) => ({ plan: touch(adaptPlan(s.plan, src)), builderTab: 'meals' })),
       applyPhasePreset: (phase) =>
         set((s) => ({
           plan: touch({
@@ -405,13 +445,7 @@ export const usePlanStore = create<PlanState>()(
         };
         const base = { ...s.plan, anamnesis };
         // Horarios: agenda argentina según el entreno del alumno; si el coach fijó desayuno / almuerzo / cena, esos.
-        const fixed: BankMainTimes = {};
-        if (!anamnesis.mealTimesAuto)
-          (['breakfast', 'lunch', 'dinner'] as const).forEach((k) => {
-            const m = /^(\d{2}):(\d{2})$/.exec(anamnesis.mealTimes?.[k] ?? '');
-            if (m) fixed[k] = +m[1] * 60 + +m[2];
-          });
-        const next = applyBankPlan(base, sel, fixed);
+        const next = applyBankPlan(base, sel, fixedFromAnamnesis(anamnesis));
         set({ plan: touch(next), builderTab: 'meals' });
       },
       applyAnamnesisToMeals: () => {
@@ -539,6 +573,9 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
+        merged.templates = Array.isArray(saved.templates)
+          ? saved.templates.filter((t) => t && typeof t.id === 'string' && Array.isArray(t.meals) && t.periodization?.on && t.periodization?.off && t.weightKg > 0)
+          : [];
         merged.exports = saved.exports && typeof saved.exports === 'object' ? saved.exports : {};
         // El panel de atletas sólo existe con la nube configurada.
         if (merged.builderTab === 'athletes' && !cloudConfigured) merged.builderTab = 'profile';
@@ -553,6 +590,7 @@ export const usePlanStore = create<PlanState>()(
       partialize: (s) => ({
         plan: s.plan,
         roster: s.roster,
+        templates: s.templates,
         ai: s.ai,
         builderTab: s.builderTab,
         deployTab: s.deployTab,

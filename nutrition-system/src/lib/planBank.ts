@@ -1,7 +1,8 @@
+import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
 import { CITES } from './evidence';
 import { FOOD_BY_ID } from './foods';
 import { comboSteps, type Combo, type ComboPart } from './menuOptions';
-import { portionCap, type CapCtx } from './portionCaps';
+import { isLiquid, mealVolumeCap, portionCap, solidGrams, type CapCtx } from './portionCaps';
 import { itemFromFood, uid } from './seed';
 import type { FoodItem, Macros, Meal, MealDay, MealRole, Phase, Sex } from './types';
 
@@ -309,78 +310,33 @@ const SLOT: Record<SlotKind, SlotDef> = {
   extra: { kind: 'extra', name: 'Colación de tarde', role: 'snack', time: '16:00', w: [0.4, 0.5, 0.4] },
 };
 
-/** Cantidad de comidas del día: 4 (mujer, escalón base), 5, o 6 sólo el día de entreno del hombre en escalón denso. */
-function mealCount(sex: Sex, tierB: boolean, day: MealDay) {
+/**
+ * Cantidad de comidas del día: 4 (mujer, escalón base), 5, o 6 sólo el día de entreno del hombre en escalón denso.
+ * Entreno al mediodía (11:30-14:00): 5 tomas limpias (media mañana antes, almuerzo después, merienda y cena).
+ */
+export function mealCount(sex: Sex, tierB: boolean, day: MealDay, tr: BankTraining = DEFAULT_TRAINING) {
   if (sex === 'F') return tierB ? 5 : 4;
-  return tierB && day === 'on' ? 6 : 5;
+  return tierB && day === 'on' && !isMidday(tr) ? 6 : 5;
 }
 
-/** Franja de entreno del alumno (minutos desde las 00:00). */
-export interface BankTraining {
-  start: number;
-  end: number;
-}
-export const DEFAULT_TRAINING: BankTraining = { start: 18 * 60, end: 19 * 60 };
-export function trainingOf(p: { trainingTime?: string; sessionMinutes?: number }): BankTraining {
-  const [h, m] = (p.trainingTime || '18:00').split(':').map(Number);
-  const start = (h || 0) * 60 + (m || 0);
-  return { start, end: start + Math.min(300, Math.max(30, Number(p.sessionMinutes) || 60)) };
-}
-/** Horarios de desayuno / almuerzo / cena fijados por el coach en la anamnesis (minutos). */
-export type BankMainTimes = Partial<Record<'breakfast' | 'lunch' | 'dinner', number>>;
-
-const hhmm = (min: number) => {
-  const t = ((Math.round(min) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
-};
-const r15 = (x: number) => Math.round(x / 15) * 15;
-/** Separación mínima entre dos comidas (min). */
-const GAP = 90;
+export type BankTraining = Training;
+export type BankMainTimes = MainTimes;
+export { DEFAULT_TRAINING, trainingOf };
 
 interface Placed extends SlotDef {
   at: number;
 }
 
 /**
- * Agenda argentina del día: Desayuno · Colación de media mañana · Almuerzo · Merienda · Antes de entrenar · Cena.
- * La cena siempre cierra el día (nunca hay una comida suelta después). Las colaciones se ubican según el entreno:
- * a la mañana, el desayuno pasa a después de entrenar y la colación queda a media mañana; a la tarde-noche, la merienda
- * se refuerza como «antes de entrenar». Ninguna comida cae durante el entreno y entre dos tomas hay al menos 1 h 30.
+ * Agenda argentina del día (agenda.ts): Desayuno · Colación de media mañana · Almuerzo · Merienda · Antes de
+ * entrenar · Cena. La cena siempre cierra el día. A la mañana el desayuno pasa a después de entrenar y la colación
+ * queda a media mañana; a la tarde-noche la merienda se refuerza como «antes de entrenar».
  */
 function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}): Placed[] {
   const on = day === 'on';
+  const a = mainAnchors(on, tr, fixed);
   const at = (kind: SlotKind, t: number, name = SLOT[kind].name): Placed => ({ ...SLOT[kind], name, time: hhmm(t), at: t });
-  // Desayuno: después de entrenar si entrena muy temprano; si no, antes (al menos 1 h 30 antes de entrenar).
-  let B = fixed.breakfast ?? 7 * 60 + 30;
-  let bName = SLOT.breakfast.name;
-  if (on && fixed.breakfast === undefined) {
-    if (tr.start < 8 * 60 + 30) {
-      B = r15(tr.end + 30);
-      bName = 'Desayuno (después de entrenar)';
-    } else if (tr.start - GAP < B) B = Math.max(6 * 60, tr.start - GAP);
-  }
-  // Almuerzo: 13:00; si choca con el entreno, antes (si da) o después de entrenar.
-  let L = fixed.lunch ?? 13 * 60;
-  let lName = SLOT.lunch.name;
-  if (on && fixed.lunch === undefined && L > tr.start - GAP && L < tr.end + 15) {
-    if (tr.start - GAP >= 12 * 60) L = tr.start - GAP;
-    else {
-      L = r15(tr.end + 30);
-      lName = 'Almuerzo (después de entrenar)';
-    }
-  }
-  // Cena: 21:00, o 45 min después de entrenar si termina tarde (como mucho 22:30). Siempre la última comida.
-  let D = fixed.dinner ?? 21 * 60;
-  if (on && fixed.dinner === undefined && tr.end + 60 > D) D = Math.min(22 * 60 + 30, r15(tr.end + 45));
-  const mains = [at('breakfast', B, bName), at('lunch', L, lName), at('dinner', D)];
-
-  const busy = (t: number) => on && t > tr.start - 30 && t < tr.end + 15;
-  const fits = (t: number, taken: Placed[]) => t >= 6 * 60 && t <= D - 120 && !busy(t) && taken.every((x) => Math.abs(x.at - t) >= GAP);
-  const tries: Record<'mid' | 'merienda' | 'pre', [number[], number, number]> = {
-    mid: [[10 * 60 + 30, 11 * 60, 10 * 60, 11 * 60 + 30, 9 * 60 + 30, r15(tr.end + 30)], B, L],
-    merienda: [[17 * 60, 17 * 60 + 30, 16 * 60 + 30, 16 * 60, 15 * 60 + 45, 18 * 60, 18 * 60 + 30, r15(tr.end + 30)], L, D],
-    pre: [[tr.start - 45, tr.start - 60, tr.start - 75], 0, tr.start],
-  };
+  const mains = [at('breakfast', a.B, a.bName), at('lunch', a.L, a.lName), at('dinner', a.D)];
   const evening = on && tr.start >= 15 * 60;
   const n0 = n - 3;
   let order: ('mid' | 'merienda' | 'pre')[] = n0 === 1 ? (evening ? ['pre', 'merienda'] : ['merienda', 'mid']) : n0 === 2 ? (evening ? ['mid', 'pre', 'merienda'] : ['mid', 'merienda']) : evening ? ['mid', 'pre', 'merienda'] : ['mid', 'merienda', 'pre'];
@@ -389,12 +345,20 @@ function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, 
   let left = n0;
   for (const kind of order) {
     if (!left) break;
-    const [ts, lo, hi] = tries[kind];
-    const t = ts.find((x) => x > lo && x < hi && fits(x, taken));
+    const { times, lo, hi } = snackTries(kind, a, tr);
+    const t = times.find((x) => x > lo && x < hi && fits(x, taken.map((p) => p.at), a, tr, on));
     if (t === undefined) continue;
     taken.push(at(kind, t));
     left--;
   }
+  // Carbos alrededor del entreno: la toma de antes suma carbos y baja grasas (digestión liviana); la de después
+  // repone glucógeno. El total del día no cambia, sólo cómo se reparte.
+  const shift = (p: Placed): Placed => {
+    if (!on || p.kind === 'pre') return p;
+    if (/después de entrenar/.test(p.name)) return { ...p, w: [p.w[0], p.w[1] * 1.3, p.w[2] * 0.8] };
+    if (/antes de entrenar/.test(p.name)) return { ...p, w: [p.w[0] * 0.8, p.w[1] * 1.2, p.w[2] * 0.6] };
+    return p;
+  };
   return taken
     .map((p) => {
       if (p.kind === 'pre') {
@@ -408,7 +372,8 @@ function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, 
       }
       return p;
     })
-    .sort((a, b) => a.at - b.at);
+    .map((p) => shift({ ...p, name: p.kind === 'breakfast' ? a.bName : p.kind === 'lunch' ? a.lName : p.name }))
+    .sort((x, y) => x.at - y.at);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -456,10 +421,10 @@ function solve(rec: R, T: Tot, ctx: Ctx): Record<string, number> {
     const cap = portionCap(p.id, ctx);
     // La proteína y el carbo que dan nombre al plato siempre van (al menos su porción mínima real);
     // la grasa y lo marcado con min: 0 (proteína en polvo opcional, nueces) pueden quedar afuera.
-    const lo = p.min ?? (p.r === 'p' || p.r === 'c' ? cap.min : 0);
+    const lo = p.min !== undefined && p.min > 0 ? Math.min(p.min, cap.min) : (p.min ?? (p.r === 'p' || p.r === 'c' ? cap.min : 0));
     return { lo: Math.min(lo, cap.max), hi: Math.min(p.max ?? Infinity, cap.max), capMin: cap.min };
   };
-  rec.parts.forEach((p) => (g[p.id] = p.r === 'x' ? Math.min(p.g ?? 0, portionCap(p.id, ctx).max) : 0));
+  rec.parts.forEach((p) => (g[p.id] = p.r === 'x' ? Math.min(fixedGrams(p, ctx), portionCap(p.id, ctx).max) : 0));
   const macro = (k: 'p' | 'c' | 'f', skip: string) => rec.parts.reduce((a, p) => (p.id === skip ? a : a + (FOOD_BY_ID[p.id][k] * g[p.id]) / 100), 0);
   for (let it = 0; it < 6; it++) {
     for (const k of ['p', 'c', 'f'] as const) {
@@ -475,7 +440,67 @@ function solve(rec: R, T: Tot, ctx: Ctx): Record<string, number> {
       g[part.id] = Math.min(hi, Math.max(lo, v));
     }
   }
+  fitVolume(rec, g, ctx);
   return g;
+}
+
+/** Cantidad fija de un ingrediente: en la mujer, guarniciones de verdura y fruta un 25 % más chicas y leche ≤ 200 ml. */
+function fixedGrams(p: ComboPart, ctx: Ctx) {
+  const g = p.g ?? 0;
+  if (ctx.sex !== 'F') return g;
+  const grp = FOOD_BY_ID[p.id]?.group;
+  if (grp === 'veg' || grp === 'fruit') return Math.max(50, Math.round((g * 0.75) / 5) * 5);
+  if (p.id === 'leche' || p.id === 'leche-deslactosada') return Math.min(g, 200);
+  return g;
+}
+
+/**
+ * Tope de volumen sólido de la toma (MEAL_VOLUME): si el plato quedó grande, achica primero la guarnición de
+ * verdura / fruta (hasta el 60 %), después el carbo y por último la proteína, nunca por debajo de su porción mínima.
+ */
+function fitVolume(rec: R, g: Record<string, number>, ctx: Ctx, cap = mealVolumeCap(ctx.sex, ctx.role)) {
+  const order: { id: string; floor: number }[] = [
+    ...rec.parts.filter((p) => p.r === 'x' && ['veg', 'fruit'].includes(FOOD_BY_ID[p.id]?.group ?? '')).map((p) => ({ id: p.id, floor: Math.round(fixedGrams(p, ctx) * 0.6) })),
+    ...rec.parts.filter((p) => p.r === 'c').map((p) => ({ id: p.id, floor: p.min ?? portionCap(p.id, ctx).min })),
+    ...rec.parts.filter((p) => p.r === 'f').map((p) => ({ id: p.id, floor: 0 })),
+    ...rec.parts.filter((p) => p.r === 'p').map((p) => ({ id: p.id, floor: p.min !== undefined && p.min > 0 ? Math.min(p.min, portionCap(p.id, ctx).min) : (p.min ?? portionCap(p.id, ctx).min) })),
+  ];
+  for (const { id, floor } of order) {
+    const over = solidGrams(g) - cap;
+    if (over <= 0) return;
+    if (isLiquid(id) || !(g[id] > floor)) continue;
+    const st = stepOf(id);
+    const next = Math.max(floor, Math.floor((g[id] - over) / st) * st);
+    g[id] = next < portionCap(id, ctx).min && floor === 0 ? 0 : next;
+  }
+}
+
+/** Guarniciones de verdura / fruta de la opción 1 que se pueden achicar (hasta el 60 %) para hacer lugar a un carbo. */
+const sides = (w: Work, ctx: Ctx) =>
+  w.recipes[0].parts.filter((p) => p.r === 'x' && ['veg', 'fruit'].includes(FOOD_BY_ID[p.id]?.group ?? '')).map((p) => ({ id: p.id, floor: Math.round(fixedGrams(p, ctx) * 0.6) }));
+
+/** Gramos sólidos que todavía entran en la toma (los líquidos no cuentan), contando lo que ceden las guarniciones. */
+function roomFor(w: Work, id: string, ctx: Ctx) {
+  if (isLiquid(id)) return Infinity;
+  const cap = w.vol ? w.vol() : mealVolumeCap(ctx.sex, w.slot.role);
+  const give = sides(w, ctx).filter((s) => s.id !== id).reduce((a, s) => a + Math.max(0, (w.grams[0][s.id] ?? 0) - s.floor), 0);
+  return cap - solidGrams(w.grams[0]) + give;
+}
+
+/** Hace lugar achicando guarniciones de verdura / fruta (poca energía por gramo) antes de agrandar un carbo denso. */
+function makeRoom(w: Work, id: string, need: number, ctx: Ctx) {
+  const cap = w.vol ? w.vol() : mealVolumeCap(ctx.sex, w.slot.role);
+  let over = solidGrams(w.grams[0]) + need - cap;
+  for (const s of sides(w, ctx)) {
+    if (over <= 0) return;
+    if (s.id === id) continue;
+    const cur = w.grams[0][s.id] ?? 0;
+    const cut = Math.min(over, Math.max(0, cur - s.floor));
+    const st = stepOf(s.id);
+    const next = Math.max(s.floor, Math.floor((cur - cut) / st) * st);
+    w.grams[0][s.id] = next;
+    over -= cur - next;
+  }
 }
 
 const toItems = (g: Record<string, number>) =>
@@ -490,6 +515,8 @@ interface Work {
   /** Gramos de cada opción (la 1 es la que cierra el día). */
   grams: Record<string, number>[];
   added: Set<string>;
+  /** Volumen sólido disponible (el postre comparte el de la cena). */
+  vol?: () => number;
 }
 
 /** Ingrediente ajustable de la opción 1 para subir / bajar energía (los fijos y las verduras no se tocan). */
@@ -497,17 +524,17 @@ const adjustable = (w: Work, k: 'p' | 'c' | 'f') => w.recipes[0].parts.filter((p
 
 /** Módulos de densidad por comida: lo que se suma (en este orden) cuando faltan calorías. */
 const MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
-  breakfast: { c: ['naranja'], f: ['nueces'] },
-  mid: { c: ['banana'], f: ['nueces'] },
-  lunch: { c: ['naranja'], f: ['oliva'] },
-  pre: { c: ['banana'], f: [] },
-  merienda: { c: ['manzana'], f: ['nueces'] },
+  breakfast: { c: ['miel', 'naranja'], f: ['nueces'] },
+  mid: { c: ['banana', 'miel'], f: ['nueces'] },
+  lunch: { c: ['naranja'], f: ['oliva', 'palta'] },
+  pre: { c: ['miel', 'banana'], f: [] },
+  merienda: { c: ['dulce-membrillo', 'manzana'], f: ['nueces'] },
   dinner: { c: ['naranja'], f: ['oliva'] },
   dessert: { c: [], f: [] },
   extra: { c: [], f: [] },
 };
 const moduleTitle = (id: string, kind: SlotKind) =>
-  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana' } as Record<string, string>)[id] ?? '';
+  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana', miel: ' + miel', 'dulce-membrillo': ' + dulce de membrillo', palta: ' + palta', isotonica: ' + bebida isotónica para el entreno' } as Record<string, string>)[id] ?? '';
 /** Título con tramos opcionales "[ con proteína|whey]": sólo se nombra lo que el plato lleva de verdad. */
 const titleFor = (title: string, g: Record<string, number>) => title.replace(/\[([^|\]]*)\|([a-z-]+)\]/g, (_, txt: string, id: string) => ((g[id] ?? 0) > 0 ? txt : ''));
 
@@ -530,6 +557,11 @@ function nudge(w: Work, id: string, kcalWanted: number, ctx: Ctx, opts: { allowN
   if (kcalWanted > 0) {
     const want = cur + Math.max(st, Math.round(kcalWanted / kpg / st) * st);
     next = Math.min(cap.max, Math.max(cur === 0 ? cap.min : cur, want));
+    // Tope de volumen de la toma: si no entra, se agranda hasta donde entra (o se busca densidad en otro lado).
+    const room = roomFor(w, id, ctx);
+    if (next - cur > room) next = cur + Math.max(0, Math.floor(room / st) * st);
+    if (next > 0 && next < cap.min) return 0;
+    if (!isLiquid(id) && next > cur) makeRoom(w, id, next - cur, ctx);
   } else {
     const floor = opts.floor ?? cap.min;
     const want = cur - Math.max(st, Math.round(-kcalWanted / kpg / st) * st);
@@ -555,7 +587,7 @@ function dayMacros(ws: Work[]): Tot {
 
 type Move = [Work, string, { allowNew?: boolean; floor?: number; max?: number }];
 /** Módulo de densidad: como mucho 1 unidad por comida (1 fruta de postre, 1 banana, 1 cda de aceite). */
-const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, oliva: 15 };
+const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, oliva: 15, miel: 20, 'dulce-membrillo': 20, palta: 50 };
 
 /**
  * Cierre del día: lleva la opción 1 de cada comida al total de calorías (±2 %) corrigiendo primero el macro más
@@ -565,8 +597,14 @@ const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana:
  * porción mínima real). Lejos de la meta reparte entre todas las comidas; cerca, hace el ajuste fino que mejor cierra.
  */
 function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, mkExtra: () => Work | null) {
-  const up = (k: 'c' | 'f'): Move[] => [
-    ...ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, { allowNew: k === 'f' }])),
+  // Mujer: la energía que falta sale primero de densidad limpia (miel, membrillo, frutos secos, palta, aceite) y
+  // recién después de agrandar el plato. Hombre: primero el plato (dentro de su tope), después los módulos.
+  const up = (k: 'c' | 'f'): Move[] => (ctx.sex === 'F' ? [...mods(k), ...parts(k)] : [...parts(k), ...mods(k)]);
+  const parts = (k: 'c' | 'f'): Move[] => ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, { allowNew: k === 'f' }]));
+  // Carbo líquido para el entreno (isotónica): en la toma pegada al entreno (antes o después), sin volumen sólido.
+  const preTraining = (w: Work) => w.slot.kind === 'pre' || /(antes|después) de entrenar/.test(w.slot.name);
+  const mods = (k: 'c' | 'f'): Move[] => [
+    ...ws.flatMap((w) => (k === 'c' && preTraining(w) ? [[w, 'isotonica', { allowNew: true, max: 500 }] as Move] : [])),
     ...ws.flatMap((w) =>
       MODULES[w.slot.kind][k]
         .filter((id) => !adjustable(w, k).includes(id) && !(k === 'f' && w.recipes[0].parts.some((p) => p.r === 'f' && FOOD_BY_ID[p.id].group === 'fat')))
@@ -618,6 +656,11 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
           const g = Math.round(gap / kpgOf(id) / st) * st || Math.sign(gap) * st;
           const floor = m[2].floor ?? cap.min;
           let next = gap > 0 ? Math.min(cap.max, Math.max(cur === 0 ? cap.min : cur, cur + g)) : Math.max(floor, cur + g);
+          if (gap > 0) {
+            const room = roomFor(w, id, ctx);
+            if (next - cur > room) next = cur + Math.max(0, Math.floor(room / st) * st);
+            if (next > 0 && next < cap.min) continue;
+          }
           if (gap < 0 && next < cap.min && floor === 0) next = 0;
           if (cur === 0 && !m[2].allowNew) continue;
           const err = Math.abs(gap - (next - cur) * kpgOf(id));
@@ -651,8 +694,9 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
 }
 
 /** Lleva una alternativa a las kcal de la opción 1 (dentro de los topes) moviendo sus carbos, grasas y proteína. */
-function fitAlt(rec: R, g: Record<string, number>, kcal: number, slot: SlotDef, ctx: Ctx) {
-  const w: Work = { slot, T: { p: 0, c: 0, f: 0, kcal }, recipes: [rec], grams: [g], added: new Set() };
+function fitAlt(rec: R, g: Record<string, number>, kcal: number, slot: SlotDef, ctx: Ctx, volCap?: number) {
+  const w: Work = { slot, T: { p: 0, c: 0, f: 0, kcal }, recipes: [rec], grams: [g], added: new Set(), vol: volCap === undefined ? undefined : () => volCap };
+  if (volCap !== undefined) fitVolume(rec, g, ctx, volCap);
   for (let guard = 0; guard < 60; guard++) {
     const gap = kcal - totals(toItems(g)).kcal;
     if (Math.abs(gap) <= kcal * 0.05) return;
@@ -685,7 +729,7 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
   const goalId = goalOf(sel.plan).id;
   const base = RECIPES[sel.variant];
   const recipes = Object.fromEntries((Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, base[k])])) as Record<SlotKind, R[]>;
-  const slots = daySlots(mealCount(sex, tierB, day), day, tr, fixed);
+  const slots = daySlots(mealCount(sex, tierB, day, tr), day, tr, fixed);
   const wsum = slots.reduce((a, k) => [a[0] + k.w[0], a[1] + k.w[1], a[2] + k.w[2]], [0, 0, 0]);
   const mkWork = (slot: SlotDef, share?: [number, number, number], only?: R[]): Work => {
     const s = share ?? [slot.w[0] / wsum[0], slot.w[1] / wsum[1], slot.w[2] / wsum[2]];
@@ -704,7 +748,7 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
     const placed = ws.map((w) => (w.slot as Placed).at).filter((x) => x !== undefined);
     const lunchAt = slots.find((x) => x.kind === 'lunch')!.at;
     const t = [16 * 60, 15 * 60 + 30, 11 * 60, 11 * 60 + 30, 18 * 60 + 30, r15(tr.end + 30)].find(
-      (x) => x >= 9 * 60 && x <= dinnerAt - 120 && !busy(x) && placed.every((y) => Math.abs(y - x) >= GAP),
+      (x) => x >= 9 * 60 && x <= dinnerAt - 120 && !busy(x) && placed.every((y) => Math.abs(y - x) >= 120),
     );
     if (t !== undefined) {
       const name = t < lunchAt ? 'Colación de media mañana' : 'Colación de tarde';
@@ -717,7 +761,12 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
       delete dinner.grams[0].naranja;
       dinner.added.delete('naranja');
     }
-    return mkWork({ ...SLOT.dessert, at: dinnerAt, time: hhmm(dinnerAt) } as Placed, [0.08, 0.1, 0.08], [recipes.dessert[0]]);
+    const dw = mkWork({ ...SLOT.dessert, at: dinnerAt, time: hhmm(dinnerAt) } as Placed, [0.08, 0.1, 0.08], [recipes.dessert[0]]);
+    // El postre comparte el volumen de la cena (es parte de la misma toma).
+    dw.vol = () => mealVolumeCap(sex, 'dinner') - solidGrams(dinner.grams[0]);
+    dinner.vol = () => mealVolumeCap(sex, 'dinner') - solidGrams(dw.grams[0]);
+    fitVolume(dw.recipes[0], dw.grams[0], { ...ctx, role: 'dinner' }, dw.vol());
+    return dw;
   };
   closeDay(ws, target, ctx, extraLeft, mkExtra);
 
@@ -734,7 +783,8 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
       const withDessert = w.slot.kind === 'dinner' && dessert;
       const opts = w.recipes.map((rec, i) => {
         const g = i === 0 ? w.grams[0] : { ...w.grams[i] };
-        if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role });
+        // Con postre, cada alternativa de la cena deja lugar para el postre (es la misma toma).
+        if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role }, withDessert ? mealVolumeCap(sex, 'dinner') - solidGrams(dItems) : undefined);
         const items = toItems(g);
         const combo: Combo = { ...rec, roles: [w.slot.role] };
         const title = titleFor(rec.title, g) + (i === 0 ? suffix : '');
@@ -813,7 +863,7 @@ export function planSummary(sel: BankSelection, weightKg: number, tr: BankTraini
   const t = dayTargets(goalOf(sel.plan), sex, weightKg);
   const tierB = t.on.kcal > TIER_B[sex];
   const opts = (kinds: SlotKind[]) => kinds.reduce((a, k) => a + RECIPES[sel.variant][k].length, 0) / kinds.length;
-  const on = daySlots(mealCount(sex, tierB, 'on'), 'on', tr).map((x) => x.kind);
-  const off = daySlots(mealCount(sex, tierB, 'off'), 'off', tr).map((x) => x.kind);
+  const on = daySlots(mealCount(sex, tierB, 'on', tr), 'on', tr).map((x) => x.kind);
+  const off = daySlots(mealCount(sex, tierB, 'off', tr), 'off', tr).map((x) => x.kind);
   return { gkg: t.gkg, kcal: { on: Math.round(t.on.kcal), off: Math.round(t.off.kcal) }, tier: tierB ? 'B' : 'A', meals: { on: on.length, off: off.length }, optionsPerMeal: Math.round(Math.min(opts(on), opts(off))) };
 }

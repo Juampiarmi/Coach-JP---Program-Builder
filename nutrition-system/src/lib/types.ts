@@ -1,5 +1,7 @@
 export type Sex = 'M' | 'F';
 export type Discipline = 'bodybuilding' | 'hybrid';
+/** Deporte principal (define el gasto de la sesión y el objetivo sugerido). */
+export type Sport = 'gym' | 'crossfit' | 'hyrox' | 'mtb' | 'team' | 'running';
 export type Phase = 'recomp' | 'maintenance' | 'surplus';
 export type BmrFormula = 'katch' | 'mifflin';
 export type PrecisionMode = 'quick' | 'isak';
@@ -31,6 +33,8 @@ export interface Profile {
   /** FFM medida (DEXA / bioimpedancia) en kg. 0 = derivar del % graso. */
   measuredFfmKg: number;
   discipline: Discipline;
+  /** Deporte principal (opcional en planes viejos: se deduce de la anamnesis). */
+  sport?: Sport;
   phase: Phase;
   bmrFormula: BmrFormula;
   /** Multiplicador NEAT sin ejercicio estructurado (1.2 sedentario → 1.6 muy activo). */

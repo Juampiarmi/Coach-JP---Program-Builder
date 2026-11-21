@@ -1,20 +1,22 @@
 // Prueba automática del Banco de Planes Maestros: 24 planes (8 perfiles × 3 variantes) × 6 pesos de referencia
 // × 4 horarios de entreno × día de entreno y de descanso. Falla si algún ingrediente (opción 1 o alternativas)
-// supera su tope duro de la Tabla Única de Topes, si el día no cierra a ±5 % de las calorías, si una comida tiene
+// supera su tope duro de la Tabla Única de Topes, si una toma supera el volumen sólido cómodo para el sexo, si la
+// proteína de una mujer sale de 1,6-2,4 g/kg, si el día no cierra a ±5 % de las calorías, si una comida tiene
 // menos de 4 opciones, si la variante no se respeta (gluten en Sin TACC, carne en vegetariano) o si la agenda no es
 // la argentina: la cena es siempre la última comida (21:00-22:30), no hay «antes de dormir», ninguna comida cae
 // durante el entreno y entre dos tomas hay al menos 1 h 30. Uso: npm run test:unit
-import { BANK_PLAN_IDS, BANK_VARIANTS, buildBankPlan, GLUTEN_FOODS, MEAT_FOODS, planLabel, REF_WEIGHTS, sexOf, trainingOf, type BankSelection } from './planBank';
+import { BANK_PLAN_IDS, BANK_VARIANTS, buildBankPlan, GLUTEN_FOODS, mealCount, MEAT_FOODS, planLabel, REF_WEIGHTS, sexOf, trainingOf, type BankSelection } from './planBank';
 import { timeToMinutes } from './schedule';
 
 /** Entreno a la mañana temprano, al mediodía, a la tarde y a la noche. */
 const TRAININGS = [{ trainingTime: '07:00', sessionMinutes: 60 }, { trainingTime: '12:00', sessionMinutes: 75 }, { trainingTime: '18:00', sessionMinutes: 60 }, { trainingTime: '20:00', sessionMinutes: 90 }];
-import { portionCap } from './portionCaps';
+import { mealVolumeCap, portionCap, solidGrams } from './portionCaps';
 
 const fails: string[] = [];
 let checks = 0;
 let worst = 0;
 let worstP = 0;
+let worstPTag = '';
 let extras = 0;
 let desserts = 0;
 const short: string[] = [];
@@ -47,16 +49,24 @@ for (const plan of BANK_PLAN_IDS) {
         const p = meals.reduce((a, m) => a + m.items.reduce((s, i) => s + i.p, 0), 0);
         const dev = kcal / T.kcal - 1;
         worst = Math.max(worst, Math.abs(dev));
-        worstP = Math.max(worstP, Math.abs(p / T.p - 1));
-        const base = sex === 'F' ? (bp.tier === 'B' ? 5 : 4) : bp.tier === 'B' && day === 'on' ? 6 : 5;
+        if (Math.abs(p / T.p - 1) > worstP) {
+          worstP = Math.abs(p / T.p - 1);
+          worstPTag = `${tag} (${(p / w).toFixed(2)} g/kg)`;
+        }
+        const base = mealCount(sex, bp.tier === 'B', day, tr);
         if (meals.length > base) extras += meals.length - base;
         if (meals.length < base) short.push(`${tag}: ${meals.length} comidas de ${base}`);
         checks++;
+        // Mujer: proteína cerca de su rango real (1,6-2,4 g/kg), sin dispararse por porciones mínimas rígidas.
+        if (sex === 'F' && (p / w < 1.6 || p / w > 2.4)) fails.push(`${tag}: proteína ${(p / w).toFixed(2)} g/kg (rango 1,6-2,4)`);
         if (Math.abs(dev) > 0.05) fails.push(`${tag}: el día cierra en ${Math.round(kcal)} kcal vs ${Math.round(T.kcal)} (${(dev * 100).toFixed(1)} %)`);
         for (const m of meals) {
           const opts = [{ title: m.title ?? '', items: m.items }, ...(m.alts ?? [])];
           if (opts.length < 4) fails.push(`${tag} · ${m.name}: sólo ${opts.length} opciones`);
           for (const o of opts) {
+            // Volumen sólido cómodo por toma (MEAL_VOLUME, distinto para mujer y hombre).
+            const vol = solidGrams(o.items);
+            if (vol > mealVolumeCap(sex, m.role) + 5) fails.push(`${tag} · ${m.name} · ${o.title}: ${vol} g sólidos (tope ${mealVolumeCap(sex, m.role)} g)`);
             for (const it of o.items) {
               checks++;
               const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg' }).max;
@@ -84,6 +94,7 @@ for (const plan of BANK_PLAN_IDS) {
 }
 console.log(`Banco de planes: ${checks} verificaciones · peor cierre de calorías ${(worst * 100).toFixed(1)} % · peor desvío de proteína ${(worstP * 100).toFixed(1)} % · ${extras} colaciones extra · ${desserts} cenas con postre`);
 if (short.length) console.log(`Días con una colación menos (no entra en la agenda): ${short.length}\n  ${short.slice(0, 6).join('\n  ')}`);
+console.log(`Peor proteína: ${worstPTag}`);
 console.log(`Comidas por día (máximo): ${[...counts].sort().map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 if (fails.length) {
   console.error(fails.slice(0, 40).join('\n'));

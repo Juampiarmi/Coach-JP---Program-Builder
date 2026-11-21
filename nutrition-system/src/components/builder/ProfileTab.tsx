@@ -1,6 +1,7 @@
 'use client';
 
-import { Activity, Gauge, Ruler, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Activity, Calculator, Eye, Gauge, Ruler, SlidersHorizontal, Zap } from 'lucide-react';
 import {
   ACTIVITY_PRESETS,
   BODY_FAT_BANDS,
@@ -16,7 +17,11 @@ import {
   trainingWeekdays,
 } from '@/lib/bioenergetics';
 import { CITES } from '@/lib/evidence';
+import { BANK_GOALS, planLabel } from '@/lib/planBank';
+import { goalFor, precalc, sessionKcalFor, sportFor, SPORTS } from '@/lib/precalc';
 import type { Phase, PrecisionMode } from '@/lib/types';
+import { bankPreview } from './TemplateBank';
+import { PlanPreviewModal, type PreviewData } from './PlanPreviewModal';
 import { usePlanStore } from '@/store/usePlanStore';
 import { ChoiceCard, Cite, cx, Label, NumberField, Panel, Readout, Segmented, Slider, TextField } from '../hud/primitives';
 
@@ -181,7 +186,7 @@ export function ProfileTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="PASO 1 · PERFIL FÍSICO" right={<Activity className="h-4 w-4 text-cyan-hud/80" />}>
+      <Panel block="perfil" title="PASO 1 · PERFIL FÍSICO" right={<Activity className="h-4 w-4 text-cyan-hud/80" />}>
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField label="Nombre del atleta" value={pr.name} onChange={(name) => setProfile({ name })} />
           <div>
@@ -203,32 +208,10 @@ export function ProfileTab() {
         <div className="mt-5 border-t border-line pt-5">{pr.precisionMode === 'quick' ? <QuickMode /> : <IsakMode />}</div>
       </Panel>
 
-      <Panel title="DISCIPLINA & FASE">
-        <div className="space-y-4">
-          <div>
-            <Label>Disciplina</Label>
-            <Segmented
-              value={pr.discipline}
-              onChange={(discipline) => setProfile({ discipline })}
-              options={[
-                { value: 'bodybuilding', label: 'Sports & Bodybuilding' },
-                { value: 'hybrid', label: 'CrossFit & Hyrox' },
-              ]}
-            />
-          </div>
-          <div>
-            <Label>Fase · aplica el preset de macros ON/OFF</Label>
-            <Segmented<Phase>
-              value={pr.phase}
-              onChange={applyPhasePreset}
-              tone="fire"
-              options={(Object.keys(PHASE_LABEL) as Phase[]).map((p) => ({ value: p, label: PHASE_LABEL[p] }))}
-            />
-          </div>
-        </div>
-      </Panel>
+      <SportGoalPanel />
+      <PrecalcPanel />
 
-      <Panel title="AGENDA DE ENTRENAMIENTO & HIDRATACIÓN">
+      <Panel block="perfil" title="AGENDA DE ENTRENAMIENTO & HIDRATACIÓN">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <label className="block">
             <Label>Entreno · inicio</Label>
@@ -262,7 +245,7 @@ export function ProfileTab() {
         </p>
       </Panel>
 
-      <Panel title="GASTO ENERGÉTICO ESTIMADO" right={<Gauge className="h-4 w-4 text-cyan-hud/80" />}>
+      <Panel block="macros" title="GASTO ENERGÉTICO ESTIMADO" right={<Gauge className="h-4 w-4 text-cyan-hud/80" />}>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Readout label="Masa libre de grasa" value={fmt1(t.ffm)} unit="kg" sub={`${fmt1(pr.bodyFatPct)} % graso`} />
           <Readout label={`Metabolismo basal · ${pr.bmrFormula === 'katch' ? 'Katch' : 'Mifflin'}`} value={fmt0(t.bmr)} unit="kcal" tone="cyan" sub={`${pr.bmrFormula === 'katch' ? 'Mifflin' : 'Katch'}: ${fmt0(t.bmrAlt)}`} />
@@ -275,7 +258,7 @@ export function ProfileTab() {
         </div>
       </Panel>
 
-      <Panel title="ENERGÍA DISPONIBLE (EA)" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : 'cyan'}>
+      <Panel block="macros" title="ENERGÍA DISPONIBLE (EA)" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : 'cyan'}>
         <p className="-mt-1 mb-3 text-[13px] text-steel">Lo que le queda al cuerpo para funcionar después de entrenar, por kg de masa magra. Si baja de 30, el déficit es demasiado agresivo y se resiente la salud hormonal (síndrome RED-S).</p>
         <p className="mb-3 text-xs leading-relaxed text-steel">
           Energía que le queda al cuerpo después de entrenar, por kg de masa libre de grasa. Se calcula con las kcal que suman las comidas planificadas de cada día.
@@ -355,5 +338,149 @@ function WeekdayPicker() {
         ))}
       </div>
     </div>
+  );
+}
+
+const chip = (on: boolean, tone: 'cyan' | 'fire' = 'cyan') =>
+  cx(
+    'rounded-lg border px-3 py-2 text-left transition',
+    on ? (tone === 'fire' ? 'border-fire bg-fire/10' : 'border-cyan-hud bg-cyan-hud/10') : 'border-line bg-panel hover:border-white/20',
+  );
+
+/** Deporte (define el gasto de la sesión) y objetivo (elige el plan maestro y la fase). */
+function SportGoalPanel() {
+  const plan = usePlanStore((s) => s.plan);
+  const setSport = usePlanStore((s) => s.setSport);
+  const setObjective = usePlanStore((s) => s.setObjective);
+  const applyPhasePreset = usePlanStore((s) => s.applyPhasePreset);
+  const pr = plan.profile;
+  const sport = sportFor(plan);
+  const goal = goalFor(plan);
+  return (
+    <Panel block="perfil" title="PASO 2 · DEPORTE Y OBJETIVO">
+      <div className="space-y-4">
+        <div>
+          <Label>Deporte principal · define cuánto gasta en cada sesión</Label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {SPORTS.map((sp) => (
+              <button key={sp.id} type="button" data-sport={sp.id} onClick={() => setSport(sp.id)} className={chip(sport?.id === sp.id)}>
+                <span className="block text-[13px] font-semibold text-ink">{sp.label}</span>
+                <span className="block text-[11px] text-mute">
+                  {sp.hint} · ~{sessionKcalFor(sp, pr.weightKg, pr.sessionMinutes)} kcal / {pr.sessionMinutes} min
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Objetivo · elige el plan maestro del banco</Label>
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+            {BANK_GOALS.map((g) => (
+              <button key={g.id} type="button" data-goal={g.id} onClick={() => setObjective(g.id)} className={chip(goal === g.id, 'fire')}>
+                <span className="block text-[13px] font-semibold text-ink">{g.label}</span>
+                <span className="block text-[11px] text-mute">{g.short}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <details className="rounded-lg border border-line px-3 py-2">
+          <summary className="cursor-pointer text-[12px] font-semibold text-steel">Avanzado · preset de macros por fase (reemplaza los macros de entreno y descanso)</summary>
+          <div className="mt-2">
+            <Segmented<Phase> value={pr.phase} onChange={applyPhasePreset} tone="fire" options={(Object.keys(PHASE_LABEL) as Phase[]).map((p) => ({ value: p, label: PHASE_LABEL[p] }))} />
+          </div>
+        </details>
+      </div>
+    </Panel>
+  );
+}
+
+const pct = (x: number) => `${x > 0 ? '+' : ''}${Math.round(x * 100)} %`;
+
+/** Precálculo en vivo: metabolismo, gasto y el plan maestro sugerido con sus calorías y macros de entreno y descanso. */
+function PrecalcPanel() {
+  const plan = usePlanStore((s) => s.plan);
+  const applyTemplate = usePlanStore((s) => s.applyTemplate);
+  const applyPrecalcMacros = usePlanStore((s) => s.applyPrecalcMacros);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const pc = precalc(plan);
+  const pr = plan.profile;
+  const same = (['on', 'off'] as const).every((d) => (['p', 'c', 'f'] as const).every((k) => Math.abs(plan.periodization[d][k] - pc.gkg[d][k]) < 0.01));
+  return (
+    <Panel block="macros" title="PRECÁLCULO EN VIVO · CALORÍAS Y MACROS" tone="cyan" right={<Calculator className="h-4 w-4 text-cyan-hud/80" />}>
+      <p className="-mt-1 text-[12.5px] text-steel">
+        Se recalcula solo con sexo, peso, talla, edad, deporte y objetivo. {pr.sex === 'F' ? 'Mujer' : 'Hombre'} · {fmt1(pr.weightKg)} kg · {fmt0(pr.heightCm)} cm · {fmt0(pr.age)} años
+        {sportFor(plan) ? ` · ${sportFor(plan)!.label}` : ''}.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" data-precalc>
+        <Readout label={`Metabolismo basal · ${pc.bmrLabel}`} value={fmt0(pc.bmr)} unit="kcal" tone="cyan" />
+        <Readout label="Gasto día de descanso" value={fmt0(pc.tdeeOff)} unit="kcal" tone="cyan" />
+        <Readout label="Gasto día de entreno" value={fmt0(pc.tdeeOn)} unit="kcal" tone="cyan" sub={`Sesión ~${fmt0(pr.sessionKcal)} kcal`} />
+        <Readout label="Plan sugerido · comidas" value={`${pc.meals.on} / ${pc.meals.off}`} sub="entreno / descanso" />
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="tnum w-full min-w-[460px] text-[12.5px]">
+          <thead>
+            <tr className="text-left font-mono text-[10px] tracking-[0.12em] text-mute">
+              <th className="py-1.5 font-normal"> </th>
+              <th className="py-1.5 font-normal">CALORÍAS</th>
+              <th className="py-1.5 font-normal">PROTEÍNAS</th>
+              <th className="py-1.5 font-normal">CARBOS</th>
+              <th className="py-1.5 font-normal">GRASAS</th>
+              <th className="py-1.5 font-normal">VS. GASTO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(['on', 'off'] as const).map((d) => (
+              <tr key={d} className="border-t border-line">
+                <td className={cx('py-2 font-semibold', d === 'on' ? 'text-fire' : 'text-cyan-hud')}>{d === 'on' ? 'Día de entreno' : 'Día de descanso'}</td>
+                <td className="py-2 font-bold text-ink">{fmt0(pc.kcal[d])} kcal</td>
+                <td className="py-2 text-steel">
+                  {pc.grams[d].p} g <span className="text-mute">({fmt1(pc.gkg[d].p)} g/kg)</span>
+                </td>
+                <td className="py-2 text-steel">
+                  {pc.grams[d].c} g <span className="text-mute">({fmt1(pc.gkg[d].c)})</span>
+                </td>
+                <td className="py-2 text-steel">
+                  {pc.grams[d].f} g <span className="text-mute">({fmt1(pc.gkg[d].f)})</span>
+                </td>
+                <td className="py-2 text-steel">{pct(pc.balance[d])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-fire/30 bg-fire/[0.05] px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-[9.5px] font-bold tracking-[0.16em] text-fire">PLAN MAESTRO SUGERIDO</div>
+          <div className="text-[13.5px] font-semibold text-ink">{planLabel(pc.sel)}</div>
+          <div className="text-[11.5px] text-mute">{pc.goal.balance} · porciones escaladas a {fmt1(pr.weightKg)} kg y horarios para entrenar a las {pr.trainingTime || '18:00'}</div>
+        </div>
+        <button
+          type="button"
+          data-precalc-preview
+          onClick={() =>
+            setPreview(
+              bankPreview(plan, pc.sel, () => {
+                setPreview(null);
+                applyTemplate(pc.sel);
+              }),
+            )
+          }
+          className="flex items-center gap-1.5 rounded-lg border border-fire/50 px-3 py-2 text-[12.5px] font-semibold text-fire hover:bg-fire/10"
+        >
+          <Eye className="h-4 w-4" /> Ver plan sugerido
+        </button>
+        <button
+          type="button"
+          disabled={same}
+          onClick={applyPrecalcMacros}
+          title="Copia estos g/kg a la pestaña Macros entreno / descanso (no toca las comidas)"
+          className="flex items-center gap-1.5 rounded-lg border border-cyan-hud/50 px-3 py-2 text-[12.5px] font-semibold text-cyan-hud hover:bg-cyan-hud/10 disabled:cursor-default disabled:border-line disabled:text-mute disabled:hover:bg-transparent"
+        >
+          <SlidersHorizontal className="h-4 w-4" /> {same ? 'Macros en uso' : 'Usar estos macros'}
+        </button>
+      </div>
+      {preview && <PlanPreviewModal data={preview} onClose={() => setPreview(null)} />}
+    </Panel>
   );
 }

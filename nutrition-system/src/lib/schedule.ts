@@ -1,3 +1,4 @@
+import { arrangeDay, fixedFromAnamnesis, mainAnchors, trainingOf } from './agenda';
 import { macrosFor, round1, round2 } from './foods';
 import type { Anamnesis, FoodItem, Meal, MealSlot, Profile } from './types';
 
@@ -18,34 +19,15 @@ const hm = (min: number) => {
   const t = ((Math.round(min) % 1440) + 1440) % 1440;
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
-const valid = (t: string, from = 5 * 60, to = 23 * 60 + 30) => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(t ?? '');
-  if (!m || +m[1] > 23 || +m[2] > 59) return false;
-  const x = +m[1] * 60 + +m[2];
-  return x >= from && x <= to;
-};
 
 /**
- * Agenda deportiva determinística a partir de la franja real de entreno (ej. CrossFit 16:00-18:00):
- *   Desayuno 06:30 · Almuerzo 12:30 · Pre-WOD 15:15 (inicio − 45') · Post-WOD 18:15 (fin + 15') · Cena 21:00 (fin + 3 h).
- * Las colaciones conservan la hora de la IA si es razonable. Día OFF: horas de la IA saneadas.
+ * Anclas del día de entreno (agenda argentina, ver agenda.ts): desayuno, almuerzo y cena según la franja de entreno,
+ * pre (inicio − 45') y post (fin + 15'). La cena cierra el día: 21:00 o 45' después de entrenar (tope 22:30).
  */
 export function dayAnchors(pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>) {
-  const [h, m] = (pr.trainingTime || '18:00').split(':').map(Number);
-  const start = (h || 0) * 60 + (m || 0);
-  const end = start + Math.min(300, Math.max(15, Number(pr.sessionMinutes) || 60));
-  const morning = start < 9 * 60;
-  let lunch = 12 * 60 + 30;
-  if (lunch > start - 60 && lunch < end + 15) lunch = end + 45;
-  return {
-    start,
-    end,
-    breakfast: morning ? end + 30 : 6 * 60 + 30,
-    lunch,
-    peri: start - 45,
-    post: end + 15,
-    dinner: Math.min(22 * 60 + 30, Math.max(20 * 60, end + 180)),
-  };
+  const tr = trainingOf(pr);
+  const a = mainAnchors(true, tr);
+  return { start: tr.start, end: tr.end, breakfast: a.B, lunch: a.L, peri: tr.start - 45, post: tr.end + 15, dinner: a.D };
 }
 
 const toMin = (t: string) => {
@@ -67,23 +49,15 @@ export function mealSchedule(pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'
 
 export const fmtHm = (min: number) => hm(min);
 
-const OFF_DEFAULT: Record<Meal['role'], number> = { breakfast: 7 * 60 + 30, lunch: 13 * 60, peri: 17 * 60, post: 17 * 60, snack: 17 * 60, dinner: 21 * 60 };
 
 export function retimeMeals(meals: Meal[], pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>, an?: Pick<Anamnesis, 'mealTimesAuto' | 'mealTimes'>): Meal[] {
-  const sch = mealSchedule(pr, an);
-  const a = { ...sch, ...sch.slots };
-  return meals
-    .map((m) => {
-      if (m.day === 'off') return { ...m, time: valid(m.time) ? m.time : hm(OFF_DEFAULT[m.role]) };
-      const fixed: Partial<Record<Meal['role'], number>> = { breakfast: a.breakfast, lunch: a.lunch, peri: a.peri, post: a.post, dinner: a.dinner };
-      const t = fixed[m.role];
-      if (t !== undefined) return { ...m, time: hm(t) };
-      // Colación: hora de la IA si es diurna y no cae dentro del entreno; si no, media mañana.
-      const x = timeToMinutes(m.time);
-      const ok = valid(m.time, 6 * 60, 23 * 60) && !(x > a.start - 30 && x < a.end + 10);
-      return { ...m, time: ok ? m.time : '10:30' };
-    })
-    .sort(byTime);
+  // Agenda argentina única (la misma del banco de planes): cena al final, 1 h 30 entre tomas, nada durante el
+  // entreno ni después de cenar. Las comidas de «ambos días» siguen la agenda del día de entreno.
+  const tr = trainingOf(pr);
+  const fixed = fixedFromAnamnesis(an);
+  const on = arrangeDay(meals.filter((m) => m.day !== 'off'), true, tr, fixed);
+  const off = arrangeDay(meals.filter((m) => m.day === 'off'), false, tr, fixed);
+  return [...on, ...off].sort(byTime);
 }
 
 /** Un alimento repetido en la misma comida (ej. palta 70 g + 45 g) se fusiona en un único ítem con los gramos sumados. */

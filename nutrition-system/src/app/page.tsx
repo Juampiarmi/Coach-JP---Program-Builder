@@ -14,7 +14,7 @@ import { ProfileTab } from '@/components/builder/ProfileTab';
 import { ExportTab } from '@/components/deploy/ExportTab';
 import { PhonePreview } from '@/components/deploy/PhonePreview';
 import { StoryTab } from '@/components/deploy/StoryTab';
-import { cx, NutritionMark } from '@/components/hud/primitives';
+import { BlockHeader, BLOCKS, cx, NutritionMark, type Block } from '@/components/hud/primitives';
 import { InstallButton } from '@/components/pwa/InstallButton';
 import { AthleteSwitcher } from '@/components/builder/AthleteSwitcher';
 import { ProfileBackup } from '@/components/builder/ProfileBackup';
@@ -27,16 +27,47 @@ import { StepFlow } from '@/components/cloud/StepFlow';
 import { CoachBoard } from '@/components/cloud/CoachBoard';
 import { cloudConfigured } from '@/lib/cloud/config';
 
-const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
-  ...(cloudConfigured ? [{ id: 'athletes' as BuilderTab, label: 'Mis atletas', icon: Users }] : []),
-  { id: 'anamnesis', label: 'Anamnesis · hábitos y salud', icon: ClipboardList },
-  { id: 'intake', label: 'Asistente IA', icon: Brain },
-  { id: 'profile', label: 'Perfil físico', icon: Dna },
-  { id: 'periodization', label: 'Macros entreno / descanso', icon: SlidersHorizontal },
-  { id: 'meals', label: 'Comidas', icon: Utensils },
-  { id: 'library', label: '📚 Planes listos', icon: Library },
-  { id: 'fooddb', label: 'Alimentos y marcas', icon: Database },
+const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain; block: Block }[] = [
+  ...(cloudConfigured ? [{ id: 'athletes' as BuilderTab, label: 'Mis atletas', icon: Users, block: 'publicacion' as Block }] : []),
+  { id: 'anamnesis', label: 'Anamnesis · hábitos y salud', icon: ClipboardList, block: 'perfil' },
+  { id: 'intake', label: 'Asistente IA', icon: Brain, block: 'perfil' },
+  { id: 'profile', label: 'Perfil físico', icon: Dna, block: 'perfil' },
+  { id: 'periodization', label: 'Macros entreno / descanso', icon: SlidersHorizontal, block: 'macros' },
+  { id: 'meals', label: 'Comidas', icon: Utensils, block: 'estructura' },
+  { id: 'library', label: '📚 Planes listos', icon: Library, block: 'estructura' },
+  { id: 'fooddb', label: 'Alimentos y marcas', icon: Database, block: 'opciones' },
 ];
+
+/** Leyenda de los 5 bloques del Builder: cada uno abre su primera pestaña (Publicación, el panel de la derecha). */
+function BlockLegend() {
+  const tab = usePlanStore((s) => s.builderTab);
+  const setBuilderTab = usePlanStore((s) => s.setBuilderTab);
+  const active = BUILDER_TABS.find((t) => t.id === tab)?.block;
+  const first: Partial<Record<Block, BuilderTab>> = { perfil: 'profile', macros: 'periodization', estructura: 'meals', opciones: 'meals' };
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Bloques del Builder">
+      {(Object.keys(BLOCKS) as Block[]).map((k) => {
+        const b = BLOCKS[k];
+        const on = active === k || (k === 'opciones' && tab === 'meals');
+        return (
+          <button
+            key={k}
+            type="button"
+            title={b.hint}
+            onClick={() => (first[k] ? setBuilderTab(first[k]!) : document.querySelector('aside')?.scrollIntoView({ behavior: 'smooth' }))}
+            className={cx('flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.12em] transition', on ? 'border-white/20 bg-white/[0.04]' : 'border-line opacity-70 hover:opacity-100')}
+            style={{ color: b.color }}
+          >
+            <span className="grid h-4 w-4 place-items-center rounded-sm text-[9px] text-carbon" style={{ background: b.color }}>
+              {b.n}
+            </span>
+            {b.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
   { id: 'preview', label: 'Vista del alumno', icon: Smartphone },
@@ -140,12 +171,14 @@ export default function Home() {
           <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ARMÁ EL PLAN</div>
           <ConflictBanner />
           <StepFlow />
+          <BlockLegend />
           <div className="mb-4 flex items-start gap-2">
           <nav className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
-            {BUILDER_TABS.map(({ id, label, icon: Icon }) => (
+            {BUILDER_TABS.map(({ id, label, icon: Icon, block }) => (
               <button
                 key={id}
                 onClick={() => setBuilderTab(id)}
+                title={`Bloque ${BLOCKS[block].n} · ${BLOCKS[block].label}`}
                 className={cx(
                   'flex flex-none items-center gap-2 rounded-lg px-3.5 py-2.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.12em] transition',
                   builderTab === id
@@ -153,6 +186,7 @@ export default function Home() {
                     : 'text-mute hover:bg-white/[0.03] hover:text-steel',
                 )}
               >
+                <span className="h-1.5 w-1.5 flex-none rounded-full" style={{ background: BLOCKS[block].color }} />
                 <Icon className="h-3.5 w-3.5" /> {label}
               </button>
             ))}
@@ -161,6 +195,7 @@ export default function Home() {
           </div>
 {/* key = atleta activo: al cambiar de atleta cada solapa se remonta sin estado local del anterior. */}
           <div key={activeId}>
+          {builderTab !== 'meals' && <BlockHeader block={BUILDER_TABS.find((t) => t.id === builderTab)?.block ?? 'perfil'} />}
           {builderTab === 'athletes' && <CoachBoard />}
           {builderTab === 'anamnesis' && <AnamnesisForm />}
           {builderTab === 'intake' && <IntakeTab />}
@@ -173,7 +208,7 @@ export default function Home() {
         </section>
 
         <aside className="min-w-0 lg:sticky lg:top-[112px] lg:max-h-[calc(100vh-128px)] lg:self-start lg:overflow-y-auto scroll-thin">
-          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ASÍ LO VE TU ALUMNO · PUBLICAR</div>
+          <BlockHeader block="publicacion" />
           <nav className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-line bg-panel p-1">
             {DEPLOY_TABS.map(({ id, label, icon: Icon }) => (
               <button

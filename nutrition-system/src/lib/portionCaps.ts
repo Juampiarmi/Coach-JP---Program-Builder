@@ -24,12 +24,15 @@ type SexRange = { F: [number, number]; M: [number, number] };
 const both = (lo: number, hi: number): SexRange => ({ F: [lo, hi], M: [lo, hi] });
 const bySex = (f: [number, number], m: [number, number]): SexRange => ({ F: f, M: m });
 
-const MEAT = bySex([120, 180], [150, 240]);
-const STARCH = bySex([120, 250], [150, 350]);
-const TUBER = bySex([150, 300], [200, 400]);
+// Mujer: platos más chicos y livianos (le cuesta el volumen sólido y no quiere llegar pesada a entrenar); la energía
+// extra sale de densidad limpia (miel, membrillo, frutos secos, palta, aceite), no de agrandar el plato.
+// Hombre: platos contundentes pero cómodos (nada de 400 g de papa + 250 g de carne + 300 g de ensalada juntos).
+const MEAT = bySex([80, 160], [130, 220]);
+const STARCH = bySex([100, 200], [150, 300]);
+const TUBER = bySex([120, 250], [200, 350]);
 const BREAD = bySex([25, 90], [25, 120]);
-const YOGURT = both(150, 200);
-const MILK = both(200, 300);
+const YOGURT = bySex([120, 200], [150, 200]);
+const MILK = bySex([200, 250], [200, 300]);
 
 export const PORTION_CAPS: Record<string, SexRange> = {
   // Proteínas (almuerzo / cena)
@@ -38,15 +41,15 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   lomo: MEAT,
   nalga: MEAT,
   cerdo: MEAT,
-  merluza: bySex([150, 200], [180, 260]),
+  merluza: bySex([100, 200], [150, 250]),
   atun: bySex([60, 120], [60, 240]),
-  picada: bySex([100, 140], [130, 180]),
-  tofu: both(100, 200),
-  'soja-texturizada': both(100, 200),
+  picada: bySex([80, 130], [130, 180]),
+  tofu: bySex([80, 160], [100, 200]),
+  'soja-texturizada': bySex([80, 160], [100, 200]),
   jamon: both(20, 60),
   // Huevos (huevos + claras ≤ 8 unidades por toma)
   huevo: bySex([50, 150], [50, 200]),
-  claras: both(66, 198),
+  claras: bySex([66, 132], [66, 198]),
   // Lácteos
   yogur: YOGURT,
   'yogur-proteico': YOGURT,
@@ -55,7 +58,7 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   'leche-deslactosada': MILK,
   untable: both(15, 40),
   'queso-light': both(30, 60),
-  ricota: both(50, 150),
+  ricota: bySex([50, 120], [50, 150]),
   whey: both(20, 40),
   'whey-isolate': both(20, 40),
   // Cereales y panes
@@ -83,16 +86,16 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   batata: TUBER,
   calabaza: TUBER,
   polenta: TUBER,
-  lentejas: both(120, 250),
-  garbanzos: both(120, 250),
-  porotos: both(120, 250),
+  lentejas: bySex([100, 200], [120, 250]),
+  garbanzos: bySex([100, 200], [120, 250]),
+  porotos: bySex([100, 200], [120, 250]),
   // Frutas (hasta 2 unidades)
   banana: both(60, 240),
   manzana: both(90, 300),
   naranja: both(75, 300),
   frutillas: both(100, 300),
   // Verduras
-  vegetales: both(150, 300),
+  vegetales: bySex([100, 220], [150, 250]),
   // Grasas
   oliva: both(5, 15),
   palta: both(30, 70),
@@ -151,10 +154,26 @@ export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range 
     const g = FOOD_BY_ID[foodId]?.group;
     [lo, hi] = (g && GROUP_CAPS[g]) || [5, 450];
   }
-  if (ctx.veg && ['lentejas', 'garbanzos', 'porotos'].includes(foodId)) hi = 300;
-  if (foodId === 'vegetales' && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, 150];
+  if (ctx.veg && ['lentejas', 'garbanzos', 'porotos'].includes(foodId)) hi = ctx.sex === 'F' ? 250 : 300;
+  if (foodId === 'vegetales' && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, ctx.sex === 'F' ? 120 : 150];
   return { min: lo, max: hi };
 }
 
 /** Tope duro absoluto (el mayor entre sexos): lo que la prueba automática verifica en todos los planes. */
 export const hardCap = (foodId: string | undefined, sex?: Sex) => portionCap(foodId, { sex }).max;
+
+/**
+ * Volumen sólido máximo por toma (g, sin contar leche, bebidas ni yogur bebible): lo que una persona come cómoda.
+ * Mujer: almuerzo y cena hasta ~550 g, desayuno 450 g, colaciones 350 g y antes de entrenar 250 g (liviano, sin
+ * hinchazón). Hombre: 750 / 600 / 450 / 350 g.
+ */
+export const MEAL_VOLUME: Record<Sex, { main: number; breakfast: number; snack: number; peri: number }> = {
+  F: { main: 550, breakfast: 450, snack: 350, peri: 250 },
+  M: { main: 750, breakfast: 600, snack: 450, peri: 350 },
+};
+const LIQUIDS = new Set(['leche', 'leche-deslactosada', 'isotonica', 'yogur-proteico']);
+export const mealVolumeCap = (sex: Sex, role?: MealRole) => MEAL_VOLUME[sex][role === 'lunch' || role === 'dinner' ? 'main' : role === 'breakfast' ? 'breakfast' : role === 'peri' ? 'peri' : 'snack'];
+export const isLiquid = (id?: string) => !!id && LIQUIDS.has(id);
+/** Gramos sólidos de una toma (para el tope de volumen). */
+export const solidGrams = (g: Record<string, number> | { foodId?: string; grams: number }[]) =>
+  Array.isArray(g) ? g.reduce((a, i) => a + (i.foodId && LIQUIDS.has(i.foodId) ? 0 : i.grams), 0) : Object.entries(g).reduce((a, [id, v]) => a + (LIQUIDS.has(id) ? 0 : v), 0);

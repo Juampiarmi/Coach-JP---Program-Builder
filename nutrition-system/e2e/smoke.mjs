@@ -89,18 +89,55 @@ try {
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await page.getByText('Plan desactualizado.').isVisible(), 'Indicador: plan desactualizado después de editar');
 
-  // Planes listos: filtrar, ver un plan y aplicarlo al alumno.
+  // Planes listos: filtrar, abrir la vista previa completa y aplicarlo al alumno.
   await page.locator('section nav button', { hasText: 'Planes listos' }).click();
+  check((await page.locator('[data-block="estructura"]').count()) > 0, 'Bloques: Planes listos marcado como «Estructura del día»');
   await page.getByRole('button', { name: 'Sin TACC', exact: true }).click();
   const cards = page.locator('[data-bank-card]');
   check((await cards.count()) === 4, `Planes listos: 4 planes por sexo y variante (${await cards.count()})`);
   await cards.first().click();
-  check((await page.getByRole('button', { name: /Aplicar a este alumno/ }).isVisible()), 'Planes listos: detalle del plan con botón Aplicar');
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: /Aplicar a este alumno/ }).click();
-  await page.waitForTimeout(200);
-  check((await meals.count()) > 0, 'Planes listos: al aplicar abre Comidas con el plan nuevo');
+  const modal = page.locator('[data-plan-preview]');
+  check(await modal.isVisible(), 'Planes listos: vista previa completa antes de aplicar');
+  check((await modal.getByText('DÍA DE ENTRENO').count()) > 0 && (await modal.getByText('DÍA DE DESCANSO').count()) > 0, 'Vista previa: día de entreno y de descanso');
+  await modal.getByRole('button', { name: /Aplicar a este alumno/ }).click();
+  await page.waitForTimeout(250);
+  check((await modal.count()) === 0 && (await meals.count()) > 0, 'Planes listos: al aplicar abre Comidas con el plan nuevo');
   check((await page.getByText(/Galletas de arroz|Arroz|Papa|Batata|Polenta/).count()) > 0, 'Planes listos: comidas reemplazadas por las del plan Sin TACC');
+  check((await page.locator('[data-block="opciones"]').count()) > 0, 'Bloques: Comidas separa «Estructura del día» y «Opciones por comida»');
+
+  // Ajustar horarios: la cena queda última en cada día.
+  await page.getByRole('button', { name: /AJUSTAR HORARIOS AL ENTRENO/ }).click();
+  await page.waitForTimeout(150);
+  const times = await meals.evaluateAll((els) => els.map((e) => e.value));
+  check(times.length > 0 && !times.some((t) => t >= '22:31' || t < '05:00'), `Ajustar horarios: nada después de las 22:30 (${times.join(' ')})`);
+
+  // Plantilla propia: guardar desde Comidas y reaplicarla desde Mis plantillas.
+  page.once('dialog', (d) => d.accept('Mi plantilla e2e'));
+  await page.locator('[data-save-template]').click();
+  await page.waitForTimeout(150);
+  await page.locator('section nav button', { hasText: 'Planes listos' }).click();
+  const tcard = page.locator('[data-template-card]', { hasText: 'Mi plantilla e2e' });
+  check(await tcard.isVisible(), 'Plantillas: el plan guardado aparece en Mis plantillas');
+  await tcard.getByRole('button', { name: /Vista previa y aplicar/ }).click();
+  check(await modal.isVisible(), 'Plantillas: vista previa escalada antes de aplicar');
+  await modal.getByRole('button', { name: /Aplicar a este alumno/ }).click();
+  await page.waitForTimeout(250);
+  check((await meals.count()) > 0, 'Plantillas: aplicada al alumno');
+
+  // Perfil: deporte + objetivo → precálculo en vivo y plan sugerido.
+  await page.locator('section nav button', { hasText: 'Perfil físico' }).click();
+  const pre = page.locator('[data-precalc]');
+  check(await pre.isVisible(), 'Perfil: precálculo en vivo (metabolismo y gasto)');
+  const before = await pre.innerText();
+  await page.locator('[data-sport="running"]').click();
+  await page.locator('[data-goal="hip"]').click();
+  await page.waitForTimeout(100);
+  check((await pre.innerText()) !== before, 'Perfil: el gasto se recalcula al cambiar el deporte');
+  check(await page.getByText(/Hipertrofia · (Hombre|Mujer) activ/).first().isVisible(), 'Perfil: sugiere el plan maestro del objetivo');
+  await page.locator('[data-precalc-preview]').click();
+  check(await modal.isVisible(), 'Perfil: vista previa del plan sugerido');
+  await page.keyboard.press('Escape');
+  check((await modal.count()) === 0, 'Vista previa: se cierra con Escape sin aplicar');
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

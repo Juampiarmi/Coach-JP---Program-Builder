@@ -49,9 +49,44 @@ export function Badge({ children, tone = 'cyan', className }: { children: ReactN
   return <span className={cx('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em]', cls, className)}>{children}</span>;
 }
 
-export function Panel({ title, tone = 'cyan', right, children, className }: { title?: ReactNode; tone?: Tone; right?: ReactNode; children: ReactNode; className?: string }) {
+/**
+ * Bloques del Builder: cada sección se distingue con su número, su color sutil y su etiqueta.
+ * 1 Perfil y parámetros · 2 Macros precalculados · 3 Estructura del día · 4 Opciones por comida · 5 Publicación.
+ */
+export type Block = 'perfil' | 'macros' | 'estructura' | 'opciones' | 'publicacion';
+export const BLOCKS: Record<Block, { n: number; label: string; hint: string; color: string }> = {
+  perfil: { n: 1, label: 'Perfil y parámetros', hint: 'Quién es el alumno: datos físicos, deporte, objetivo, anamnesis y horarios.', color: '#38BDF8' },
+  macros: { n: 2, label: 'Macros precalculados', hint: 'Calorías y macros del día de entreno y del de descanso.', color: '#A78BFA' },
+  estructura: { n: 3, label: 'Estructura del día', hint: 'Comidas, horarios y planes listos para aplicar.', color: '#F97316' },
+  opciones: { n: 4, label: 'Opciones por comida', hint: 'Platos alternativos equivalentes, alimentos y marcas.', color: '#34D399' },
+  publicacion: { n: 5, label: 'Publicación', hint: 'Cómo lo ve el alumno y cómo se lo entregás.', color: '#FFD600' },
+};
+
+/** Cinta de bloque: número, etiqueta y para qué sirve, con el color del bloque. */
+export function BlockHeader({ block, children }: { block: Block; children?: ReactNode }) {
+  const b = BLOCKS[block];
   return (
-    <section className={cx('hud-panel rounded-xl border border-line bg-panel p-4 sm:p-5', className)} data-tone={tone}>
+    <div data-block={block} className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line bg-panel2 px-3 py-2" style={{ boxShadow: `inset 3px 0 0 ${b.color}` }}>
+      <span className="grid h-5 w-5 flex-none place-items-center rounded font-mono text-[10.5px] font-bold text-carbon" style={{ background: b.color }}>
+        {b.n}
+      </span>
+      <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.16em]" style={{ color: b.color }}>
+        {b.label}
+      </span>
+      <span className="min-w-0 flex-1 text-[12px] text-steel">{b.hint}</span>
+      {children}
+    </div>
+  );
+}
+
+export function Panel({ title, tone = 'cyan', right, children, className, block }: { title?: ReactNode; tone?: Tone; right?: ReactNode; children: ReactNode; className?: string; block?: Block }) {
+  return (
+    <section
+      className={cx('hud-panel rounded-xl border border-line bg-panel p-4 sm:p-5', className)}
+      data-tone={tone}
+      data-block={block}
+      style={block ? { boxShadow: `inset 3px 0 0 ${BLOCKS[block].color}` } : undefined}
+    >
       {(title || right) && (
         <div className="mb-4 flex items-center justify-between gap-3">
           {title ? <Tag tone={tone}>{title}</Tag> : <span />}

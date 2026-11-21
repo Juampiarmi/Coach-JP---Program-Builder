@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
-import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
+import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
 import { alternativesFor, equivalentGrams, type FoodRef, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
@@ -11,10 +11,11 @@ import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, fixSeasoning, optionTotals, prepMinutes } from '@/lib/menuOptions';
 import { OptionBadges } from './OptionBadges';
 import { usePlanStore } from '@/store/usePlanStore';
-import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
+import { BlockHeader, Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
 import { NewDishButton } from './FoodBrandDatabase';
-import { dayAnchors, timeToMinutes } from '@/lib/schedule';
+import { fixedFromAnamnesis, hhmm, mainAnchors, trainingOf } from '@/lib/agenda';
+import { timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
 
@@ -709,7 +710,8 @@ export function MealsTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="PASO 2 · COMIDAS DEL PLAN" right={<Utensils className="h-4 w-4 text-cyan-hud/80" />}>
+      <BlockHeader block="estructura" />
+      <Panel title="ESTRUCTURA DEL DÍA · COMIDAS Y HORARIOS" block="estructura" tone="fire" right={<Utensils className="h-4 w-4 text-fire/80" />}>
         <p className="-mt-1 mb-3 text-[13px] text-steel">Armá las comidas del día de entreno y de descanso. Cada comida puede tener hasta 5 opciones con los mismos macros; tu alumno elige la que quiera. La línea de proteína te avisa si desayuno, almuerzo y cena llegan al mínimo para el músculo.</p>
         <div className="grid gap-3 lg:grid-cols-2">
           <DayCompare day="on" />
@@ -717,6 +719,11 @@ export function MealsTab() {
         </div>
         <BalanceBanner />
         <RetimeBar />
+        <SaveTemplateBar />
+      </Panel>
+
+      <BlockHeader block="opciones" />
+      <Panel title="OPCIONES POR COMIDA" block="opciones" right={<Utensils className="h-4 w-4 text-[#34D399]/80" />}>
         <AltsBar />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="w-72">
@@ -805,37 +812,79 @@ export function MealsTab() {
   );
 }
 
-const hhmm = (min: number) => `${String(Math.floor((((min % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String(((min % 60) + 60) % 60).padStart(2, '0')}`;
-
-/** Agenda deportiva derivada de la franja de entreno: muestra la secuencia y la aplica con un toque. */
+/** Agenda argentina derivada de la franja de entreno (la misma del banco de planes): la muestra y la aplica con un toque. */
 function RetimeBar() {
   const pr = usePlanStore((s) => s.plan.profile);
+  const an = usePlanStore((s) => s.plan.anamnesis);
   const retime = usePlanStore((s) => s.retimeMeals);
-  const a = dayAnchors(pr);
+  const tr = trainingOf(pr);
+  const a = mainAnchors(true, tr, fixedFromAnamnesis(an));
   const seq: [string, number][] = [
-    ['Desayuno', a.breakfast],
-    ['Almuerzo', a.lunch],
-    ['Pre-WOD', a.peri],
-    ['Post-WOD', a.post],
-    ['Cena', a.dinner],
+    [a.bName, a.B],
+    [a.lName, a.L],
+    ['Antes de entrenar', tr.start - 45],
+    ['Cena', a.D],
   ];
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-carbon px-3 py-2">
       <span className="font-mono text-[10px] tracking-[0.12em] text-mute">
-        ENTRENO {hhmm(a.start)}–{hhmm(a.end)} ·
+        ENTRENO {hhmm(tr.start)}–{hhmm(tr.end)} ·
       </span>
-      <span className="tnum min-w-0 flex-1 font-mono text-[10.5px] text-steel">
+      <span className="tnum min-w-0 flex-1 font-mono text-[10.5px] text-steel" title="Agenda argentina: la cena cierra el día (nada después), 1 h 30 entre tomas y ninguna comida durante el entreno. Las colaciones van a media mañana o a la merienda.">
         {seq
           .sort((x, y) => timeToMinutes(hhmm(x[1])) - timeToMinutes(hhmm(y[1])))
           .map(([n, t]) => `${n} ${hhmm(t)}`)
-          .join(' → ')}
+          .join(' → ')}{' '}
+        · cena siempre al final
       </span>
       <button
         type="button"
         onClick={retime}
+        title="Reacomoda todas las comidas con la agenda argentina: cena entre 21:00 y 22:30 cerrando el día, 1 h 30 entre tomas y sin colación «antes de dormir»"
         className="rounded-md border border-cyan-hud/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud hover:bg-cyan-hud/10"
       >
         [ ⏱ AJUSTAR HORARIOS AL ENTRENO ]
+      </button>
+    </div>
+  );
+}
+
+/** Guardar el plan del atleta como plantilla propia (queda en Planes listos → Mis plantillas). */
+function SaveTemplateBar() {
+  const plan = usePlanStore((s) => s.plan);
+  const saveTemplate = usePlanStore((s) => s.saveTemplate);
+  const count = usePlanStore((s) => s.templates.length);
+  const setBuilderTab = usePlanStore((s) => s.setBuilderTab);
+  const [saved, setSaved] = useState('');
+  const save = () => {
+    const name = window.prompt('Nombre de la plantilla (la vas a encontrar en Planes listos → Mis plantillas):', `${plan.profile.name} · ${PHASE_LABEL[plan.profile.phase]}`);
+    if (name === null) return;
+    saveTemplate(name);
+    setSaved(name.trim() || `Plan de ${plan.profile.name}`);
+  };
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-carbon px-3 py-2">
+      <span className="font-mono text-[10px] tracking-[0.12em] text-mute">PLANTILLA PROPIA ·</span>
+      <span className="min-w-0 flex-1 text-[11.5px] text-steel">
+        {saved ? (
+          <>
+            ✓ Guardada como «{saved}».{' '}
+            <button type="button" onClick={() => setBuilderTab('library')} className="font-semibold text-cyan-hud hover:underline">
+              Ver mis plantillas
+            </button>
+          </>
+        ) : (
+          `Guardá este plan para reutilizarlo con otros atletas (se reescala a su peso)${count ? ` · ${count} guardada${count > 1 ? 's' : ''}` : ''}.`
+        )}
+      </span>
+      <button
+        type="button"
+        data-save-template
+        onClick={save}
+        disabled={plan.meals.length === 0}
+        className="rounded-md border border-fire/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/10 disabled:opacity-40"
+      >
+        [ ⭐ GUARDAR COMO PLANTILLA ]
       </button>
     </div>
   );
