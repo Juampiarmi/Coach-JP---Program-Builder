@@ -65,6 +65,10 @@ Adaptador `alumnoVoz` (runner.html): corre la app del alumno con un `AudioContex
 - Parsers de CrossFit del alumno que todavía no son públicos (`jpCfFila` y los formatos del HUD): se vuelven testeables al sacarlos de los bloques autoejecutables (siguiente paso de la modularización).
 - Funciones atadas al estado `S` / DOM: copiar/duplicar día (`ejecutarCopiaDia`), `jpActivarAlumno`, el orquestador `autoFormatBlock` y el nivel con IA.
 
+## Vista del entrenamiento y pantalla completa (`cases-vista.js`)
+
+Adaptador `alumnoVista` (runner.html): inserta piezas de muestra en la app del alumno y las mide con `getComputedStyle` (alineación de márgenes, subtítulos naranja, desplegable de pautas, encabezado de cardio, deduplicado de videos, firma, menú de Perfil con temporizadores simulados y colores de la pantalla completa del timer por fase). 8 casos.
+
 ## Timer en segundo plano (`cases-segundo-plano.js`)
 
 Adaptador `alumnoFondo` (runner.html): reloj simulado sobre la app del alumno. 6 casos: cronograma de transiciones del timer (Tabata, EMOM, AMRAP) con su hora y su texto, entrega del cronograma al service worker al pasar a segundo plano (`visibilitychange`), cola del SW (`jpPlanFases`, tope de 60 min) y su código, aviso «Mantené la pantalla encendida» en iPhone / iPad (una sola vez, nunca en escritorio) y textos `app.notif.*` / `app.aviso.*`. Los avisos del sistema con el teléfono bloqueado son mejor esfuerzo: el navegador puede dormir el service worker (más en iPhone); eso no se puede testear.

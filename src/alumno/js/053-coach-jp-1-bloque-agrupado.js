@@ -680,12 +680,11 @@
       fp.className = 'cf-phase' + (p.classList.contains('rest') ? ' rest' : '') +
                      (p.classList.contains('work') ? ' work' : '') +
                      (p.classList.contains('warn') ? ' warn' : '');
-      /* directiva -- espeja también el color inline dorado/cián fijado en
-         pintar() (ver comentario ahí): sin esto, la pantalla completa
-         quedaba con los colores viejos aunque el motor chico ya mostrara
-         los nuevos. */
-      if(p.style.color) fp.style.setProperty('color', p.style.color, 'important');
-      else fp.style.removeProperty('color');
+      /* el estado de la fase (preparación / trabajo / descanso / quieto) viaja en data-fase y el color sale del CSS (092-pantalla-completa-azul.css): trabajo = naranja, descanso =
+         cyan, preparación = amarillo del escudo; se mantiene aunque entren los últimos 10 s (antes el aviso los volvía a todos ámbar y no se distinguía el descanso). */
+      var estadoFase = /PREPARACI/i.test(p.textContent || '') ? 'prep' : (p.classList.contains('rest') ? 'rest' : (p.classList.contains('work') ? 'work' : 'idle'));
+      var fullEl = document.getElementById('cwtFull'); if(fullEl && fullEl.dataset.fase !== estadoFase) fullEl.dataset.fase = estadoFase;
+      fp.style.removeProperty('color');
     }
     if(r && fr){
       var e = T() ? T().estado() : null;
@@ -700,8 +699,7 @@
                 (b.parentNode.classList.contains('rest') ? ' rest' : '') +
                 (b.parentNode.classList.contains('warn') ? ' warn' : '');
       if(fb.parentNode.className !== cls) fb.parentNode.className = cls;
-      if(b.style.background) fb.style.setProperty('background', b.style.background, 'important');
-      else fb.style.removeProperty('background');
+      fb.style.removeProperty('background');    /* el color de la barra sale del CSS según la fase (data-fase) */
     }
     var go = document.getElementById('cwtGo'), fg = document.getElementById('cfGo');
     if(go && fg && fg.textContent !== go.textContent) fg.textContent = go.textContent;
