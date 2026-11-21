@@ -13999,9 +13999,10 @@ var jpBox = (function(){
     aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
     mitad:    function(){ jpPerfilSonido.reproducir('mitad', true); },   /* la háptica de la mitad ya la envía el HUD Timer */
     inicio:   function(){ jpPerfilSonido.reproducir('inicio'); },
+    reiniciar:function(){ ultimaChicharra = 0; },    /* tests: el timer con reloj simulado no debe dejar una marca de tiempo "del futuro" que silencie las bocinas siguientes */
     chicharra:function(){
       var ahora = Date.now();
-      if(ahora - ultimaChicharra < 1400) return;      /* el "segundo 0" y la transicion de fase no suenan dos veces */
+      if(ahora - ultimaChicharra < 1400){ try{ jpPerfilSonido.hint(null); }catch(eH){} return; }      /* el "segundo 0" y la transicion de fase no suenan dos veces (y la pista de voz de la segunda se descarta) */
       ultimaChicharra = ahora; jpPerfilSonido.reproducir('fin');
     }
   };
@@ -16420,6 +16421,11 @@ var jpVoz = (function(){
     if(forzar && silenciada()) return false;
     var lang = idioma(), e = BUF[lang] && BUF[lang][id];
     if(!e){ cargar(lang); return false; }
+    /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
+    if(id === 'halfway' && actual && Date.now() - hablaT < 900){
+      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      return true;
+    }
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
@@ -26124,6 +26130,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(fase === 'work' && c.rest > 0) return true;
     return ronda < rondas;
   }
+  /* Frase que corresponde a la transición que está por pasar: 'go' (arranca la fase de trabajo o un intervalo nuevo), 'rest' (empieza el descanso), 'last_round' (arranca la
+     última ronda) o 'done' (fin: "Stop"). La voz SIEMPRE se decide acá, en el instante de la transición: el ticker cae en el borde del segundo (+12 ms), así que casi nunca
+     existe un tick con "0 segundos" y no se puede depender de avisar(0). */
+  function pistaTransicion(){
+    var c = cfg();
+    if(fase === 'prep') return 'go';
+    if(!hayProximo()) return 'done';
+    if(fase === 'work' && c.rest > 0 && modo !== 'emom') return 'rest';
+    return (ronda + 1 >= rondas) ? 'last_round' : 'go';
+  }
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
@@ -26134,18 +26150,26 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
-      try{
-        var pista = !hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work');
-        /* voz: la preparación termina con "¡Ya!"; al abrirse una ronda nueva dice "Siguiente ronda" y, en la última, "Última ronda" */
-        if(fase === 'prep') pista = 'go';
-        else if(pista === 'work') pista = (ronda + 1 >= rondas) ? 'last_round' : 'next_round';
-        jpPerfilSonido.hint(pista);
-      }catch(e){}
+      try{ jpPerfilSonido.hint(pistaTransicion()); }catch(e){}
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
       if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
+  /* Aviso de la transición (bocina o voz): paso() puede encadenar VARIAS transiciones de golpe cuando el teléfono estuvo bloqueado; solo se anuncia la ÚLTIMA (la del estado
+     en el que queda el reloj) y solo si es reciente (menos de 3 s: con el ticker normal el atraso es de ~12 ms; un navegador en segundo plano puede llegar a ~1 s). Así al volver no se escucha una ráfaga de "¡Go!" / "Rest" viejos ni se pisa una frase con otra. */
+  var cueTrans = null;
   function paso(){
+    cueTrans = null;
+    pasoInterno();
+    var q = cueTrans; cueTrans = null;
+    if(q && q.over < 3000){
+      try{ jpPerfilSonido.hint(q.p); }catch(eH){}
+      jpBox.chicharra(); jpRayo('gold');
+      if(q.fin){ window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true); }
+      if(q.vib) vibAl(q.vib);
+    }
+  }
+  function pasoInterno(){
     /* directiva10 -- en vez de resolver una sola transición de fase por
        llamada (lo que dejaría "debiendo" el resto del salto si el celular
        estuvo bloqueado más tiempo que la fase actual, y de paso estiraría
@@ -26167,19 +26191,21 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         var overPrep = -faltaPrep;
         fase = pendiente ? pendiente.fase : 'work';
         restante = pendiente ? pendiente.restante : 0;
-        pendiente = null; ultimoBeep = -1;
+        pendiente = null; ultimoBeep = (restante > 0 && restante <= 3) ? restante : -1;    /* si la fase nueva dura 3 s o menos, su cuenta arranca con la frase de la transición: no se dice el número que coincide con ella */
         faseTargetEnd = now + restante * 1000 - overPrep;
         /* la fase real recién arranca ahora -- el cuenta-arriba tampoco debe
            contar el tiempo que duró la preparación. */
         transcurridoBase = 0; transcurridoStart = now; transcurrido = 0;
-        jpBox.chicharra(); jpRayo('gold'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+        cueTrans = { p: 'go', over: overPrep, fin: true };    /* voz: termina la cuenta 3-2-1 y dice "¡Go!" */
         continue;
       }
       transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
       /* hito de mitad: doble beep al cumplirse el 50% del tiempo objetivo */
       if(!mitadAvisada){
         var totObj = duracionTotal(c);
-        if(totObj >= 30 && transcurrido >= totObj / 2){
+        /* si la mitad cae justo en la cuenta 3-2-1 de la fase, se espera a que arranque la fase siguiente (no se pisa la cuenta ni el "¡Go!" / "Rest") */
+        var enCuenta = fase !== 'up' && (faseTargetEnd - now) <= 4500;
+        if(totObj >= 30 && transcurrido >= totObj / 2 && !enCuenta){
           mitadAvisada = true;
           if(transcurrido < totObj / 2 + 10){ jpBox.mitad(); vibAl([60, 40, 60]); }
         }
@@ -26194,21 +26220,21 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       if(modo === 'amrap'){ finalizar('AMRAP completo', over > 8000); return; }
       if(modo === 'tabata' || modo === 'intervalos'){
         if(fase === 'work' && c.rest > 0){
-          fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = -1;
-          if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); }
+          fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;    /* si la fase nueva dura 3 s o menos, su cuenta arranca con la frase de la transición: no se dice el número que coincide con ella */
+          cueTrans = { p: 'rest', over: over };
           continue;
         }
         vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
         if(ronda >= rondas){ finalizar((modo === 'intervalos' ? 'Intervalos' : 'Tabata') + ' completo', over > 8000); return; }
-        ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = -1;
-        if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); }
+        ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;
+        cueTrans = { p: ronda >= rondas ? 'last_round' : 'go', over: over };
         continue;
       }
       /* EMOM */
       vueltas.push(c.intervalo);
       if(ronda >= rondas){ finalizar('EMOM completo', over > 8000); return; }
-      ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = -1;
-      if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); vibAl([100, 50, 100]); }
+      ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;
+      cueTrans = { p: ronda >= rondas ? 'last_round' : 'go', over: over, vib: [100, 50, 100] };
       continue;
     }
   }
@@ -26279,6 +26305,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     pintar();
   }
   function finalizar(motivo, silencioso){
+    cueTrans = null;    /* el fin tiene su propio aviso ("Stop"): se descartan las transiciones pendientes de una recuperación */
     try{ document.dispatchEvent(new CustomEvent('jp-wod-fin', { detail: { modo: modo, seg: transcurrido, motivo: String(motivo || '') } })); }catch(eFin){}
     corriendo = false; if(tick){ tick.stop(); } tick = null;
     despierto(false);
@@ -47987,6 +48014,40 @@ html body #cwtWrap .hud-actions .cwt-mute{ flex:1 1 0 !important; min-width:0 !i
 html body #cwtWrap .hud-actions #cwtVoz{ order:2 !important; }
 html body #cwtWrap .hud-actions .cwt-hud-min{ flex:0 0 36px !important; order:3 !important; }
 html body #cwtWrap .hud-actions .cwt-hud-close{ flex:0 0 36px !important; order:4 !important; }
+</style>
+<style id="jpPantallaCompleta">
+/* Timer en pantalla completa ("modo gimnasio") · mismo diseño que el HUD Timer actual.
+   Antes la pantalla completa quedó con la estética vieja (negro puro + naranja CrossFit: fondo #090909, botón naranja, pastilla de ronda traslúcida). Ahora usa las superficies
+   y colores del HUD: fondo azul noche (#0B132B), superficies #131F43 / #1A2850 con borde azul (150,178,240), botón principal dorado (#FFC24B) sobre azul, texto #EEF3FF y la
+   tipografía Chakra Petch. El color de la fase y de la barra siguen saliendo del HUD (el espejo los copia en línea), así los dos nunca se ven distintos. Va al final de los
+   estilos y con el id #cwtFull duplicado (especificidad máxima) para ganar a las reglas viejas de 052 / 058 / 081 / 084 (la 084 fuerza naranja con "body.jp-mission:not(.cf-disc) #cwtFull"). */
+html body #cwtFull#cwtFull{
+  background:radial-gradient(circle at 50% 40%, rgba(98,126,214,.18), rgba(11,19,43,0) 62%), #0B132B !important;
+  color:#EEF3FF; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
+}
+html body #cwtFull#cwtFull .cf-shield path{ stroke:rgba(150,178,240,.12) !important; }
+html body #cwtFull#cwtFull .cf-time{ color:#EFEFEF !important; font-family:'Chakra Petch',monospace !important; text-shadow:0 0 38px rgba(98,126,214,.32) !important; }
+html body #cwtFull#cwtFull .cf-time.alerta{ color:#EFEFEF !important; text-shadow:0 0 46px rgba(150,178,240,.5) !important; }
+html body #cwtFull#cwtFull .cf-round{
+  background:#131F43 !important; border:1px solid rgba(150,178,240,.52) !important; color:#EEF3FF !important;
+  font-family:'Chakra Petch',sans-serif !important; box-shadow:0 14px 30px -18px rgba(0,0,0,.8);
+}
+html body #cwtFull#cwtFull.warn .cf-round{ background:rgba(245,158,11,.12) !important; border-color:rgba(245,158,11,.6) !important; color:#FFE3A6 !important; }
+html body #cwtFull#cwtFull .cf-bar{ background:rgba(255,255,255,.08) !important; }
+html body #cwtFull#cwtFull .cf-acts button, html body #cwtFull#cwtFull #cfReset{
+  background:#1A2850 !important; border:1px solid rgba(150,178,240,.52) !important; color:#EEF3FF !important;
+  border-radius:14px !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.9px !important;
+}
+html body #cwtFull#cwtFull .cf-acts .cf-go{
+  background:#FFC24B !important; border-color:#FFC24B !important; color:#0B132B !important;
+  border-radius:15px !important; letter-spacing:1.2px !important; box-shadow:0 10px 24px -12px rgba(255,194,75,.55) !important;
+}
+html body #cwtFull#cwtFull .cf-x{
+  background:rgba(255,255,255,.06) !important; border:1px solid rgba(150,178,240,.35) !important; color:#EEF3FF !important;
+}
+html body #cwtFull#cwtFull .cf-sign b{ color:#EEF3FF !important; font-family:'Chakra Petch',sans-serif !important; }
+html body #cwtFull#cwtFull .cf-sign b em{ color:#FF5500 !important; }
+html body #cwtFull#cwtFull .cf-sign span{ color:#9FB0D8 !important; font-family:'Chakra Petch',sans-serif !important; }
 </style>
 
 </body>

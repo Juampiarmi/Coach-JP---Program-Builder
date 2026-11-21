@@ -505,9 +505,9 @@
     var V = w.jpVoz, d = w.document, plays = [], creados = {}, P = [];
     function nodo(){ var f = function(){ return nodo(); }; return new Proxy(f, { get: function(t, p){ return p === 'then' ? undefined : nodo(); }, set: function(){ return true; } }); }
     var ctxF = { state: 'running', currentTime: 1, destination: nodo(), resume: function(){ return Promise.resolve(); } };
-    var decodificados = [], fetchs = 0;
+    var decodificados = [], fetchs = 0, reloj = 0, playsT = [];
     ctxF.decodeAudioData = function(ab, ok){ decodificados.push(ab); ok({ getChannelData: function(){ return new Float32Array(4); }, sampleRate: 44100 }); };
-    ctxF.createBufferSource = function(){ var s = { buffer: null, connect: function(){}, start: function(){ plays.push(s.buffer && s.buffer.id); }, stop: function(){}, onended: null }; return s; };
+    ctxF.createBufferSource = function(){ var s = { buffer: null, connect: function(){}, start: function(){ plays.push(s.buffer && s.buffer.id); playsT.push(reloj); }, stop: function(){}, onended: null }; return s; };
     ['createOscillator', 'createGain', 'createBiquadFilter', 'createWaveShaper', 'createDynamicsCompressor', 'createBuffer'].forEach(function(n){ ctxF[n] = function(){ creados[n] = (creados[n] || 0) + 1; return nodo(); }; });
     var KEYS = ['jp_voz', 'jp_voz_lang', 'jp_audio_muted', 'coachjp_lang'], guardado = {}, origCtx = w.ensureAudioCtx, origFetch = w.fetch, idiomaApp = w.JP_I18N.lang();
     KEYS.forEach(function(k){ guardado[k] = w.localStorage.getItem(k); });
@@ -528,7 +528,7 @@
       if(c.caso === 'frases'){
         ls('jp_voz', '1'); montar();
         var r = { cuenta: [3, 2, 1].map(function(n){ return dice(function(){ w.jpBox.cuenta(n); }); }).join(',') };
-        r.ya = dice(function(){ w.jpBox.go(); }); r.mitad = dice(function(){ w.jpBox.mitad(); });
+        r.ya = dice(function(){ w.jpBox.go(); }); montar(); r.mitad = dice(function(){ w.jpBox.mitad(); });
         r.sinTonos = !creados.createOscillator;
         montar(); r.finSinFraseEsSilencio = V.hablar('fin', 0) === true && plays.length === 0 && !creados.createOscillator;
         return r;
@@ -629,6 +629,44 @@
           return { controlesDebajoDelTitulo: ['voz', 'cerrar'].every(function(k){ return piezas[k] && piezas[k].width > 0 && piezas[k].top >= piezas.titulo.bottom - 2; }),
             sinSolapes: solapes.length === 0, dentroDelAncho: ks.every(function(k){ return piezas[k] && piezas[k].left >= 0 && piezas[k].right <= anchoVentana + 0.5; }), detalle: solapes.join(',') + ' · ancho ' + anchoVentana };
         } finally { sinAnim.remove(); tocados.forEach(function(t){ if(t[1] == null) t[0].removeAttribute('style'); else t[0].setAttribute('style', t[1]); }); }
+      }
+      if(c.caso === 'secuencia' || c.caso === 'segundoPlano' || c.caso === 'amrap'){
+        /* el timer de WOD con un reloj simulado: los avisos que salen son los de la voz (sin ningún pitido), en el orden y con el espaciado que se escuchan */
+        var DN = w.Date.now, TM = w.CoachWodTimer, T0 = 1700000000000;
+        w.jpBox.reiniciar();
+        function dichos(){ return ids().join(','); }
+        function huecoMin(){ var m = 1e9; for(var k = 1; k < playsT.length; k++) m = Math.min(m, playsT[k] - playsT[k - 1]); return playsT.length > 1 ? m : null; }
+        w.Date.now = function(){ return reloj; };
+        try{
+          ls('jp_voz', '1'); ls('jp_voz_lang', 'en'); montar(); reloj = T0;
+          try{ TM.cerrar(); }catch(e0){}
+          if(c.caso === 'amrap') TM.configurar({ modo: 'amrap', total: 1 }); else TM.configurar({ modo: 'tabata', work: 5, rest: 3, rondas: 3 });
+          TM.arrancar(); plays.length = 0; playsT.length = 0; creados = {};
+          var r = {};
+          if(c.caso === 'segundoPlano'){
+            /* teléfono bloqueado: no hay ningún tick durante 22 s y al volver se resincroniza UNA vez contra el reloj de pared */
+            reloj = T0 + 22012; TM.paso(); var e1 = TM.estado();
+            r.estado = e1.ronda + '/' + e1.rondas + ' ' + e1.fase; r.restante = e1.restante; r.dicho = dichos(); r.sinPitidos = !creados.createOscillator;
+            /* una vuelta más tarde (de 3 s a 40 s) no se repite ninguna frase vieja */
+            plays.length = 0; reloj = T0 + 60012; TM.paso(); r.alFinal = dichos(); r.terminado = !TM.estado().corriendo;
+            return r;
+          }
+          reloj = T0 + 12; var n = 0;
+          while(TM.estado().corriendo && n++ < 600){ TM.paso(); reloj += 1000; }
+          r.secuencia = dichos(); r.huecoMin = huecoMin(); r.sinPitidos = !creados.createOscillator; r.terminado = !TM.estado().corriendo;
+          return r;
+        } finally { w.Date.now = DN; try{ TM.reset(); TM.cerrar(); }catch(e9){} w.jpBox.reiniciar(); }
+      }
+      if(c.caso === 'pantallaCompleta'){
+        var FS = w.CoachTimerFull, cls = d.body.className, sinAnim2 = d.createElement('style');
+        sinAnim2.textContent = '#cwtFull, #cwtFull *{ transition:none !important; animation:none !important; }'; d.head.appendChild(sinAnim2);    /* se mide el estilo final, no una transición en curso */
+        try{
+          FS.entrar();
+          var full = d.getElementById('cwtFull'), q = function(s){ return w.getComputedStyle(d.querySelector(s)); };
+          var fondo = w.getComputedStyle(full).backgroundColor, go = q('#cfGo'), rs = q('#cfReset'), rd = q('#cfRound'), tm = q('#cfTime');
+          return { fondoAzul: fondo === 'rgb(11, 19, 43)', botonDorado: go.backgroundColor === 'rgb(255, 194, 75)' && go.color === 'rgb(11, 19, 43)', secundarioAzul: rs.backgroundColor === 'rgb(26, 40, 80)' && /150, 178, 240/.test(rs.borderColor),
+            pastillaAzul: rd.backgroundColor === 'rgb(19, 31, 67)', tipografia: /Chakra Petch/.test(tm.fontFamily) && /Chakra Petch/.test(go.fontFamily) && /Chakra Petch/.test(rd.fontFamily), sinNaranjaDeFondo: !/255, 85, 0/.test(w.getComputedStyle(full).backgroundImage) };
+        } finally { FS.salir(); d.body.className = cls; sinAnim2.remove(); }
       }
       if(c.caso === 'minimizado'){
         /* HUD minimizado: la barra mini queda a la vista, sin velo ni desenfoque sobre la app (la piel azul noche lo dejaba tapando todo) */

@@ -235,6 +235,16 @@
     if(fase === 'work' && c.rest > 0) return true;
     return ronda < rondas;
   }
+  /* Frase que corresponde a la transición que está por pasar: 'go' (arranca la fase de trabajo o un intervalo nuevo), 'rest' (empieza el descanso), 'last_round' (arranca la
+     última ronda) o 'done' (fin: "Stop"). La voz SIEMPRE se decide acá, en el instante de la transición: el ticker cae en el borde del segundo (+12 ms), así que casi nunca
+     existe un tick con "0 segundos" y no se puede depender de avisar(0). */
+  function pistaTransicion(){
+    var c = cfg();
+    if(fase === 'prep') return 'go';
+    if(!hayProximo()) return 'done';
+    if(fase === 'work' && c.rest > 0 && modo !== 'emom') return 'rest';
+    return (ronda + 1 >= rondas) ? 'last_round' : 'go';
+  }
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
@@ -245,18 +255,26 @@
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
-      try{
-        var pista = !hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work');
-        /* voz: la preparación termina con "¡Ya!"; al abrirse una ronda nueva dice "Siguiente ronda" y, en la última, "Última ronda" */
-        if(fase === 'prep') pista = 'go';
-        else if(pista === 'work') pista = (ronda + 1 >= rondas) ? 'last_round' : 'next_round';
-        jpPerfilSonido.hint(pista);
-      }catch(e){}
+      try{ jpPerfilSonido.hint(pistaTransicion()); }catch(e){}
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
       if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
+  /* Aviso de la transición (bocina o voz): paso() puede encadenar VARIAS transiciones de golpe cuando el teléfono estuvo bloqueado; solo se anuncia la ÚLTIMA (la del estado
+     en el que queda el reloj) y solo si es reciente (menos de 3 s: con el ticker normal el atraso es de ~12 ms; un navegador en segundo plano puede llegar a ~1 s). Así al volver no se escucha una ráfaga de "¡Go!" / "Rest" viejos ni se pisa una frase con otra. */
+  var cueTrans = null;
   function paso(){
+    cueTrans = null;
+    pasoInterno();
+    var q = cueTrans; cueTrans = null;
+    if(q && q.over < 3000){
+      try{ jpPerfilSonido.hint(q.p); }catch(eH){}
+      jpBox.chicharra(); jpRayo('gold');
+      if(q.fin){ window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true); }
+      if(q.vib) vibAl(q.vib);
+    }
+  }
+  function pasoInterno(){
     /* directiva10 -- en vez de resolver una sola transición de fase por
        llamada (lo que dejaría "debiendo" el resto del salto si el celular
        estuvo bloqueado más tiempo que la fase actual, y de paso estiraría
@@ -278,19 +296,21 @@
         var overPrep = -faltaPrep;
         fase = pendiente ? pendiente.fase : 'work';
         restante = pendiente ? pendiente.restante : 0;
-        pendiente = null; ultimoBeep = -1;
+        pendiente = null; ultimoBeep = (restante > 0 && restante <= 3) ? restante : -1;    /* si la fase nueva dura 3 s o menos, su cuenta arranca con la frase de la transición: no se dice el número que coincide con ella */
         faseTargetEnd = now + restante * 1000 - overPrep;
         /* la fase real recién arranca ahora -- el cuenta-arriba tampoco debe
            contar el tiempo que duró la preparación. */
         transcurridoBase = 0; transcurridoStart = now; transcurrido = 0;
-        jpBox.chicharra(); jpRayo('gold'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+        cueTrans = { p: 'go', over: overPrep, fin: true };    /* voz: termina la cuenta 3-2-1 y dice "¡Go!" */
         continue;
       }
       transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
       /* hito de mitad: doble beep al cumplirse el 50% del tiempo objetivo */
       if(!mitadAvisada){
         var totObj = duracionTotal(c);
-        if(totObj >= 30 && transcurrido >= totObj / 2){
+        /* si la mitad cae justo en la cuenta 3-2-1 de la fase, se espera a que arranque la fase siguiente (no se pisa la cuenta ni el "¡Go!" / "Rest") */
+        var enCuenta = fase !== 'up' && (faseTargetEnd - now) <= 4500;
+        if(totObj >= 30 && transcurrido >= totObj / 2 && !enCuenta){
           mitadAvisada = true;
           if(transcurrido < totObj / 2 + 10){ jpBox.mitad(); vibAl([60, 40, 60]); }
         }
@@ -305,21 +325,21 @@
       if(modo === 'amrap'){ finalizar('AMRAP completo', over > 8000); return; }
       if(modo === 'tabata' || modo === 'intervalos'){
         if(fase === 'work' && c.rest > 0){
-          fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = -1;
-          if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); }
+          fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;    /* si la fase nueva dura 3 s o menos, su cuenta arranca con la frase de la transición: no se dice el número que coincide con ella */
+          cueTrans = { p: 'rest', over: over };
           continue;
         }
         vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
         if(ronda >= rondas){ finalizar((modo === 'intervalos' ? 'Intervalos' : 'Tabata') + ' completo', over > 8000); return; }
-        ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = -1;
-        if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); }
+        ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;
+        cueTrans = { p: ronda >= rondas ? 'last_round' : 'go', over: over };
         continue;
       }
       /* EMOM */
       vueltas.push(c.intervalo);
       if(ronda >= rondas){ finalizar('EMOM completo', over > 8000); return; }
-      ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = -1;
-      if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); vibAl([100, 50, 100]); }
+      ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = (restante <= 3) ? restante : -1;
+      cueTrans = { p: ronda >= rondas ? 'last_round' : 'go', over: over, vib: [100, 50, 100] };
       continue;
     }
   }
@@ -390,6 +410,7 @@
     pintar();
   }
   function finalizar(motivo, silencioso){
+    cueTrans = null;    /* el fin tiene su propio aviso ("Stop"): se descartan las transiciones pendientes de una recuperación */
     try{ document.dispatchEvent(new CustomEvent('jp-wod-fin', { detail: { modo: modo, seg: transcurrido, motivo: String(motivo || '') } })); }catch(eFin){}
     corriendo = false; if(tick){ tick.stop(); } tick = null;
     despierto(false);

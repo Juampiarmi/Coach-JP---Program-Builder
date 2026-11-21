@@ -1386,9 +1386,10 @@ var jpBox = (function(){
     aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
     mitad:    function(){ jpPerfilSonido.reproducir('mitad', true); },   /* la háptica de la mitad ya la envía el HUD Timer */
     inicio:   function(){ jpPerfilSonido.reproducir('inicio'); },
+    reiniciar:function(){ ultimaChicharra = 0; },    /* tests: el timer con reloj simulado no debe dejar una marca de tiempo "del futuro" que silencie las bocinas siguientes */
     chicharra:function(){
       var ahora = Date.now();
-      if(ahora - ultimaChicharra < 1400) return;      /* el "segundo 0" y la transicion de fase no suenan dos veces */
+      if(ahora - ultimaChicharra < 1400){ try{ jpPerfilSonido.hint(null); }catch(eH){} return; }      /* el "segundo 0" y la transicion de fase no suenan dos veces (y la pista de voz de la segunda se descarta) */
       ultimaChicharra = ahora; jpPerfilSonido.reproducir('fin');
     }
   };

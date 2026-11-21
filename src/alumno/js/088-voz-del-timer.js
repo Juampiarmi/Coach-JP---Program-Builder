@@ -102,6 +102,11 @@ var jpVoz = (function(){
     if(forzar && silenciada()) return false;
     var lang = idioma(), e = BUF[lang] && BUF[lang][id];
     if(!e){ cargar(lang); return false; }
+    /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
+    if(id === 'halfway' && actual && Date.now() - hablaT < 900){
+      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      return true;
+    }
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
