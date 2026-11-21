@@ -149,7 +149,7 @@
     /* directiva ("Motor de Retroalimentación Háptica & Sonido Táctico")
        -- switch discreto en Ajustes: lee/escribe la MISMA clave
        jp_audio_muted que ya usa isAudioMuted() (playBeep, ver AUDIO más
-       arriba) y el mute del Custom WOD Timer (#cwtMute) -- un solo
+       arriba) y el chip VOZ del Custom WOD Timer -- un solo
        interruptor real, sin duplicar estado. */
     var audioToggle = q('hdpAudioToggle');
     if(audioToggle && !audioToggle.dataset.hdWired){

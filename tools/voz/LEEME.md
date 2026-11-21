@@ -11,7 +11,8 @@ node tools/voz/generar.js --check   # ¿cada frase tiene su mp3 vigente en es y 
 node tools/voz/generar.js --empaquetar   # regenera solo el paquete incrustado a partir de voz/
 ```
 
-- Voz por idioma: `frases.json` → `porIdioma` pisa la voz, el modelo y los ajustes generales (hoy el español usa Charlie con más expresividad: estabilidad 0,3, estilo 0,65, velocidad 1,12). Cambiar uno no regenera el otro idioma.
+- Voz por idioma: `frases.json` → `porIdioma` pisa la voz, el modelo y los ajustes generales (hoy el español usa Charlie con más expresividad: estabilidad 0,3, estilo 0,65, velocidad 1,12; el inglés, el idioma por defecto de la voz, usa Charlie «high energy»: estabilidad 0,25, estilo 0,75, velocidad 1,12, frases con signos de exclamación). Cambiar uno no regenera el otro idioma.
+- Idioma de la voz en la app: **inglés por defecto** (aunque la app esté en español); Ajustes permite ES, EN o AUTO (sigue el idioma de la app). Clave `jp_voz_lang`.
 - Probar otras voces o ajustes sin tocar el paquete: `node tools/voz/probar-voces.js es [ids]` (genera una pista por candidata en `tools/voz/muestras/`, ignorada por git).
 - Frases, voz (Charlie), modelo y ajustes: `frases.json`. Cambiar un texto o un ajuste regenera solo esa frase (hash en el manifest).
 - Clave: variable `ELEVENLABS_API_KEY` o un `.env` en `tools/voz/`, en la raíz o en `elevenlabs-tts/`. Ninguno se commitea (`tools/voz/.gitignore`).

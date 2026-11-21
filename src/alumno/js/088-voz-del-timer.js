@@ -10,7 +10,7 @@
    · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NO suena (la voz reemplaza al pitido; si el
      clip todavía se está cargando, ese aviso queda en silencio). Solo si el paquete no se pudo cargar (estado "fallo") devuelve false y suena el tono de siempre para que el timer
      no quede mudo. Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
-   · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('auto' | 'es' | 'en'). 'auto' sigue el idioma de la app (JP_I18N).
+   · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
@@ -21,7 +21,9 @@ var jpVoz = (function(){
   function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
   function activa(){ return lsGet(KEY) === '1'; }
   function silenciada(){ try{ return typeof isAudioMuted === 'function' && isAudioMuted(); }catch(e){ return false; } }
-  function pref(){ var p = lsGet(KEY_L); return (p === 'es' || p === 'en') ? p : 'auto'; }
+  /* idioma de la voz: por defecto INGLÉS (más firme y de app profesional), sin importar el idioma de la app; Ajustes permite ES, EN o AUTO (sigue el idioma de la app) */
+  var IDIOMA_DEFECTO = 'en';
+  function pref(){ var p = lsGet(KEY_L); return (p === 'es' || p === 'en' || p === 'auto') ? p : IDIOMA_DEFECTO; }
   function idioma(){
     var p = pref(); if(p !== 'auto') return p;
     var l = 'es'; try{ if(window.JP_I18N && JP_I18N.lang) l = JP_I18N.lang(); }catch(e){}
@@ -100,6 +102,11 @@ var jpVoz = (function(){
     if(forzar && silenciada()) return false;
     var lang = idioma(), e = BUF[lang] && BUF[lang][id];
     if(!e){ cargar(lang); return false; }
+    /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
+    if(id === 'halfway' && actual && Date.now() - hablaT < 900){
+      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      return true;
+    }
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
@@ -156,6 +163,8 @@ var jpVoz = (function(){
     avisarCambio();
   }
   function fijarIdioma(v){ lsSet(KEY_L, (v === 'es' || v === 'en') ? v : 'auto'); if(activa()) cargar(); avisarCambio(); }
+  /* el silencio general (Ajustes → Sonido & Haptic) también silencia la voz: el chip del timer lo muestra y un toque lo levanta */
+  function quitarSilencio(){ lsSet('jp_audio_muted', '0'); avisarCambio(); }
 
   /* ---------- controles: fila de Ajustes (hdpVozToggle / hdpVozIdioma / hdpVozProbar) y chip del timer de WOD (cwtVoz) ---------- */
   function pintar(){
@@ -173,9 +182,10 @@ var jpVoz = (function(){
     var pr = document.getElementById('hdpVozProbar'); if(pr) pr.textContent = '▶ ' + T('app.voz.probar', 'Probar');
     var chip = document.getElementById('cwtVoz');
     if(chip){
-      chip.textContent = on ? '🗣 ' + T('app.voz.chip.on', 'VOZ: ON') : '🗣 ' + T('app.voz.chip.off', 'VOZ: OFF');
-      chip.classList.toggle('off', !on);
-      chip.title = on ? T('app.voz.chip.t.on', 'Apagar la voz del timer') : T('app.voz.chip.t.off', 'Activar la voz del timer');
+      var mudo = silenciada();
+      chip.textContent = mudo ? '🔇 ' + T('app.voz.chip.mute', 'SIN SONIDO') : (on ? '🗣 ' + T('app.voz.chip.on', 'VOZ: ON') : '🗣 ' + T('app.voz.chip.off', 'VOZ: OFF'));
+      chip.classList.toggle('off', mudo || !on);
+      chip.title = mudo ? T('app.voz.chip.t.mute', 'El sonido está silenciado: tocá para activarlo') : (on ? T('app.voz.chip.t.on', 'Apagar la voz del timer') : T('app.voz.chip.t.off', 'Activar la voz del timer'));
     }
   }
   document.addEventListener('click', function(e){
@@ -183,7 +193,7 @@ var jpVoz = (function(){
     var b = t.closest('#hdpVozToggle [data-voz]'); if(b){ activar(b.dataset.voz === 'on'); return; }
     b = t.closest('#hdpVozIdioma [data-vlang]'); if(b){ fijarIdioma(b.dataset.vlang); return; }
     if(t.closest('#hdpVozProbar')){ probar(); return; }
-    if(t.closest('#cwtVoz')){ activar(!activa()); try{ if(navigator.vibrate) navigator.vibrate([15]); }catch(x){} }
+    if(t.closest('#cwtVoz')){ if(silenciada()) quitarSilencio(); else activar(!activa()); try{ if(navigator.vibrate) navigator.vibrate([15]); }catch(x){} }
   });
   document.addEventListener('jp-voz-cambio', pintar);
   function iniciar(){ pintar(); if(activa()) setTimeout(function(){ cargar(); }, 300); }

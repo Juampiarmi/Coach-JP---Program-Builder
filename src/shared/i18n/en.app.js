@@ -14,6 +14,8 @@ JP_I18N.add('en', {
   'app.voz.ejemplo': '3 - 2 - 1 - Go!',
   'app.voz.chip.on': 'VOICE: ON',
   'app.voz.chip.off': 'VOICE: OFF',
+  'app.voz.chip.mute': 'MUTED',
+  'app.voz.chip.t.mute': 'Sound is muted: tap to turn it on',
   'app.voz.chip.t.on': 'Turn timer voice off',
   'app.voz.chip.t.off': 'Turn timer voice on'
 });

@@ -16,6 +16,8 @@ JP_I18N.add('es', {
   'app.voz.ejemplo': '3 - 2 - 1 - ¡Ya!',
   'app.voz.chip.on': 'VOZ: ON',
   'app.voz.chip.off': 'VOZ: OFF',
+  'app.voz.chip.mute': 'SIN SONIDO',
+  'app.voz.chip.t.mute': 'El sonido está silenciado: tocá para activarlo',
   'app.voz.chip.t.on': 'Apagar la voz del timer',
   'app.voz.chip.t.off': 'Activar la voz del timer'
 });
