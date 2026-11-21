@@ -1457,6 +1457,12 @@ var jpBgTimer = (function(){
       try{ localStorage.setItem(KEY, String(finTs)); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'programar', at: finTs, titulo:'Coach JP', cuerpo: TXT });
     },
+    /* avisos por cambio de fase (WOD): eventos = [{ at, titulo, cuerpo }]; el SW los dispara a su hora, solo si la app no está visible, y reemplaza lo programado antes */
+    programarFases: function(eventos){
+      if(!eventos || !eventos.length) return;
+      try{ localStorage.setItem(KEY, String(eventos[eventos.length - 1].at)); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'programar-fases', eventos: eventos });
+    },
     cancelar: function(){
       try{ localStorage.removeItem(KEY); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'cancelar' });
@@ -1667,17 +1673,40 @@ const jpWake = (function(){
       if(!sentinel) pedir();
     }, 4000);
   }
+  /* iPhone / iPad (incluido el iPad que se presenta como Mac): al bloquear la pantalla o cambiar de app, iOS suspende la página: el timer y la voz se pausan (el reloj se pone al día
+     al volver, pero no suena nada mientras tanto). Se avisa UNA sola vez por dispositivo, la primera vez que corre un cronómetro. */
+  var KEY_IOS = 'jp_aviso_pantalla_ios';
+  function esIOS(){
+    try{
+      var ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }catch(e){ return false; }
+  }
+  function tx(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
   /* sin Wake Lock (navegadores viejos) el teléfono puede bloquearse solo: se avisa una vez para que el alumno lo evite */
-  function avisarSinSoporte(){
-    if(avisado || soporta()) return;
+  function avisarPantalla(){
+    if(avisado) return;
+    var ios = esIOS();
+    if(!ios && soporta()) return;
+    if(ios){
+      try{ if(localStorage.getItem(KEY_IOS) === '1'){ avisado = true; return; } localStorage.setItem(KEY_IOS, '1'); }catch(e0){}
+    }
     avisado = true;
-    try{ if(window.CoachAviso && window.CoachAviso.mostrar) window.CoachAviso.mostrar('fatiga', '💡', 'Mantené la pantalla encendida', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.', 9000); }catch(e3){}
+    try{
+      if(window.CoachAviso && window.CoachAviso.mostrar){
+        if(ios) window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.iphone.t', 'Mantené la pantalla encendida'), tx('app.aviso.iphone.b', 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.'), 12000);
+        else window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.pantalla.t', 'Mantené la pantalla encendida'), tx('app.aviso.pantalla.b', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.'), 9000);
+      }
+    }catch(e3){}
   }
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') pedir(); });
   window.addEventListener('pageshow', pedir);
   window.addEventListener('focus', pedir);
   return {
-    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarSinSoporte(); },
+    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarPantalla(); },
+    /* tests */
+    esIOS: esIOS,
+    __reiniciarAviso: function(){ avisado = false; try{ localStorage.removeItem(KEY_IOS); }catch(e){} },
     off: function(m){ delete motivos[m]; if(!hay()) soltar(); },
     activo: function(){ return !!sentinel; }
   };

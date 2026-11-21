@@ -10323,6 +10323,16 @@ JP_I18N.add('es', {
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
   /* voz del timer (088-voz-del-timer.js) */
+  /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
+  'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
+  'app.notif.work.simple': '💪 ¡A trabajar!',
+  'app.notif.minuto': '⏱️ Minuto {r}/{n}',
+  'app.notif.rest': '😮‍💨 Descanso · Ronda {r}/{n}',
+  'app.notif.done': '🏁 ¡Listo! Terminaste, buen trabajo.',
+  'app.aviso.iphone.t': 'Mantené la pantalla encendida',
+  'app.aviso.iphone.b': 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.',
+  'app.aviso.pantalla.t': 'Mantené la pantalla encendida',
+  'app.aviso.pantalla.b': 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.',
   'app.voz.lb': 'Voz del timer',
   'app.voz.idioma': 'Idioma de la voz',
   'app.voz.auto': 'AUTO',
@@ -10346,6 +10356,15 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
+  'app.notif.work': '💪 Go! · Round {r}/{n}',
+  'app.notif.work.simple': '💪 Go!',
+  'app.notif.minuto': '⏱️ Minute {r}/{n}',
+  'app.notif.rest': '😮‍💨 Rest · Round {r}/{n}',
+  'app.notif.done': '🏁 Done! Great work.',
+  'app.aviso.iphone.t': 'Keep the screen on',
+  'app.aviso.iphone.b': 'On iPhone, if you lock the phone or switch apps, the timer and the voice pause until you come back. Keep the screen on while you train: the app stops it from turning off by itself.',
+  'app.aviso.pantalla.t': 'Keep the screen on',
+  'app.aviso.pantalla.b': 'Your browser cannot stop the phone from locking by itself: set auto-lock to "never" while you train so the clock does not stop.',
   'app.voz.lb': 'Timer voice',
   'app.voz.idioma': 'Voice language',
   'app.voz.auto': 'AUTO',
@@ -14070,6 +14089,12 @@ var jpBgTimer = (function(){
       try{ localStorage.setItem(KEY, String(finTs)); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'programar', at: finTs, titulo:'Coach JP', cuerpo: TXT });
     },
+    /* avisos por cambio de fase (WOD): eventos = [{ at, titulo, cuerpo }]; el SW los dispara a su hora, solo si la app no está visible, y reemplaza lo programado antes */
+    programarFases: function(eventos){
+      if(!eventos || !eventos.length) return;
+      try{ localStorage.setItem(KEY, String(eventos[eventos.length - 1].at)); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'programar-fases', eventos: eventos });
+    },
     cancelar: function(){
       try{ localStorage.removeItem(KEY); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'cancelar' });
@@ -14280,17 +14305,40 @@ const jpWake = (function(){
       if(!sentinel) pedir();
     }, 4000);
   }
+  /* iPhone / iPad (incluido el iPad que se presenta como Mac): al bloquear la pantalla o cambiar de app, iOS suspende la página: el timer y la voz se pausan (el reloj se pone al día
+     al volver, pero no suena nada mientras tanto). Se avisa UNA sola vez por dispositivo, la primera vez que corre un cronómetro. */
+  var KEY_IOS = 'jp_aviso_pantalla_ios';
+  function esIOS(){
+    try{
+      var ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }catch(e){ return false; }
+  }
+  function tx(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
   /* sin Wake Lock (navegadores viejos) el teléfono puede bloquearse solo: se avisa una vez para que el alumno lo evite */
-  function avisarSinSoporte(){
-    if(avisado || soporta()) return;
+  function avisarPantalla(){
+    if(avisado) return;
+    var ios = esIOS();
+    if(!ios && soporta()) return;
+    if(ios){
+      try{ if(localStorage.getItem(KEY_IOS) === '1'){ avisado = true; return; } localStorage.setItem(KEY_IOS, '1'); }catch(e0){}
+    }
     avisado = true;
-    try{ if(window.CoachAviso && window.CoachAviso.mostrar) window.CoachAviso.mostrar('fatiga', '💡', 'Mantené la pantalla encendida', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.', 9000); }catch(e3){}
+    try{
+      if(window.CoachAviso && window.CoachAviso.mostrar){
+        if(ios) window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.iphone.t', 'Mantené la pantalla encendida'), tx('app.aviso.iphone.b', 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.'), 12000);
+        else window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.pantalla.t', 'Mantené la pantalla encendida'), tx('app.aviso.pantalla.b', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.'), 9000);
+      }
+    }catch(e3){}
   }
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') pedir(); });
   window.addEventListener('pageshow', pedir);
   window.addEventListener('focus', pedir);
   return {
-    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarSinSoporte(); },
+    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarPantalla(); },
+    /* tests */
+    esIOS: esIOS,
+    __reiniciarAviso: function(){ avisado = false; try{ localStorage.removeItem(KEY_IOS); }catch(e){} },
     off: function(m){ delete motivos[m]; if(!hay()) soltar(); },
     activo: function(){ return !!sentinel; }
   };
@@ -26238,6 +26286,55 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       continue;
     }
   }
+  /* Cronograma de las próximas transiciones, desde el estado actual: [{ at (epoch ms), tipo: 'work' | 'rest' | 'done', ronda, rondas }]. Sirve para los avisos del sistema con el teléfono
+     bloqueado (jpBgTimer.programarFases): el SW los dispara a su hora aunque la página esté suspendida. Es solo lectura: no toca el estado del motor. */
+  function cronogramaFases(){
+    var ev = [], c = cfg(), now = Date.now();
+    if(!corriendo) return ev;
+    function push(at, tipo, r){ if(at > now) ev.push({ at: Math.round(at), tipo: tipo, ronda: r, rondas: rondas }); }
+    var t = faseTargetEnd, f = fase, r = ronda, inicioReal = null;
+    if(f === 'prep'){
+      inicioReal = t;
+      push(t, 'work', r);
+      f = pendiente ? pendiente.fase : 'work'; t = t + (pendiente ? pendiente.restante : 0) * 1000;
+    }
+    if(modo === 'fortime'){
+      if(c.cap) push(inicioReal != null ? inicioReal + c.cap * 60000 : transcurridoStart + (c.cap * 60 - transcurridoBase) * 1000, 'done', r);
+      return ev;
+    }
+    if(modo === 'amrap'){ push(t, 'done', r); return ev; }
+    var g = 0;
+    if(modo === 'tabata' || modo === 'intervalos'){
+      while(g++ < 600){
+        if(f === 'work' && c.rest > 0){ push(t, 'rest', r); f = 'rest'; t += c.rest * 1000; continue; }
+        if(r >= rondas){ push(t, 'done', r); break; }
+        r++; f = 'work'; push(t, 'work', r); t += c.work * 1000;
+      }
+      return ev;
+    }
+    while(g++ < 600){    /* EMOM */
+      if(r >= rondas){ push(t, 'done', r); break; }
+      r++; push(t, 'work', r); t += c.intervalo * 1000;
+    }
+    return ev;
+  }
+  function tr(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
+  function textoNotif(e){
+    var p = { r: e.ronda, n: e.rondas };
+    if(e.tipo === 'done') return tr('app.notif.done', '🏁 ¡Listo! Terminaste, buen trabajo.');
+    if(e.tipo === 'rest') return tr('app.notif.rest', '😮‍💨 Descanso · Ronda ' + p.r + '/' + p.n, p);
+    if(modo === 'emom') return tr('app.notif.minuto', '⏱️ Minuto ' + p.r + '/' + p.n, p);
+    if(modo === 'tabata' || modo === 'intervalos') return tr('app.notif.work', '💪 ¡A trabajar! · Ronda ' + p.r + '/' + p.n, p);
+    return tr('app.notif.work.simple', '💪 ¡A trabajar!');
+  }
+  /* al pasar a segundo plano (pantalla bloqueada u otra app) se le entrega el cronograma completo al SW: avisa cada cambio de fase aunque la página quede suspendida */
+  function enviarFasesSW(){
+    if(!corriendo) return;
+    try{
+      var lista = cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, titulo: 'Coach JP', cuerpo: textoNotif(e) }; });
+      if(lista.length) jpBgTimer.programarFases(lista);
+    }catch(eN){}
+  }
   /* instante de referencia del reloj: el fin de la fase (cuenta regresiva) o el inicio (cuenta arriba) */
   function refTick(){ return fase === 'up' ? transcurridoStart : faseTargetEnd; }
   function arrancar(){
@@ -26498,8 +26595,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        la pestaña recupera el foco) se resincroniza YA el cronómetro activo
        contra el reloj real. */
     document.addEventListener('visibilitychange', function(){
-      if(document.visibilityState === 'visible') sincronizarWodActivo();
+      if(document.visibilityState === 'visible') sincronizarWodActivo(); else enviarFasesSW();
     });
+    window.addEventListener('pagehide', enviarFasesSW);
     window.addEventListener('pageshow', sincronizarWodActivo);
     window.addEventListener('focus', sincronizarWodActivo);
   }
@@ -26507,6 +26605,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
+                           cronograma: function(){ return cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, ronda: e.ronda, rondas: e.rondas, cuerpo: textoNotif(e) }; }); }, enviarFases: enviarFasesSW,
                            paso: paso, reset: reset, arrancar: arrancar, finalizar: finalizar, mmss: mmss,
                            resync: sincronizarWodActivo };
 
@@ -28332,8 +28431,9 @@ body.cf-modo .block .directive-chip{display:none !important}
    4 · AVISOS EMERGENTES (fatiga / molestia)
 --------------------------------------------------------- */
 .jp-toast{
+  /* z-index por encima del header sticky (300): antes el título y las primeras líneas del aviso quedaban tapados por la cabecera */
   position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top));
-  z-index:260;width:min(560px,calc(100vw - 24px));display:none;
+  z-index:1200;width:min(560px,calc(100vw - 24px));display:none;
   /* el aviso nunca bloquea lo que el alumno está tocando debajo */
   pointer-events:none;
   padding:14px 16px;border-radius:18px;

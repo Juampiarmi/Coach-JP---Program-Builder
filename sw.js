@@ -12,7 +12,7 @@
    La página manda { tipo:'jp-voz', accion:'precachear', urls:[...] } al activar la voz: se guardan todos los clips del idioma y se descartan los que ya no están en la lista. */
 const VOZ = 'coachjp-voz-v1';
 const esVoz = u => /\/voz\/(manifest\.json|[a-z]{2}\/[\w-]+\.mp3)$/.test(u.pathname);
-const CACHE = 'coachjp-athlete-v15';   /* v15: pantalla completa del timer con el diseño del HUD, voz con «Go / Rest / Stop» al cerrar la cuenta y avisos de transición sin ráfagas al volver de segundo plano. v14: voz del timer (caché propia coachjp-voz-v1). v13: rótulos de la tarjeta del bloque desde el diccionario (i18n), vocabulario acostado/tibias. v12: invalida las cachés v11 al activarse (circuitos de cardio / metabólico con todas las estaciones iguales: número, nombre, cantidad y aclaración) */
+const CACHE = 'coachjp-athlete-v16';   /* v16: avisos por fase con el teléfono bloqueado (tope 60 min) y aviso de pantalla encendida en iPhone. v15: pantalla completa del timer con el diseño del HUD, voz con «Go / Rest / Stop» al cerrar la cuenta y avisos de transición sin ráfagas al volver de segundo plano. v14: voz del timer (caché propia coachjp-voz-v1). v13: rótulos de la tarjeta del bloque desde el diccionario (i18n), vocabulario acostado/tibias. v12: invalida las cachés v11 al activarse (circuitos de cardio / metabólico con todas las estaciones iguales: número, nombre, cantidad y aclaración) */
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(Promise.all([
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k.indexOf('coachjp-athlete-') === 0).map(k => caches.delete(k)))),
@@ -65,15 +65,52 @@ self.addEventListener('message', e => {
     for (const r of await k.keys()) { if (porBase.has(base(r.url)) && !vivos.has(r.url)) await k.delete(r); }
   }));
 });
-let jpT = null, jpRes = null;
+/* Avisos por cambio de fase del timer de WOD: la página manda { tipo:'jp-timer', accion:'programar-fases', eventos:[{ at, titulo, cuerpo }] } cuando la app pasa a segundo plano
+   (o el teléfono se bloquea). El SW arma una cola y dispara cada aviso a su hora (solo si NINGUNA ventana de la app está visible), todos con la misma etiqueta: cada uno reemplaza al
+   anterior y no se apilan. jpPlanFases es una función pura (la prueban los tests): descarta lo inválido, lo que ya pasó hace más de 2,5 s y lo que cae más allá del tope.
+   Tope: 60 min (antes 10). Es el margen que le pedimos al navegador: el sistema puede dormir o cerrar el SW antes (más en iPhone), así que es "mejor esfuerzo", no una garantía. */
+const TOPE_AVISOS_MS = 60 * 60 * 1000, VENCIDO_MS = 2500;
+function jpPlanFases(eventos, ahora, tope, vencido) {
+  return (Array.isArray(eventos) ? eventos : []).filter(ev => ev && typeof ev.at === 'number' && isFinite(ev.at) && ev.at > ahora - vencido && ev.at - ahora <= tope)
+    .sort((a, b) => a.at - b.at).slice(0, 400);
+}
+let jpT = null, jpRes = null, jpFasesT = null, jpFasesRes = null, jpFasesCola = [];
+function jpFasesCancelar() {
+  if (jpFasesT) { clearTimeout(jpFasesT); jpFasesT = null; }
+  jpFasesCola = [];
+  if (jpFasesRes) { jpFasesRes(); jpFasesRes = null; }
+}
+function jpFasesSiguiente() {
+  if (jpFasesT) { clearTimeout(jpFasesT); jpFasesT = null; }
+  jpFasesCola = jpPlanFases(jpFasesCola, Date.now(), TOPE_AVISOS_MS, VENCIDO_MS);
+  if (!jpFasesCola.length) { if (jpFasesRes) { jpFasesRes(); jpFasesRes = null; } return; }
+  const ev = jpFasesCola[0];
+  jpFasesT = setTimeout(() => {
+    jpFasesT = null; jpFasesCola.shift();
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      if (list.some(c => c.visibilityState === 'visible')) return;
+      return self.registration.showNotification(ev.titulo || 'Coach JP', { body: ev.cuerpo || '', vibrate: [200, 100, 200], tag: 'coachjp-timer', renotify: true });
+    }).then(jpFasesSiguiente, jpFasesSiguiente);
+  }, Math.max(0, ev.at - Date.now()));
+}
 self.addEventListener('message', e => {
   const d = e.data || {};
   if (d.tipo !== 'jp-timer') return;
+  if (d.accion === 'programar-fases') {
+    if (jpT) { clearTimeout(jpT); jpT = null; }
+    if (jpRes) { jpRes(); jpRes = null; }
+    jpFasesCancelar();
+    jpFasesCola = jpPlanFases(d.eventos, Date.now(), TOPE_AVISOS_MS, 0);
+    if (!jpFasesCola.length) return;
+    e.waitUntil(new Promise(res => { jpFasesRes = res; jpFasesSiguiente(); }));
+    return;
+  }
+  jpFasesCancelar();
   if (jpT) { clearTimeout(jpT); jpT = null; }
   if (jpRes) { jpRes(); jpRes = null; }
   if (d.accion !== 'programar') return;
   const ms = d.at - Date.now();
-  if (!(ms > 0) || ms > 600000) return;
+  if (!(ms > 0) || ms > TOPE_AVISOS_MS) return;    /* antes 10 min; ahora el mismo tope de 60 min que las fases */
   e.waitUntil(new Promise(res => {
     jpRes = res;
     jpT = setTimeout(() => {

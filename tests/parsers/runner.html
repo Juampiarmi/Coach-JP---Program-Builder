@@ -51,6 +51,7 @@
 <script src="cases-copia-plan.js"></script>
 <script src="cases-i18n.js"></script>
 <script src="cases-voz.js"></script>
+<script src="cases-segundo-plano.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -99,6 +100,7 @@
     pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
     i18nBib:      { run: function(i){ return i18nCaso(i); }, valor: function(r){ return r; } },
     alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
+    alumnoFondo:  { run: function(i){ return alumnoFondo(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -498,6 +500,97 @@
       });
     } else throw new Error('caso desconocido: ' + c.caso);
     return P;
+  }
+  /* ---------- timer en segundo plano: avisos por fase (cronograma + service worker) y aviso de pantalla encendida en iPhone ---------- */
+  function alumnoFondo(c){
+    var w = alumnoWin(); if(!w || !w.CoachWodTimer) throw new Error('no hay timer en la app del alumno');
+    var d = w.document, TM = w.CoachWodTimer, DN = w.Date.now, T0 = 1700000000000, reloj = T0, P = [];
+    function leerSW(){ var x = new XMLHttpRequest(); x.open('GET', '../../sw.js', false); x.send(); return x.responseText; }
+    function corre(cfg){
+      try{ TM.cerrar(); }catch(e0){}
+      reloj = T0; w.Date.now = function(){ return reloj; };
+      TM.configurar(cfg); TM.arrancar();
+    }
+    function resumen(lista){ return lista.map(function(e){ return e.tipo + '@' + Math.round((e.at - T0) / 1000); }).join(','); }
+    function ponerUA(ua, plataforma, toques){
+      Object.defineProperty(w.navigator, 'userAgent', { get: function(){ return ua; }, configurable: true });
+      Object.defineProperty(w.navigator, 'platform', { get: function(){ return plataforma; }, configurable: true });
+      Object.defineProperty(w.navigator, 'maxTouchPoints', { get: function(){ return toques; }, configurable: true });
+    }
+    function quitarUA(){ ['userAgent', 'platform', 'maxTouchPoints'].forEach(function(k){ try{ delete w.navigator[k]; }catch(e){} }); }
+    var idiomaApp = w.JP_I18N.lang(); w.JP_I18N.setLang('es');
+    try{
+      if(c.caso === 'cronogramaTabata'){
+        corre({ modo: 'tabata', work: 5, rest: 3, rondas: 3 });
+        var l = TM.cronograma();
+        return { tipos: l.map(function(e){ return e.tipo; }).join(','), offsets: l.map(function(e){ return Math.round((e.at - T0) / 1000); }).join(','), primero: l[0].cuerpo, descanso: l[1].cuerpo, ultimo: l[l.length - 1].cuerpo };
+      }
+      if(c.caso === 'cronogramaOtros'){
+        var o = {};
+        corre({ modo: 'emom', intervalo: 60, rondas: 3 }); var le = TM.cronograma(); o.emom = resumen(le); o.emomTexto = le[1].cuerpo;
+        corre({ modo: 'amrap', total: 1 }); o.amrap = resumen(TM.cronograma());
+        TM.reset(); o.quieto = TM.cronograma().length;
+        return o;
+      }
+      if(c.caso === 'envio'){
+        var enviados = [], orig = w.jpBgTimer.programarFases;
+        w.jpBgTimer.programarFases = function(ev){ enviados.push(ev); };
+        try{
+          corre({ modo: 'tabata', work: 5, rest: 3, rondas: 3 });
+          var vis = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(d), 'visibilityState');
+          Object.defineProperty(d, 'visibilityState', { get: function(){ return 'hidden'; }, configurable: true });
+          d.dispatchEvent(new w.Event('visibilitychange')); var oculto = enviados.slice();
+          Object.defineProperty(d, 'visibilityState', { get: function(){ return 'visible'; }, configurable: true });
+          enviados.length = 0; d.dispatchEvent(new w.Event('visibilitychange')); var volvio = enviados.length;
+          TM.reset(); Object.defineProperty(d, 'visibilityState', { get: function(){ return 'hidden'; }, configurable: true });
+          enviados.length = 0; d.dispatchEvent(new w.Event('visibilitychange')); var detenido = enviados.length;
+          var ev0 = oculto[0] || [];
+          return { alOcultar: ev0.length, titulo: ev0[0] && ev0[0].titulo, ordenado: ev0.every(function(e, i){ return i === 0 || ev0[i - 1].at <= e.at; }) && ev0.every(function(e){ return typeof e.cuerpo === 'string' && e.cuerpo.length > 3; }), alVolver: volvio, sinTimer: detenido };
+        } finally { delete d.visibilityState; w.jpBgTimer.programarFases = orig; }
+      }
+      if(c.caso === 'swPlan'){
+        var sw = leerSW();
+        var m = /function jpPlanFases[\s\S]*?\n}\n/.exec(sw); if(!m) return ['no encuentro jpPlanFases en sw.js'];
+        var plan = new Function(m[0] + '; return jpPlanFases;')();
+        var ids = function(l){ return l.map(function(e){ return e.at; }).join(','); }, TOPE = 3600000;
+        if(ids(plan([{ at: 1500 }, { at: 1200 }, { at: 500 }, { at: 1000 + TOPE + 1 }, { at: 'x' }, null, { at: 1000 + TOPE }], 1000, TOPE, 0)) !== '1200,1500,3601000') P.push('sin margen de vencido: ' + ids(plan([{ at: 1500 }, { at: 1200 }, { at: 500 }, { at: 1000 + TOPE + 1 }, { at: 'x' }, null, { at: 1000 + TOPE }], 1000, TOPE, 0)));
+        if(ids(plan([{ at: 500 }, { at: -1600 }], 1000, TOPE, 2500)) !== '500') P.push('el vencido de 2,5 s no se respeta');
+        if(plan(undefined, 1000, TOPE, 0).length !== 0) P.push('una lista inválida debe dar cola vacía');
+        if(!/TOPE_AVISOS_MS = 60 \* 60 \* 1000/.test(sw)) P.push('el tope de avisos no es de 60 minutos');
+        if(/ms > 600000/.test(sw)) P.push('quedó el tope viejo de 10 minutos');
+        if(!/accion === 'programar-fases'/.test(sw) || !/jpFasesCancelar\(\)/.test(sw)) P.push('el SW no atiende «programar-fases» o no cancela lo anterior');
+        if((sw.match(/tag: 'coachjp-timer'/g) || []).length < 2) P.push('los avisos por fase deben usar la misma etiqueta que el aviso final (no se apilan)');
+        if(!/list\.some\(c => c\.visibilityState === 'visible'\)/.test(sw)) P.push('el SW debe callar si la app está visible');
+        return P;
+      }
+      if(c.caso === 'iphone'){
+        var toast = function(){ return d.getElementById('jpToast'); }, wk = w.jpWake, r = {};
+        var limpiar = function(){ if(w.CoachAviso) w.CoachAviso.cerrar(); wk.__reiniciarAviso(); };
+        try{
+          limpiar(); ponerUA('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 Version/17.4 Mobile/15E148 Safari/604.1', 'iPhone', 5);
+          r.detecta = wk.esIOS() === true;
+          wk.on('t1'); r.muestra = toast().classList.contains('on'); r.titulo = toast().querySelector('.tl').textContent;
+          r.habla = /iPhone/.test(toast().querySelector('.tx').textContent) && /voz/.test(toast().querySelector('.tx').textContent);
+          r.porEncimaDelHeader = (parseInt(w.getComputedStyle(toast()).zIndex, 10) || 0) > (parseInt(w.getComputedStyle(d.querySelector('.hd-compact') || d.body).zIndex, 10) || 0);
+          wk.off('t1'); w.CoachAviso.cerrar(); wk.on('t2'); r.unaVez = !toast().classList.contains('on') && w.localStorage.getItem('jp_aviso_pantalla_ios') === '1'; wk.off('t2');
+          limpiar(); ponerUA('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15', 'MacIntel', 5);
+          wk.on('t3'); r.ipadMac = wk.esIOS() === true && toast().classList.contains('on'); wk.off('t3');
+          limpiar(); ponerUA('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0', 'Win32', 0);
+          wk.on('t4'); r.escritorioNo = wk.esIOS() === false && !toast().classList.contains('on'); wk.off('t4');
+        } finally { quitarUA(); limpiar(); }
+        return r;
+      }
+      if(c.caso === 'textos'){
+        var I = w.JP_I18N, ks = I.claves('es').filter(function(k){ return /^app\.(notif|aviso)\./.test(k); });
+        if(ks.length < 9) P.push('faltan claves app.notif.* / app.aviso.* (' + ks.length + ')');
+        ks.forEach(function(k){ if(I.faltantes('en').indexOf(k) >= 0) P.push('sin inglés: ' + k); });
+        I.incoherentes('en').forEach(function(k){ if(/^app\.(notif|aviso)\./.test(k)) P.push('marcadores distintos: ' + k); });
+        return P;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      w.Date.now = DN; try{ TM.reset(); TM.cerrar(); }catch(e9){} w.jpBox.reiniciar(); w.JP_I18N.setLang(idiomaApp); try{ w.localStorage.removeItem('coachjp_lang'); }catch(e8){}
+    }
   }
   /* ---------- voz del timer: motor de audio de la app del alumno con un AudioContext simulado (sin sonido ni red) ---------- */
   function alumnoVoz(c){
