@@ -343,6 +343,55 @@
       continue;
     }
   }
+  /* Cronograma de las próximas transiciones, desde el estado actual: [{ at (epoch ms), tipo: 'work' | 'rest' | 'done', ronda, rondas }]. Sirve para los avisos del sistema con el teléfono
+     bloqueado (jpBgTimer.programarFases): el SW los dispara a su hora aunque la página esté suspendida. Es solo lectura: no toca el estado del motor. */
+  function cronogramaFases(){
+    var ev = [], c = cfg(), now = Date.now();
+    if(!corriendo) return ev;
+    function push(at, tipo, r){ if(at > now) ev.push({ at: Math.round(at), tipo: tipo, ronda: r, rondas: rondas }); }
+    var t = faseTargetEnd, f = fase, r = ronda, inicioReal = null;
+    if(f === 'prep'){
+      inicioReal = t;
+      push(t, 'work', r);
+      f = pendiente ? pendiente.fase : 'work'; t = t + (pendiente ? pendiente.restante : 0) * 1000;
+    }
+    if(modo === 'fortime'){
+      if(c.cap) push(inicioReal != null ? inicioReal + c.cap * 60000 : transcurridoStart + (c.cap * 60 - transcurridoBase) * 1000, 'done', r);
+      return ev;
+    }
+    if(modo === 'amrap'){ push(t, 'done', r); return ev; }
+    var g = 0;
+    if(modo === 'tabata' || modo === 'intervalos'){
+      while(g++ < 600){
+        if(f === 'work' && c.rest > 0){ push(t, 'rest', r); f = 'rest'; t += c.rest * 1000; continue; }
+        if(r >= rondas){ push(t, 'done', r); break; }
+        r++; f = 'work'; push(t, 'work', r); t += c.work * 1000;
+      }
+      return ev;
+    }
+    while(g++ < 600){    /* EMOM */
+      if(r >= rondas){ push(t, 'done', r); break; }
+      r++; push(t, 'work', r); t += c.intervalo * 1000;
+    }
+    return ev;
+  }
+  function tr(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
+  function textoNotif(e){
+    var p = { r: e.ronda, n: e.rondas };
+    if(e.tipo === 'done') return tr('app.notif.done', '🏁 ¡Listo! Terminaste, buen trabajo.');
+    if(e.tipo === 'rest') return tr('app.notif.rest', '😮‍💨 Descanso · Ronda ' + p.r + '/' + p.n, p);
+    if(modo === 'emom') return tr('app.notif.minuto', '⏱️ Minuto ' + p.r + '/' + p.n, p);
+    if(modo === 'tabata' || modo === 'intervalos') return tr('app.notif.work', '💪 ¡A trabajar! · Ronda ' + p.r + '/' + p.n, p);
+    return tr('app.notif.work.simple', '💪 ¡A trabajar!');
+  }
+  /* al pasar a segundo plano (pantalla bloqueada u otra app) se le entrega el cronograma completo al SW: avisa cada cambio de fase aunque la página quede suspendida */
+  function enviarFasesSW(){
+    if(!corriendo) return;
+    try{
+      var lista = cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, titulo: 'Coach JP', cuerpo: textoNotif(e) }; });
+      if(lista.length) jpBgTimer.programarFases(lista);
+    }catch(eN){}
+  }
   /* instante de referencia del reloj: el fin de la fase (cuenta regresiva) o el inicio (cuenta arriba) */
   function refTick(){ return fase === 'up' ? transcurridoStart : faseTargetEnd; }
   function arrancar(){
@@ -603,8 +652,9 @@
        la pestaña recupera el foco) se resincroniza YA el cronómetro activo
        contra el reloj real. */
     document.addEventListener('visibilitychange', function(){
-      if(document.visibilityState === 'visible') sincronizarWodActivo();
+      if(document.visibilityState === 'visible') sincronizarWodActivo(); else enviarFasesSW();
     });
+    window.addEventListener('pagehide', enviarFasesSW);
     window.addEventListener('pageshow', sincronizarWodActivo);
     window.addEventListener('focus', sincronizarWodActivo);
   }
@@ -612,6 +662,7 @@
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
+                           cronograma: function(){ return cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, ronda: e.ronda, rondas: e.rondas, cuerpo: textoNotif(e) }; }); }, enviarFases: enviarFasesSW,
                            paso: paso, reset: reset, arrancar: arrancar, finalizar: finalizar, mmss: mmss,
                            resync: sincronizarWodActivo };
 

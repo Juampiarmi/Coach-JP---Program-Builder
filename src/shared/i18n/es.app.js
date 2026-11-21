@@ -8,6 +8,16 @@ JP_I18N.add('es', {
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
   /* voz del timer (088-voz-del-timer.js) */
+  /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
+  'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
+  'app.notif.work.simple': '💪 ¡A trabajar!',
+  'app.notif.minuto': '⏱️ Minuto {r}/{n}',
+  'app.notif.rest': '😮‍💨 Descanso · Ronda {r}/{n}',
+  'app.notif.done': '🏁 ¡Listo! Terminaste, buen trabajo.',
+  'app.aviso.iphone.t': 'Mantené la pantalla encendida',
+  'app.aviso.iphone.b': 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.',
+  'app.aviso.pantalla.t': 'Mantené la pantalla encendida',
+  'app.aviso.pantalla.b': 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.',
   'app.voz.lb': 'Voz del timer',
   'app.voz.idioma': 'Idioma de la voz',
   'app.voz.auto': 'AUTO',

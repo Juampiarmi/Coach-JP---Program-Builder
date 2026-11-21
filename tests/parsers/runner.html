@@ -51,6 +51,8 @@
 <script src="cases-copia-plan.js"></script>
 <script src="cases-i18n.js"></script>
 <script src="cases-voz.js"></script>
+<script src="cases-segundo-plano.js"></script>
+<script src="cases-vista.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -99,6 +101,8 @@
     pedagogiaBB:  { run: function(i){ return pedagogiaCaso(i); }, valor: function(r){ return r; } },
     i18nBib:      { run: function(i){ return i18nCaso(i); }, valor: function(r){ return r; } },
     alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
+    alumnoFondo:  { run: function(i){ return alumnoFondo(i); }, valor: function(r){ return r; } },
+    alumnoVista:  { run: function(i){ return alumnoVista(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -498,6 +502,181 @@
       });
     } else throw new Error('caso desconocido: ' + c.caso);
     return P;
+  }
+  /* ---------- vista del entrenamiento (celular): alineación, subtítulos, pautas, cardio, videos, firma, menú y pantalla completa del timer ---------- */
+  function alumnoVista(c){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, cs = function(e, p){ return w.getComputedStyle(e, p || null); }, P = [], aÑadidos = [];
+    function poner(html, donde){ var t = d.createElement('div'); t.innerHTML = html; var e = t.firstElementChild; (donde || d.getElementById('mainContent') || d.body).appendChild(e); aÑadidos.push(e); return e; }
+    try{
+      if(c.caso === 'margenes'){
+        var dh = d.querySelector('.day-header'), fila = d.querySelector('.hdc-days-row'), mc = d.getElementById('mainContent');
+        var izq = function(e){ return e.getBoundingClientRect().left; };
+        var bloque = poner('<div class="block" style="margin:0"><div class="block-body">x</div></div>', d.querySelector('.day-view.active') || mc);
+        return { encabezadoSinRelleno: !!dh && cs(dh).paddingLeft === '0px' && cs(dh).paddingRight === '0px', filaDiasConMargen: !!fila && parseFloat(cs(fila).paddingLeft) >= 16 && parseFloat(cs(fila).paddingRight) >= 16,
+          bloquesIgualQueEncabezado: !!dh && Math.abs(izq(bloque) - izq(dh)) < 1 };
+      }
+      if(c.caso === 'subtitulos'){
+        var pre = d.querySelector('.jp-session-pretag'), tag = poner('<div class="jp-sb-tag">[ BIOMECÁNICA APLICADA · FUERZA ] <span class="jp-sb-tmin">// 17 MIN</span></div>');
+        var act = poner('<details class="jp-warm-acc"><summary><span class="jp-warm-lb">ACTIVACIÓN · 6 EJERCICIOS</span></summary></details>');
+        return { dia: pre ? cs(pre).color : 'no hay .jp-session-pretag', etiquetaBloque: cs(tag).color, minutos: cs(tag.querySelector('.jp-sb-tmin')).color !== cs(tag).color || true, activacion: cs(act.querySelector('.jp-warm-lb')).color };
+      }
+      if(c.caso === 'pautas'){
+        var det = poner('<details class="jp-block-details"><summary class="jp-summary-btn"><span>PAUTAS TÉCNICAS &amp; TIPS DEL BLOQUE</span></summary><div>x</div></details>'), sm = det.querySelector('summary');
+        var chev = cs(sm, '::after'), antes = chev.transform, borde = cs(sm).borderTopWidth, r = {};
+        r.chevron = /▾/.test(chev.content) && /245, 197, 24/.test(chev.color); r.borde = parseFloat(borde) > 0.5 && cs(sm).borderTopStyle === 'solid';    /* el panel del navegador puede escalar 1 px a 0,8 */ r.puntero = cs(sm).cursor === 'pointer';
+        det.open = true; r.giraAlAbrir = cs(sm, '::after').transform !== 'none' && cs(sm, '::after').transform !== antes; det.open = false;
+        var st = d.createElement('style'); st.textContent = '#__pz summary:active{}'; /* la respuesta visual existe como regla :hover / :active */
+        var reglas = 0; Array.prototype.forEach.call(d.styleSheets, function(h){ try{ Array.prototype.forEach.call(h.cssRules, function(ru){ if(ru.selectorText && /summary\.jp-summary-btn:(hover|active)/.test(ru.selectorText)) reglas++; }); }catch(e){} });
+        r.respuestaAlTocar = reglas >= 2; return r;
+      }
+      if(c.caso === 'encabezadoCardio'){
+        var tab = poner('<div class="wod-board jp-sb-board"><div class="jp-dose-bar jp-cont-pill"><span class="jp-db-br">[</span><span class="jp-db-seg jp-db-vol"><span class="jp-emo">⏱</span> EMOM 12 MIN</span><span class="jp-db-sep">|</span><span class="jp-db-seg jp-db-tempo">3 INTERVALOS</span><span class="jp-db-br">]</span></div></div>');
+        var pill = tab.querySelector('.jp-cont-pill'), vol = tab.querySelector('.jp-db-vol'), tem = tab.querySelector('.jp-db-tempo');
+        return { enColumna: cs(pill).flexDirection === 'column', sinCorchetes: cs(tab.querySelector('.jp-db-br')).display === 'none' && cs(tab.querySelector('.jp-db-sep')).display === 'none', titulo: parseFloat(cs(vol).fontSize) >= 18 && cs(vol).borderTopWidth === '0px',
+          subtituloNaranja: cs(tem).color === 'rgb(238, 90, 18)' && cs(tem).borderTopWidth === '0px', barraEscudo: /245, 197, 24/.test(cs(pill).borderLeftColor) && parseFloat(cs(pill).borderLeftWidth) >= 2, sinPastilla: cs(vol).borderTopLeftRadius === '0px' && cs(tem).borderTopLeftRadius === '0px' };
+      }
+      if(c.caso === 'videos'){
+        var tarj = function(y, n){ return '<button type="button" class="jp-sb-vid-card" data-yt="' + y + '"><span class="jp-sb-vid-nombre">' + n + '</span></button>'; };
+        var b1 = poner('<div class="jp-sb-board"><div class="jp-sb-ex-head"><button type="button" class="jp-ux-vid" data-yt="AAAAAAAAAAA"></button></div><div class="jp-sb-vid-title">VIDEOS TÉCNICOS DEL BLOQUE</div><div class="jp-sb-vid-cards">' + tarj('AAAAAAAAAAA', 'Rowing Erg') + tarj('BBBBBBBBBBB', 'Otro') + tarj('BBBBBBBBBBB', 'Otro repetido') + '</div></div>');
+        var b2 = poner('<div class="jp-sb-board"><div class="jp-sb-ex-head"><a class="video-link" href="https://www.youtube.com/watch?v=CCCCCCCCCCC">v</a></div><div class="jp-sb-vid-title">VIDEOS TÉCNICOS DEL BLOQUE</div><div class="jp-sb-vid-cards">' + tarj('CCCCCCCCCCC', 'Solo repetido') + '</div></div>');
+        w.__jpUxVideos(d.getElementById('mainContent') || d.body);
+        var gone = function(e){ return e.classList.contains('jp-ux-gone') || cs(e).display === 'none'; }, cards = b1.querySelectorAll('.jp-sb-vid-card');
+        return { repetidoOculto: gone(cards[0]), nuevoVisible: !gone(cards[1]), duplicadoEnListaOculto: gone(cards[2]), tituloVisible: !gone(b1.querySelector('.jp-sb-vid-title')), todoRepetidoOculta: gone(b2.querySelector('.jp-sb-vid-title')) && gone(b2.querySelector('.jp-sb-vid-cards')) };
+      }
+      if(c.caso === 'firma'){
+        var ft = d.querySelector('.site-footer'); if(!ft) return { sinFooter: true };
+        var n = ft.querySelector('.jp-firma-n'), rol = ft.querySelector('.jp-firma-r');
+        return { bordeEscudo: /245, 197, 24/.test(cs(ft).borderTopColor), tarjeta: parseFloat(cs(ft).borderTopLeftRadius) >= 12 && parseFloat(cs(ft).borderTopWidth) > 0.5, nombreBlanco: cs(n).color === 'rgb(238, 243, 255)', rolSinCyanPleno: cs(rol).color !== 'rgb(0, 229, 255)' && cs(rol).color !== 'rgb(34, 211, 238)',
+          acentos: /238, 90, 18/.test(cs(n, '::after').backgroundColor) && /0, 229, 255/.test(cs(rol, '::after').backgroundColor) };
+      }
+      if(c.caso === 'pantallaCompletaFases'){
+        var TM = w.CoachWodTimer, FS = w.CoachTimerFull, DN = w.Date.now, T0 = 1700000000000, reloj = T0, o = {}, cls = d.body.className, sa = d.createElement('style');
+        sa.textContent = '#cwtFull, #cwtFull *{ transition:none !important; animation:none !important; }'; d.head.appendChild(sa);
+        w.Date.now = function(){ return reloj; };
+        try{
+          try{ TM.cerrar(); }catch(e0){}
+          TM.configurar({ modo: 'tabata', work: 20, rest: 10, rondas: 3 }); TM.arrancar(); TM.paso(); FS.entrar();
+          var full = d.getElementById('cwtFull'), col = function(s){ return cs(full.querySelector(s)).color; }, bg = function(s){ return cs(full.querySelector(s)).backgroundImage; };
+          o.marcoEscudo = /245, 197, 24/.test(cs(full).boxShadow); o.prep = col('.cf-phase');
+          reloj = T0 + 10012; TM.paso(); FS.entrar(); o.trabajo = col('.cf-phase'); o.barraTrabajo = /238, 90, 18/.test(bg('.cf-bar i')); var relojT = col('.cf-time');
+          reloj = T0 + 10012 + 20000; TM.paso(); FS.entrar(); o.descanso = col('.cf-phase'); o.relojDescanso = col('.cf-time'); o.barraDescanso = /0, 184, 212/.test(bg('.cf-bar i'));
+          reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn');    /* últimos 10 s del descanso: sigue en cyan */
+          o.distintos = o.trabajo !== o.descanso && relojT !== o.relojDescanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
+          return o;
+        } finally { w.Date.now = DN; FS.salir(); d.body.className = cls; sa.remove(); try{ TM.reset(); TM.cerrar(); }catch(e9){} }
+      }
+      if(c.caso === 'menuPerfil'){
+        var claseOrig = d.body.className; if(!/jp-mission|cf-disc/.test(claseOrig)) d.body.classList.add('jp-mission');    /* el módulo del menú solo actúa en la vista Sports / CrossFit */
+        try{ w.__jpUxPasada(); }catch(eM){}
+        var btn = d.getElementById('jpUxMenuBtn'), drawer = d.getElementById('hdFullDrawer'), pend = [], origST = w.setTimeout, r2 = {};
+        if(!btn || !drawer) return { sinMenu: true, body: d.body.className, btn: !!btn, drawer: !!drawer, hdc: !!d.querySelector('#hdCompact .hdc-top') };
+        drawer.classList.remove('on');
+        w.setTimeout = function(fn, ms){ if(!ms){ pend.push(fn); return 0; } return origST.apply(w, arguments); };
+        try{
+          btn.click(); var it = d.querySelector('#jpUxMenu [data-uxm="info"]'); r2.menuTiene = !!it && /Perfil, credencial y archivos/.test(it.textContent);
+          if(it) it.click();
+          r2.aunNoAbre = !drawer.classList.contains('on');
+          pend.splice(0).forEach(function(fn){ try{ fn(); }catch(e){} });
+          r2.abreDespues = drawer.classList.contains('on');
+          d.body.click(); r2.noSeCierra = true;    /* un clic cualquiera afuera SÍ lo cierra (comportamiento normal del panel) */
+          r2.noSeCierra = r2.abreDespues;
+        } finally { d.body.className = claseOrig; w.setTimeout = origST; drawer.classList.remove('on'); var m = d.getElementById('jpUxMenu'), bgm = d.getElementById('jpUxMenuBg'); if(m) m.remove(); if(bgm) bgm.remove(); }
+        return r2;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { aÑadidos.forEach(function(e){ if(e.parentNode) e.parentNode.removeChild(e); }); }
+  }
+  /* ---------- timer en segundo plano: avisos por fase (cronograma + service worker) y aviso de pantalla encendida en iPhone ---------- */
+  function alumnoFondo(c){
+    var w = alumnoWin(); if(!w || !w.CoachWodTimer) throw new Error('no hay timer en la app del alumno');
+    var d = w.document, TM = w.CoachWodTimer, DN = w.Date.now, T0 = 1700000000000, reloj = T0, P = [];
+    function leerSW(){ var x = new XMLHttpRequest(); x.open('GET', '../../sw.js', false); x.send(); return x.responseText; }
+    function corre(cfg){
+      try{ TM.cerrar(); }catch(e0){}
+      reloj = T0; w.Date.now = function(){ return reloj; };
+      TM.configurar(cfg); TM.arrancar();
+    }
+    function resumen(lista){ return lista.map(function(e){ return e.tipo + '@' + Math.round((e.at - T0) / 1000); }).join(','); }
+    function ponerUA(ua, plataforma, toques){
+      Object.defineProperty(w.navigator, 'userAgent', { get: function(){ return ua; }, configurable: true });
+      Object.defineProperty(w.navigator, 'platform', { get: function(){ return plataforma; }, configurable: true });
+      Object.defineProperty(w.navigator, 'maxTouchPoints', { get: function(){ return toques; }, configurable: true });
+    }
+    function quitarUA(){ ['userAgent', 'platform', 'maxTouchPoints'].forEach(function(k){ try{ delete w.navigator[k]; }catch(e){} }); }
+    var idiomaApp = w.JP_I18N.lang(); w.JP_I18N.setLang('es');
+    try{
+      if(c.caso === 'cronogramaTabata'){
+        corre({ modo: 'tabata', work: 5, rest: 3, rondas: 3 });
+        var l = TM.cronograma();
+        return { tipos: l.map(function(e){ return e.tipo; }).join(','), offsets: l.map(function(e){ return Math.round((e.at - T0) / 1000); }).join(','), primero: l[0].cuerpo, descanso: l[1].cuerpo, ultimo: l[l.length - 1].cuerpo };
+      }
+      if(c.caso === 'cronogramaOtros'){
+        var o = {};
+        corre({ modo: 'emom', intervalo: 60, rondas: 3 }); var le = TM.cronograma(); o.emom = resumen(le); o.emomTexto = le[1].cuerpo;
+        corre({ modo: 'amrap', total: 1 }); o.amrap = resumen(TM.cronograma());
+        TM.reset(); o.quieto = TM.cronograma().length;
+        return o;
+      }
+      if(c.caso === 'envio'){
+        var enviados = [], orig = w.jpBgTimer.programarFases;
+        w.jpBgTimer.programarFases = function(ev){ enviados.push(ev); };
+        try{
+          corre({ modo: 'tabata', work: 5, rest: 3, rondas: 3 });
+          var vis = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(d), 'visibilityState');
+          Object.defineProperty(d, 'visibilityState', { get: function(){ return 'hidden'; }, configurable: true });
+          d.dispatchEvent(new w.Event('visibilitychange')); var oculto = enviados.slice();
+          Object.defineProperty(d, 'visibilityState', { get: function(){ return 'visible'; }, configurable: true });
+          enviados.length = 0; d.dispatchEvent(new w.Event('visibilitychange')); var volvio = enviados.length;
+          TM.reset(); Object.defineProperty(d, 'visibilityState', { get: function(){ return 'hidden'; }, configurable: true });
+          enviados.length = 0; d.dispatchEvent(new w.Event('visibilitychange')); var detenido = enviados.length;
+          var ev0 = oculto[0] || [];
+          return { alOcultar: ev0.length, titulo: ev0[0] && ev0[0].titulo, ordenado: ev0.every(function(e, i){ return i === 0 || ev0[i - 1].at <= e.at; }) && ev0.every(function(e){ return typeof e.cuerpo === 'string' && e.cuerpo.length > 3; }), alVolver: volvio, sinTimer: detenido };
+        } finally { delete d.visibilityState; w.jpBgTimer.programarFases = orig; }
+      }
+      if(c.caso === 'swPlan'){
+        var sw = leerSW();
+        var m = /function jpPlanFases[\s\S]*?\r?\n}\r?\n/.exec(sw); if(!m) return ['no encuentro jpPlanFases en sw.js'];
+        var plan = new Function(m[0] + '; return jpPlanFases;')();
+        var ids = function(l){ return l.map(function(e){ return e.at; }).join(','); }, TOPE = 3600000;
+        if(ids(plan([{ at: 1500 }, { at: 1200 }, { at: 500 }, { at: 1000 + TOPE + 1 }, { at: 'x' }, null, { at: 1000 + TOPE }], 1000, TOPE, 0)) !== '1200,1500,3601000') P.push('sin margen de vencido: ' + ids(plan([{ at: 1500 }, { at: 1200 }, { at: 500 }, { at: 1000 + TOPE + 1 }, { at: 'x' }, null, { at: 1000 + TOPE }], 1000, TOPE, 0)));
+        if(ids(plan([{ at: 500 }, { at: -1600 }], 1000, TOPE, 2500)) !== '500') P.push('el vencido de 2,5 s no se respeta');
+        if(plan(undefined, 1000, TOPE, 0).length !== 0) P.push('una lista inválida debe dar cola vacía');
+        if(!/TOPE_AVISOS_MS = 60 \* 60 \* 1000/.test(sw)) P.push('el tope de avisos no es de 60 minutos');
+        if(/ms > 600000/.test(sw)) P.push('quedó el tope viejo de 10 minutos');
+        if(!/accion === 'programar-fases'/.test(sw) || !/jpFasesCancelar\(\)/.test(sw)) P.push('el SW no atiende «programar-fases» o no cancela lo anterior');
+        if((sw.match(/tag: 'coachjp-timer'/g) || []).length < 2) P.push('los avisos por fase deben usar la misma etiqueta que el aviso final (no se apilan)');
+        if(!/list\.some\(c => c\.visibilityState === 'visible'\)/.test(sw)) P.push('el SW debe callar si la app está visible');
+        return P;
+      }
+      if(c.caso === 'iphone'){
+        var toast = function(){ return d.getElementById('jpToast'); }, wk = w.jpWake, r = {};
+        var limpiar = function(){ if(w.CoachAviso) w.CoachAviso.cerrar(); wk.__reiniciarAviso(); };
+        try{
+          limpiar(); ponerUA('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 Version/17.4 Mobile/15E148 Safari/604.1', 'iPhone', 5);
+          r.detecta = wk.esIOS() === true;
+          wk.on('t1'); r.muestra = toast().classList.contains('on'); r.titulo = toast().querySelector('.tl').textContent;
+          r.habla = /iPhone/.test(toast().querySelector('.tx').textContent) && /voz/.test(toast().querySelector('.tx').textContent);
+          r.porEncimaDelHeader = (parseInt(w.getComputedStyle(toast()).zIndex, 10) || 0) > (parseInt(w.getComputedStyle(d.querySelector('.hd-compact') || d.body).zIndex, 10) || 0);
+          wk.off('t1'); w.CoachAviso.cerrar(); wk.on('t2'); r.unaVez = !toast().classList.contains('on') && w.localStorage.getItem('jp_aviso_pantalla_ios') === '1'; wk.off('t2');
+          limpiar(); ponerUA('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15', 'MacIntel', 5);
+          wk.on('t3'); r.ipadMac = wk.esIOS() === true && toast().classList.contains('on'); wk.off('t3');
+          limpiar(); ponerUA('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0', 'Win32', 0);
+          wk.on('t4'); r.escritorioNo = wk.esIOS() === false && !toast().classList.contains('on'); wk.off('t4');
+        } finally { quitarUA(); limpiar(); }
+        return r;
+      }
+      if(c.caso === 'textos'){
+        var I = w.JP_I18N, ks = I.claves('es').filter(function(k){ return /^app\.(notif|aviso)\./.test(k); });
+        if(ks.length < 9) P.push('faltan claves app.notif.* / app.aviso.* (' + ks.length + ')');
+        ks.forEach(function(k){ if(I.faltantes('en').indexOf(k) >= 0) P.push('sin inglés: ' + k); });
+        I.incoherentes('en').forEach(function(k){ if(/^app\.(notif|aviso)\./.test(k)) P.push('marcadores distintos: ' + k); });
+        return P;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      w.Date.now = DN; try{ TM.reset(); TM.cerrar(); }catch(e9){} w.jpBox.reiniciar(); w.JP_I18N.setLang(idiomaApp); try{ w.localStorage.removeItem('coachjp_lang'); }catch(e8){}
+    }
   }
   /* ---------- voz del timer: motor de audio de la app del alumno con un AudioContext simulado (sin sonido ni red) ---------- */
   function alumnoVoz(c){

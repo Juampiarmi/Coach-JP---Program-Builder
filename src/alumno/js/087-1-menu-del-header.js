@@ -50,7 +50,9 @@
     }
     cerrarMenu();
     var el = k === 'hist' ? (top && $('.jp-hist-btn', top)) : $('#hdcInfoBtn');
-    if(el) el.click();
+    /* El toque en el ítem sigue su camino por el documento: el cierre por "clic afuera" del panel de Perfil (075) lo veía como un clic fuera del panel y lo cerraba en el acto,
+       así "Perfil, credencial y archivos" parecía no llevar a ningún lado. Se abre en el turno siguiente, cuando ese mismo clic ya terminó de propagarse. */
+    if(el) setTimeout(function(){ el.click(); }, 0);
   });
   D.addEventListener('keydown', function(e){ if(e.key === 'Escape') cerrarMenu(); });
 
@@ -150,6 +152,31 @@
       });
       var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
+    });
+  }
+
+  /* Un video que ya se ve en línea dentro del bloque (botón de la fila / estación) no se repite abajo en "Videos técnicos del bloque", y un mismo video no aparece dos veces en la lista. */
+  function idYt(el){
+    var y = el.getAttribute('data-yt'); if(y) return y;
+    var h = el.getAttribute('href') || '', m = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/)([\w-]{6,})/.exec(h);
+    return m ? m[1] : '';
+  }
+  function sinVideosRepetidos(root){
+    $$('.jp-sb-board, .jp-cfboard', root).forEach(function(bd){
+      var enLinea = {};
+      $$('[data-yt], a[href*="youtu"]', bd).forEach(function(b){
+        if(b.closest('.jp-sb-vid-cards, .jp-cf-vid-cards, .jp-ux-vtray, .jp-ux-gone')) return;
+        var y = idYt(b); if(y) enLinea[y] = 1;
+      });
+      var vistos = {};
+      $$('.jp-sb-vid-card[data-yt], .jp-cf-vid-card[data-yt]', bd).forEach(function(c){
+        if(c.classList.contains('jp-ux-gone')) return;
+        var y = c.getAttribute('data-yt');
+        if(enLinea[y] || vistos[y]) c.classList.add('jp-ux-gone'); else vistos[y] = 1;
+      });
+      var quedan = $$('.jp-sb-vid-card, .jp-cf-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
+      if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title, .jp-cf-vid-cards, .jp-cf-vids, .jp-ux-vtray', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
+      else { var bandeja = $('.jp-ux-vtray em', bd); if(bandeja) bandeja.textContent = String(quedan); }
     });
   }
 
@@ -884,10 +911,11 @@
     try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
     var raiz = $('#mainContent') || D.body;
     try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
-    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\W*time\s*cap\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
+    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\W*time\s*cap\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); sinVideosRepetidos(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); sinVideosRepetidos(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
     try{ if(esSb()){ clasificarFilas(raiz); sugerirFilas(raiz); actualizarContador(); } montarHistorial(); briefingJerarquia(raiz); }catch(e4){ console.warn('ux registro', e4); }
   }
   function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }
+  window.__jpUxPasada = pasada; window.__jpUxVideos = sinVideosRepetidos;    /* tests */
   /* cabecera: el alto publicado en --hdc-h sigue al alto REAL (nombre en 2 lineas, fuente que carga tarde, escala de texto), nunca queda viejo */
   function medirHdr(){
     var hd = D.getElementById('hdCompact'); if(!hd) return;

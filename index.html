@@ -10323,6 +10323,16 @@ JP_I18N.add('es', {
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
   /* voz del timer (088-voz-del-timer.js) */
+  /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
+  'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
+  'app.notif.work.simple': '💪 ¡A trabajar!',
+  'app.notif.minuto': '⏱️ Minuto {r}/{n}',
+  'app.notif.rest': '😮‍💨 Descanso · Ronda {r}/{n}',
+  'app.notif.done': '🏁 ¡Listo! Terminaste, buen trabajo.',
+  'app.aviso.iphone.t': 'Mantené la pantalla encendida',
+  'app.aviso.iphone.b': 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.',
+  'app.aviso.pantalla.t': 'Mantené la pantalla encendida',
+  'app.aviso.pantalla.b': 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.',
   'app.voz.lb': 'Voz del timer',
   'app.voz.idioma': 'Idioma de la voz',
   'app.voz.auto': 'AUTO',
@@ -10346,6 +10356,15 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
+  'app.notif.work': '💪 Go! · Round {r}/{n}',
+  'app.notif.work.simple': '💪 Go!',
+  'app.notif.minuto': '⏱️ Minute {r}/{n}',
+  'app.notif.rest': '😮‍💨 Rest · Round {r}/{n}',
+  'app.notif.done': '🏁 Done! Great work.',
+  'app.aviso.iphone.t': 'Keep the screen on',
+  'app.aviso.iphone.b': 'On iPhone, if you lock the phone or switch apps, the timer and the voice pause until you come back. Keep the screen on while you train: the app stops it from turning off by itself.',
+  'app.aviso.pantalla.t': 'Keep the screen on',
+  'app.aviso.pantalla.b': 'Your browser cannot stop the phone from locking by itself: set auto-lock to "never" while you train so the clock does not stop.',
   'app.voz.lb': 'Timer voice',
   'app.voz.idioma': 'Voice language',
   'app.voz.auto': 'AUTO',
@@ -14070,6 +14089,12 @@ var jpBgTimer = (function(){
       try{ localStorage.setItem(KEY, String(finTs)); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'programar', at: finTs, titulo:'Coach JP', cuerpo: TXT });
     },
+    /* avisos por cambio de fase (WOD): eventos = [{ at, titulo, cuerpo }]; el SW los dispara a su hora, solo si la app no está visible, y reemplaza lo programado antes */
+    programarFases: function(eventos){
+      if(!eventos || !eventos.length) return;
+      try{ localStorage.setItem(KEY, String(eventos[eventos.length - 1].at)); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'programar-fases', eventos: eventos });
+    },
     cancelar: function(){
       try{ localStorage.removeItem(KEY); }catch(e){}
       aSW({ tipo:'jp-timer', accion:'cancelar' });
@@ -14280,17 +14305,40 @@ const jpWake = (function(){
       if(!sentinel) pedir();
     }, 4000);
   }
+  /* iPhone / iPad (incluido el iPad que se presenta como Mac): al bloquear la pantalla o cambiar de app, iOS suspende la página: el timer y la voz se pausan (el reloj se pone al día
+     al volver, pero no suena nada mientras tanto). Se avisa UNA sola vez por dispositivo, la primera vez que corre un cronómetro. */
+  var KEY_IOS = 'jp_aviso_pantalla_ios';
+  function esIOS(){
+    try{
+      var ua = navigator.userAgent || '';
+      return /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }catch(e){ return false; }
+  }
+  function tx(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
   /* sin Wake Lock (navegadores viejos) el teléfono puede bloquearse solo: se avisa una vez para que el alumno lo evite */
-  function avisarSinSoporte(){
-    if(avisado || soporta()) return;
+  function avisarPantalla(){
+    if(avisado) return;
+    var ios = esIOS();
+    if(!ios && soporta()) return;
+    if(ios){
+      try{ if(localStorage.getItem(KEY_IOS) === '1'){ avisado = true; return; } localStorage.setItem(KEY_IOS, '1'); }catch(e0){}
+    }
     avisado = true;
-    try{ if(window.CoachAviso && window.CoachAviso.mostrar) window.CoachAviso.mostrar('fatiga', '💡', 'Mantené la pantalla encendida', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.', 9000); }catch(e3){}
+    try{
+      if(window.CoachAviso && window.CoachAviso.mostrar){
+        if(ios) window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.iphone.t', 'Mantené la pantalla encendida'), tx('app.aviso.iphone.b', 'En iPhone, si bloqueás el teléfono o cambiás de app, el timer y la voz se pausan hasta que vuelvas. Dejá la pantalla encendida mientras entrenás: la app evita que se apague sola.'), 12000);
+        else window.CoachAviso.mostrar('fatiga', '💡', tx('app.aviso.pantalla.t', 'Mantené la pantalla encendida'), tx('app.aviso.pantalla.b', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.'), 9000);
+      }
+    }catch(e3){}
   }
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') pedir(); });
   window.addEventListener('pageshow', pedir);
   window.addEventListener('focus', pedir);
   return {
-    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarSinSoporte(); },
+    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarPantalla(); },
+    /* tests */
+    esIOS: esIOS,
+    __reiniciarAviso: function(){ avisado = false; try{ localStorage.removeItem(KEY_IOS); }catch(e){} },
     off: function(m){ delete motivos[m]; if(!hay()) soltar(); },
     activo: function(){ return !!sentinel; }
   };
@@ -26238,6 +26286,55 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       continue;
     }
   }
+  /* Cronograma de las próximas transiciones, desde el estado actual: [{ at (epoch ms), tipo: 'work' | 'rest' | 'done', ronda, rondas }]. Sirve para los avisos del sistema con el teléfono
+     bloqueado (jpBgTimer.programarFases): el SW los dispara a su hora aunque la página esté suspendida. Es solo lectura: no toca el estado del motor. */
+  function cronogramaFases(){
+    var ev = [], c = cfg(), now = Date.now();
+    if(!corriendo) return ev;
+    function push(at, tipo, r){ if(at > now) ev.push({ at: Math.round(at), tipo: tipo, ronda: r, rondas: rondas }); }
+    var t = faseTargetEnd, f = fase, r = ronda, inicioReal = null;
+    if(f === 'prep'){
+      inicioReal = t;
+      push(t, 'work', r);
+      f = pendiente ? pendiente.fase : 'work'; t = t + (pendiente ? pendiente.restante : 0) * 1000;
+    }
+    if(modo === 'fortime'){
+      if(c.cap) push(inicioReal != null ? inicioReal + c.cap * 60000 : transcurridoStart + (c.cap * 60 - transcurridoBase) * 1000, 'done', r);
+      return ev;
+    }
+    if(modo === 'amrap'){ push(t, 'done', r); return ev; }
+    var g = 0;
+    if(modo === 'tabata' || modo === 'intervalos'){
+      while(g++ < 600){
+        if(f === 'work' && c.rest > 0){ push(t, 'rest', r); f = 'rest'; t += c.rest * 1000; continue; }
+        if(r >= rondas){ push(t, 'done', r); break; }
+        r++; f = 'work'; push(t, 'work', r); t += c.work * 1000;
+      }
+      return ev;
+    }
+    while(g++ < 600){    /* EMOM */
+      if(r >= rondas){ push(t, 'done', r); break; }
+      r++; push(t, 'work', r); t += c.intervalo * 1000;
+    }
+    return ev;
+  }
+  function tr(k, d, p){ try{ return (typeof window.jpT === 'function') ? window.jpT(k, p) : d; }catch(e){ return d; } }
+  function textoNotif(e){
+    var p = { r: e.ronda, n: e.rondas };
+    if(e.tipo === 'done') return tr('app.notif.done', '🏁 ¡Listo! Terminaste, buen trabajo.');
+    if(e.tipo === 'rest') return tr('app.notif.rest', '😮‍💨 Descanso · Ronda ' + p.r + '/' + p.n, p);
+    if(modo === 'emom') return tr('app.notif.minuto', '⏱️ Minuto ' + p.r + '/' + p.n, p);
+    if(modo === 'tabata' || modo === 'intervalos') return tr('app.notif.work', '💪 ¡A trabajar! · Ronda ' + p.r + '/' + p.n, p);
+    return tr('app.notif.work.simple', '💪 ¡A trabajar!');
+  }
+  /* al pasar a segundo plano (pantalla bloqueada u otra app) se le entrega el cronograma completo al SW: avisa cada cambio de fase aunque la página quede suspendida */
+  function enviarFasesSW(){
+    if(!corriendo) return;
+    try{
+      var lista = cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, titulo: 'Coach JP', cuerpo: textoNotif(e) }; });
+      if(lista.length) jpBgTimer.programarFases(lista);
+    }catch(eN){}
+  }
   /* instante de referencia del reloj: el fin de la fase (cuenta regresiva) o el inicio (cuenta arriba) */
   function refTick(){ return fase === 'up' ? transcurridoStart : faseTargetEnd; }
   function arrancar(){
@@ -26498,8 +26595,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        la pestaña recupera el foco) se resincroniza YA el cronómetro activo
        contra el reloj real. */
     document.addEventListener('visibilitychange', function(){
-      if(document.visibilityState === 'visible') sincronizarWodActivo();
+      if(document.visibilityState === 'visible') sincronizarWodActivo(); else enviarFasesSW();
     });
+    window.addEventListener('pagehide', enviarFasesSW);
     window.addEventListener('pageshow', sincronizarWodActivo);
     window.addEventListener('focus', sincronizarWodActivo);
   }
@@ -26507,6 +26605,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
+                           cronograma: function(){ return cronogramaFases().map(function(e){ return { at: e.at, tipo: e.tipo, ronda: e.ronda, rondas: e.rondas, cuerpo: textoNotif(e) }; }); }, enviarFases: enviarFasesSW,
                            paso: paso, reset: reset, arrancar: arrancar, finalizar: finalizar, mmss: mmss,
                            resync: sincronizarWodActivo };
 
@@ -28332,8 +28431,9 @@ body.cf-modo .block .directive-chip{display:none !important}
    4 · AVISOS EMERGENTES (fatiga / molestia)
 --------------------------------------------------------- */
 .jp-toast{
+  /* z-index por encima del header sticky (300): antes el título y las primeras líneas del aviso quedaban tapados por la cabecera */
   position:fixed;left:50%;transform:translateX(-50%);top:calc(12px + env(safe-area-inset-top));
-  z-index:260;width:min(560px,calc(100vw - 24px));display:none;
+  z-index:1200;width:min(560px,calc(100vw - 24px));display:none;
   /* el aviso nunca bloquea lo que el alumno está tocando debajo */
   pointer-events:none;
   padding:14px 16px;border-radius:18px;
@@ -34646,12 +34746,11 @@ body.cf-modo .block .ex-tip{display:none}
       fp.className = 'cf-phase' + (p.classList.contains('rest') ? ' rest' : '') +
                      (p.classList.contains('work') ? ' work' : '') +
                      (p.classList.contains('warn') ? ' warn' : '');
-      /* directiva -- espeja también el color inline dorado/cián fijado en
-         pintar() (ver comentario ahí): sin esto, la pantalla completa
-         quedaba con los colores viejos aunque el motor chico ya mostrara
-         los nuevos. */
-      if(p.style.color) fp.style.setProperty('color', p.style.color, 'important');
-      else fp.style.removeProperty('color');
+      /* el estado de la fase (preparación / trabajo / descanso / quieto) viaja en data-fase y el color sale del CSS (092-pantalla-completa-azul.css): trabajo = naranja, descanso =
+         cyan, preparación = amarillo del escudo; se mantiene aunque entren los últimos 10 s (antes el aviso los volvía a todos ámbar y no se distinguía el descanso). */
+      var estadoFase = /PREPARACI/i.test(p.textContent || '') ? 'prep' : (p.classList.contains('rest') ? 'rest' : (p.classList.contains('work') ? 'work' : 'idle'));
+      var fullEl = document.getElementById('cwtFull'); if(fullEl && fullEl.dataset.fase !== estadoFase) fullEl.dataset.fase = estadoFase;
+      fp.style.removeProperty('color');
     }
     if(r && fr){
       var e = T() ? T().estado() : null;
@@ -34666,8 +34765,7 @@ body.cf-modo .block .ex-tip{display:none}
                 (b.parentNode.classList.contains('rest') ? ' rest' : '') +
                 (b.parentNode.classList.contains('warn') ? ' warn' : '');
       if(fb.parentNode.className !== cls) fb.parentNode.className = cls;
-      if(b.style.background) fb.style.setProperty('background', b.style.background, 'important');
-      else fb.style.removeProperty('background');
+      fb.style.removeProperty('background');    /* el color de la barra sale del CSS según la fase (data-fase) */
     }
     var go = document.getElementById('cwtGo'), fg = document.getElementById('cfGo');
     if(go && fg && fg.textContent !== go.textContent) fg.textContent = go.textContent;
@@ -46012,7 +46110,7 @@ html body.jp-mission:not(.cf-disc) .day-header .jp-brief-dir{ align-self:flex-st
 .jp-ux-vid .jp-ux-vth{ position:absolute; inset:0; background:center/cover no-repeat; opacity:.55; }
 .jp-ux-vid .jp-ux-vp{ position:relative; font-size:.7rem; line-height:1; text-shadow:0 1px 4px rgba(0,0,0,.8); }
 .jp-ux-vid:active{ border-color:#FF5500; }
-.jp-sb-vid-card.jp-ux-gone, .jp-sb-vid-cards.jp-ux-gone, .jp-sb-vid-title.jp-ux-gone{ display:none !important; }
+.jp-sb-vid-card.jp-ux-gone, .jp-sb-vid-cards.jp-ux-gone, .jp-sb-vid-title.jp-ux-gone, .jp-ux-vtray.jp-ux-gone{ display:none !important; }
 /* 6 · pautas y tips: acordeón por sección */
 .jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb{ display:flex; align-items:center; gap:8px; cursor:pointer; -webkit-tap-highlight-color:transparent; min-height:34px; }
 .jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb .jp-ux-chev{ margin-left:auto; color:#FF5500; font-size:.7rem; transition:transform .18s; }
@@ -46369,7 +46467,9 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     }
     cerrarMenu();
     var el = k === 'hist' ? (top && $('.jp-hist-btn', top)) : $('#hdcInfoBtn');
-    if(el) el.click();
+    /* El toque en el ítem sigue su camino por el documento: el cierre por "clic afuera" del panel de Perfil (075) lo veía como un clic fuera del panel y lo cerraba en el acto,
+       así "Perfil, credencial y archivos" parecía no llevar a ningún lado. Se abre en el turno siguiente, cuando ese mismo clic ya terminó de propagarse. */
+    if(el) setTimeout(function(){ el.click(); }, 0);
   });
   D.addEventListener('keydown', function(e){ if(e.key === 'Escape') cerrarMenu(); });
 
@@ -46469,6 +46569,31 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
       });
       var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
+    });
+  }
+
+  /* Un video que ya se ve en línea dentro del bloque (botón de la fila / estación) no se repite abajo en "Videos técnicos del bloque", y un mismo video no aparece dos veces en la lista. */
+  function idYt(el){
+    var y = el.getAttribute('data-yt'); if(y) return y;
+    var h = el.getAttribute('href') || '', m = /(?:youtu\\.be\\/|[?&]v=|\\/shorts\\/|\\/embed\\/)([\\w-]{6,})/.exec(h);
+    return m ? m[1] : '';
+  }
+  function sinVideosRepetidos(root){
+    $$('.jp-sb-board, .jp-cfboard', root).forEach(function(bd){
+      var enLinea = {};
+      $$('[data-yt], a[href*="youtu"]', bd).forEach(function(b){
+        if(b.closest('.jp-sb-vid-cards, .jp-cf-vid-cards, .jp-ux-vtray, .jp-ux-gone')) return;
+        var y = idYt(b); if(y) enLinea[y] = 1;
+      });
+      var vistos = {};
+      $$('.jp-sb-vid-card[data-yt], .jp-cf-vid-card[data-yt]', bd).forEach(function(c){
+        if(c.classList.contains('jp-ux-gone')) return;
+        var y = c.getAttribute('data-yt');
+        if(enLinea[y] || vistos[y]) c.classList.add('jp-ux-gone'); else vistos[y] = 1;
+      });
+      var quedan = $$('.jp-sb-vid-card, .jp-cf-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
+      if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title, .jp-cf-vid-cards, .jp-cf-vids, .jp-ux-vtray', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
+      else { var bandeja = $('.jp-ux-vtray em', bd); if(bandeja) bandeja.textContent = String(quedan); }
     });
   }
 
@@ -47203,10 +47328,11 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
     var raiz = $('#mainContent') || D.body;
     try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
-    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\\W*time\\s*cap\\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
+    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\\W*time\\s*cap\\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); sinVideosRepetidos(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); sinVideosRepetidos(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
     try{ if(esSb()){ clasificarFilas(raiz); sugerirFilas(raiz); actualizarContador(); } montarHistorial(); briefingJerarquia(raiz); }catch(e4){ console.warn('ux registro', e4); }
   }
   function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }
+  window.__jpUxPasada = pasada; window.__jpUxVideos = sinVideosRepetidos;    /* tests */
   /* cabecera: el alto publicado en --hdc-h sigue al alto REAL (nombre en 2 lineas, fuente que carga tarde, escala de texto), nunca queda viejo */
   function medirHdr(){
     var hd = D.getElementById('hdCompact'); if(!hd) return;
@@ -48048,6 +48174,121 @@ html body #cwtFull#cwtFull .cf-x{
 html body #cwtFull#cwtFull .cf-sign b{ color:#EEF3FF !important; font-family:'Chakra Petch',sans-serif !important; }
 html body #cwtFull#cwtFull .cf-sign b em{ color:#FF5500 !important; }
 html body #cwtFull#cwtFull .cf-sign span{ color:#9FB0D8 !important; font-family:'Chakra Petch',sans-serif !important; }
+
+/* ---------- borde del escudo y color por fase ----------
+   Marco amarillo del escudo (#F5C518) alrededor de toda la pantalla, con un toque suave de naranja arriba a la izquierda y de cyan abajo a la derecha.
+   La fase manda el color (data-fase, ver espejo() en 053): TRABAJO naranja, DESCANSO cyan, PREPARACIÓN amarillo del escudo. Se aplica al rótulo de la fase, al reloj, a la barra
+   y a la pastilla de ronda, así el descanso y la actividad se distinguen al instante y con cualquier distancia. */
+html body #cwtFull#cwtFull{
+  box-shadow:inset 0 0 0 2px rgba(245,197,24,.62), inset 0 0 70px rgba(245,197,24,.07) !important;
+  background-image:radial-gradient(circle at 12% 8%, rgba(238,90,18,.16), rgba(238,90,18,0) 42%), radial-gradient(circle at 88% 94%, rgba(0,229,255,.12), rgba(0,229,255,0) 44%), radial-gradient(circle at 50% 40%, rgba(98,126,214,.16), rgba(11,19,43,0) 62%) !important;
+  background-color:#0B132B !important;
+}
+html body #cwtFull#cwtFull .cf-phase{ color:#EEF3FF !important; }
+html body #cwtFull#cwtFull[data-fase="work"] .cf-phase{ color:#FF6A1F !important; }
+html body #cwtFull#cwtFull[data-fase="rest"] .cf-phase{ color:#00E5FF !important; }
+html body #cwtFull#cwtFull[data-fase="prep"] .cf-phase{ color:#F5C518 !important; }
+html body #cwtFull#cwtFull .cf-phase::before{ background:currentColor !important; box-shadow:0 0 10px currentColor !important; }
+html body #cwtFull#cwtFull[data-fase="work"] .cf-time{ color:#FFFFFF !important; text-shadow:0 0 44px rgba(255,106,31,.5) !important; }
+html body #cwtFull#cwtFull[data-fase="rest"] .cf-time{ color:#BDF7FF !important; text-shadow:0 0 44px rgba(0,229,255,.5) !important; }
+html body #cwtFull#cwtFull[data-fase="prep"] .cf-time{ color:#FFF4C2 !important; text-shadow:0 0 44px rgba(245,197,24,.45) !important; }
+html body #cwtFull#cwtFull .cf-bar i{ background:#EEF3FF !important; }
+html body #cwtFull#cwtFull[data-fase="work"] .cf-bar i{ background:linear-gradient(90deg,#EE5A12,#FF8A3D) !important; }
+html body #cwtFull#cwtFull[data-fase="rest"] .cf-bar i{ background:linear-gradient(90deg,#00B8D4,#00E5FF) !important; }
+html body #cwtFull#cwtFull[data-fase="prep"] .cf-bar i{ background:linear-gradient(90deg,#C99A0B,#F5C518) !important; }
+html body #cwtFull#cwtFull[data-fase="work"] .cf-round{ border-color:rgba(255,106,31,.6) !important; }
+html body #cwtFull#cwtFull[data-fase="rest"] .cf-round{ border-color:rgba(0,229,255,.6) !important; }
+html body #cwtFull#cwtFull[data-fase="prep"] .cf-round{ border-color:rgba(245,197,24,.6) !important; }
+html body #cwtFull#cwtFull.warn[data-fase] .cf-round{ background:#131F43 !important; color:#EEF3FF !important; }
+html body #cwtFull#cwtFull .cf-time.alerta{ animation:cfPulse .5s ease; }
+</style>
+<style id="jpVistaPulida">
+/* Vista del entrenamiento · pulido móvil (alineación, subtítulos, acordeón de pautas, encabezado de cardio, firma)
+   Todo va con especificidad alta y al final de los estilos de la app: pisa generaciones viejas de CSS sin tocar datos ni lógica.
+   Paleta: amarillo del escudo #F5C518 (bordes), naranja de la marca #EE5A12 (subtítulos), cyan táctico #00E5FF (acentos sutiles), azul noche de la app. */
+:root{ --jp-escudo:#F5C518; --jp-naranja:#EE5A12; --jp-cyan:#00E5FF; --jp-azul-sub:#9FB0D8; }
+
+/* ---------- 1 · una sola columna de márgenes ----------
+   Los bloques con borde (activación, biomecánica, cardio…) llenan los 20 px de margen de #mainContent, pero el encabezado del día (título, tarjetas de tonelaje, "Ver directiva")
+   tenía 4 px extra a cada lado: las cajas con borde parecían sobresalir. Ahora todo comparte el mismo borde izquierdo y derecho; y la fila de semana / día
+   ya no toca los bordes de la pantalla. */
+html body:not(#_):not(#__) .day-view .day-header,
+html body.jp-mission:not(.cf-disc) .day-view .day-header{ padding-left:0 !important; padding-right:0 !important; }
+html body:not(#_):not(#__) #hdCompact .hdc-days-row{ padding-left:20px !important; padding-right:20px !important; box-sizing:border-box !important; }
+html body:not(#_):not(#__) #mainContent{ box-sizing:border-box; }
+html body:not(#_):not(#__) #mainContent .block, html body:not(#_):not(#__) #mainContent .info-card{ max-width:100%; box-sizing:border-box; }
+
+/* ---------- 1b · subtítulos y rótulos en naranja de la marca ---------- */
+html body:not(#_):not(#__) .jp-session-pretag{ color:var(--jp-naranja) !important; }
+html body:not(#_):not(#__) .jp-sb-tag{ color:var(--jp-naranja) !important; }
+html body:not(#_):not(#__) .jp-sb-tag .jp-sb-tmin{ color:rgba(238,90,18,.72) !important; }
+html body:not(#_):not(#__) .jp-warm-acc .jp-warm-lb{ color:var(--jp-naranja) !important; }
+
+/* ---------- 2 · "Pautas técnicas & tips del bloque": se nota que es un desplegable ---------- */
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn,
+html body:not(#_):not(#__) details.jp-cf-acc > summary{
+  display:flex !important; align-items:center; gap:10px; width:100%; box-sizing:border-box; padding:11px 14px !important;
+  border:1px solid rgba(150,178,240,.24) !important; border-radius:12px !important; background:rgba(150,178,240,.05) !important;
+  cursor:pointer; list-style:none; -webkit-tap-highlight-color:transparent;
+  transition:background .18s ease, border-color .18s ease, transform .12s ease;
+}
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn::-webkit-details-marker,
+html body:not(#_):not(#__) details.jp-cf-acc > summary::-webkit-details-marker{ display:none; }
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn::after,
+html body:not(#_):not(#__) details.jp-cf-acc > summary::after{
+  content:'\\25BE'; flex:0 0 auto; margin-left:auto; font-size:.95rem; line-height:1; color:rgba(245,197,24,.9); transition:transform .2s ease;
+}
+html body:not(#_):not(#__) details.jp-block-details[open] > summary.jp-summary-btn::after,
+html body:not(#_):not(#__) details.jp-cf-acc[open] > summary::after{ transform:rotate(180deg); }
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn:hover,
+html body:not(#_):not(#__) details.jp-cf-acc > summary:hover{ background:rgba(150,178,240,.1) !important; border-color:rgba(245,197,24,.42) !important; }
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn:active,
+html body:not(#_):not(#__) details.jp-cf-acc > summary:active{ background:rgba(150,178,240,.16) !important; transform:scale(.99); }
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn:focus-visible,
+html body:not(#_):not(#__) details.jp-cf-acc > summary:focus-visible{ outline:2px solid rgba(245,197,24,.7); outline-offset:2px; }
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn span, html body:not(#_):not(#__) details.jp-cf-acc > summary span{ font-size:.72rem !important; letter-spacing:.02em !important; line-height:1.25; white-space:nowrap; }
+html body:not(#_):not(#__) details.jp-block-details[open] > summary.jp-summary-btn,
+html body:not(#_):not(#__) details.jp-cf-acc[open] > summary{ border-color:rgba(245,197,24,.38) !important; }
+
+/* ---------- 3 · bloque de cardio / intervalos: encabezado, no botoncitos ----------
+   "[ ⏱ EMOM 12 MIN | 3 INTERVALOS ]" eran dos pastillas apiladas. Ahora es un título con su subtítulo: barra del escudo a la izquierda, formato en grande y la cantidad de
+   intervalos en naranja chico. */
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill{
+  display:flex !important; flex-direction:column !important; flex-wrap:nowrap !important; align-items:flex-start !important; justify-content:flex-start !important; gap:3px !important;
+  width:auto !important; margin:2px 0 12px !important; padding:4px 0 4px 14px !important;
+  background:transparent !important; border:0 !important; border-left:3px solid var(--jp-escudo) !important; border-radius:0 !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-br, html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-sep{ display:none !important; }
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-seg{ display:flex !important; width:auto !important; background:transparent !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; padding:0 !important; min-height:0 !important; }
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-vol{
+  order:1; align-items:center; gap:8px; color:#EEF3FF !important; font-size:1.3rem !important; font-weight:800 !important; line-height:1.15 !important;
+  letter-spacing:.05em !important; text-transform:uppercase;
+}
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-vol .jp-emo{ font-size:1.05rem; }
+html body:not(#_):not(#__) .jp-sb-board .jp-dose-bar.jp-cont-pill .jp-db-tempo{
+  order:2; color:var(--jp-naranja) !important; font-size:.76rem !important; font-weight:700 !important; letter-spacing:.18em !important; text-transform:uppercase;
+}
+
+/* ---------- 5 · firma de la programación ---------- */
+html body:not(#_):not(#__) .site-footer{
+  margin:30px 20px 0 !important; padding:20px 18px 16px !important; box-sizing:border-box;
+  border:1px solid rgba(245,197,24,.38) !important; border-radius:18px !important; text-align:center !important;
+  background:linear-gradient(180deg, rgba(19,31,67,.78), rgba(11,19,43,.92)) !important;
+  box-shadow:0 18px 40px -26px rgba(0,0,0,.85), inset 0 1px 0 rgba(245,197,24,.14) !important;
+}
+html body:not(#_):not(#__) .site-footer p{ margin:0 0 6px !important; color:var(--jp-azul-sub) !important; font-size:.76rem; line-height:1.5; }
+html body:not(#_):not(#__) .site-footer p b{ color:#EEF3FF !important; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+html body:not(#_):not(#__) .site-footer .jp-firma{
+  margin:14px 0 0 !important; padding:14px 0 0 !important; border-top:1px solid rgba(245,197,24,.26) !important; display:block;
+}
+html body:not(#_):not(#__) .site-footer .jp-firma-n{
+  display:block; color:#EEF3FF !important; font-size:.98rem !important; font-weight:800; letter-spacing:.04em; text-transform:none;
+}
+html body:not(#_):not(#__) .site-footer .jp-firma-n::after{ content:''; display:block; width:30px; height:2px; margin:7px auto 8px; border-radius:2px; background:var(--jp-naranja); }
+html body:not(#_):not(#__) .site-footer .jp-firma-d{ display:none !important; }
+html body:not(#_):not(#__) .site-footer .jp-firma-r{ display:block; color:var(--jp-azul-sub) !important; font-size:.74rem !important; line-height:1.55; letter-spacing:.02em; }
+html body:not(#_):not(#__) .site-footer .jp-firma-r::after{ content:''; display:block; width:30px; height:2px; margin:10px auto 0; border-radius:2px; background:var(--jp-cyan); opacity:.7; }
+html body:not(#_):not(#__) .site-footer .jp-build{ margin:10px 0 0 !important; color:rgba(159,176,216,.5) !important; font-size:.62rem !important; letter-spacing:.16em; text-transform:uppercase; }
 </style>
 
 </body>
