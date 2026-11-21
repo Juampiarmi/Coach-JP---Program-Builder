@@ -1524,12 +1524,12 @@ function jpEscudoPulso(){
     var sh = f.querySelector('.cf-shield');
     if(!sh || !sh.animate) return;
     sh.animate([
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' },
-      { filter: 'drop-shadow(0 0 16px rgba(245,158,11,.5))', offset: .3 },
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' }
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' },
+      { filter: 'drop-shadow(0 0 14px rgba(245,197,24,.5))', offset: .3 },
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' }
     ], { duration: 280, easing: 'ease-out' });
     sh.querySelectorAll('path').forEach(function(p){
-      if(p.animate) p.animate([{ stroke: 'rgba(245,158,11,.15)' }, { stroke: 'rgba(245,158,11,.6)', offset: .3 }, { stroke: 'rgba(245,158,11,.15)' }], { duration: 280, easing: 'ease-out' });
+      if(p.animate) p.animate([{ strokeOpacity: .8 }, { strokeOpacity: 1, offset: .3 }, { strokeOpacity: .8 }], { duration: 280, easing: 'ease-out' });
     });
   }catch(e){}
 }

@@ -9,8 +9,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { sinDesenfoqueAnidado: true, bloqueRedondo: true, tarjetaRedonda: true, barraDorada: true, sinBordeGruesoIzq: true, radiosHermanos: true, activacionRecortada: true }, modo: 'subset',
     nota: 'Esquinas nítidas: sin desenfoque de fondo anidado en el bloque y su tablero, la barra dorada de la tarjeta del ejercicio es una pieza recortada por la esquina (no un borde izquierdo grueso que se afina), las cajas hermanas comparten borde y radio, y «Activación» queda recortada por la tarjeta redondeada' },
   { id: 'pulido.02', area: 'Pulido · marca', fn: 'alumnoPulido', input: { caso: 'marca' },
-    expect: { jpMasGrande: true, jpPesado: true, jpNaranja: true, coachBlanco: true, coachNoPierdePeso: true }, modo: 'subset',
-    nota: 'En el header «JP» es más grande que «COACH» (1,6 veces), en peso 900 y naranja de la marca; «COACH» sigue en blanco' },
+    expect: { mismoTamano: true, mismoPeso: true, mismoEspaciado: true, jpNaranja: true, coachBlanco: true, sinResplandor: true }, modo: 'subset',
+    nota: 'En el header «COACH» y «JP» tienen el mismo tamaño, peso y espaciado (antes JP era 1,6 veces más grande); JP solo se distingue por el naranja de la marca, sin resplandor, y COACH sigue en blanco' },
   { id: 'pulido.03', area: 'Pulido · pautas', fn: 'alumnoPulido', input: { caso: 'pautas' },
     expect: { izquierda: true, derecha: true, mismoAncho: true }, modo: 'subset',
     nota: '«Pautas técnicas & tips del bloque» queda alineada con las filas desplegables de adentro de la tarjeta (Registrar carga, Coaching tips, Objetivo, Tempo): mismo borde izquierdo, derecho y ancho' },
@@ -32,5 +32,14 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
   { id: 'pulido.09', area: 'Story Card · datos', fn: 'alumnoPulido', input: { caso: 'storyDatos' },
     expect: { tonelaje: 1920, series: 4, reps: 28, sinTiempoInventado: true, tiempoMedido: true, mismoTonelaje: true, latidoSoloConAccion: true, latidoVencido: true, sesionSinHacer: true, sesionHecha: true, rpeSoloDelDia: true,
       prDeHoy: true, prViejoNoCuenta: true, prDeOtroDiaNoCuenta: true, sinHacerSinKilos: true, kilosRegistrados: true }, modo: 'subset',
-    nota: 'La Story Card muestra lo registrado: tonelaje (kg × reps de las series tildadas, no las sin tildar), series y repeticiones exactos; el tiempo solo si está medido (primera y última serie) y vacío si no (antes mostraba «2 h 00 m» inventadas); abrir la app sin entrenar no suma tiempo; «sesión N de M» no cuenta dos veces el día concluido; el RPE ignora bloques de un plan viejo; en CrossFit el PR es solo de hoy y de un ejercicio del día y el volumen prescripto no se cuenta si el bloque no se hizo' }
+    nota: 'La Story Card muestra lo registrado: tonelaje (kg × reps de las series tildadas, no las sin tildar), series y repeticiones exactos; el tiempo solo si está medido (primera y última serie) y vacío si no (antes mostraba «2 h 00 m» inventadas); abrir la app sin entrenar no suma tiempo; «sesión N de M» no cuenta dos veces el día concluido; el RPE ignora bloques de un plan viejo; en CrossFit el PR es solo de hoy y de un ejercicio del día y el volumen prescripto no se cuenta si el bloque no se hizo' },
+  { id: 'pulido.10', area: 'Pulido · escudo', fn: 'alumnoPulido', input: { caso: 'escudoLimpio' },
+    expect: { sinBorde: true, sinFondo: true, sinSombraDeCaja: true, sinAuras: true, sinResplandorEnIsotipo: true, isotipoVisible: true }, modo: 'subset',
+    nota: 'El logo / escudo del header se ve limpio, sin el recuadro que lo encerraba: sin borde, sin fondo, sin sombra de caja y sin auras de color alrededor; queda solo el isotipo dorado (con una sombra apenas marcada, sin resplandor de neón) y no más chico que antes' },
+  { id: 'pulido.11', area: 'Pulido · timer chico', fn: 'alumnoPulido', input: { caso: 'timerChico' },
+    expect: { trabajoNaranja: true, trabajoAlertaNaranja: true, descansoCyan: true, descansoEnLosUltimosSegundos: true, rondaSinPastilla: true }, modo: 'subset',
+    nota: 'En el timer chico el trabajo va en naranja y el descanso en cyan táctico (rótulo, números y barra), también en los últimos segundos (antes la alerta pintaba todo de cyan o ámbar y el descanso no se distinguía), y «Ronda n de N» es texto sin pastilla' },
+  { id: 'pulido.12', area: 'Pulido · filetes', fn: 'alumnoPulido', input: { caso: 'lineasSuperiores' },
+    expect: { sinFileteEnSports: true, sinFileteEnCrossfit: true }, modo: 'subset',
+    nota: 'Sin líneas finas que sobresalgan arriba de «Activación», «Pautas técnicas» y «Completar bloque»: el filete de categoría del bloque (.block::before) y el borde de arriba de la fila de Activación ya no se dibujan, ni en la vista Sports ni en la de CrossFit' }
 ]);

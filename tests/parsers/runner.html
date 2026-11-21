@@ -568,7 +568,12 @@
           reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn'); var relojW = col('.cf-time');    /* últimos 10 s del descanso: la fase conserva su color */
           o.distintos = o.trabajo !== o.descanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
           /* números del reloj: naranja en todas las fases y sin neón (sombra sin desenfoque) */
-          o.relojNaranja = [relojP, relojT, relojD, relojW].every(function(c){ return c === 'rgb(255, 106, 31)'; });
+          o.relojNaranja = relojP === 'rgb(255, 106, 31)' && relojT === 'rgb(255, 106, 31)';
+          o.relojDescansoCyan = relojD === 'rgb(0, 229, 255)' && relojW === 'rgb(0, 229, 255)';    /* el descanso va en cyan, también en los últimos 10 s */
+          /* "RONDA n / N": texto limpio, sin pastilla ni borde */
+          var rd = cs(full.querySelector('.cf-round')); o.rondaSinPastilla = parseFloat(rd.borderTopWidth) === 0 && rd.boxShadow === 'none' && (rd.backgroundColor === 'rgba(0, 0, 0, 0)' || rd.backgroundColor === 'transparent') && rd.backgroundImage === 'none' && parseFloat(rd.paddingLeft) === 0;
+          /* contorno del escudo de fondo: dorado (degradé #cfOro con el amarillo del escudo) */
+          var gr = full.querySelector('#cfOro'), pth = full.querySelector('.cf-shield path'); o.escudoOro = !!gr && /F5C518/i.test(gr.innerHTML) && /cfOro/.test(cs(pth).stroke) && parseFloat(cs(pth).strokeWidth) >= 1.5;
           var tsh = cs(full.querySelector('.cf-time')).textShadow; o.sinNeon = tsh === 'none' || /\s0px$/.test(tsh.trim());
           var sg = full.querySelector('.cf-sign'), rf = full.getBoundingClientRect(), rs = sg.getBoundingClientRect();
           o.firmaAbajo = cs(sg).position === 'absolute' && rs.top > rf.top + rf.height * 0.78 && rs.bottom <= rf.bottom + 1;
@@ -619,7 +624,39 @@
       }
       if(c.caso === 'marca'){
         var m = d.querySelector('.hdc-brand-mark'), em = m && m.querySelector('em'); if(!m || !em) return { sinMarca: true };
-        return { jpMasGrande: fs(em) > fs(m) * 1.3, jpPesado: parseInt(cs(em).fontWeight, 10) >= 900, jpNaranja: cs(em).color === 'rgb(238, 90, 18)', coachBlanco: cs(m).color === 'rgb(255, 255, 255)', coachNoPierdePeso: parseInt(cs(m).fontWeight, 10) >= 800 };
+        return { mismoTamano: fs(em) === fs(m), mismoPeso: cs(em).fontWeight === cs(m).fontWeight && parseInt(cs(m).fontWeight, 10) >= 700, mismoEspaciado: cs(em).letterSpacing === cs(m).letterSpacing, jpNaranja: cs(em).color === 'rgb(238, 90, 18)', coachBlanco: cs(m).color === 'rgb(255, 255, 255)', sinResplandor: cs(em).textShadow === 'none' };
+      }
+      if(c.caso === 'escudoLimpio'){
+        var sh = d.querySelector('.hdc-shield'); if(!sh) return { sinEscudo: true };
+        var svgS = sh.querySelector('svg'), b4 = cs(sh, '::before'), a4 = cs(sh, '::after');
+        return { sinBorde: parseFloat(cs(sh).borderTopWidth) === 0 && parseFloat(cs(sh).borderLeftWidth) === 0, sinFondo: cs(sh).backgroundImage === 'none' && (cs(sh).backgroundColor === 'rgba(0, 0, 0, 0)' || cs(sh).backgroundColor === 'transparent'),
+          sinSombraDeCaja: cs(sh).boxShadow === 'none', sinAuras: (b4.display === 'none' || b4.content === 'none') && (a4.display === 'none' || a4.content === 'none'), sinResplandorEnIsotipo: !/245, 197, 24|255, 85, 0/.test(cs(svgS).filter), isotipoVisible: svgS.getBoundingClientRect().width >= 26 };
+      }
+      if(c.caso === 'timerChico'){
+        var sinT = poner('<style>.cwt-screen, .cwt-screen *{ transition:none !important; animation:none !important; }</style>', d.head);
+        var pant = poner('<div class="cwt-screen"><div class="cwt-phase work">TABATA · TRABAJO</div><div class="cwt-time">00:12</div><div class="cwt-round">Ronda <b>1</b> de <b>8</b></div><div class="cwt-bar work"><i></i></div></div>');
+        var ph = pant.querySelector('.cwt-phase'), tm = pant.querySelector('.cwt-time'), br = pant.querySelector('.cwt-bar'), rnd = pant.querySelector('.cwt-round'), r2 = {};
+        r2.trabajoNaranja = cs(tm).color === 'rgb(255, 106, 31)' && cs(br.querySelector('i')).backgroundColor === 'rgb(255, 106, 31)';
+        tm.classList.add('alerta'); r2.trabajoAlertaNaranja = cs(tm).color === 'rgb(255, 106, 31)'; tm.classList.remove('alerta');
+        ph.className = 'cwt-phase rest'; br.className = 'cwt-bar rest'; ph.textContent = 'TABATA · DESCANSO';
+        r2.descansoCyan = cs(tm).color === 'rgb(0, 229, 255)' && cs(ph).color === 'rgb(0, 229, 255)' && cs(br.querySelector('i')).backgroundColor === 'rgb(0, 229, 255)';
+        tm.classList.add('alerta'); ph.classList.add('warn'); br.classList.add('warn'); r2.descansoEnLosUltimosSegundos = cs(tm).color === 'rgb(0, 229, 255)' && cs(ph).color === 'rgb(0, 229, 255)' && cs(br.querySelector('i')).backgroundColor === 'rgb(0, 229, 255)';
+        r2.rondaSinPastilla = parseFloat(cs(rnd).borderTopWidth) === 0 && cs(rnd).boxShadow === 'none' && cs(rnd).backgroundImage === 'none' && (cs(rnd).backgroundColor === 'rgba(0, 0, 0, 0)' || cs(rnd).backgroundColor === 'transparent') && parseFloat(cs(rnd).paddingLeft) === 0;
+        return r2;
+      }
+      if(c.caso === 'lineasSuperiores'){
+        var estaba = d.body.className, res = {};
+        try{
+          ['jp-mission', 'cf-disc'].forEach(function(k){
+            d.body.classList.remove('jp-mission', 'cf-disc'); d.body.classList.add(k);
+            var bl = poner('<div class="block cat-strength"><div class="block-body"><div class="wod-board jp-sb-board"><details class="jp-block-details"><summary class="jp-summary-btn"><span>P</span></summary></details></div></div></div>');
+            var wr = poner('<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary>a</summary></details></div></div>');
+            var vis = function(e, p){ var x = cs(e, p); return x.display !== 'none' && x.content !== 'none' && x.content !== 'normal'; };
+            res[k] = !vis(bl, '::before') && !vis(bl, '::after') && !vis(wr, '::before') && !vis(wr, '::after') && parseFloat(cs(wr.querySelector('.jp-warm-acc')).borderTopWidth) === 0;
+            if(bl.parentNode) bl.parentNode.removeChild(bl); if(wr.parentNode) wr.parentNode.removeChild(wr);
+          });
+        } finally { d.body.className = estaba; }
+        return { sinFileteEnSports: res['jp-mission'], sinFileteEnCrossfit: res['cf-disc'] };
       }
       if(c.caso === 'pautas'){
         var bd = poner('<div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas"><details class="jp-ex-tips"><summary>COACHING</summary></details></div></div><details class="jp-block-details"><summary class="jp-summary-btn"><span>PAUTAS</span></summary></details></div>');
@@ -972,7 +1009,7 @@
           var full = d.getElementById('cwtFull'), q = function(s){ return w.getComputedStyle(d.querySelector(s)); };
           var fondo = w.getComputedStyle(full).backgroundColor, go = q('#cfGo'), rs = q('#cfReset'), rd = q('#cfRound'), tm = q('#cfTime');
           return { fondoAzul: fondo === 'rgb(11, 19, 43)', botonDorado: go.backgroundColor === 'rgb(255, 194, 75)' && go.color === 'rgb(11, 19, 43)', secundarioAzul: rs.backgroundColor === 'rgb(26, 40, 80)' && /150, 178, 240/.test(rs.borderColor),
-            pastillaAzul: rd.backgroundColor === 'rgb(19, 31, 67)', tipografia: /Chakra Petch/.test(tm.fontFamily) && /Chakra Petch/.test(go.fontFamily) && /Chakra Petch/.test(rd.fontFamily), sinNaranjaDeFondo: !/255, 85, 0/.test(w.getComputedStyle(full).backgroundImage) };
+            rondaSinPastilla: parseFloat(rd.borderTopWidth) === 0 && (rd.backgroundColor === 'rgba(0, 0, 0, 0)' || rd.backgroundColor === 'transparent'), tipografia: /Chakra Petch/.test(tm.fontFamily) && /Chakra Petch/.test(go.fontFamily) && /Chakra Petch/.test(rd.fontFamily), sinNaranjaDeFondo: !/255, 85, 0/.test(w.getComputedStyle(full).backgroundImage) };
         } finally { FS.salir(); d.body.className = cls; sinAnim2.remove(); }
       }
       if(c.caso === 'minimizado'){
