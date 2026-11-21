@@ -1,6 +1,7 @@
 import runtime from '@/pwa/athleteRuntime';
 import cloudBoot from '@/pwa/cloudBoot';
 import styles from '@/pwa/athleteStyles';
+import { allergiesOf, CELIAC_PLATE_WARNING, foodIsSafe, planIsMeatFree, sealsFor } from './allergens';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
@@ -87,6 +88,9 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
   const per = plan.periodization;
   const slug = slugify(pr.name);
   const protocols: { tag: string; title: string; body: string }[] = [];
+  // Seguridad clínica: sellos de aptitud por plato y alimentos que los swaps nunca proponen.
+  const allergies = allergiesOf(plan);
+  const veg = planIsMeatFree(plan);
   if (per.refeed.enabled && t.refeedGrams) {
     protocols.push({
       tag: 'PROTOCOLO · REFEED ' + per.refeed.hours + 'H',
@@ -147,11 +151,12 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         technique: fixTechnique(c.technique, c.items, c.title) || autoTechnique(c.items),
         steps: optionSteps(c),
         prepMin: prepMinutes(c.items),
+        seals: sealsFor(c.items, allergies, veg),
         // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
         // Las alternativas fuera de la franja del día (planes viejos) no llegan al atleta.
         alts: (c.alts ?? [])
           .filter((a) => a.items.length && a.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], m.role)))
-          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items) })),
+          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items), seals: sealsFor(a.items, allergies, veg) })),
       };
     }),
     // Marca sugerida por ingrediente según el presupuesto del atleta (Nivel 1 / 2 / 3).
@@ -165,6 +170,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     // Cada alimento viaja con sus franjas del día (filtro estricto de los swaps en la PWA).
     foods: Object.fromEntries(FOODS.map((f) => [f.id, { ...f, slots: foodSlots(f) }])),
     anchors: GROUP_ANCHOR,
+    avoid: FOODS.filter((f) => !foodIsSafe(f.id, allergies)).map((f) => f.id),
+    celiacWarning: allergies.includes('gluten') ? CELIAC_PLATE_WARNING : '',
     groupLabels: GROUP_LABEL,
     swapGroups: usedGroups,
     supplements: plan.supplements.filter((s) => s.enabled),

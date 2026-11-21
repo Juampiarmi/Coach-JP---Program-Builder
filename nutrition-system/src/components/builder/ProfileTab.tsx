@@ -17,6 +17,7 @@ import {
   trainingWeekdays,
 } from '@/lib/bioenergetics';
 import { CITES } from '@/lib/evidence';
+import { ALLERGIES } from '@/lib/anamnesisPro';
 import { BANK_GOALS, planLabel } from '@/lib/planBank';
 import { goalFor, precalc, sessionKcalFor, sportFor, SPORTS } from '@/lib/precalc';
 import type { Phase, PrecisionMode } from '@/lib/types';
@@ -383,6 +384,7 @@ function SportGoalPanel() {
             ))}
           </div>
         </div>
+        <AllergyChips />
         <details className="rounded-lg border border-line px-3 py-2">
           <summary className="cursor-pointer text-[12px] font-semibold text-steel">Avanzado · preset de macros por fase (reemplaza los macros de entreno y descanso)</summary>
           <div className="mt-2">
@@ -482,5 +484,32 @@ function PrecalcPanel() {
       </div>
       {preview && <PlanPreviewModal data={preview} onClose={() => setPreview(null)} />}
     </Panel>
+  );
+}
+
+/** Alergias e intolerancias (las mismas de la anamnesis): el banco, los swaps y la publicación las respetan. */
+function AllergyChips() {
+  const an = usePlanStore((s) => s.plan.anamnesis);
+  const setAnamnesis = usePlanStore((s) => s.setAnamnesis);
+  const list = an?.allergies ?? [];
+  const toggle = (id: string) => setAnamnesis({ allergies: list.includes(id) ? list.filter((x) => x !== id) : [...list, id] });
+  return (
+    <div>
+      <Label>Alergias e intolerancias · el plan nunca las incluye (bloquea la publicación)</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {ALLERGIES.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            data-allergy={a.id}
+            onClick={() => toggle(a.id)}
+            className={cx('rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold transition', list.includes(a.id) ? 'border-danger bg-danger/15 text-[#FCA5A5]' : 'border-line text-steel hover:border-white/20 hover:text-ink')}
+          >
+            {list.includes(a.id) ? '✕ ' : ''}
+            {a.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

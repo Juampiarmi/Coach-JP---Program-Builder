@@ -361,6 +361,9 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .dish .obadges{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .dish .obadges i{font-style:normal;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:9.5px;font-weight:700;letter-spacing:.03em;color:var(--micro);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
 .dish .obadges i.t{color:#FCD34D;border-color:rgba(252,211,77,.35)}
+.seals{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0 0}
+.seals i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.02em;color:#4ADE80;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);border-radius:999px;padding:2px 8px}
+.xwarn{margin-top:6px;font-size:11px;line-height:1.4;color:#FDE68A;background:rgba(255,214,0,.08);border:1px solid rgba(255,214,0,.3);border-radius:8px;padding:5px 8px}
 .item .fd s.adj{color:var(--cyan)}
 .desglose{border-top:1px solid var(--line);padding:0 14px}
 .desglose summary{list-style:none;cursor:pointer;padding:10px 0;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--cyan)}

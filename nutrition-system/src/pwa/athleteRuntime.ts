@@ -143,7 +143,7 @@ const runtime = String.raw`
     if (!src) return [];
     var dens = kcal100(src), slot = SLOT[role];
     return Object.keys(D.foods)
-      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && (!slot || !f.slots || f.slots.indexOf(slot) >= 0); })
+      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && !(D.avoid && D.avoid.indexOf(id) >= 0) && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && (!slot || !f.slots || f.slots.indexOf(slot) >= 0); })
       .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens) }; })
       .sort(function (a, b) { return a.d - b.d; })
       .slice(0, 6);
@@ -981,7 +981,7 @@ const runtime = String.raw`
     }
     var meal = D.meals.filter(function (m) { return m.id === S.fridge.meal; })[0];
     var t = meal ? fridgeTarget(meal) : { p: 0, c: 0, f: 0 };
-    var opts = Object.keys(D.foods).filter(function (id) { return D.foods[id].group !== 'veg' && kcal100(D.foods[id]) > 0; })
+    var opts = Object.keys(D.foods).filter(function (id) { return D.foods[id].group !== 'veg' && kcal100(D.foods[id]) > 0 && !(D.avoid && D.avoid.indexOf(id) >= 0); })
       .sort(function (a, b) { return D.foods[a].name.localeCompare(D.foods[b].name); });
     var sel = function (k) {
       return '<select class="inp" id="fr-' + k + '" data-fr="' + k + '"><option value="">— ingrediente ' + (k + 1) + ' —</option>' + opts.map(function (id) { return '<option value="' + esc(id) + '"' + (S.fridge.ing[k] === id ? ' selected' : '') + '>' + esc(D.foods[id].name) + '</option>'; }).join('') + '</select>';
@@ -1488,6 +1488,10 @@ const runtime = String.raw`
         var otitle = x.alt ? x.alt.title : m.title;
         var omin = (x.alt || m).prepMin;
         if (otitle) h += '<div class="dish"><span class="dtag">' + (x.alt ? 'Opción ' + x.opt + ' · alternativa con los mismos nutrientes' : 'Opción 1 · la recomendada') + '</span><b>' + esc(otitle) + '</b><span class="obadges">' + (omin ? '<i class="t">⏱ ' + omin + ' min</i>' : '') + '<i>' + n0(x.kcal) + ' kcal · ' + mtxt(x.t.p, x.t.c, x.t.f) + '</i></span></div>';
+        // Sellos de aptitud del plato (según las restricciones del alumno) y aviso fijo para celíacos.
+        var oseals = (x.alt || m).seals || [];
+        if (oseals.length) h += '<div class="seals">' + oseals.map(function (z) { return '<i>✓ ' + esc(z) + '</i>'; }).join('') + '</div>';
+        if (D.celiacWarning) h += '<div class="xwarn">⚠ ' + esc(D.celiacWarning) + '</div>';
       }
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {

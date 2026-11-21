@@ -141,6 +141,10 @@ export const FOODS: FoodRef[] = [
   { id: 'soja-texturizada', name: 'Soja texturizada (hidratada)', group: 'lean-protein', p: 17, c: 11, f: 0.4, leucine: 1.3, equiv: ['tofu'] },
   { id: 'naranja', name: 'Naranja / mandarina', group: 'fruit', unit: { label: 'u', grams: 150 }, p: 0.9, c: 10, f: 0.2, leucine: 0.02 },
   { id: 'pan-rallado', name: 'Pan rallado (rebozado)', group: 'cereal', p: 12, c: 72, f: 2, leucine: 0.8 },
+  // Sustitutos seguros para alergias / intolerancias (lib/allergens.ts).
+  { id: 'semillas', name: 'Semillas de girasol y chía', group: 'fat', p: 20, c: 15, f: 48, leucine: 1.3, equiv: ['palta', 'oliva'] },
+  { id: 'untable-deslactosado', name: 'Queso untable descremado sin lactosa', group: 'dairy-protein', p: 10, c: 3, f: 1, leucine: 0.98, equiv: ['untable'] },
+  { id: 'queso-deslactosado', name: 'Queso cremoso light sin lactosa', group: 'dairy-protein', p: 22, c: 1, f: 14, leucine: 2.0, equiv: ['queso-light'] },
 ];
 
 export const FOOD_BY_ID: Record<string, FoodRef> = Object.fromEntries(FOODS.map((f) => [f.id, f]));

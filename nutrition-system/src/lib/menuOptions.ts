@@ -306,6 +306,8 @@ export interface Combo {
   steps: string[];
   /** Variante de preferencia (sin lactosa / plant-based): sólo se ofrece cuando el plan tiene ese filtro activo. */
   special?: boolean;
+  /** Ingredientes sustituidos por alergia sin paso propio en la receta: se les genera uno. */
+  loose?: string[];
 }
 
 const MAIN: MealRole[] = ['lunch', 'dinner'];
@@ -595,7 +597,7 @@ export function comboSteps(c: Combo, items: FoodItem[]) {
     .filter(has)
     .map((st) => st.replace(/\{([a-z-]+)\}/g, (_, id: string) => q[id]));
   // Ingredientes que no son de la receta base (ej. la palta que suma el cierre del día): también llevan su paso.
-  const own = new Set(c.parts.map((p) => p.id));
+  const own = new Set(c.parts.map((p) => p.id).filter((id) => !c.loose?.includes(id)));
   items.filter((i) => i.grams > 0 && i.foodId && !own.has(i.foodId)).forEach((i) => stepsForItem(i).forEach((st) => steps.push(st)));
   return [...steps, seasoningStep(items, c.title)];
 }

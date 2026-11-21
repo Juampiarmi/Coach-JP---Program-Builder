@@ -1,5 +1,6 @@
 'use client';
 
+import { allergenConflicts } from '@/lib/allergens';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -361,6 +362,12 @@ export const useCloudStore = create<CloudState>()(
           const plan = active();
           let link = get().links[plan.id];
           set({ error: '' });
+          // Seguridad clínica: un plan con alérgenos declarados nunca llega al alumno.
+          const conflicts = allergenConflicts(plan);
+          if (conflicts.length) {
+            set({ error: `No se publicó: ${conflicts[0].meal} · Opción ${conflicts[0].option + 1} lleva ${conflicts[0].food}, que tu alumno tiene marcado como alergia / intolerancia.` });
+            return null;
+          }
           if (!link) {
             const created = await get().connectPlan(plan);
             if (!created) return null;

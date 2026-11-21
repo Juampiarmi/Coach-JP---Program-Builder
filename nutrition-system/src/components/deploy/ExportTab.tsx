@@ -9,6 +9,8 @@ import { suggestedUrl, whatsappSummary } from '@/lib/share';
 import { BalanceBanner } from '../builder/BalanceBanner';
 import { ExportFreshness } from './ExportFreshness';
 import { PublishPanel } from '../cloud/PublishPanel';
+import { QualityLights } from './QualityLights';
+import { publishBlocked } from '@/lib/quality';
 import { CloudConnect } from '../cloud/CloudConnect';
 import { athleteLink, cloudConfigured } from '@/lib/cloud/config';
 import { useCloudStore } from '@/store/useCloudStore';
@@ -108,7 +110,10 @@ export function ExportTab() {
   const slug = slugify(plan.profile.name);
   const repo = `atleta-${slug}`;
 
+  // Bloqueo duro: con un alérgeno declarado en el plan no se genera el archivo del alumno.
+  const blocked = publishBlocked(plan);
   const generate = () => {
+    if (blocked) throw new Error('Plan con alérgenos declarados');
     const html = buildAthleteHtml(plan, { preview: false, mode: 'on', icons: icons(), migrateTo: cloudLink?.token ? athleteLink(cloudLink.slug, cloudLink.token) : undefined });
     setLastSize(new Blob([html]).size);
     markExported(planFingerprint(plan));
@@ -130,6 +135,7 @@ export function ExportTab() {
 
   return (
     <div className="space-y-4">
+      <QualityLights />
       {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
@@ -142,17 +148,18 @@ export function ExportTab() {
             <b className="text-ink">¿Tu alumno usaba la app en archivo?</b> Subí este index.html en su repo de siempre: al abrirlo le aparece el botón <b className="text-cyan-hud">“Pasar mi historial a mi link nuevo”</b> y se lleva comidas, agua y peso al link fijo.
           </p>
         )}
-        <ExportFreshness onReexport={() => download('index.html', generate(), 'text/html;charset=utf-8')} />
+        <ExportFreshness onReexport={() => !blocked && download('index.html', generate(), 'text/html;charset=utf-8')} />
         <div className="mb-3">
           <BalanceBanner context="export" />
         </div>
         <div className="grid gap-2">
-          <HudButton onClick={copy} className="py-4 text-[12px]">
+          {blocked && <p data-export-blocked className="rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[12.5px] font-semibold text-[#FCA5A5]">⛔ Exportar está frenado: el plan tiene alérgenos declarados. Corregilo en el semáforo de arriba.</p>}
+          <HudButton onClick={copy} disabled={blocked} className="py-4 text-[12px]">
             {copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
             {copied ? 'CÓDIGO COPIADO' : 'COPIAR EL CÓDIGO DEL ARCHIVO'}
           </HudButton>
           <div className="grid grid-cols-2 gap-2">
-            <HudButton tone="cyan" variant="ghost" onClick={() => download('index.html', generate(), 'text/html;charset=utf-8')}>
+            <HudButton tone="cyan" variant="ghost" disabled={blocked} onClick={() => download('index.html', generate(), 'text/html;charset=utf-8')}>
               <Download className="h-4 w-4" /> Descargar index.html
             </HudButton>
             <HudButton tone="steel" variant="ghost" onClick={() => download('sw.js', buildServiceWorker(slug), 'text/javascript;charset=utf-8')}>

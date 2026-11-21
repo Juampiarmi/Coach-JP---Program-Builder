@@ -15,6 +15,7 @@ import { BlockHeader, Cite, cx, HudButton, Label, NumInput, Panel, Segmented, To
 import { BalanceBanner } from './BalanceBanner';
 import { NewDishButton } from './FoodBrandDatabase';
 import { fixedFromAnamnesis, hhmm, mainAnchors, trainingOf } from '@/lib/agenda';
+import { ALLERGEN_INFO, allergiesOf, conflictOf, foodIsSafe } from '@/lib/allergens';
 import { timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
@@ -149,7 +150,8 @@ function Equivalences({ mealId, item }: { mealId: string; item: FoodItem }) {
   const alts = (
     ref ? alternativesFor(ref, 8).map((f) => ({ food: f, grams: equivalentGrams(ref.id, item.grams, f.id) })) : freeEquivalents(item, 8)
   )
-    .filter(({ food }) => !role || fitsSlot(food, role))
+    // Sólo equivalencias aptas para las alergias / intolerancias del alumno.
+    .filter(({ food }) => (!role || fitsSlot(food, role)) && foodIsSafe(food.id, allergiesOf(usePlanStore.getState().plan)))
     .slice(0, 2);
   if (!alts.length) return <span className="text-xs text-steel/70">{ref ? 'Única opción de su grupo' : 'Sin macros para equivaler'}</span>;
   // Vista previa de la compensación (Swap Matrix): qué ajusta el resto de la comida para no descuadrarse.
@@ -188,6 +190,7 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
   const removeItem = usePlanStore((s) => s.removeItem);
   const ref = item.foodId ? FOOD_BY_ID[item.foodId] : undefined;
   const hint = householdHint(item.foodId, item.grams);
+  const allergies = allergiesOf(usePlanStore.getState().plan);
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] sm:items-center">
@@ -199,14 +202,20 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
             className="w-full cursor-pointer truncate bg-transparent text-[15px] font-medium text-ink outline-none hover:text-white"
             title="Cambiar por otro alimento del mismo grupo (se recalcula la porción)"
           >
-            {FOODS.filter((f) => f.group === ref.group).map((f) => (
+            {FOODS.filter((f) => f.group === ref.group && (f.id === ref.id || !allergies.length || foodIsSafe(f.id, allergies))).map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
+                {f.id === ref.id && conflictOf(item, allergies).length ? ' ⚠ alérgeno del alumno' : ''}
               </option>
             ))}
           </select>
         ) : (
           <span className="text-[15px] font-medium text-ink">{item.food}</span>
+        )}
+        {conflictOf(item, allergies).length > 0 && (
+          <div data-allergen-flag className="mt-0.5 inline-flex rounded border border-danger/50 bg-danger/10 px-1.5 py-px text-[10.5px] font-bold text-danger">
+            ⚠ Alérgeno del alumno: {conflictOf(item, allergies).map((a) => ALLERGEN_INFO[a].short).join(', ')}
+          </div>
         )}
         <div className="text-[11px] text-steel">
           {ref ? `${GROUP_LABEL[ref.group]}${ref.custom ? ' · mi marca' : ''}` : (() => {

@@ -138,6 +138,37 @@ try {
   check(await modal.isVisible(), 'Perfil: vista previa del plan sugerido');
   await page.keyboard.press('Escape');
   check((await modal.count()) === 0, 'Vista previa: se cierra con Escape sin aplicar');
+  // Seguridad clínica: alergia declarada → marcas en Comidas, publicación frenada, corrección automática y sellos.
+  await page.locator('[data-goal="rec"]').click();
+  await page.locator('[data-allergy="lactose"]').click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  check((await page.locator('[data-allergen-flag]').count()) > 0, 'Alergias: los ingredientes con lactosa quedan marcados en Comidas');
+  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+  check((await page.locator('[data-quality="blocked"]').count()) === 1, 'Semáforo: publicar frenado por alérgenos');
+  check(await page.getByRole('button', { name: /Descargar index.html/ }).isDisabled(), 'Bloqueo duro: no se puede descargar el archivo del alumno');
+  check((await page.locator('[data-check]').count()) >= 8, `Semáforo: ${await page.locator('[data-check]').count()} verificaciones en vivo`);
+  await page.locator('[data-fix-allergens]').click();
+  await page.waitForTimeout(200);
+  check((await page.locator('[data-quality="ok"]').count()) === 1, 'Alergias: «Corregir automáticamente» sustituye y destraba la publicación');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Descargar index.html/ }).click()]);
+  const html2 = join(dir, 'sin-lactosa.html');
+  await dl2.saveAs(html2);
+  const exported = readFileSync(html2, 'utf8');
+  check(/"seals":\[[^\]]*"Sin lactosa"/.test(exported) && /"avoid":\[[^\]]*"leche"/.test(exported), 'App del alumno: sellos «Sin lactosa» por plato y swaps sin alimentos con lactosa');
+  {
+    const sp = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await sp.goto('file://' + html2, { waitUntil: 'load' });
+    await sp.waitForTimeout(400);
+    if (await sp.getByText('Entendido, arrancar').isVisible()) await sp.getByText('Entendido, arrancar').click();
+    check((await sp.locator('.seals i', { hasText: 'Sin lactosa' }).count()) > 0, 'App del alumno: sello «✓ Sin lactosa» visible en los platos');
+    check((await sp.locator('.xwarn').count()) > 0, 'App del alumno: aviso de contaminación cruzada en los platos (celíaco)');
+    await sp.close();
+  }
+  await page.locator('section nav button', { hasText: 'Planes listos' }).click();
+  await page.locator('[data-bank-card]').first().click();
+  await page.locator('[data-plan-preview]').getByRole('button', { name: /Aplicar a este alumno/ }).click();
+  await page.waitForTimeout(250);
+  check((await page.locator('[data-allergen-flag]').count()) === 0, 'Alergias: el plan del banco aplicado llega sin lactosa');
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

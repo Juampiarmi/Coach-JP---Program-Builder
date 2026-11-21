@@ -9,6 +9,7 @@ import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { fixedFromAnamnesis } from '@/lib/agenda';
+import { acceptFor, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
 import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
@@ -82,6 +83,8 @@ interface PlanState {
   deleteTemplate: (id: string) => void;
   /** Aplica un plan ajeno (plantilla u otro alumno) adaptado al atleta activo: porciones, topes, horarios y macros. */
   applyAdapted: (src: PlanSource) => void;
+  /** Sustituye en todo el plan los ingredientes con alérgenos declarados. Devuelve cuántas opciones corrigió y cuántos conflictos quedan. */
+  fixAllergens: () => { fixed: number; left: number };
   setMacro: (day: DayMode, key: keyof Macros, value: number) => void;
   setPeriodization: (p: Partial<Periodization>) => void;
   setCoachNote: (s: string) => void;
@@ -295,8 +298,15 @@ export const usePlanStore = create<PlanState>()(
           return { plan: touch({ ...s.plan, profile: { ...s.plan.profile, phase: pc.goal.phase }, periodization: { ...s.plan.periodization, on: pc.gkg.on, off: pc.gkg.off } }) };
         }),
       saveTemplate: (name) => set((s) => ({ templates: [templateFromPlan(s.plan, name), ...s.templates] })),
+      fixAllergens: () => {
+        const s = get();
+        const r = fixPlanAllergens(s.plan, planIsMeatFree(s.plan));
+        if (r.fixed) set({ plan: touch(r.plan) });
+        return { fixed: r.fixed, left: allergenConflicts(r.plan).length };
+      },
       deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((t) => t.id !== id) })),
-      applyAdapted: (src) => set((s) => ({ plan: touch(adaptPlan(s.plan, src)), builderTab: 'meals' })),
+      // Copia / plantilla: además de reescalar, se sustituyen los alérgenos que el alumno tiene declarados.
+      applyAdapted: (src) => set((s) => ({ plan: touch(fixPlanAllergens(adaptPlan(s.plan, src)).plan), builderTab: 'meals' })),
       applyPhasePreset: (phase) =>
         set((s) => ({
           plan: touch({
@@ -385,7 +395,7 @@ export const usePlanStore = create<PlanState>()(
         const basket = s.plan.anamnesis?.basket;
         const others = (meal.alts ?? []).filter((_, k) => k !== slot);
         // Nunca repite la base (plato / proteína) de la Opción 1 ni de las otras alternativas de la misma comida.
-        const opts = suggestAlternatives(meal, basket ? new Set(basket) : null, 12, others.map((a) => baseKey(a.items))).filter(
+        const opts = suggestAlternatives(meal, basket ? new Set(basket) : null, 12, others.map((a) => baseKey(a.items)), acceptFor(allergiesOf(s.plan))).filter(
           (o) => !others.some((a) => a.title === o.title || baseKey(a.items) === baseKey(o.items)),
         );
         if (!opts.length) return 0;
@@ -406,7 +416,7 @@ export const usePlanStore = create<PlanState>()(
             return { ...m, alts: alts.length ? alts : undefined };
           }),
         })),
-      generateAllAlts: (overwrite = false) => set((s) => ({ plan: touch(withAlternatives(s.plan, overwrite)) })),
+      generateAllAlts: (overwrite = false) => set((s) => ({ plan: touch(withAlternatives(s.plan, overwrite, undefined, acceptFor(allergiesOf(s.plan)))) })),
       setAltItemGrams: (mealId, slot, itemId, grams) =>
         set((s) => ({
           plan: mapMeal(s.plan, mealId, (m) => ({

@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { BookOpen, Copy, Eye, FolderHeart, ShieldAlert, Trash2 } from 'lucide-react';
 import { fmt0, fmt1 } from '@/lib/bioenergetics';
+import { fixedFromAnamnesis } from '@/lib/agenda';
+import { ALLERGEN_INFO, allergiesOf, fixPlanAllergens } from '@/lib/allergens';
 import { adaptPlan, sourceOf, type PlanTemplate } from '@/lib/planAdapt';
 import { goalFor, variantFor } from '@/lib/precalc';
 import {
@@ -42,9 +44,11 @@ const chip = (on: boolean) =>
 /** Vista previa de un plan del banco escalado al alumno activo (la usan Planes listos y el precálculo del perfil). */
 export function bankPreview(athlete: AthletePlan, sel: BankSelection, onApply: () => void): PreviewData {
   const g = goalOf(sel.plan);
-  const bp = buildBankPlan(sel, athlete.profile.weightKg, trainingOf(athlete.profile));
+  const allergies = allergiesOf(athlete);
+  const bp = buildBankPlan(sel, athlete.profile.weightKg, trainingOf(athlete.profile), fixedFromAnamnesis(athlete.anamnesis), allergies);
   const warnings = [
-    ...(sel.variant === 'stacc' ? [STACC_WARNING] : []),
+    ...(sel.variant === 'stacc' || allergies.includes('gluten') ? [STACC_WARNING] : []),
+    ...(allergies.length ? [`Adaptado a las restricciones de ${athlete.profile.name}: ${allergies.map((a) => ALLERGEN_INFO[a].label.toLowerCase()).join(', ')}. Los platos con esos ingredientes se cambian por otros aptos o se sustituye el ingrediente por un equivalente seguro.`] : []),
     ...(sexOf(sel.plan) !== athlete.profile.sex ? [`Es un plan de ${SEX_LABEL[sexOf(sel.plan)].toLowerCase()} y ${athlete.profile.name} está cargado con el otro sexo: revisá que sea el que querés.`] : []),
   ];
   return {
@@ -208,7 +212,7 @@ function MyTemplates({ onPreview }: { onPreview: (d: PreviewData | null) => void
   const applyAdapted = usePlanStore((s) => s.applyAdapted);
   const deleteTemplate = usePlanStore((s) => s.deleteTemplate);
   const preview = (t: PlanTemplate) => {
-    const adapted = adaptPlan(athlete, t);
+    const adapted = fixPlanAllergens(adaptPlan(athlete, t)).plan;
     onPreview({
       title: `Plantilla: ${t.name}`,
       scaledFor: scaledLabel(athlete.profile.name, athlete.profile.weightKg, athlete.profile.trainingTime),
@@ -258,7 +262,7 @@ function CopyFromAthlete({ onPreview }: { onPreview: (d: PreviewData | null) => 
   const applyAdapted = usePlanStore((s) => s.applyAdapted);
   const others = listAthletes({ plan: athlete, roster }).filter((a) => a.id !== athlete.id && a.meals.length > 0);
   const preview = (src: AthletePlan) => {
-    const adapted = adaptPlan(athlete, sourceOf(src));
+    const adapted = fixPlanAllergens(adaptPlan(athlete, sourceOf(src))).plan;
     onPreview({
       title: `Plan de ${src.profile.name}`,
       scaledFor: scaledLabel(athlete.profile.name, athlete.profile.weightKg, athlete.profile.trainingTime),

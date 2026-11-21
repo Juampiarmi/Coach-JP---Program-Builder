@@ -5,6 +5,7 @@ import { fixGreeting, OFF_PERI_NAME, parseTrainingWindow, PERI_WORDS, resolveAth
 import { FOOD_BY_ID, macrosFor, matchFood, round1, round2 } from './foods';
 import { fitsSlot } from './mealSlots';
 import { consolidateItems, dayAnchors, retimeMeals } from './schedule';
+import { fixPlanAllergens } from './allergens';
 import { autoTitle } from './menuOptions';
 import { uid } from './seed';
 import { MAX_OPTIONS, type AiProvider, type AiSettings, type AthletePlan, type FoodItem, type Meal, type MealDay, type MealRole, type Phase, type Supplement } from './types';
@@ -374,7 +375,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
     };
   });
 
-  return {
+  const out: AthletePlan = {
     ...base,
     profile: {
       ...base.profile,
@@ -401,6 +402,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
     supplements: supplements.length ? supplements : aisGroupA(weightKg),
     coachNote: fixGreeting(json.coachNote?.trim() || base.coachNote, json.athleteName, athleteName),
   };
+  // Seguridad clínica: lo que la IA haya puesto con un alérgeno declarado se sustituye por un equivalente seguro.
+  return fixPlanAllergens(out).plan;
 }
 
 // ---------- PRUEBA DE CONEXIÓN ----------

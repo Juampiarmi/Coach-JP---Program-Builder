@@ -1,10 +1,11 @@
 import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
+import { allergiesOf, FOOD_ALLERGENS, safeRecipes, type Allergen } from './allergens';
 import { CITES } from './evidence';
 import { FOOD_BY_ID } from './foods';
 import { comboSteps, type Combo, type ComboPart } from './menuOptions';
 import { isLiquid, mealVolumeCap, portionCap, solidGrams, type CapCtx } from './portionCaps';
 import { itemFromFood, uid } from './seed';
-import type { FoodItem, Macros, Meal, MealDay, MealRole, Phase, Sex } from './types';
+import type { AthletePlan, FoodItem, Macros, Meal, MealDay, MealRole, Phase, Sex } from './types';
 
 // =====================================================================================================
 // BANCO DE PLANES MAESTROS (nutrición deportiva · Argentina)
@@ -266,6 +267,8 @@ const VEG: Record<SlotKind, R[]> = {
     { title: 'Milanesas de soja al horno con puré de papa', parts: [P('soja-texturizada'), C('papa'), F('oliva'), X('huevo', 50), X('pan-rallado', 20)], steps: ['Mezclá {soja-texturizada} de soja texturizada hidratada con {huevo} y formá las milanesas.', 'Pasalas por {pan-rallado} de pan rallado y hornealas 10 min por lado.', 'Serví con puré de {papa} de papa y {oliva} de aceite de oliva.'] },
     { title: 'Ensalada completa de garbanzos, huevo, queso y arroz', parts: [P('huevo'), C('garbanzos'), F('oliva'), X('queso-light', 30), X('vegetales', 200)], steps: ['Mezclá {garbanzos} de garbanzos cocidos con {vegetales} de verduras.', 'Sumá {huevo} de huevo duro y {queso-light} de queso light en cubos.', 'Condimentá con {oliva} de aceite de oliva.'] },
     { title: 'Omelette de claras con queso, papas al horno y ensalada', parts: [P('claras', { min: 66 }), C('papa'), F('oliva'), X('huevo', 50), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras} y cociná el omelette con {queso-light} de queso light.', 'Asá {papa} de papa en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
+    { title: 'Polenta cremosa con salsa de tomate, huevo poché y queso', parts: [P('huevo'), C('polenta'), X('queso-light', 30), X('vegetales', 100)], steps: ['Prepará {polenta} de polenta cremosa con agua y sal.', 'Cociná {huevo} poché en la salsa de {vegetales} de tomate.', 'Serví con {queso-light} de queso por encima.'] },
+    { title: 'Papas al horno con huevo, queso y ensalada', parts: [P('huevo'), C('papa'), F('oliva'), X('queso-light', 30), X('vegetales', 150)], steps: ['Asá {papa} de papa en gajos con {oliva} de aceite, 30 min a 200 °C.', 'Sumá {huevo} a la plancha y {queso-light} de queso.', 'Acompañá con {vegetales} de ensalada.'] },
   ],
   pre: [STD.pre[0], STD.pre[1], { title: 'Tostadas de pan lactal con queso untable y miel', parts: [P('untable'), C('pan-lactal'), X('miel', 10)], steps: ['Untá {pan-lactal} de pan lactal con {untable} de queso untable y {miel} de miel.'] }, STD.pre[3], STD.pre[4]],
   merienda: [STD.merienda[0], STD.merienda[1], STD.merienda[2], { title: 'Café con leche y tostado de queso', parts: [P('queso-light'), C('pan'), X('leche', 200)], steps: ['Armá el tostado con {pan} de pan integral y {queso-light} de queso light.', 'Acompañá con café con {leche} de leche.'] }],
@@ -412,6 +415,8 @@ const stepOf = (id: string) => {
 
 interface Ctx extends CapCtx {
   sex: Sex;
+  /** Filtro de alérgenos del alumno para los módulos de densidad (nueces, etc.). */
+  ok?: (foodId: string) => boolean;
 }
 
 /** Gramos de una receta para un objetivo de macros, cada ingrediente dentro de su rango (tope duro incluido). */
@@ -534,7 +539,7 @@ const MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
   extra: { c: [], f: [] },
 };
 const moduleTitle = (id: string, kind: SlotKind) =>
-  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana', miel: ' + miel', 'dulce-membrillo': ' + dulce de membrillo', palta: ' + palta', isotonica: ' + bebida isotónica para el entreno' } as Record<string, string>)[id] ?? '';
+  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana', miel: ' + miel', 'dulce-membrillo': ' + dulce de membrillo', palta: ' + palta', semillas: ' + semillas', isotonica: ' + bebida isotónica para el entreno' } as Record<string, string>)[id] ?? '';
 /** Título con tramos opcionales "[ con proteína|whey]": sólo se nombra lo que el plato lleva de verdad. */
 const titleFor = (title: string, g: Record<string, number>) => title.replace(/\[([^|\]]*)\|([a-z-]+)\]/g, (_, txt: string, id: string) => ((g[id] ?? 0) > 0 ? txt : ''));
 
@@ -587,7 +592,9 @@ function dayMacros(ws: Work[]): Tot {
 
 type Move = [Work, string, { allowNew?: boolean; floor?: number; max?: number }];
 /** Módulo de densidad: como mucho 1 unidad por comida (1 fruta de postre, 1 banana, 1 cda de aceite). */
-const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, oliva: 15, miel: 20, 'dulce-membrillo': 20, palta: 50 };
+const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, semillas: 30, oliva: 15, miel: 20, 'dulce-membrillo': 20, palta: 50 };
+/** Equivalente seguro de un módulo de densidad para un alumno con alergia. */
+const MODULE_SAFE: Record<string, string> = { nueces: 'semillas' };
 
 /**
  * Cierre del día: lleva la opción 1 de cada comida al total de calorías (±2 %) corrigiendo primero el macro más
@@ -608,13 +615,16 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
     ...ws.flatMap((w) =>
       MODULES[w.slot.kind][k]
         .filter((id) => !adjustable(w, k).includes(id) && !(k === 'f' && w.recipes[0].parts.some((p) => p.r === 'f' && FOOD_BY_ID[p.id].group === 'fat')))
+        // Alergia: el módulo se cambia por su equivalente seguro (nueces → semillas) o se saltea.
+        .map((id) => (ctx.ok && !ctx.ok(id) ? (MODULE_SAFE[id] ?? '') : id))
+        .filter((id) => id && (!ctx.ok || ctx.ok(id)) && !adjustable(w, k).includes(id))
         // Con postre en la cena, nada de fruta de postre aparte (un solo postre).
         .filter((id) => !(w.slot.kind === 'dinner' && ws.some((d) => d.slot.kind === 'dessert')))
         .map((id): Move => [w, id, { allowNew: true, max: MODULE_MAX[id] }]),
     ),
   ];
   const down = (k: 'p' | 'c' | 'f'): Move[] => [
-    ...ws.flatMap((w) => [...w.added].filter((id) => (k === 'f' ? MODULES[w.slot.kind].f : MODULES[w.slot.kind].c).includes(id)).map((id): Move => [w, id, { floor: 0 }])),
+    ...ws.flatMap((w) => [...w.added].filter((id) => (k === 'f' ? [...MODULES[w.slot.kind].f, 'semillas'] : [...MODULES[w.slot.kind].c, 'isotonica']).includes(id)).map((id): Move => [w, id, { floor: 0 }])),
     ...ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, k === 'f' ? { floor: 0 } : {}])),
   ];
   const kpgOf = (id: string) => kcalOf(FOOD_BY_ID[id]) / 100;
@@ -723,12 +733,17 @@ function ordered(goal: BankGoal, kind: SlotKind, recs: R[]): R[] {
   return [...recs].sort((a, b) => (carbFirst ? lean(a) - lean(b) : lean(b) - lean(a)));
 }
 
-function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot, tr: BankTraining, fixed: BankMainTimes): Meal[] {
+function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot, tr: BankTraining, fixed: BankMainTimes, allergies: Allergen[]): Meal[] {
   const sex = sexOf(sel.plan);
-  const ctx: Ctx = { sex, veg: sel.variant === 'veg' };
+  const veg = sel.variant === 'veg';
+  const ctx: Ctx = { sex, veg, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
   const goalId = goalOf(sel.plan).id;
   const base = RECIPES[sel.variant];
-  const recipes = Object.fromEntries((Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, base[k])])) as Record<SlotKind, R[]>;
+  // Alergias: recetas aptas primero; si no alcanzan, las otras con el ingrediente sustituido por un equivalente seguro.
+  const recipes = Object.fromEntries(
+    // Como mucho 5 opciones por comida (la sugerida + 4 alternativas), igual que en el Builder.
+    (Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, safeRecipes(base[k], allergies, { veg, role: SLOT[k].role, sex })).slice(0, 5)]),
+  ) as Record<SlotKind, R[]>;
   const slots = daySlots(mealCount(sex, tierB, day, tr), day, tr, fixed);
   const wsum = slots.reduce((a, k) => [a[0] + k.w[0], a[1] + k.w[1], a[2] + k.w[2]], [0, 0, 0]);
   const mkWork = (slot: SlotDef, share?: [number, number, number], only?: R[]): Work => {
@@ -820,12 +835,14 @@ export interface BankPlan {
  * Arma el plan completo (día de entreno + día de descanso) para un peso. Los horarios siguen la agenda argentina y
  * el horario de entreno del alumno (por defecto 18:00, 1 h); `fixed`: desayuno / almuerzo / cena fijados por el coach.
  */
-export function buildBankPlan(sel: BankSelection, weightKg: number, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}): BankPlan {
+export function buildBankPlan(sel: BankSelection, weightKg: number, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}, allergies: Allergen[] = []): BankPlan {
+  // Celíaco: siempre la variante Sin TACC (las vegetarianas sustituyen pan y fideos por los certificados).
+  if (allergies.includes('gluten') && sel.variant === 'std') sel = { ...sel, variant: 'stacc' };
   const sex = sexOf(sel.plan);
   const goal = goalOf(sel.plan);
   const t = dayTargets(goal, sex, weightKg);
   const tierB = t.on.kcal > TIER_B[sex];
-  const meals = [...buildDay(sel, 'on', tierB, t.on, tr, fixed), ...buildDay(sel, 'off', tierB, t.off, tr, fixed)];
+  const meals = [...buildDay(sel, 'on', tierB, t.on, tr, fixed, allergies), ...buildDay(sel, 'off', tierB, t.off, tr, fixed, allergies)];
   return { sel, weightKg, tier: tierB ? 'B' : 'A', gkg: t.gkg, target: { on: t.on, off: t.off }, meals };
 }
 
@@ -840,14 +857,16 @@ export const planLabel = (sel: BankSelection) => `${goalOf(sel.plan).label} · $
  * la Tabla Única de Topes), la matriz de macros del objetivo y los horarios según su entreno.
  * Perfil, suplementos, anamnesis y nota del coach se conservan (Sin TACC suma su aviso fijo).
  */
-export function applyBankPlan<T extends { profile: { weightKg: number; phase: Phase; trainingTime?: string; sessionMinutes?: number }; periodization: { on: Macros; off: Macros }; meals: Meal[]; coachNote: string }>(
+export function applyBankPlan<T extends { profile: { weightKg: number; phase: Phase; trainingTime?: string; sessionMinutes?: number }; periodization: { on: Macros; off: Macros }; meals: Meal[]; coachNote: string; anamnesis?: AthletePlan['anamnesis'] }>(
   base: T,
   sel: BankSelection,
   fixed: BankMainTimes = {},
 ): T {
   const goal = goalOf(sel.plan);
-  const bp = buildBankPlan(sel, base.profile.weightKg, trainingOf(base.profile), fixed);
-  const note = [base.coachNote.trim() || goal.rationale, sel.variant === 'stacc' && !base.coachNote.includes('SIN TACC') ? STACC_WARNING : ''].filter(Boolean).join('\n\n');
+  const allergies = allergiesOf(base);
+  const bp = buildBankPlan(sel, base.profile.weightKg, trainingOf(base.profile), fixed, allergies);
+  const celiac = sel.variant === 'stacc' || allergies.includes('gluten');
+  const note = [base.coachNote.trim() || goal.rationale, celiac && !base.coachNote.includes('SIN TACC') ? STACC_WARNING : ''].filter(Boolean).join('\n\n');
   return {
     ...base,
     profile: { ...base.profile, phase: goal.phase },

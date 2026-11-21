@@ -1,5 +1,6 @@
 'use client';
 
+import { publishBlocked } from '@/lib/quality';
 import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ClipboardCopy, Cloud, History, KeyRound, Link2, MessageCircle, RefreshCw, Rocket, ShieldOff, Smartphone } from 'lucide-react';
 import { athleteLink } from '@/lib/cloud/config';
@@ -50,6 +51,8 @@ export function PublishPanel() {
   const busy = useCloudStore((s) => s.busy);
   const error = useCloudStore((s) => s.error);
   const { state, last } = useExportFreshness();
+  // Bloqueo duro: con un alérgeno declarado en el plan, no se publica.
+  const blocked = publishBlocked(plan);
   const [login, setLogin] = useState(false);
   const [done, setDone] = useState<number | null>(null);
   const [copied, setCopied] = useState('');
@@ -100,7 +103,7 @@ export function PublishPanel() {
             const v = await publish();
             if (v) setDone(v);
           }}
-          disabled={!!busy || (state === 'fresh' && !!link)}
+          disabled={!!busy || (state === 'fresh' && !!link) || blocked}
           title="Sube el plan a la nube y lo deja visible en el link de tu alumno"
           className={cx(
             'mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-[16px] font-bold transition',
@@ -109,7 +112,7 @@ export function PublishPanel() {
           )}
         >
           {state === 'fresh' && link ? <Check className="h-5 w-5" /> : <Rocket className="h-5 w-5" />}
-          {busy ?? (state === 'fresh' && link ? 'Plan al día' : link ? 'Publicar cambios' : 'Publicar y crear su link')}
+          {blocked ? 'Frenado: hay alérgenos en el plan' : (busy ?? (state === 'fresh' && link ? 'Plan al día' : link ? 'Publicar cambios' : 'Publicar y crear su link'))}
         </button>
         {done && (
           <div role="status" className="mt-3 rounded-xl border border-[#22C55E]/40 bg-[#22C55E]/10 px-4 py-3 text-[14px] font-semibold text-[#4ADE80]">

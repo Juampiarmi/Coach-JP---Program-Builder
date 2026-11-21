@@ -59,6 +59,8 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   untable: both(15, 40),
   'queso-light': both(30, 60),
   ricota: bySex([50, 120], [50, 150]),
+  'untable-deslactosado': both(15, 40),
+  'queso-deslactosado': both(30, 60),
   whey: both(20, 40),
   'whey-isolate': both(20, 40),
   // Cereales y panes
@@ -101,6 +103,7 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   palta: both(30, 70),
   nueces: both(10, 30),
   mani: both(10, 30),
+  semillas: both(10, 30),
   // Carbos de rápida absorción
   miel: both(5, 20),
   'dulce-membrillo': both(5, 20),

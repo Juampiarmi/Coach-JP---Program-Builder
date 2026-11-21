@@ -47,6 +47,7 @@ const GROUP_SLOTS: Record<SwapGroup, FoodSlot[]> = {
 const FOOD_SLOTS: Record<string, FoodSlot[]> = {
   nueces: ['am', 'peri', 'main'],
   mani: ['am', 'peri'],
+  semillas: ['am', 'peri', 'main'],
   arroz: ['main', 'peri'],
   batata: ['main', 'peri'],
   oliva: ['am', 'main'],
