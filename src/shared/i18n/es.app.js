@@ -24,6 +24,7 @@ JP_I18N.add('es', {
   'app.voz.probar': 'Probar',
   'app.voz.sinpaquete': 'Sin paquete de voz',
   'app.voz.ejemplo': '3 - 2 - 1 - ¡Ya!',
+  'app.voz.guia': 'El timer te habla: cuenta 3 - 2 - 1, «Go» al empezar, «Rest» al descansar y «Stop» al terminar. Tocá «Probar» para escuchar un ejemplo.',
   'app.voz.chip.on': 'VOZ: ON',
   'app.voz.chip.off': 'VOZ: OFF',
   'app.voz.chip.mute': 'SIN SONIDO',

@@ -871,12 +871,13 @@
     }
     }
 
+    /* solo datos reales: sin tiempo medido no se muestra un tiempo (antes caía a "55 min" fijos) y sin tonelaje no se dibuja un "0 KG" */
     var cajas = [
-      { k:'VOLUMEN', v: (d.vol || 0).toLocaleString('es-AR'), u:'KG' },
+      (d.vol > 0) ? { k:'VOLUMEN', v: (d.vol || 0).toLocaleString('es-AR'), u:'KG' } : null,
       { k:'SERIES',  v: String(d.series || 0), u:'SERIES' },
-      { k:'TIEMPO',  v: String(d.tiempo || fmtDuracionStory(55)), u:'' }
-    ];
-    var x = 100, ancho = (W - 200 - 40) / 3;
+      d.tiempo ? { k:'TIEMPO',  v: String(d.tiempo), u:'' } : null
+    ].filter(Boolean);
+    var x = 100, ancho = (W - 200 - 20 * (cajas.length - 1)) / cajas.length;
     cajas.forEach(function(b, i){
       var bx = x + i * (ancho + 20);
       g.fillStyle = 'rgba(255,255,255,.05)'; rr(g, bx, 1150, ancho, 206, 24); g.fill();

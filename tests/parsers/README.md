@@ -69,6 +69,10 @@ Adaptador `alumnoVoz` (runner.html): corre la app del alumno con un `AudioContex
 
 Adaptador `alumnoVista` (runner.html): inserta piezas de muestra en la app del alumno y las mide con `getComputedStyle` (alineación de márgenes, subtítulos naranja, desplegable de pautas, encabezado de cardio, deduplicado de videos, firma, menú de Perfil con temporizadores simulados y colores de la pantalla completa del timer por fase). 8 casos.
 
+## Pulido fino y datos reales de la Story Card (`cases-pulido.js`)
+
+Adaptador `alumnoPulido` (runner.html): inserta piezas con la misma estructura que las reales y las mide con `getComputedStyle`. 9 casos: esquinas y bordes nítidos (sin desenfoque anidado, barra de color de la tarjeta recortada por la esquina, radios hermanos), marca «JP» más grande que «COACH», «Pautas técnicas» alineada con las filas de adentro, selectores con el elegido en naranja (y «OFF» gris), controles de voz en una tarjeta con guía es/en, «Pausar sesión» a ancho completo y margen inferior del panel, explicación del mesociclo partida en puntos, tarjetas de semana (badge en la primera línea, pico y descarga distintos), pestañas de la Guía con íconos de línea. El caso `pulido.09` carga series de prueba en el estado de la app, compara lo que recibe la Story Card contra la suma hecha a mano (tonelaje, series, repeticiones, tiempo solo medido, latido pasivo, «sesión N de M», RPE, PR de CrossFit solo de hoy y volumen prescripto solo de bloques hechos) y devuelve el estado como estaba.
+
 ## Timer en segundo plano (`cases-segundo-plano.js`)
 
 Adaptador `alumnoFondo` (runner.html): reloj simulado sobre la app del alumno. 6 casos: cronograma de transiciones del timer (Tabata, EMOM, AMRAP) con su hora y su texto, entrega del cronograma al service worker al pasar a segundo plano (`visibilitychange`), cola del SW (`jpPlanFases`, tope de 60 min) y su código, aviso «Mantené la pantalla encendida» en iPhone / iPad (una sola vez, nunca en escritorio) y textos `app.notif.*` / `app.aviso.*`. Los avisos del sistema con el teléfono bloqueado son mejor esfuerzo: el navegador puede dormir el service worker (más en iPhone); eso no se puede testear.

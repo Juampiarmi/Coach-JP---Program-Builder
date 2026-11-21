@@ -23,8 +23,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { bordeEscudo: true, tarjeta: true, nombreBlanco: true, rolSinCyanPleno: true, acentos: true }, modo: 'subset',
     nota: 'La firma de la programación es una tarjeta con borde amarillo del escudo, nombre en blanco con acento naranja, cargo en azul tenue con acento cyan y la versión discreta (se fueron el cargo en cyan pleno y el gris suelto)' },
   { id: 'vista.07', area: 'Timer · pantalla completa', fn: 'alumnoVista', input: { caso: 'pantallaCompletaFases' },
-    expect: { marcoEscudo: true, prep: 'rgb(245, 197, 24)', trabajo: 'rgb(255, 106, 31)', descanso: 'rgb(0, 229, 255)', relojDescanso: 'rgb(189, 247, 255)', barraTrabajo: true, barraDescanso: true, distintos: true }, modo: 'subset',
-    nota: 'La pantalla completa del timer lleva el marco amarillo del escudo y el color manda la fase: trabajo en naranja, descanso en cyan y preparación en amarillo (rótulo, reloj, barra y pastilla de ronda), también en los últimos 10 segundos' },
+    expect: { sinMarco: true, prep: 'rgb(245, 197, 24)', trabajo: 'rgb(255, 106, 31)', descanso: 'rgb(0, 229, 255)', barraTrabajo: true, barraDescanso: true, distintos: true, relojNaranja: true, sinNeon: true, firmaAbajo: true, firmaGrande: true }, modo: 'subset',
+    nota: 'La pantalla completa del timer NO lleva marco ni recuadro amarillo estático (el borde solo se enciende de forma rítmica en el 3-2-1), los números del reloj van en naranja sin neón en todas las fases, la fase se distingue por el rótulo, la barra y la pastilla (trabajo naranja, descanso cyan, preparación amarillo, también en los últimos 10 s) y la firma COACH JP queda abajo, más grande' },
   { id: 'vista.08', area: 'Menú del header', fn: 'alumnoVista', input: { caso: 'menuPerfil' },
     expect: { menuTiene: true, aunNoAbre: true, abreDespues: true, noSeCierra: true }, modo: 'subset',
     nota: '«Perfil, credencial y archivos» abre el panel de Perfil: el clic de afuera del panel lo cerraba en el acto (parecía un botón muerto); ahora se abre en el turno siguiente y se queda abierto' }

@@ -21,6 +21,7 @@ JP_I18N.add('en', {
   'app.voz.probar': 'Test',
   'app.voz.sinpaquete': 'Voice pack unavailable',
   'app.voz.ejemplo': '3 - 2 - 1 - Go!',
+  'app.voz.guia': 'The timer talks to you: a 3 - 2 - 1 countdown, "Go" at the start, "Rest" on breaks and "Stop" at the end. Tap "Test" to hear an example.',
   'app.voz.chip.on': 'VOICE: ON',
   'app.voz.chip.off': 'VOICE: OFF',
   'app.voz.chip.mute': 'MUTED',

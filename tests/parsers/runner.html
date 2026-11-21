@@ -53,6 +53,7 @@
 <script src="cases-voz.js"></script>
 <script src="cases-segundo-plano.js"></script>
 <script src="cases-vista.js"></script>
+<script src="cases-pulido.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -103,6 +104,7 @@
     alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
     alumnoFondo:  { run: function(i){ return alumnoFondo(i); }, valor: function(r){ return r; } },
     alumnoVista:  { run: function(i){ return alumnoVista(i); }, valor: function(r){ return r; } },
+    alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -558,11 +560,19 @@
           try{ TM.cerrar(); }catch(e0){}
           TM.configurar({ modo: 'tabata', work: 20, rest: 10, rondas: 3 }); TM.arrancar(); TM.paso(); FS.entrar();
           var full = d.getElementById('cwtFull'), col = function(s){ return cs(full.querySelector(s)).color; }, bg = function(s){ return cs(full.querySelector(s)).backgroundImage; };
-          o.marcoEscudo = /245, 197, 24/.test(cs(full).boxShadow); o.prep = col('.cf-phase');
+          /* sin marco ni recuadro amarillo estático: el borde solo se enciende de forma rítmica (#jpRayo) en el 3-2-1 */
+          o.sinMarco = cs(full).boxShadow === 'none' && parseFloat(cs(full).borderTopWidth) === 0 && !/245, 197, 24/.test(cs(full).boxShadow);
+          o.prep = col('.cf-phase'); var relojP = col('.cf-time');
           reloj = T0 + 10012; TM.paso(); FS.entrar(); o.trabajo = col('.cf-phase'); o.barraTrabajo = /238, 90, 18/.test(bg('.cf-bar i')); var relojT = col('.cf-time');
-          reloj = T0 + 10012 + 20000; TM.paso(); FS.entrar(); o.descanso = col('.cf-phase'); o.relojDescanso = col('.cf-time'); o.barraDescanso = /0, 184, 212/.test(bg('.cf-bar i'));
-          reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn');    /* últimos 10 s del descanso: sigue en cyan */
-          o.distintos = o.trabajo !== o.descanso && relojT !== o.relojDescanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
+          reloj = T0 + 10012 + 20000; TM.paso(); FS.entrar(); o.descanso = col('.cf-phase'); var relojD = col('.cf-time'); o.barraDescanso = /0, 184, 212/.test(bg('.cf-bar i'));
+          reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn'); var relojW = col('.cf-time');    /* últimos 10 s del descanso: la fase conserva su color */
+          o.distintos = o.trabajo !== o.descanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
+          /* números del reloj: naranja en todas las fases y sin neón (sombra sin desenfoque) */
+          o.relojNaranja = [relojP, relojT, relojD, relojW].every(function(c){ return c === 'rgb(255, 106, 31)'; });
+          var tsh = cs(full.querySelector('.cf-time')).textShadow; o.sinNeon = tsh === 'none' || /\s0px$/.test(tsh.trim());
+          var sg = full.querySelector('.cf-sign'), rf = full.getBoundingClientRect(), rs = sg.getBoundingClientRect();
+          o.firmaAbajo = cs(sg).position === 'absolute' && rs.top > rf.top + rf.height * 0.78 && rs.bottom <= rf.bottom + 1;
+          o.firmaGrande = parseFloat(cs(sg.querySelector('b')).fontSize) >= 20 && parseFloat(cs(sg.querySelector('b em')).fontSize) > parseFloat(cs(sg.querySelector('b')).fontSize);
           return o;
         } finally { w.Date.now = DN; FS.salir(); d.body.className = cls; sa.remove(); try{ TM.reset(); TM.cerrar(); }catch(e9){} }
       }
@@ -586,6 +596,124 @@
       }
       throw new Error('caso desconocido: ' + c.caso);
     } finally { aÑadidos.forEach(function(e){ if(e.parentNode) e.parentNode.removeChild(e); }); }
+  }
+  /* ---------- pulido fino: esquinas, marca, pautas alineadas, Perfil & Ajustes, Guía de entrenamiento y datos reales de la Story Card ---------- */
+  function alumnoPulido(c){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, cs = function(e, p){ return w.getComputedStyle(e, p || null); }, aÑadidos = [], fs = function(e){ return parseFloat(cs(e).fontSize); };
+    function poner(html, donde){ var t = d.createElement('div'); t.innerHTML = html; var e = t.firstElementChild; (donde || d.getElementById('mainContent') || d.body).appendChild(e); aÑadidos.push(e); return e; }
+    var overlay = d.getElementById('guideModal'), estabaAbierto = overlay && overlay.classList.contains('open'), estiloPrev = d.body.getAttribute('data-jp-estilo');
+    if((c.caso === 'esquinas' || c.caso === 'pautas') && typeof w.jpEstiloTarjeta === 'function') w.jpEstiloTarjeta(4);      /* el estilo por defecto: «Compacto de élite» */
+    try{
+      if(c.caso === 'esquinas'){
+        var blk = poner('<div class="block cat-strength"><div class="block-body"><div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas"><details class="jp-ex-tips"><summary>T</summary></details><details class="jp-ex-box"><summary>O</summary></details></div></div><details class="jp-block-details"><summary class="jp-summary-btn"><span>P</span></summary><div>z</div></details></div></div></div>');
+        var warm = poner('<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary>a</summary></details></div></div>');
+        var ex = blk.querySelector('.jp-sb-ex'), board = blk.querySelector('.jp-sb-board'), rad = function(e){ return parseFloat(cs(e).borderTopLeftRadius); }, bw = function(e){ return parseFloat(cs(e).borderTopWidth); };
+        var s1 = blk.querySelector('.jp-ex-tips > summary'), s2 = blk.querySelector('.jp-ex-box > summary'), s3 = blk.querySelector('.jp-block-details > summary'), cb = cs(ex, '::before');
+        return { sinDesenfoqueAnidado: cs(blk).backdropFilter === 'none' && cs(board).backdropFilter === 'none',
+          bloqueRedondo: rad(blk) === 16 && bw(blk) > 0.5, tarjetaRedonda: rad(ex) === parseFloat(cs(ex).getPropertyValue('--xc-r')), barraDorada: cb.content !== 'none' && /255, 194, 75/.test(cb.backgroundColor) && parseFloat(cb.width) >= 2.5 && cb.position === 'absolute',
+          sinBordeGruesoIzq: Math.abs(parseFloat(cs(ex).borderLeftWidth) - parseFloat(cs(ex).borderTopWidth)) < 0.01,
+          radiosHermanos: rad(s3) === 12 && rad(blk.querySelector('.jp-ex-tips')) === 12 && rad(blk.querySelector('.jp-ex-box')) === 12 && rad(s1) === rad(s2),
+          activacionRecortada: cs(warm).overflow === 'hidden' && rad(warm) >= 15 && rad(warm.querySelector('summary')) >= 15 && cs(warm).backdropFilter === 'none',
+          _medidas: [rad(blk), bw(blk), rad(ex), cs(ex).borderLeftWidth, cs(ex).borderTopWidth, d.body.className, d.body.getAttribute('data-jp-estilo')].join(' | ') };
+      }
+      if(c.caso === 'marca'){
+        var m = d.querySelector('.hdc-brand-mark'), em = m && m.querySelector('em'); if(!m || !em) return { sinMarca: true };
+        return { jpMasGrande: fs(em) > fs(m) * 1.3, jpPesado: parseInt(cs(em).fontWeight, 10) >= 900, jpNaranja: cs(em).color === 'rgb(238, 90, 18)', coachBlanco: cs(m).color === 'rgb(255, 255, 255)', coachNoPierdePeso: parseInt(cs(m).fontWeight, 10) >= 800 };
+      }
+      if(c.caso === 'pautas'){
+        var bd = poner('<div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas"><details class="jp-ex-tips"><summary>COACHING</summary></details></div></div><details class="jp-block-details"><summary class="jp-summary-btn"><span>PAUTAS</span></summary></details></div>');
+        var fila = bd.querySelector('.jp-ex-tips').getBoundingClientRect(), pau = bd.querySelector('.jp-block-details > summary').getBoundingClientRect();
+        return { izquierda: Math.abs(fila.left - pau.left) < 2, derecha: Math.abs(fila.right - pau.right) < 2, mismoAncho: Math.abs(fila.width - pau.width) < 3 };
+      }
+      if(c.caso === 'ajustes'){
+        var cfg = d.querySelector('.hdp-settings'), cur = d.querySelector('.hdp-curve-row'); if(!cfg || !cur) return { sinAjustes: true };
+        var tg = poner('<div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b on">KG</button><button type="button" class="hdp-uni-b">LBS</button></div>', cfg);
+        var tg2 = poner('<div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b on" data-voz="off">OFF</button></div>', cfg);
+        var chip = poner('<span class="hdp-curve-chip cur">S1 70%</span>', cur), chip2 = poner('<span class="hdp-curve-chip">S2 78%</span>', cur);
+        var on = tg.querySelector('.on'), off = tg.querySelector('button:not(.on)'), apag = tg2.querySelector('button');
+        return { activoNaranja: /242, 106, 27/.test(cs(on).backgroundImage) && cs(on).color === 'rgb(255, 255, 255)', inactivoApagado: cs(off).backgroundImage === 'none' && cs(off).color === 'rgb(143, 160, 200)',
+          apagadoGris: /70, 85, 127/.test(cs(apag).backgroundImage) && !/242, 106, 27/.test(cs(apag).backgroundImage), semanaActivaResaltada: /242, 106, 27/.test(cs(chip).backgroundImage) && cs(chip2).backgroundImage === 'none',
+          tarjetaProgramaConAire: parseFloat(cs(d.querySelector('.hdp-athlete')).paddingLeft) >= 18 };
+      }
+      if(c.caso === 'voz'){
+        var gr = d.getElementById('hdpVozGrupo'), idi = w.JP_I18N.lang(); if(!gr) return { sinGrupo: true };
+        var r = { juntos: !!(gr.querySelector('#hdpVozToggle') && gr.querySelector('#hdpVozIdioma') && gr.querySelector('#hdpVozProbar') && gr.querySelector('.hdp-voz-guia')), unaTarjeta: parseFloat(cs(gr).borderTopLeftRadius) >= 12 && parseFloat(cs(gr).borderTopWidth) > 0.5 };
+        var primera = gr.querySelector('.hdp-row'); r.filasSinTarjeta = cs(primera).borderTopWidth === '0px' && parseFloat(cs(primera).borderTopLeftRadius) === 0;
+        try{ w.JP_I18N.setLang('es'); w.jpVoz.pintar(); r.guiaEs = /El timer te habla/.test(gr.querySelector('.hdp-voz-guia').textContent) && /3 - 2 - 1/.test(gr.querySelector('.hdp-voz-guia').textContent);
+          w.JP_I18N.setLang('en'); w.jpVoz.pintar(); r.guiaEn = /The timer talks to you/.test(gr.querySelector('.hdp-voz-guia').textContent);
+        } finally { w.JP_I18N.setLang(idi); try{ w.localStorage.removeItem('coachjp_lang'); }catch(eL){} w.jpVoz.pintar(); }
+        var slot = d.getElementById('hdpQtSlot'), pb = poner('<button type="button" class="ses-pause">⏸ Pausar sesión</button>', slot), interior = slot.clientWidth - parseFloat(cs(slot).paddingLeft) - parseFloat(cs(slot).paddingRight);
+        r.pausarAnchoCompleto = pb.getBoundingClientRect().width >= interior * 0.95;
+        r.margenInferior = parseFloat(cs(d.getElementById('hdFullDrawer')).paddingBottom) >= 100;
+        return r;
+      }
+      if(c.caso === 'guiaTexto'){
+        if(typeof w.jpPartirTexto !== 'function') return { sinFuncion: true };
+        var t = 'Push / Pull / Pierna completa. Split analítico de tres días: Push (pecho), Pull. Cada grupo se entrena una vez por semana. Mesociclo de 4 semanas: S1 a S3 siempre a RIR 1-2 (nunca al fallo) con sobrecarga progresiva de kilos (S1 base, S2 +2,5%, S3 +5%) y S4 descarga activa (una serie menos, RIR 3-4). Los ejercicios se repiten las 4 semanas.';
+        var s = w.jpPartirTexto(t), vacio = w.jpPartirTexto('  ') , nulo = w.jpPartirTexto(null);
+        return { n: s.length, primera: s[0], decimalesEnteros: s[3].indexOf('+2,5%') >= 0 && s[3].indexOf('RIR 3-4)') >= 0, vacio: vacio.length + nulo.length, tituloEnNegrita: w.jpOracionConTitulo(s[3]).indexOf('<b>Mesociclo de 4 semanas:</b>') === 0, sinTitulo: w.jpOracionConTitulo(s[2]) === s[2], contenedorEsDiv: !!d.getElementById('mesoExplainText') && d.getElementById('mesoExplainText').tagName === 'DIV' };
+      }
+      if(c.caso === 'semanas'){
+        overlay.classList.add('open');
+        var fila0 = function(cls, ti, bg){ return '<div class="gc-row ' + cls + '"><div class="gc-row-main"><b>' + ti + '</b><span>Bloque X · Acumulación base (Volumen útil)<div style="font-size:.82rem">Ajustás cargas y técnica en las anclas pesadas de cada día — todavía no buscás el límite.</div></span></div><span class="gc-badge gc-badge-rpe">' + bg + '</span></div>'; };
+        var lst = poner('<div class="guide-cards gc-list">' + fila0('gc-row-carga', 'Semana 1', 'RPE 7-8 (RIR 3-2)') + fila0('gc-row-pico', 'Semana 3', 'RPE 9-10 (RIR 1-0)') + fila0('gc-row-descarga', 'Semana 4', 'RPE 6-7 (RIR 4)') + '</div>', overlay.querySelector('.modal'));
+        var fr = lst.querySelectorAll('.gc-row'), q = function(r, sel){ return r.querySelector(sel).getBoundingClientRect(); };
+        var misma = function(r){ var a = q(r, '.gc-row-main > b'), b2 = q(r, '.gc-badge-rpe'); return Math.abs((a.top + a.height / 2) - (b2.top + b2.height / 2)) < 14; };
+        var abajo = function(r){ var a = q(r, '.gc-row-main > b'), t2 = q(r, '.gc-row-main > span'), rr = r.getBoundingClientRect(); return t2.top >= a.bottom - 2 && t2.width > rr.width * 0.8; };
+        var col = function(r, p){ return cs(r)[p]; };
+        var real = { descarga: d.querySelectorAll('#mesoExplainSection .gc-row-descarga, .gc-list .gc-row-descarga').length, carga: d.querySelectorAll('.gc-list .gc-row-carga').length };
+        return { badgeEnLaPrimeraLinea: misma(fr[0]) && misma(fr[1]) && misma(fr[2]), descripcionAnchoCompleto: abajo(fr[0]) && abajo(fr[2]), cargaNaranja: col(fr[0], 'borderLeftColor') === 'rgb(238, 90, 18)', picoRelleno: col(fr[1].querySelector('.gc-badge-rpe'), 'backgroundColor') === 'rgb(238, 90, 18)',
+          descargaCyan: col(fr[2], 'borderLeftColor') === 'rgb(0, 229, 255)' && /0, 229, 255|127, 239, 255/.test(col(fr[2].querySelector('.gc-badge-rpe'), 'color')), distintasDeCarga: col(fr[2], 'borderLeftColor') !== col(fr[0], 'borderLeftColor'),
+          semanasReales: real.descarga >= 1 && real.carga >= 1, _medidas: [col(fr[2], 'borderLeftColor'), col(fr[2].querySelector('.gc-badge-rpe'), 'color')].join(' | ') };
+      }
+      if(c.caso === 'pestanas'){
+        overlay.classList.add('open');
+        var tabs = d.getElementById('guideTabs'), todas = tabs.querySelectorAll('.tm-tab'), mod = overlay.querySelector('.modal'), onT = tabs.querySelector('.tm-tab.on'), offT = tabs.querySelector('.tm-tab:not(.on)');
+        var ics = Array.prototype.map.call(todas, function(b){ return b.querySelector('svg.gd-tab-ic'); });
+        return { tresIconosDeLinea: ics.length === 3 && ics.every(Boolean), mismoTamano: ics.every(function(i){ return i && cs(i).width === cs(ics[0]).width && i.getAttribute('stroke-width') === '1.8'; }), sinEmoji: Array.prototype.every.call(todas, function(b){ return !/[\u{1F300}-\u{1FAFF}❤]/u.test(b.textContent); }),
+          activaNaranja: /242, 106, 27/.test(cs(onT).backgroundImage) && cs(onT).color === 'rgb(255, 255, 255)', inactivaAzul: cs(offT).color === 'rgb(159, 176, 216)' && cs(offT).backgroundImage === 'none',
+          barraAzulNoche: cs(tabs).backgroundColor === 'rgb(19, 31, 67)', barraAlBordeDeArriba: cs(tabs).position === 'sticky' && parseFloat(cs(tabs).top) === -parseFloat(cs(mod).paddingTop), barraAnchoCompleto: parseFloat(cs(tabs).marginLeft) === -parseFloat(cs(mod).paddingLeft) };
+      }
+      if(c.caso === 'storyDatos'){
+        var st = w.eval('state'), dv = d.documentElement, wk = st.currentWeek || 0, day = w.eval('DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0]'), bid = (day.blocks && day.blocks[0]) ? day.blocks[0].id : 'b_test';
+        var salvado = { loads: st.loads, session: st.session, completed: st.completed, rir: st.rir }, origPres = w.jpMinutosPrescriptos, o = {}, hoyISO = new Date().toISOString().slice(0, 10);
+        Object.defineProperty(d, 'visibilityState', { get: function(){ return 'visible'; }, configurable: true });
+        try{
+          w.jpMinutosPrescriptos = function(){ return 0; };
+          var K = function(n){ return wk + '|' + day.id + '|' + bid + '|e0|' + n; }, t0 = Date.now() - 20 * 60000;
+          function cargar(conTiempo){
+            st.loads = {}; st.session = { marcasTiempo: [] }; st.completed = {}; st.rir = {};
+            [[80, 6], [80, 6], [60, 8], [60, 8]].forEach(function(kr, i){ st.loads[K(i + 1)] = { kg: String(kr[0]), reps: String(kr[1]), done: true, ex: 'Press de banca' }; if(conTiempo){ st.loads[K(i + 1)].tsDone = t0 + i * 3 * 60000; st.loads[K(i + 1)].ts = st.loads[K(i + 1)].tsDone; } });
+            st.loads[K(5)] = { kg: '100', reps: '10', done: false, ex: 'Press de banca' };      /* cargada pero SIN tildar: no cuenta */
+          }
+          cargar(false); var a = w.CoachStoryDatos(w.CoachStory.datosSports(wk, day));
+          o.tonelaje = a.vol; o.series = a.series; o.reps = a.reps; o.sinTiempoInventado = a.tiempo === '' && a.tiempoReal === 0;
+          cargar(true); var b = w.CoachStoryDatos(w.CoachStory.datosSports(wk, day));
+          o.tiempoMedido = b.tiempo === '12 min' && b.tiempoReal === 12; o.mismoTonelaje = b.vol === a.vol;
+          /* latido pasivo: abrir la app sin entrenar no suma tiempo */
+          st.session = { marcasTiempo: [] }; w.__jpUltimaAccion(0); w.__jpLatidoPasivo(); var sinAccion = st.session.marcasTiempo.length;
+          w.__jpUltimaAccion(Date.now()); w.__jpLatidoPasivo(); o.latidoSoloConAccion = sinAccion === 0 && st.session.marcasTiempo.length === 1;
+          w.__jpUltimaAccion(Date.now() - 20 * 60000); st.session.marcasTiempo = []; w.__jpLatidoPasivo(); o.latidoVencido = st.session.marcasTiempo.length === 0;
+          /* sesión N de M: el día concluido no se cuenta dos veces */
+          st.completed = {}; var r0 = w.CoachMetricas.racha(); st.completed[wk] = {}; st.completed[wk][day.id] = { __dayDone: true }; var r1 = w.CoachMetricas.racha();
+          o.sesionSinHacer = r0.actual === 1 && r0.hechas === 0; o.sesionHecha = r1.hechas === 1 && r1.actual === 1;
+          /* RPE: solo bloques del día (sin restos de otro plan con el mismo id de día) */
+          if(day.blocks && day.blocks.length){ st.rir = {}; st.rir[wk + '|' + day.id + '|' + bid] = 1; st.rir[wk + '|' + day.id + '|bloque_viejo'] = 3; o.rpeSoloDelDia = w.CoachMetricas.rpe() === 9; } else o.rpeSoloDelDia = true;
+          /* CrossFit / Hyrox: PR del día y kilos del bloque */
+          var dia = { id: 'dx', short: 'D1', label: 'Fuerza', blocks: [{ id: 'bx1', category: 'strength', title: 'Back Squat', items: ['3x5 Back Squat @ 100kg'] }] };
+          st.completed = {}; st.loads = {}; st.session = { marcasTiempo: [], prDetalle: [{ ex: 'Back Squat', fecha: hoyISO }] };
+          o.prDeHoy = w.datosStoryCF(wk, dia).esPR === true;
+          st.session.prDetalle = [{ ex: 'Back Squat', fecha: '2001-01-01' }]; o.prViejoNoCuenta = w.datosStoryCF(wk, dia).esPR === false;
+          st.session.prDetalle = [{ ex: 'Bulgarian Split Squat', fecha: hoyISO }]; o.prDeOtroDiaNoCuenta = w.datosStoryCF(wk, dia).esPR === false;
+          o.sinHacerSinKilos = w.datosStoryCF(wk, dia).volumenTotal === 0;
+          st.loads[wk + '|dx|bx1|e0|1'] = { kg: '100', reps: '5', done: true, ex: 'Back Squat' }; o.kilosRegistrados = w.datosStoryCF(wk, dia).volumenTotal === 500;
+        } finally { st.loads = salvado.loads; st.session = salvado.session; st.completed = salvado.completed; st.rir = salvado.rir; w.jpMinutosPrescriptos = origPres; delete d.visibilityState; }
+        return o;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { aÑadidos.forEach(function(e){ if(e.parentNode) e.parentNode.removeChild(e); }); if(overlay && !estabaAbierto) overlay.classList.remove('open');
+      if(estiloPrev == null) d.body.removeAttribute('data-jp-estilo'); else d.body.setAttribute('data-jp-estilo', estiloPrev); }
   }
   /* ---------- timer en segundo plano: avisos por fase (cronograma + service worker) y aviso de pantalla encendida en iPhone ---------- */
   function alumnoFondo(c){

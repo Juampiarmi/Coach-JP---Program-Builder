@@ -176,6 +176,7 @@ var jpVoz = (function(){
     var rowI = document.getElementById('hdpVozIdiomaRow'); if(rowI) rowI.style.display = on ? '' : 'none';
     var rowP = document.getElementById('hdpVozProbarRow'); if(rowP) rowP.style.display = on ? '' : 'none';
     var ej = document.getElementById('hdpVozEjemploLb'); if(ej) ej.textContent = T('app.voz.ejemplo', '3 - 2 - 1 - ¡Ya!');
+    var guia = document.getElementById('hdpVozGuia'); if(guia) guia.textContent = T('app.voz.guia', guia.textContent);
     var lb = document.getElementById('hdpVozLb'); if(lb) lb.textContent = '🗣 ' + T('app.voz.lb', 'Voz del timer');
     var lbI = document.getElementById('hdpVozIdiomaLb'); if(lbI) lbI.textContent = T('app.voz.idioma', 'Idioma de la voz');
     var au = document.getElementById('hdpVozAuto'); if(au) au.textContent = T('app.voz.auto', 'AUTO');

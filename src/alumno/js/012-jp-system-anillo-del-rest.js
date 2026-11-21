@@ -203,8 +203,8 @@
     const cols = [
       { icono: '🏋️', v: d.vol.toLocaleString('es-AR') + ' KG', col: '#E5C378', solo: d.vol > 0 },
       { icono: '⚡', v: d.series + ' SERIES', col: '#38BDF8', solo: true },
-      { icono: '⏱️', v: String(d.tiempo).toUpperCase(), col: '#FFFFFF', solo: true }
-    ].filter(function(cc){ return cc.solo; });      /* sin tonelaje (cardio/WOD) no se dibuja un "0 KG" ficticio */
+      { icono: '⏱️', v: String(d.tiempo || '').toUpperCase(), col: '#FFFFFF', solo: !!d.tiempo }
+    ].filter(function(cc){ return cc.solo; });      /* sin tonelaje (cardio/WOD) no se dibuja un "0 KG" ficticio; sin tiempo medido tampoco un tiempo inventado */
     const colW = barW / cols.length;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     cols.forEach((cItem, i) => {
@@ -812,8 +812,8 @@
        no es creíble o no hay registro real, se cae a una estimación
        coherente en base a las series completadas (20-180 min, 60 por
        defecto si no hay series). */
-    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 150) ? elapsedMin : (r.series > 0 ? Math.min(150, Math.max(20, r.series * 3)) : 60);
-    const tiempoFmt = fmtDuracionStory(minsCrudo);
+    /* solo se informa un tiempo MEDIDO (primera y última serie registradas, ver enriquecer() en 018): ya no se inventa uno a partir de las series */
+    const tiempoFmt = '';
     const f = new Date();
     /* directiva (aislamiento de PRs por día) -- mismo criterio que
        pintarResumen(): state.session.prs es un log de nombres de TODO el

@@ -2674,6 +2674,8 @@ function datosStoryCF(weekIdx, day){
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
+    /* sin series tildadas: el volumen PRESCRIPTO solo entra si el bloque se marcó como hecho (el alumno lo hizo pero no cargó kilos). Un bloque sin hacer no aporta kilos que nadie movió. */
+    if(!isBlockDone(weekIdx, day.id, b.id)) return { vol: 0, top: 0 };
     let setsActuales = 1, volP = 0, topP = 0;
     (b.items || []).forEach(function(raw){
       const l = String(raw || '').trim();
@@ -2699,7 +2701,16 @@ function datosStoryCF(weekIdx, day){
     if(r.top > topLiftKg) topLiftKg = r.top;
   });
   volumenTotal = Math.round(volumenTotal);
-  const esPR = !!(state.session && state.session.prs && state.session.prs.length > 0);
+  /* PR del día: antes bastaba con que hubiera UN récord en todo el mesociclo (state.session.prs nunca se resetea) para marcar "PR" en cualquier tarjeta.
+     Ahora cuenta solo un récord de HOY en un ejercicio de ESTE día (mismo criterio que la Story de Bodybuilding). */
+  const esPR = (function(){
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    let textoDia = ' ';
+    (day.blocks || []).forEach(function(b){
+      textoDia += ' ' + nrmHist((b.exerciseName || '') + ' ' + (b.title || '') + ' ' + (b.items || []).join(' ') + ' ' + (b.exercises || []).map(function(e){ return e && e.name; }).join(' '));
+    });
+    return ((state.session && state.session.prDetalle) || []).some(function(p){ const n = nrmHist(p && p.ex); return !!n && p.fecha === hoyISO && textoDia.indexOf(n) >= 0; });
+  })();
   /* directiva ("Composición Universal de Movimientos") -- Hero Card 1
      ya no protagoniza con el título de UN solo bloque (el más pesado):
      el título pasa a ser una categoría dinámica según la MEZCLA real de
@@ -3403,12 +3414,30 @@ const guideBtnEl = document.getElementById('guideBtn');
 const guideCloseEl = document.getElementById('guideClose');
 function openModal(el){ el.classList.add('open'); }
 function closeModal(el){ el.classList.remove('open'); }
+/* Parte un texto largo en oraciones (corta en ". " / "? " / "! " seguidos de mayúscula, dígito o apertura): la explicación técnica del mesociclo llegaba como UN solo párrafo de ~15 renglones.
+   Solo cambia la presentación: el texto del plan no se toca. Puro y sin RegExp con lookbehind (Safari viejo). */
+function jpPartirTexto(t){
+  const s = String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+  if(!s) return [];
+  return s.replace(/([.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡0-9(])/g, '$1\u0001').split('\u0001').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+window.jpPartirTexto = jpPartirTexto;
+/* una oración con "Título: detalle" (título corto) lleva el título en negrita para poder escanear la lista */
+function jpOracionConTitulo(o){
+  const m = /^([^:.]{3,44}):\s+(\S[\s\S]*)$/.exec(o);
+  return m ? '<b>' + m[1] + ':</b> ' + m[2] : o;
+}
 (function pintarMeso(){
   const sec = document.getElementById('mesoExplainSection');
   if(!sec || !PROGRAM_CONFIG.mesoObjetivo) return;
+  /* objetivo del bloque en un párrafo corto y el resto como puntos (una idea por punto) */
+  const puntos = jpPartirTexto(PROGRAM_CONFIG.mesoTexto || '');
+  let objetivo = PROGRAM_CONFIG.mesoObjetivo;
+  /* la primera oración, si es solo un rótulo corto (ej. "Push / Pull / Pierna completa."), sigue pegada al objetivo como en el texto original */
+  if(puntos.length && puntos[0].length <= 48 && puntos[0].indexOf(':') < 0) objetivo += ' — ' + puntos.shift().replace(/\.$/, '');
   document.getElementById('mesoExplainText').innerHTML =
-    '<b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + PROGRAM_CONFIG.mesoObjetivo +
-    (PROGRAM_CONFIG.mesoTexto ? ' — ' + PROGRAM_CONFIG.mesoTexto : '');
+    '<span class="gd-meso-obj"><b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + objetivo + '</span>' +
+    (puntos.length ? '<ul class="gd-meso-lista">' + puntos.map(function(o){ return '<li>' + jpOracionConTitulo(o) + '</li>'; }).join('') + '</ul>' : '');
   const t = document.getElementById('mesoExplainTable');
   t.innerHTML = '<tr><th>Semana</th><th>Fase</th><th>Intensidad</th></tr>' +
     (PROGRAM_CONFIG.weeks || []).map(function(w){
@@ -3532,10 +3561,13 @@ function closeModal(el){ el.classList.remove('open'); }
     var html = '';
     if(h0 === 'semana'){
       cont.className = 'guide-cards gc-list';
-      html = datos.map(function(c){
+      html = datos.map(function(c, iw){
         var ult = c[c.length - 1];
         var numerica = /^[0-9]+$/.test(c[0].textContent.trim());
-        return '<div class="gc-row"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
+        /* la semana de descarga (deload) y la de pico (a fallo técnico) se distinguen de las de carga con clases propias: el color lo pone el CSS */
+        var wm = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.weeks && PROGRAM_CONFIG.weeks[iw]) || {};
+        var claseSem = wm.deload ? ' gc-row-descarga' : (wm.fail ? ' gc-row-pico' : ' gc-row-carga');
+        return '<div class="gc-row' + claseSem + '"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
           (c.length > 2 ? '<span>' + c[1].innerHTML + '</span>' : '') + '</div>' +
           '<span class="gc-badge gc-badge-rpe">' + ult.textContent.trim() + '</span></div>';
       }).join('');
@@ -3565,6 +3597,20 @@ function closeModal(el){ el.classList.remove('open'); }
     if(tabla.parentNode) tabla.parentNode.replaceChild(cont, tabla);
   }
   Array.prototype.slice.call(document.querySelectorAll('.guide-table')).forEach(convertir);
+})();
+/* pestañas de la Guía (Técnica / Glosario / Zonas FC): íconos de línea del mismo trazo y color en las tres (antes eran emojis de colores distintos: 🎯 📚 ❤️).
+   Solo cambia lo que se ve; el texto y el data-gd de cada pestaña quedan igual. */
+(function guiaPestanasIconos(){
+  const IC = {
+    tecnica: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/>',
+    glosario: '<path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
+    fc: '<path d="M3 12h4l2-5 4 10 2-5h6"/>'
+  };
+  Array.prototype.slice.call(document.querySelectorAll('#guideTabs .tm-tab')).forEach(function(b){
+    const k = b.getAttribute('data-gd'); if(!IC[k] || b.querySelector('.gd-tab-ic')) return;
+    const txt = (b.textContent || '').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/, '').trim();
+    b.innerHTML = '<svg class="gd-tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[k] + '</svg><span class="gd-tab-tx">' + txt + '</span>';
+  });
 })();
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
