@@ -26,9 +26,9 @@ test.beforeEach(async ({ page }) => {
 
 /** El Doctor vive en la pestaña Exportar: se mira ahí y se vuelve a Texto. */
 async function doctorSays(page: import('@playwright/test').Page, rx: RegExp, count: number) {
-  await page.getByRole('tab', { name: /EXPORTAR/ }).click()
+  await page.getByRole('tab', { name: /CARRUSEL & CAPTION/ }).click()
   await expect(page.getByText(rx)).toHaveCount(count)
-  await page.getByRole('tab', { name: /TEXTO/ }).click()
+  await page.getByRole('tab', { name: /CONTENIDO/ }).click()
   if (!(await citeInput(page).isVisible())) await page.getByRole('button', { name: /Fuente científica/ }).click()
 }
 

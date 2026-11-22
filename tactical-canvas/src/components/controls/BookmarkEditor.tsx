@@ -42,7 +42,7 @@ export function BookmarkEditor({ state, update, auto }: Props) {
       </Field>
       {points.map((p, i) => (
         <Field key={i} label={`> ${String(i + 1).padStart(2, '0')}`}>
-          <TextInput value={p} onChange={(v) => set({ points: points.map((x, j) => (j === i ? v : x)) })} />
+          <TextInput value={p} onChange={(v) => set({ points: points.map((x, j) => (j === i ? v : x)) })} field={i === 0 ? 'bookmark' : undefined} />
         </Field>
       ))}
       <Field label="Llamado a la acción">

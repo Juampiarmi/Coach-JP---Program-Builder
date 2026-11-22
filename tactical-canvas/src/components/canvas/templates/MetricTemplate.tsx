@@ -20,6 +20,7 @@ export function MetricTemplate({ state, fontFamily, scale }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div
+        data-part="metric"
         style={{
           fontFamily,
           fontWeight: 700,

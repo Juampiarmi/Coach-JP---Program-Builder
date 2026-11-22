@@ -8,6 +8,13 @@ interface Props {
   /** Escala de la vista previa (px de pantalla por px del lienzo) */
   scale: number
   onNudge: (target: NudgeTarget, nudge: Nudge | null) => void
+  /** Clic sin arrastre: qué parte del lienzo se tocó (data-part) y en qué bloque (null = fondo) */
+  onPick?: (hit: CanvasPick) => void
+}
+
+export interface CanvasPick {
+  part: string | null
+  block: NudgeTarget | null
 }
 
 const LABEL: Record<NudgeTarget, string> = { headline: 'TITULAR', block: 'BLOQUE' }
@@ -42,7 +49,7 @@ function drag(e: RPointerEvent, onMove: (ev: PointerEvent) => void) {
  * bloque central lo selecciona con una caja táctica; arrastrar lo mueve y los nodos de esquina
  * lo escalan. El ajuste se guarda en px del lienzo nativo (`state.nudge`).
  */
-export function CanvasGizmo({ state, canvasRef, scale, onNudge }: Props) {
+export function CanvasGizmo({ state, canvasRef, scale, onNudge, onPick }: Props) {
   const [sel, setSel] = useState<NudgeTarget | null>(null)
   const [box, setBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
@@ -81,6 +88,17 @@ export function CanvasGizmo({ state, canvasRef, scale, onNudge }: Props) {
     const hits = document.elementsFromPoint(e.clientX, e.clientY)
     const hit = hits.map((n) => (n as HTMLElement).closest?.('[data-nudge]') as HTMLElement | null).find((n) => n && canvasRef.current?.contains(n))
     const t = (hit?.dataset.nudge as NudgeTarget | undefined) ?? null
+    // Click-to-focus: un clic sin arrastre abre en el panel el campo de lo que se tocó.
+    if (onPick) {
+      const part = hits.map((n) => (n as HTMLElement).closest?.('[data-part]') as HTMLElement | null).find((n) => n && canvasRef.current?.contains(n))?.dataset.part ?? null
+      const x = e.clientX
+      const y = e.clientY
+      const up = (ev: PointerEvent) => {
+        window.removeEventListener('pointerup', up)
+        if (Math.hypot(ev.clientX - x, ev.clientY - y) < 5) onPick({ part, block: t })
+      }
+      window.addEventListener('pointerup', up)
+    }
     setSel(t)
     if (!t) return
     const start = current(t)

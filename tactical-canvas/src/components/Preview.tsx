@@ -2,7 +2,7 @@ import type { RefObject } from 'react'
 import { useFitScale } from '../hooks/useFitScale'
 import { ASPECTS } from '../lib/brand'
 import type { CanvasState, Nudge, NudgeTarget } from '../types'
-import { CanvasGizmo } from './CanvasGizmo'
+import { CanvasGizmo, type CanvasPick } from './CanvasGizmo'
 import { STORY_SAFE, TacticalCanvas } from './canvas/TacticalCanvas'
 import { GhostOverlay } from './GhostOverlay'
 
@@ -20,10 +20,12 @@ interface Props {
   slideIndex?: number
   /** Ajuste fino sobre el lienzo (arrastre / escala); sin callback no hay herramientas */
   onNudge?: (target: NudgeTarget, nudge: Nudge | null) => void
+  /** Click-to-focus: clic sobre una parte del lienzo */
+  onPick?: (hit: CanvasPick) => void
 }
 
 /** Live preview: el lienzo nativo se escala con transform para entrar en el espacio disponible. */
-export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = false, gridGuide = false, slideCount = 1, slideIndex = 0, onNudge, resolveImage }: Props) {
+export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = false, gridGuide = false, slideCount = 1, slideIndex = 0, onNudge, onPick, resolveImage }: Props) {
   const { w, h, ratio } = ASPECTS[state.aspect]
   const { ref, scale } = useFitScale(w, h, gutter)
 
@@ -36,7 +38,7 @@ export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = fals
         >
           <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} slideIndex={slideIndex} slideCount={slideCount} resolveImage={resolveImage} />
         </div>
-        {onNudge && !overlay && <CanvasGizmo state={state} canvasRef={canvasRef} scale={scale} onNudge={onNudge} />}
+        {onNudge && !overlay && <CanvasGizmo state={state} canvasRef={canvasRef} scale={scale} onNudge={onNudge} onPick={onPick} />}
         {overlay && <GhostOverlay aspect={state.aspect} w={w} h={h} count={slideCount} index={slideIndex} />}
         {state.aspect === 'story' && !overlay && (
           // Guías de zona segura (sólo en pantalla, no se exportan)

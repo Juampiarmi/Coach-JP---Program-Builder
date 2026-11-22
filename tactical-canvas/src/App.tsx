@@ -2,9 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { BrandBar } from './components/BrandBar'
 import { ModeSwitch, type WorkMode } from './components/ModeSwitch'
 import { ControlPanel, type PanelTab } from './components/controls/ControlPanel'
-import { PanelTabs } from './components/PanelTabs'
-import { Segmented } from './components/controls/primitives'
-import { ExportButtons } from './components/ExportButtons'
+import { normalizeTab, PanelTabs } from './components/PanelTabs'
+import { FOCUS_EVENT } from './components/controls/primitives'
+import { useExportPng } from './components/ExportButtons'
+import { Menu, MenuItem } from './components/Menu'
+import { CreateDrawer } from './components/CreateDrawer'
+import type { CanvasPick } from './components/CanvasGizmo'
+import { pickTarget } from './lib/canvasFocus'
 import { Preview } from './components/Preview'
 import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
@@ -18,8 +22,7 @@ import { zipFiles } from './lib/zip'
 import { remixToStories } from './lib/remix'
 import { diagnose, SCORE_COLOR, type DoctorFix } from './lib/retentionDoctor'
 import { RetentionDoctor } from './components/RetentionDoctor'
-import { packDayFor, WEEKLY_PACK } from './lib/weeklyPack'
-import { WeekDayBar } from './components/WeekDayBar'
+import { WEEKLY_PACK } from './lib/weeklyPack'
 import { deckImageIds } from './lib/projects'
 import { ProjectBar } from './components/ProjectBar'
 import { ProjectLibrary } from './components/ProjectLibrary'
@@ -119,7 +122,7 @@ export default function App() {
   const report = diagnose(slides, (i) => luma(photoId(slides[i])), citations.get)
   const [doctorOpen, setDoctorOpen] = usePersistentState<{ open: boolean }>('jp-tactical-canvas:doctor', { open: true })
   const doctorRef = useRef<HTMLDivElement>(null)
-  const [panelTab, setPanelTab] = usePersistentState<{ tab: PanelTab }>('jp-tactical-canvas:panel-tab', { tab: 'ai' })
+  const [panelTab, setPanelTab] = usePersistentState<{ tab: PanelTab }>('jp-tactical-canvas:panel-tab', { tab: 'text' })
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
   // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
   const migrated = useRef(false)
@@ -159,6 +162,7 @@ export default function App() {
       pristine={JSON.stringify(deck.slides) === JSON.stringify(DEFAULT_DECK.slides)}
       onOpenLibrary={() => openLibrary('browse')}
       onSave={() => openLibrary('save')}
+      onRename={currentProject ? (name) => projectActions.rename(currentProject.id, name) : undefined}
       compact={compact}
     />
   )
@@ -330,9 +334,6 @@ export default function App() {
       onSelect={selectSlide}
       onAdd={addSlide}
       onRemove={removeSlide}
-      onExportAll={() => runBatch('png')}
-      onExportZip={() => runBatch('zip')}
-      onExportDual={runDual}
       onRegenerate={regenerateActive}
       onMove={moveSlide}
       regenBusy={regen.busy}
@@ -347,6 +348,30 @@ export default function App() {
     setDoctorOpen({ open: true })
     setDrawerOpen(true)
     window.setTimeout(() => doctorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+  }
+
+  /**
+   * CLICK-TO-FOCUS: abre la pestaña del campo, despliega su sección y lo enfoca con un destello.
+   * Las secciones plegadas escuchan FOCUS_EVENT (ver Section · focusKeys).
+   */
+  const focusField = (tab: PanelTab, key: string) => {
+    setPanelTab({ tab })
+    setDrawerOpen(true)
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(FOCUS_EVENT, { detail: key }))
+      window.setTimeout(() => {
+        const el = document.querySelector<HTMLElement>(`[data-field="${key}"]`)
+        if (!el) return
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        el.focus({ preventScroll: true })
+        el.classList.add('tc-flash')
+        window.setTimeout(() => el.classList.remove('tc-flash'), 1200)
+      }, 90)
+    }, 60)
+  }
+  const onPick = ({ part, block }: CanvasPick) => {
+    const target = pickTarget(part, block, state.template)
+    focusField(target[0], target[1])
   }
 
   const controls = (tab: PanelTab) => (
@@ -373,151 +398,232 @@ export default function App() {
     />
   )
 
-  /** Panel lateral en 5 pestañas: IA & plan · texto · estilo · servicios · carrusel & exportación. */
+  // MODO CREAR: Plan Semanal + Generador IA + variantes sin API. Al cargar o generar, se cierra solo.
+  const [createOpen, setCreateOpen] = useState(false)
+  const createFlow = (
+    <>
+      {deck.packDay && (
+        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2 font-mono text-[10px] text-steel">
+          <span>📅 En el lienzo: {WEEKLY_PACK.find((d) => d.id === deck.packDay)?.day} (con tus ediciones)</span>
+          <button
+            type="button"
+            onClick={() => {
+              const day = WEEKLY_PACK.find((d) => d.id === deck.packDay)
+              if (day && confirm(`¿Descartar tus cambios del ${day.day} y volver al set original?`)) (setCreateOpen(false), void loadDay(day.id, true))
+            }}
+            className="shrink-0 rounded-md border border-line px-2 py-1 tracking-[0.1em] transition hover:border-fire/50 hover:text-fire"
+          >
+            ↺ ORIGINAL
+          </button>
+        </div>
+      )}
+      <AiGenerator
+        onResult={(r, meta) => {
+          saveDraftIfNeeded()
+          applyGeneration(r, { ...meta, photoId: photos.take(`${meta.topic} ${r.slides.map((x) => `${x.tag ?? ''} ${x.headlineA ?? ''} ${x.headlineB ?? ''}`).join(' ')}`, meta.discipline) })
+          setCreateOpen(false)
+        }}
+        // Cargar el set listo: si ya lo editaste, vuelve tu versión (↺ ORIGINAL lo rehace desde el pack).
+        onLoadDay={(id) => (setCreateOpen(false), void loadDay(id))}
+        onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })}
+      />
+    </>
+  )
+
+  const exportPng = useExportPng(canvasRef, state)
+
+  /** Panel lateral en 3 pestañas: contenido · diseño & foto · carrusel & caption. */
+  const tab = normalizeTab(panelTab.tab)
   const panel = (
     <>
-      <PanelTabs tab={panelTab.tab} onChange={(tab) => setPanelTab({ tab })} score={report.score} />
-      {panelTab.tab === 'ai' && <AiGenerator onResult={(r, meta) => (saveDraftIfNeeded(), applyGeneration(r, { ...meta, photoId: photos.take(`${meta.topic} ${r.slides.map((x) => `${x.tag ?? ''} ${x.headlineA ?? ''} ${x.headlineB ?? ''}`).join(' ')}`, meta.discipline) }))} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />}
-      {panelTab.tab === 'text' && controls('text')}
-      {panelTab.tab === 'style' && (
+      <PanelTabs tab={tab} onChange={(t) => setPanelTab({ tab: t })} score={report.score} />
+      {tab === 'text' && controls('text')}
+      {tab === 'style' && (
         <>
           <BrandKitBar state={state} onApply={applyKit} slideCount={slides.length} />
           {controls('style')}
         </>
       )}
-      {panelTab.tab === 'services' && controls('services')}
-      {panelTab.tab === 'export' && (
+      {tab === 'export' && (
         <>
-      <RetentionDoctor
-        ref={doctorRef}
-        report={report}
-        active={active}
-        open={doctorOpen.open}
-        onToggle={() => setDoctorOpen({ open: !doctorOpen.open })}
-        onSelect={selectSlide}
-        onFix={(f) => fixDoctor([f])}
-        onFixAll={() => fixDoctor(report.findings.flatMap((f) => (f.fix ? [f.fix] : [])))}
-      />
+          <RetentionDoctor
+            ref={doctorRef}
+            report={report}
+            active={active}
+            open={doctorOpen.open}
+            onToggle={() => setDoctorOpen({ open: !doctorOpen.open })}
+            onSelect={selectSlide}
+            onFix={(f) => fixDoctor([f])}
+            onFixAll={() => fixDoctor(report.findings.flatMap((f) => (f.fix ? [f.fix] : [])))}
+          />
+          <div className="space-y-2 border-b border-line px-4 py-3">
+            <p className="font-mono text-[10px] font-semibold tracking-[0.16em] text-cyan uppercase">Caption + hashtags</p>
+            <CaptionBar caption={caption} onChange={setCaption} slides={slides} fallback={fallbackCaption(slides)} />
+          </div>
+          <div className="space-y-2 border-b border-line px-4 py-3">
+            <p className="font-mono text-[10px] font-semibold tracking-[0.16em] text-cyan uppercase">Formato y exportación</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {state.aspect === 'feed' ? (
+                <button
+                  type="button"
+                  onClick={remix}
+                  title="Convierte todo el carrusel 4:5 en historias 9:16: reacomoda el texto en vertical y reserva zonas para stickers (encuesta, preguntas, link)"
+                  className="rounded-lg border border-gold/60 bg-gold/10 px-2 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] text-gold transition hover:bg-gold/20"
+                >
+                  [ ⇅ REMIX 9:16 ]
+                </button>
+              ) : (
+                <button type="button" onClick={() => update({ aspect: 'feed' })} className="rounded-lg border border-line px-2 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] text-steel transition hover:text-white">
+                  [ ⇅ VOLVER A 4:5 ]
+                </button>
+              )}
+              <button type="button" onClick={() => void exportPng.run('download')} disabled={exportPng.status === 'busy'} className="rounded-lg bg-fire px-2 py-2 font-mono text-[10px] font-bold tracking-[0.08em] text-carbon transition hover:brightness-110 disabled:opacity-60">
+                ⬇ PNG 4K · ESTA PLACA
+              </button>
+              <button type="button" onClick={() => runBatch('zip')} disabled={Boolean(exporting)} className="rounded-lg border border-fire/60 px-2 py-2 font-mono text-[10px] font-semibold tracking-[0.08em] text-fire transition hover:bg-fire/10 disabled:opacity-50">
+                ⬇ ZIP COMPLETO
+              </button>
+              <button type="button" onClick={runDual} disabled={Boolean(exporting)} className="rounded-lg border border-gold/60 px-2 py-2 font-mono text-[10px] font-semibold tracking-[0.08em] text-gold transition hover:bg-gold/10 disabled:opacity-50">
+                ⬇ FEED + HISTORIAS
+              </button>
+            </div>
+            {(exporting || exportPng.note) && <p className="font-mono text-[10px] text-steel">{exporting ?? exportPng.note}</p>}
+          </div>
           {controls('export')}
         </>
       )}
     </>
   )
 
-  const aspectToggle = (
-    <Segmented<AspectId>
-      value={state.aspect}
-      onChange={(aspect) => update({ aspect })}
-      options={[
-        { value: 'feed', label: isDesktop ? '4:5 FEED' : '4:5' },
-        { value: 'story', label: isDesktop ? '9:16 STORY' : '9:16' },
-      ]}
-      size="sm"
-    />
-  )
-
+  const iconBtn = 'rounded-lg border border-line px-2.5 py-1.5 font-mono text-[12px] text-steel transition hover:text-white disabled:opacity-30'
   const undoButtons = (
     <span className="flex shrink-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={history.undo}
-        disabled={!history.canUndo}
-        title="Deshacer (⌘/Ctrl + Z)"
-        aria-label="Deshacer"
-        className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[12px] text-steel transition hover:text-white disabled:opacity-30"
-      >
+      <button type="button" onClick={history.undo} disabled={!history.canUndo} title="Deshacer (⌘/Ctrl + Z)" aria-label="Deshacer" className={iconBtn}>
         ↶
       </button>
-      <button
-        type="button"
-        onClick={history.redo}
-        disabled={!history.canRedo}
-        title="Rehacer (⌘/Ctrl + ⇧ + Z)"
-        aria-label="Rehacer"
-        className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[12px] text-steel transition hover:text-white disabled:opacity-30"
-      >
+      <button type="button" onClick={history.redo} disabled={!history.canRedo} title="Rehacer (⌘/Ctrl + ⇧ + Z)" aria-label="Rehacer" className={iconBtn}>
         ↷
       </button>
     </span>
   )
 
-  const overlayToggle = (
-    <>
-    {undoButtons}
-    <button
-      type="button"
-      onClick={showDoctor}
-      title={`Doctor de retención: ${report.score}/100 · ${report.findings.length} hallazgo(s). Revisalo antes de exportar.`}
-      className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-steel transition hover:text-white"
-    >
-      🩺
-      <span className="rounded px-1 text-[10px] font-bold text-carbon" style={{ background: SCORE_COLOR(report.score) }}>
-        {report.score}
-      </span>
-    </button>
-    {state.aspect === 'feed' && (
+  /** Centro: formato (4:5 · 9:16) + Vista Feed 3×3 en un solo selector segmentado. */
+  const seg = (on: boolean) =>
+    `rounded-md px-2 py-1 font-mono text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap transition ${on ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'}`
+  const formatSwitch = (
+    <div role="group" aria-label="Formato" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-0.5">
+      <button type="button" aria-pressed={state.aspect === 'feed'} onClick={() => update({ aspect: 'feed' })} className={seg(state.aspect === 'feed')}>
+        {isDesktop ? '4:5 FEED' : '4:5'}
+      </button>
+      <button type="button" aria-pressed={state.aspect === 'story'} onClick={() => update({ aspect: 'story' })} className={seg(state.aspect === 'story')}>
+        {isDesktop ? '9:16 STORY' : '9:16'}
+      </button>
       <button
         type="button"
-        onClick={remix}
-        title="Convierte todo el carrusel 4:5 en historias 9:16: reacomoda el texto en vertical y reserva zonas para stickers (encuesta, preguntas, link)"
-        className="rounded-lg border border-gold/60 bg-gold/10 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-gold transition hover:bg-gold/20"
+        onClick={() => setFeedGrid(true)}
+        title="Grilla 3×3: la portada nueva junto a tus últimos posts del perfil, con contraste y armonía (no se exporta)"
+        aria-label="Grilla 3×3"
+        className={seg(false)}
       >
-        {isDesktop ? '[ ⇅ REMIX 9:16 ]' : '⇅ 9:16'}
+        {isDesktop ? '⊞ 3×3' : '⊞'}
       </button>
-    )}
-    <button
-      type="button"
-      onClick={() => update({ accentSwap: !state.accentSwap })}
-      aria-pressed={Boolean(state.accentSwap)}
-      title="Alterna naranja ⇄ cian en toda la placa"
-      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
-        state.accentSwap ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-fire/60 bg-fire/10 text-fire'
-      }`}
-    >
-      {isDesktop ? '[ ⚡ SWAP ACCENT ]' : '⚡'}
-    </button>
-    <button
-      type="button"
-      onClick={() => setOverlay((o) => !o)}
-      aria-pressed={overlay}
-      title="Simula la interfaz de Instagram sobre la placa (no se exporta)"
-      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
-        overlay ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
-      }`}
-    >
-      {isDesktop ? '[ 👁 OVERLAY INSTAGRAM ]' : '👁 IG'}
-    </button>
-    <button
-      type="button"
-      onClick={() => setGridGuide((g) => !g)}
-      aria-pressed={gridGuide}
-      title="Muestra cómo recorta Instagram la miniatura en la grilla del perfil (no se exporta)"
-      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
-        gridGuide ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
-      }`}
-    >
-      {isDesktop ? '[ ▦ GRILLA PERFIL ]' : '▦'}
-    </button>
-    <button
-      type="button"
-      onClick={() => setFeedGrid(true)}
-      title="La portada nueva junto a tus últimos posts en la grilla del perfil: contraste y armonía (no se exporta)"
-      className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-steel transition hover:text-white"
-    >
-      {isDesktop ? '[ ⊞ VISTA FEED 3×3 ]' : '⊞ 3×3'}
-    </button>
-    <button
-      type="button"
-      onClick={() => update({ slideCounter: !state.slideCounter })}
-      aria-pressed={Boolean(state.slideCounter)}
-      title="Contador «01 / 05» y «DESLIZÁ →» en todas las placas (se exporta)"
-      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
-        state.slideCounter ? 'border-fire/70 bg-fire/15 text-fire' : 'border-line text-steel hover:text-white'
-      }`}
-    >
-      {isDesktop ? '[ 01/05 CONTADOR ]' : '01/05'}
-    </button>
+    </div>
+  )
+
+  /** Derecha: guías de pantalla, doctor y exportar (cada grupo en un solo control). */
+  const guidesOn = [overlay, gridGuide, Boolean(state.slideCounter), Boolean(state.accentSwap)].filter(Boolean).length
+  const toolsRight = (
+    <>
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        title="Plan Semanal, Generador IA y variantes sin API"
+        className="shrink-0 rounded-lg border border-cyan bg-cyan/10 px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] whitespace-nowrap text-cyan transition hover:bg-cyan/20"
+      >
+        + CREAR
+      </button>
+      <Menu
+        ariaLabel="Guías"
+        title="Overlay de Instagram, grilla del perfil, contador y swap de acento"
+        buttonClass={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${guidesOn ? 'border-cyan/60 text-cyan' : 'border-line text-steel hover:text-white'}`}
+        label={<>👁 GUÍAS{guidesOn ? ` · ${guidesOn}` : ''} ▾</>}
+      >
+        {() => (
+          <>
+            <MenuItem checked={overlay} onSelect={() => setOverlay((o) => !o)} hint="Simula la interfaz de Instagram (no se exporta)">
+              OVERLAY INSTAGRAM
+            </MenuItem>
+            <MenuItem checked={gridGuide} onSelect={() => setGridGuide((g) => !g)} hint="Recorte de la miniatura en el perfil (no se exporta)">
+              GRILLA PERFIL
+            </MenuItem>
+            <MenuItem checked={Boolean(state.slideCounter)} onSelect={() => update({ slideCounter: !state.slideCounter })} hint="«01 / 05» y «DESLIZÁ →» en todas las placas (se exporta)">
+              CONTADOR 01/05
+            </MenuItem>
+            <MenuItem checked={Boolean(state.accentSwap)} onSelect={() => update({ accentSwap: !state.accentSwap })} hint="Naranja ⇄ cian en toda la placa (se exporta)">
+              SWAP ACCENT
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+      <button
+        type="button"
+        onClick={showDoctor}
+        title={`Doctor de retención: ${report.score}/100 · ${report.findings.length} hallazgo(s). Revisalo antes de exportar.`}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-steel transition hover:text-white"
+      >
+        🩺
+        <span className="rounded px-1 text-[10px] font-bold text-carbon" style={{ background: SCORE_COLOR(report.score) }}>
+          {report.score}
+        </span>
+      </button>
+      <Menu
+        ariaLabel="Exportar"
+        buttonClass="rounded-lg bg-fire px-3 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] whitespace-nowrap text-carbon transition hover:brightness-110"
+        label={exportPng.status === 'busy' || exporting ? '⬇ EXPORTANDO…' : '⬇ EXPORTAR ▾'}
+      >
+        {(close) => (
+          <>
+            <MenuItem onSelect={() => (close(), void exportPng.run('download'))} disabled={exportPng.status === 'busy'} hint="Placa activa en alta resolución">
+              {exportPng.label}
+            </MenuItem>
+            {exportPng.shareable && (
+              <MenuItem onSelect={() => (close(), void exportPng.run('share'))} hint="Instagram, WhatsApp…">
+                COMPARTIR ESTA PLACA
+              </MenuItem>
+            )}
+            {slides.length > 1 && (
+              <MenuItem onSelect={() => (close(), runBatch('zip'))} disabled={Boolean(exporting)} hint="Todas las placas + caption.txt">
+                DESCARGAR TODAS (.ZIP)
+              </MenuItem>
+            )}
+            {slides.length > 1 && (
+              <MenuItem onSelect={() => (close(), runBatch('png'))} disabled={Boolean(exporting)} hint="Cada placa por separado (en el celular: compartir)">
+                {slides.length} PNG SUELTOS
+              </MenuItem>
+            )}
+            <MenuItem onSelect={() => (close(), runDual())} disabled={Boolean(exporting)} hint="Un .zip con /feed_4x5/ y /stories_9x16/">
+              FEED + HISTORIAS (.ZIP)
+            </MenuItem>
+          </>
+        )}
+      </Menu>
     </>
+  )
+
+  const preview = (gutter: number) => (
+    <Preview
+      state={canvasState}
+      bgImage={bgImage}
+      canvasRef={canvasRef}
+      gutter={gutter}
+      overlay={overlay && !exporting}
+      gridGuide={gridGuide && !exporting}
+      resolveImage={bg.get}
+      slideCount={slides.length}
+      slideIndex={active}
+      onNudge={exporting ? undefined : nudge}
+      onPick={exporting ? undefined : onPick}
+    />
   )
 
   const canvasUI = isDesktop ? (
@@ -532,52 +638,36 @@ export default function App() {
           </div>
         </aside>
         <main className="tc-grid-bg flex min-w-0 flex-1 flex-col">
-          {/* Barra superior: pestañas (flex-1, scroll horizontal) + utilidades fijas a la derecha. */}
-          <div className="border-b border-line bg-carbon/80 px-6 py-3 backdrop-blur">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="pt-0.5">{projectBar()}</div>
-              <div className="min-w-0 flex-1">
-                <WeekDayBar active={deck.packDay ?? null} today={packDayFor().id} edited={Object.keys(weekly.decks)} onLoad={(id) => void loadDay(id)} onRestore={(id) => void loadDay(id, true)} />
-              </div>
+          {/* Barra superior en UNA fila: proyecto + deshacer · formato · crear, guías, doctor y exportar. */}
+          <div className="relative z-30 flex min-w-0 items-center gap-2.5 border-b border-line bg-carbon/80 px-4 py-2.5 backdrop-blur">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {projectBar()}
+              {undoButtons}
             </div>
-            {slideBar(
-              <>
-                {overlayToggle}
-                <div className="w-56 shrink-0">{aspectToggle}</div>
-              </>,
-            )}
+            {formatSwitch}
+            <div className="flex shrink-0 items-center justify-end gap-1.5">{toolsRight}</div>
           </div>
-          <div className="min-h-0 flex-1 p-6">
-            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
-          </div>
-          <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
-            <CaptionBar caption={caption} onChange={setCaption} slides={slides} fallback={fallbackCaption(slides)} />
-            <ExportButtons target={canvasRef} state={state} />
-          </div>
+          <div className="min-h-0 flex-1 p-6">{preview(16)}</div>
+          <div className="border-t border-line bg-carbon/60 px-5 py-2.5">{slideBar()}</div>
         </main>
       </div>
   ) : (
     <div className="flex h-dvh flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+      <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <BrandBar />
-        <div className="w-32 shrink-0">{aspectToggle}</div>
-      </header>
-
-      <div className="flex items-center gap-2 border-b border-line px-4 py-2">
-        {/* El selector de modo conserva su ancho; las herramientas se desplazan si no entran. */}
-        <div className="w-40 shrink-0">
+        <div className="w-36 shrink-0">
           <ModeSwitch mode={mode} onChange={setMode} compact />
         </div>
-        <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{overlayToggle}</div>
+      </header>
+      <div className="relative z-30 flex items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 scrollbar-none">
+        {/* Fila con scroll horizontal: nada se encoge (si no entra, se desliza). */}
+        <div className="shrink-0">{projectBar(true)}</div>
+        {undoButtons}
+        {formatSwitch}
+        {toolsRight}
       </div>
-      <div className="border-b border-line px-4 py-2">
-        <div className="mb-2">{projectBar(true)}</div>
-        <WeekDayBar active={deck.packDay ?? null} today={packDayFor().id} edited={Object.keys(weekly.decks)} onLoad={(id) => void loadDay(id)} onRestore={(id) => void loadDay(id, true)} compact />
-        {slideBar()}
-      </div>
-      <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
-      </main>
+      <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-3">{preview(4)}</main>
+      <div className="border-t border-line px-4 py-2">{slideBar()}</div>
 
       <section
         className={`flex shrink-0 flex-col border-t border-line bg-carbon transition-[height] duration-300 ease-out ${
@@ -588,7 +678,7 @@ export default function App() {
           type="button"
           onClick={() => setDrawerOpen((o) => !o)}
           aria-expanded={drawerOpen}
-          className="flex items-center justify-between px-4 py-3 font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan"
+          className="flex items-center justify-between px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan"
         >
           <span>[ {drawerOpen ? 'CERRAR PANEL' : 'EDITAR PLACA'} ]</span>
           <svg
@@ -606,12 +696,6 @@ export default function App() {
             {panel}
           </div>
         )}
-        <div className="border-t border-line px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="flex flex-col gap-2">
-            <CaptionBar caption={caption} onChange={setCaption} slides={slides} fallback={fallbackCaption(slides)} />
-            <ExportButtons target={canvasRef} state={state} compact />
-          </div>
-        </div>
       </section>
     </div>
   )
@@ -619,6 +703,11 @@ export default function App() {
   return (
     <>
       {mode === 'canvas' && canvasUI}
+      {mode === 'canvas' && (
+        <CreateDrawer open={createOpen} onClose={() => setCreateOpen(false)}>
+          {createFlow}
+        </CreateDrawer>
+      )}
       {mode === 'canvas' && libraryOpen && (
         <ProjectLibrary
           projects={library.projects}

@@ -24,6 +24,7 @@ import { STICKER_OPTIONS, STICKER_SPEC } from '../../lib/remix'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
 import { PaperBadge } from './PaperBadge'
+import { contentFields, countWords } from '../../lib/templateFields'
 import { PaperLibraryPanel } from './PaperLibraryPanel'
 import { PhotoBankPanel, type PhotoBankApi } from './PhotoBankPanel'
 import { photoBackground } from '../../lib/photoBank'
@@ -65,7 +66,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
 ]
 
 /** Pestañas del panel lateral (ver App): cada sección del ControlPanel vive en una. */
-export type PanelTab = 'ai' | 'text' | 'style' | 'services' | 'export'
+export type PanelTab = 'text' | 'style' | 'export'
 
 /** Grilla de plantillas agrupada por tipo de pieza. */
 const TEMPLATE_GROUPS: { label: string; ids: TemplateId[] }[] = [
@@ -160,6 +161,8 @@ function seedQuote(state: CanvasState): Partial<CanvasState> {
 
 export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption, tab = 'text', citation = null, onRecheckCitation, photoBank }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
+  // Formulario contextual: sólo los campos que dibuja la plantilla activa (y el texto heredado que se ve).
+  const fields = contentFields(state)
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
   // Diagrama: lo que se ve es lo que se edita (datos de la placa o, si no hay, los del pilar del tema).
@@ -261,7 +264,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
       )}
 
       {tab === 'text' && (
-        <Section index="01" title="Texto" summary={`${state.headlineA} ${state.headlineB}`}>
+        <Section index="01" title="Texto" summary={`${state.headlineA} ${state.headlineB}`} focusKeys={['headlineA', 'headlineB', 'body', 'chips', 'quoteText']}>
           <Field label="Tag superior">
             <TextInput value={state.tag} onChange={(tag) => update({ tag })} uppercase placeholder="DISCIPLINA · CATEGORÍA" />
           </Field>
@@ -289,7 +292,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Titular · blanco">
-              <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
+              <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} field="headlineA" />
             </Field>
             <div>
               <div className="mb-1 flex items-baseline justify-between gap-1">
@@ -303,78 +306,47 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                   ⇄ INVERTIR
                 </button>
               </div>
-              <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} ariaLabel="Remate · naranja" />
+              <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} ariaLabel="Remate · naranja" field="headlineB" />
             </div>
           </div>
           <p className="-mt-1 font-mono text-[9px] tracking-wider text-steel/60">↵ Enter = salto de línea forzado · *palabra* invierte color</p>
-          <Toggle label="↵ Remate en renglón nuevo" checked={state.remateNewLine !== false} onChange={(remateNewLine) => update({ remateNewLine })} />
-          {state.remateNewLine !== false && (
-            <Field label="Separación titular → remate" hint={(state.remateGap ?? 0) === 0 ? 'interlineado' : undefined}>
-              <Range value={state.remateGap ?? 0} onChange={(remateGap) => update({ remateGap })} min={0} max={60} step={2} suffix="%" />
-            </Field>
-          )}
           {slideIndex === 0 && <HookScorer {...ai} slideCount={slideCount} />}
           {slideIndex === 0 && <HookGenerator {...ai} />}
           </>
           )}
-          <Field label="Preset tipográfico" plain>
-            <div className="grid grid-cols-3 gap-1.5">
-              {TYPE_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.hint}
-                  onClick={() => update({ typePreset: state.typePreset === p.id ? 'none' : (p.id as TypePreset) })}
-                  aria-pressed={state.typePreset === p.id}
-                  className={`rounded-md border px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider whitespace-nowrap transition ${
-                    state.typePreset === p.id ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <button
-            type="button"
-            onClick={() => update({ accentSwap: !state.accentSwap })}
-            aria-pressed={Boolean(state.accentSwap)}
-            title="Alterna naranja ⇄ cian en toda la placa"
-            className={`flex w-full items-center justify-center gap-2 rounded-md border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
-              state.accentSwap ? 'border-cyan/70 bg-cyan/10 text-cyan' : 'border-fire/60 bg-fire/10 text-fire'
-            }`}
-          >
-            <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
-            [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
-          </button>
-          {state.template === 'repeat' || state.template === 'quote' || state.template === 'essay' || state.template === 'workout' || state.template === 'fix' || state.template === 'service' || state.template === 'case' || state.template === 'myth' ? null : state.template === 'manifesto' ? (
-            <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
-          ) : (
-            <Field label={state.template === 'diagram' ? 'Párrafo (opcional)' : 'Párrafo'} hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
-              <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
+          {state.template === 'manifesto' && <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>}
+          {fields.body && (
+            <Field
+              label={fields.bodyInherited ? 'Bajada · heredada' : state.template === 'diagram' ? 'Bajada (opcional)' : 'Bajada'}
+              hint={<span>*palabra* invierte color · {state.body.length} car.</span>}
+            >
+              <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} field="body" />
             </Field>
           )}
-          {state.template !== 'athletic' && state.template !== 'quote' && state.template !== 'manifesto' && state.template !== 'repeat' && (
-            <Field label="Datos clave · cajas tácticas" hint="uno por línea, con número (máx 4)">
+          {fields.bodyInherited && <Inherited what="Esta bajada viene de otra plantilla y se ve en la placa." onClear={() => update({ body: '' })} />}
+          {fields.chips && (
+            <Field label={fields.chipsInherited ? 'Datos clave · heredados' : 'Datos clave · cajas tácticas'} hint="uno por línea, con número (máx 4)">
               <TextArea
                 value={(state.dataChips ?? []).join('\n')}
                 // Campo vacío = sin cajas (antes quedaba [''] guardado como una caja vacía).
                 onChange={(v) => update({ dataChips: v.trim() ? v.split('\n').map((c) => c.toUpperCase()).slice(0, 4) : [] })}
                 rows={2}
                 placeholder={'RIR 1-2\nPAUSA 2-3 MIN\n10-20 SERIES/SEM'}
+                field="chips"
               />
             </Field>
           )}
+          {fields.chipsInherited && <Inherited what="Estas cajas vienen de otra plantilla y se ven en la placa." onClear={() => update({ dataChips: [] })} />}
         </Section>
       )}
 
       {tab === 'text' && (
-        <Section index="02" title={templateLabel} summary={summaryFor(state)}>
+        <Section index="02" title={templateLabel} summary={summaryFor(state)} focusKeys={['kicker', 'metric', 'mythText', 'truthText', 'bookmark', 'checklist']}>
           {state.template === 'metric' && (
             <>
               <div className="grid grid-cols-[1fr_2fr] gap-2">
                 <Field label="Métrica">
-                  <TextInput value={state.metricValue} onChange={(metricValue) => update({ metricValue })} placeholder="+14%" />
+                  <TextInput value={state.metricValue} onChange={(metricValue) => update({ metricValue })} placeholder="+14%" field="metric" />
                 </Field>
                 <Field label="Subtítulo">
                   <TextInput value={state.metricLabel} onChange={(metricLabel) => update({ metricLabel })} uppercase />
@@ -795,9 +767,19 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           )}
 
           {state.template === 'statement' && (
-            <Field label="Remate / sentencia" hint="barra naranja">
-              <TextArea value={state.kicker} onChange={(kicker) => update({ kicker })} rows={2} />
-            </Field>
+            <>
+              <Field label="Remate de barra naranja" hint="opcional">
+                <TextArea value={state.kicker} onChange={(kicker) => update({ kicker })} rows={2} field="kicker" />
+              </Field>
+              {fields.kickerActive && (
+                <div className="-mt-1 flex items-center justify-between gap-2 rounded border border-fire/50 bg-fire/10 px-2 py-1 font-mono text-[9px] leading-relaxed text-fire" data-testid="kicker-active">
+                  <span>⚠ ACTIVO: se ve en la placa y suma {countWords(state.kicker)} palabras al Doctor.</span>
+                  <button type="button" onClick={() => update({ kicker: '' })} className="shrink-0 rounded border border-fire/60 px-1.5 py-px font-semibold hover:bg-fire/20">
+                    QUITAR
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </Section>
       )}
@@ -806,6 +788,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         <Section
           index="02"
           title="Fondo"
+          focusKeys={['bg']}
           summary={(state.bgStyle ?? 'photo') !== 'photo' ? BG_STYLE_LABEL[state.bgStyle] : bgImage ? `Foto · capa ${state.bgOverlay}%` : 'Carbón sólido'}
           defaultOpen={Boolean(bgImage) || (state.bgStyle ?? 'photo') !== 'photo'}
         >
@@ -831,6 +814,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={loadingImg}
+              data-field="bg"
               className="flex flex-1 items-center gap-2.5 rounded-md border border-dashed border-cyan/40 bg-cyan/5 px-2.5 py-2 text-left font-mono text-[11px] tracking-[0.1em] text-cyan transition hover:bg-cyan/10 disabled:opacity-60"
             >
               {bgImage ? (
@@ -921,19 +905,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         </Section>
       )}
 
-      {tab === 'services' && (
-        <Section
-          index="01"
-          title="Servicios & Programas Coach JP"
-          summary={state.template === 'service' ? (state.serviceMode === 'catalog' ? `Catálogo · ${state.serviceCatalog.length} disciplinas` : `Ficha · ${SERVICE_BY_ID[state.serviceSport]?.label ?? ''}`) : 'Placas de conversión'}
-          defaultOpen
-        >
-          <ServicesPanel state={state} update={update} onCaption={onCaption} />
-        </Section>
-      )}
 
       {tab === 'text' && state.template !== 'manifesto' && state.template !== 'repeat' && (
-        <Section index="03" title="Fuente científica" summary={`${CITE_MARK[citation?.state ?? 'none']}${state.citeMain}`} defaultOpen={false}>
+        <Section index="03" title="Fuente científica" summary={`${CITE_MARK[citation?.state ?? 'none']}${state.citeMain}`} defaultOpen={false} focusKeys={['cite']}>
           <div className="tc-scroll -mt-1 flex gap-1.5 overflow-x-auto pb-1">
             {CITATION_LIBRARY.map((c) => (
               <button
@@ -949,7 +923,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               </button>
             ))}
           </div>
-          <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
+          <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" field="cite" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
           <PaperBadge status={citation} onRecheck={onRecheckCitation} onFix={(citeMain) => update({ citeMain })} />
           <CitationSuggester {...ai} />
@@ -959,6 +933,17 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
       {tab === 'text' && state.template !== 'manifesto' && state.template !== 'repeat' && (
         <Section index="04" title="Biblioteca de papers propios" summary="Evidencia validada · la IA puede citar sólo de acá" defaultOpen={false}>
           <PaperLibraryPanel state={state} update={update} />
+        </Section>
+      )}
+
+      {tab === 'text' && (
+        <Section
+          index="05"
+          title="Servicios & Programas Coach JP"
+          summary={state.template === 'service' ? (state.serviceMode === 'catalog' ? `Catálogo · ${state.serviceCatalog.length} disciplinas` : `Ficha · ${SERVICE_BY_ID[state.serviceSport]?.label ?? ''}`) : 'Placas de conversión'}
+          defaultOpen={state.template === 'service'}
+        >
+          <ServicesPanel state={state} update={update} onCaption={onCaption} />
         </Section>
       )}
 
@@ -975,6 +960,42 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           summary={`${THEME_LABEL[state.theme]} · ${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}% · ${ALIGN_LABEL[state.contentAlign]}`}
           defaultOpen={false}
         >
+          <Field label="Preset tipográfico" plain>
+            <div className="grid grid-cols-3 gap-1.5">
+              {TYPE_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  title={p.hint}
+                  onClick={() => update({ typePreset: state.typePreset === p.id ? 'none' : (p.id as TypePreset) })}
+                  aria-pressed={state.typePreset === p.id}
+                  className={`rounded-md border px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider whitespace-nowrap transition ${
+                    state.typePreset === p.id ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <button
+            type="button"
+            onClick={() => update({ accentSwap: !state.accentSwap })}
+            aria-pressed={Boolean(state.accentSwap)}
+            title="Alterna naranja ⇄ cian en toda la placa"
+            className={`flex w-full items-center justify-center gap-2 rounded-md border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
+              state.accentSwap ? 'border-cyan/70 bg-cyan/10 text-cyan' : 'border-fire/60 bg-fire/10 text-fire'
+            }`}
+          >
+            <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
+            [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
+          </button>
+          <Toggle label="↵ Remate en renglón nuevo" checked={state.remateNewLine !== false} onChange={(remateNewLine) => update({ remateNewLine })} />
+          {state.remateNewLine !== false && (
+            <Field label="Separación titular → remate" hint={(state.remateGap ?? 0) === 0 ? 'interlineado' : undefined}>
+              <Range value={state.remateGap ?? 0} onChange={(remateGap) => update({ remateGap })} min={0} max={60} step={2} suffix="%" />
+            </Field>
+          )}
           <Field label="Tema" plain>
             <Segmented<ThemeId>
               value={state.theme}
@@ -1069,4 +1090,16 @@ function summaryFor(s: CanvasState) {
     case 'myth':
       return s.mythText ? `✘ ${s.mythText}` : 'Mito sin cargar'
   }
+}
+
+/** Aviso de texto heredado de otra plantilla que igual se ve en la placa (y suma al Doctor). */
+function Inherited({ what, onClear }: { what: string; onClear: () => void }) {
+  return (
+    <div className="-mt-1 flex items-center justify-between gap-2 rounded border border-gold/40 bg-gold/5 px-2 py-1 font-mono text-[9px] leading-relaxed text-gold">
+      <span>⚠ {what}</span>
+      <button type="button" onClick={onClear} className="shrink-0 rounded border border-gold/50 px-1.5 py-px font-semibold hover:bg-gold/15">
+        QUITAR
+      </button>
+    </div>
+  )
 }

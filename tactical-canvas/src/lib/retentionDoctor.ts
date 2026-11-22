@@ -2,6 +2,7 @@ import { BRAND } from './brand'
 import { swapHex } from './accent'
 import { effectiveTheme, PALETTES } from './theme'
 import { aiTells } from './language'
+import { rendersChips } from './templateFields'
 import { citeFromMatch, citationKey, parseCitation, type CitationStatus } from './paperVerify'
 import type { CanvasState, TemplateId } from '../types'
 
@@ -112,7 +113,8 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
         return []
     }
   })()
-  return { headline, body: [...body, ...(s.template === 'athletic' ? [] : (s.dataChips ?? []))].filter((t) => t && t.trim()) }
+  // Las cajas de datos cuentan sólo donde la plantilla las dibuja (en Cita o Manifiesto quedan ocultas).
+  return { headline, body: [...body, ...(rendersChips(s.template) ? (s.dataChips ?? []) : [])].filter((t) => t && t.trim()) }
 }
 
 // Imperativos con pronombre enclítico incluidos: «guardalo», «compartilo», «mandame».

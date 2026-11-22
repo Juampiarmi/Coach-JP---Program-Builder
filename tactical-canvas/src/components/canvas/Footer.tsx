@@ -21,7 +21,7 @@ export function Footer({ citeMain, citeSub, scale, ink = BRAND.white, muted = BR
     <footer style={{ marginTop: 'auto', paddingTop: 44 * scale, flexShrink: 0 }}>
       <div style={{ height: 2, background: line }} />
       {(main || sub) && (
-        <div style={{ marginTop: 30 * scale, fontFamily: FONT_MONO, textTransform: 'uppercase' }}>
+        <div data-part="cite" style={{ marginTop: 30 * scale, fontFamily: FONT_MONO, textTransform: 'uppercase' }}>
           {main && (
             <p style={{ margin: 0, fontSize: 21 * scale, letterSpacing: '0.06em', color: muted, lineHeight: 1.35 }}>
               [ {main} ]

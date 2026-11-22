@@ -164,7 +164,7 @@ export function StructEditor({ state, update }: Props) {
             </button>
             <div className="min-w-0 flex-1">
               <Field label={`Condición ${i + 1}`}>
-                <TextInput value={it.text} onChange={(text) => setItem(i, { text })} />
+                <TextInput value={it.text} onChange={(text) => setItem(i, { text })} field={i === 0 ? 'checklist' : undefined} />
               </Field>
             </div>
           </div>
