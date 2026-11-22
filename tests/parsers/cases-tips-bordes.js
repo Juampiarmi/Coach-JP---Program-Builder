@@ -24,5 +24,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Los tips que devuelve la IA (o que se escriben a mano) con rótulos sueltos (CLAVE, CUIDADO, EJECUCIÓN…) se llevan a los rótulos del Banco (CUE EFICIENTE, CUIDADO / ERROR COMÚN), conservando el código de estación del biset y las líneas de transición, y se recortan a una frase corta por punto' },
   { id: 'tips.03', area: 'Builder · tips', fn: 'alumnoVersion', input: { caso: 'cambioEj' },
     expect: { vacioSeEscribe: true, automaticaSeReescribe: true, manualSeRespeta: true, mismoFormatoQueElBanco: true }, modo: 'subset',
-    nota: 'Al cambiar el ejercicio de un bloque las pautas se reescriben en el formato del Banco si estaban vacías o eran las automáticas del ejercicio anterior (antes quedaban las del ejercicio viejo); si el coach las había editado a mano se respetan' }
+    nota: 'Al cambiar el ejercicio de un bloque las pautas se reescriben en el formato del Banco si estaban vacías o eran las automáticas del ejercicio anterior (antes quedaban las del ejercicio viejo); si el coach las había editado a mano se respetan' },
+  { id: 'header.01', area: 'Header · atleta', fn: 'alumnoVersion', input: { caso: 'headerAtleta' },
+    expect: { escudoConAire: true, centroOpticoConElTexto: true, sinRecuadro: true, marcaProporcionada: true, activoSobrio: true, nombreDeFicha: true, contextoSutil: true, controlesMismoContorno: true, margenesParejos: true, numerosTabulares: true }, modo: 'subset',
+    nota: 'Header del atleta: el escudo dorado sin recuadro tiene aire a los costados y su centro óptico coincide con el bloque de texto; «COACH» y «JP» del mismo tamaño con un acento naranja limpio y sin resplandor; «ACTIVO» discreto (sin cápsula, borde ni rayo); el nombre en mayúsculas y firme, estilo ficha, con una línea sutil de disciplina · nivel; y el botón «…», SEM y DÍA con el mismo radio, borde y altura, con los mismos márgenes laterales que el escudo y números tabulares' }
 ]);
