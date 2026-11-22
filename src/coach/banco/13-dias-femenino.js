@@ -21,7 +21,7 @@
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Arrancá siempre por la pierna más débil. Torso inclinado unos 30°, bajada de 3 segundos y pausa de 1 segundo abajo con el glúteo estirado: el peso lo lleva la pierna de adelante.' }),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'], n: 'La polea cruza el cuerpo: llevá la pierna atrás y apenas hacia afuera, sostené 1 segundo apretando el glúteo y volvé lento cruzando la línea media para estirarlo.' }),
       R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0-1|60'),
-      R('B', ['Puente de glúteo a una pierna', 'Abducción con banda (monster walk)'], '3x10 por lado/12 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo: el puente a una pierna activa el glúteo mayor con la pelvis estable y la abducción con banda termina de congestionar el glúteo medio. Sin pausa entre las dos.' }),
+      R('B', ['Puente de glúteo a una pierna', 'Abducción con banda (monster walk)'], '2x10 por lado/12 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo: el puente a una pierna activa el glúteo mayor con la pelvis estable y la abducción con banda termina de congestionar el glúteo medio. Sin pausa entre las dos.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
@@ -30,12 +30,12 @@
     foco: 'Día de rodilla dominante con máxima estabilidad: el hack squat como ancla (torso apoyado, cero fatiga lumbar), la prensa con los pies altos y abiertos para repartir el trabajo con el glúteo y la sentadilla búlgara con el torso inclinado para el glúteo estirado. Aislamientos de cuádriceps, isquio, gemelo y aductores cierran el volumen. Es la sesión con más trabajo de cuádriceps de la semana: llegá con hidratos comidos y con ganas.',
     filas: [
       R('F', 'Hack squat', '4x6-8|1|150', '5x6-8|0-1|180', { tp: ['3110'], n: 'Espalda apoyada, pies a la altura media de la plataforma y bajada de 3 segundos hasta una flexión profunda. La máquina te da estabilidad externa: usala para cargar fuerte sin pagar con la espalda baja.' }),
-      R('H', 'Prensa 45°', '4x10-12|1|120', '4x10-12|0-1|120', { tp: ['3110'], n: 'Pies altos y apenas abiertos para sumar glúteo: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil.' }),
+      R('H', 'Prensa 45°', '3x10-12|1|120', '4x10-12|0-1|120', { tp: ['3110'], n: 'Pies altos y apenas abiertos para sumar glúteo: bajá hasta donde la pelvis no se despegue del respaldo, ese es tu rango útil.' }),
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '3x8-10 por lado|0-1|90', { tp: ['3110'] }),
-      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
+      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop', { soloA: true }),
       R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
-      R('A', 'Aducción en máquina', '3x12-15|1|60', '4x15|0|45'),
+      R('A', 'Aducción en máquina', '3x12-15|1|60', '4x15|0|45', { soloA: true }),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: el step up trabaja cuádriceps y glúteo y el talón a una pierna completa la pantorrilla, sin pausa entre las dos.' }),
       R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
@@ -64,7 +64,7 @@
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '3x12-15 por lado|0|45|drop', { tp: ['3011'] }),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|drop'),
-      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop'),
+      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '2x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop'),
       R('C', ['Bird dog', 'Plancha frontal'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
@@ -73,13 +73,13 @@
     foco: 'Sesión de torso integral: espalda con tracción vertical y horizontal, pecho en dos ángulos (press inclinado y cruce de cables), un press de hombro y un biset de deltoide lateral y posterior para la postura y la proporción. Un biset de brazos y el core cierran el día. Priorizá la espalda: es el contrapeso del trabajo de pierna y lo que más cambia la silueta.',
     filas: [
       R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van a las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
-      R('H', 'Press inclinado con mancuernas', '4x8-12|1|120', '4x8-10|1|120'),
+      R('H', 'Press inclinado con mancuernas', '3x8-12|1|120', '4x8-10|1|120'),
       R('H', 'Remo apoyado en banco inclinado', '4x10-12|1|90', '4x10-12|0-1|90'),
       R('H', 'Press de hombros sentado', '3x10-12|1|90', '3x10-12|0-1|90'),
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true }),
-      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '4x10-12/10-12|1|75', '3x10-12/10-12|0|75|drop'),
       R('C', ['Dead bug', 'Hollow body'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -89,7 +89,7 @@
     filas: [
       R('F', 'Press militar sentado', '4x6-8|2|150', '5x5-6|1|180', { n: 'Glúteos y abdomen apretados, costillas abajo y la barra sube en línea recta. Si arqueás la espalda baja para ayudarte, bajá la carga.' }),
       R('H', 'Press inclinado con mancuernas', '3x8-12|1|120', '4x8-10|0-1|120'),
-      R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90'),
+      R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90', { soloA: true }),
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|drop'),
       R('B', ['Extensión tríceps tras nuca a 2 manos', 'Patada de tríceps con mancuerna'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|drop'),
@@ -133,7 +133,7 @@
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Arrancá siempre por la pierna más débil y repetí con la otra el mismo número de repeticiones. Torso inclinado unos 30° y pausa de 1 segundo abajo con el glúteo estirado.' }),
       R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
-      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo medio: la abducción con banda empuja las rodillas hacia afuera y el puente a una pierna termina de congestionar con la pelvis estable. Sin pausa entre las dos.' }),
+      R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '2x12 por lado/10 por lado|1|45', '3x12 por lado/12 por lado|0|45|drop', { n: 'Cierre de glúteo medio: la abducción con banda empuja las rodillas hacia afuera y el puente a una pierna termina de congestionar con la pelvis estable. Sin pausa entre las dos.' }),
       R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45'),
       R('M', null, null, null, { fin: FIN.glute })
     ] };
@@ -142,13 +142,13 @@
     foco: 'Sesión de torso completo y equilibrado: una tracción vertical abre el día, seguida de un press inclinado, un remo y un press de hombro para cubrir empuje y tracción en partes iguales. El cruce de cables trabaja el pecho estirado, el deltoide lateral y posterior redondean el hombro y el cierre de brazos (bíceps y tríceps) termina de armar la silueta. Priorizá la espalda: es el contrapeso del trabajo de pierna y lo que más cambia la postura. Controlá la bajada de cada repetición y no regales rango.',
     filas: [
       R('F', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { n: 'Pecho hacia la barra y escápulas hacia abajo antes de tirar. Los codos van hacia las costillas. Es el ejercicio principal del día: cargalo en serio.' }),
-      R('H', 'Press inclinado con mancuernas', '4x8-12|1|120', '4x8-10|1|120'),
+      R('H', 'Press inclinado con mancuernas', '3x8-12|1|120', '4x8-10|1|120'),
       R('H', 'Remo apoyado en banco inclinado', '4x10-12|1|90', '4x10-12|0-1|90'),
       R('H', 'Press de hombros sentado', '3x10-12|1|90', '3x10-12|0-1|90'),
       R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, con cargas livianas y rango completo, para que el deltoide quede redondo desde todos los ángulos.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: lateral, posterior y W seguidos sin pausa. Acá manda la congestión, no la carga.' }),
-      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
+      R('B', ['Curl de bíceps en banco inclinado (Mancuernas)', 'Extensión tríceps tras nuca a 2 manos'], '4x10-12/10-12|1|75', '4x10-12/10-12|0|75|drop', { n: 'Biset de brazos: bíceps y tríceps antagonistas sin pausa. Mientras uno trabaja el otro se recupera, así que podés cargar fuerte.' }),
       R('C', ['Hollow body', 'Dead bug'], '3x30s/8 por lado|1|45', '3x40s/10 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.torso })
     ] };
@@ -161,6 +161,7 @@
       R('H', 'Sentadilla búlgara con torso inclinado', '3x8-10 por lado|1|90', '4x8-10 por lado|0-1|90', { tp: ['3110'], n: 'Torso inclinado unos 30° para cargar el glúteo estirado y pausa de 1 segundo abajo. Arrancá por la pierna más débil.' }),
       R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }),
+      R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
       R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '4x10-12|0-1|90', { n: 'Refuerzo de torso: no es el día para buscar el máximo sino estímulo de calidad con poca fatiga. Codos a las costillas y pausa de medio segundo abajo.' }),
       R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|45', null, { soloI: true, n: 'Cierre de hombros: lateral y posterior seguidos, livianos y con rango completo.' }),
       R('T', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado', 'Elevaciones W con mancuernas'], null, '4x15-20/15-20/12-15|0|45|drop', { soloA: true, n: 'Triset de hombros: tres estaciones sin pausa para redondear el deltoide. La congestión es el objetivo.' }),
@@ -169,8 +170,8 @@
     ] };
 
   PB.ESTR.push(
-    { g: 'f', f: 3, est: 'Pierna A · Push, Pull y Brazos · Pierna B', dias: ['F_PA', 'F_PPB', 'F_PB'], res: 'Split de tres días con prioridad en tren inferior (Constructor de Glúteos): Pierna A (glúteos y cuádriceps + core), Push, Pull y Brazos (torso completo y equilibrado) y Pierna B (glúteos e isquiotibiales + refuerzo de torso). Glúteo y pierna dos veces por semana, con la sesión de torso en el medio para recuperar. Hipertrofia por estiramiento (peso muerto rumano con déficit, búlgara con el torso inclinado), hip thrust pesado con pausa y patada en polea cruzada, con apoyos estables y poca fatiga axial. Todas con entrada en calor específica, un básico pesado, compuestos de hipertrofia, cierre de congestión, core y finisher metabólico.' },
-    { g: 'f', f: 4, est: 'Glúteo · Torso · Pierna · Glúteo y Hombros', dias: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], res: 'Glúteo en frecuencia 2 (con una tercera exposición a baja demanda), torso integral y una sesión de rodilla dominante con máquinas estables: la mayor parte del volumen va a tren inferior sin descuidar el desarrollo general.' },
-    { g: 'f', f: 5, est: 'Glúteo · Push · Pierna · Pull · Glúteo y Armonía', dias: ['F_GLU_A', 'F_PUSH', 'F_QUAD', 'F_PULL', 'F_GLU_B'], res: 'Glúteo y pierna en frecuencia 2-3 con Push y Pull dedicados: cadera pesada, empuje (hombro y pecho), cuádriceps e isquios, tracción y una segunda sesión de glúteo con brazos. Cinco sesiones completas: se entrena fuerte y se descansa en serio.' }
+    { g: 'f', f: 3, est: 'Pierna A · Push, Pull y Brazos · Pierna B', dias: ['F_PA', 'F_PPB', 'F_PB'], res: 'Split de tres días con prioridad en tren inferior (Constructor de Glúteos): Pierna A (glúteos y cuádriceps + core), Push, Pull y Brazos (torso completo y equilibrado) y Pierna B (glúteos e isquiotibiales + refuerzo de torso). Glúteo y pierna dos veces por semana, con la sesión de torso en el medio para recuperar. Hipertrofia por estiramiento (peso muerto rumano con déficit, búlgara con el torso inclinado), hip thrust pesado con pausa y patada en polea cruzada, con apoyos estables y poca fatiga axial. Todas con entrada en calor específica, un básico pesado, compuestos de hipertrofia, cierre de congestión, core y finisher metabólico. Volumen semanal en series efectivas (intermedio): glúteo 24 (es el grupo con más volumen), cuádriceps 7, isquiotibiales 7, gemelo 4 y, en el torso, espalda 11, hombro lateral 7, pecho 6 y bíceps y tríceps 4 cada uno.' },
+    { g: 'f', f: 4, est: 'Glúteo · Torso · Pierna · Glúteo y Hombros', dias: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], res: 'Glúteo en frecuencia 2 (con una tercera exposición a baja demanda), torso integral y una sesión de rodilla dominante con máquinas estables: la mayor parte del volumen va a tren inferior sin descuidar el desarrollo general. Volumen semanal en series efectivas (intermedio): glúteo 30 (con la tercera exposición a baja demanda), cuádriceps 10, isquiotibiales 9, gemelo 7, espalda 8, hombro lateral 8, pecho 6 y bíceps y tríceps 4 cada uno.' },
+    { g: 'f', f: 5, est: 'Glúteo · Push · Pierna · Pull · Glúteo y Armonía', dias: ['F_GLU_A', 'F_PUSH', 'F_QUAD', 'F_PULL', 'F_GLU_B'], res: 'Glúteo y pierna en frecuencia 2-3 con Push y Pull dedicados: cadera pesada, empuje (hombro y pecho), cuádriceps e isquios, tracción y una segunda sesión de glúteo con brazos. Cinco sesiones completas: se entrena fuerte y se descansa en serio. Volumen semanal en series efectivas (intermedio): glúteo 27, cuádriceps 10, isquiotibiales 12, gemelo 7, espalda 13, hombro lateral 7, pecho 6 y bíceps y tríceps 9 cada uno.' }
   );
 })();

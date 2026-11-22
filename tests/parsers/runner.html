@@ -56,6 +56,7 @@
 <script src="cases-pulido.js"></script>
 <script src="cases-version.js"></script>
 <script src="cases-tips-bordes.js"></script>
+<script src="cases-femenino.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -108,6 +109,7 @@
     alumnoVista:  { run: function(i){ return alumnoVista(i); }, valor: function(r){ return r; } },
     alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
     alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
+    bancoFemenino: { run: function(i){ return bancoFemenino(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -1445,6 +1447,63 @@
   /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
      input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
      Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */
+  /* plantillas femeninas del Banco: volumen semanal por grupo (series efectivas, mismo cálculo que el panel del Builder) frente a los rangos y a lo que dicen sus textos */
+  function bancoFemenino(c){
+    var PB = win.__jpPB, banco = getS().banco || [], EST = PB.EST;
+    var vol = function(r){ var v = EST.volumen(r.dias || [], 'f', r.niv || 'intermedio'), o = {}; v.forEach(function(x){ o[x.g] = x; }); return o; };
+    var por = function(re){ return banco.filter(function(r){ return r.genero === 'f' && re.test(r.id) && (r.dias || []).length; }); };
+    var g = function(o, k){ return o[k] ? o[k].v : 0; };
+    if(c.caso === 'pirámide'){
+      var d = EST.parsearDosis('1x10 (Aclimatación) + 1x8 (Carga alta) + 2x8 (Top Set) + 1x12 (Back-off -10%) | Tempo 2012 | RIR 1-2'), s0 = EST.parsearDosis('3x10 | RIR 1');
+      return { efectivas: d.efectivas, sinContarAclimatacion: d.efectivas === 4 && d.sets === 1, normalNoCambia: s0.sets === 3 && s0.efectivas === undefined };
+    }
+    if(c.caso === 'bodybuilding'){
+      var lista = por(/^bkstd_jp26_f/), res = { plantillas: lista.length };
+      res.seis = lista.length === 6;
+      res.gluteoEnRango = lista.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= o['Glúteo'].lo; });
+      res.gluteoEsElMayor = lista.every(function(r){ var o = vol(r), gl = g(o, 'Glúteo'); return Object.keys(o).filter(function(k){ return k !== 'Glúteo' && k !== 'Core'; }).every(function(k){ return g(o, k) < gl; }); });
+      res.piernaEnRango = lista.every(function(r){ var o = vol(r); return ['Cuádriceps', 'Isquios', 'Gemelos'].every(function(k){ return g(o, k) >= o[k].lo; }); });
+      res.cuadricepsNoSePasa = lista.every(function(r){ var o = vol(r); return g(o, 'Cuádriceps') <= o['Cuádriceps'].hi; });
+      res.tren_inferior_protagonista = lista.every(function(r){ var o = vol(r), inf = ['Glúteo', 'Cuádriceps', 'Isquios', 'Gemelos'].reduce(function(a, k){ return a + g(o, k); }, 0), sup = ['Pecho', 'Espalda', 'Hombro lateral', 'Hombro posterior', 'Hombro anterior', 'Bíceps', 'Tríceps'].reduce(function(a, k){ return a + g(o, k); }, 0); return inf >= sup * 0.9; });
+      res.brazosEnRango = lista.filter(function(r){ return /f[34]_/.test(r.id); }).every(function(r){ var o = vol(r); return g(o, 'Bíceps') >= o['Bíceps'].lo && g(o, 'Tríceps') >= o['Tríceps'].lo; });
+      res.pechoEnRango = lista.every(function(r){ var o = vol(r); return g(o, 'Pecho') <= o['Pecho'].hi; });
+      /* el texto de cada plantilla dice los mismos números que el panel (glúteo, cuádriceps y gemelo) */
+      res.textoCoincide = lista.every(function(r){ var o = vol(r), t = String(r.notas || ''), m = /glúteo (\d+)[^.]*?cuádriceps (\d+)[^.]*?gemelo (\d+)/.exec(t); return !!m && +m[1] === g(o, 'Glúteo') && +m[2] === g(o, 'Cuádriceps') && +m[3] === g(o, 'Gemelos'); });
+      return res;
+    }
+    if(c.caso === 'fullbody'){
+      var fb = por(/^fb[34]_f/), r2 = { plantillas: fb.length };
+      r2.cuatro = fb.length === 4;
+      r2.gluteoEnRango = fb.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= o['Glúteo'].lo && g(o, 'Glúteo') <= o['Glúteo'].hi; });
+      r2.gluteoMayorQueCuadriceps = fb.every(function(r){ var o = vol(r); return g(o, 'Glúteo') > g(o, 'Cuádriceps'); });
+      r2.cuadricepsEnRango = fb.every(function(r){ var o = vol(r); return g(o, 'Cuádriceps') >= o['Cuádriceps'].lo && g(o, 'Cuádriceps') <= o['Cuádriceps'].hi; });
+      r2.isquiosEnRango = fb.every(function(r){ var o = vol(r); return g(o, 'Isquios') >= o['Isquios'].lo && g(o, 'Isquios') <= o['Isquios'].hi; });
+      r2.gemeloPresente = fb.every(function(r){ var o = vol(r); return g(o, 'Gemelos') >= o['Gemelos'].lo; });
+      r2.espaldaEnRango = fb.every(function(r){ var o = vol(r); return g(o, 'Espalda') <= o['Espalda'].hi; });
+      r2.textoDiceGluteo = fb.every(function(r){ return /glúteo/i.test(r.notas) && /enfoque es femenino/i.test(r.notas); });
+      r2.textoCoincide = (function(){ var a = fb.filter(function(r){ return r.id === 'fb3_f_av'; })[0], b = fb.filter(function(r){ return r.id === 'fb4_f_av'; })[0], e = fb.filter(function(r){ return r.id === 'fb4_f_el'; })[0];
+        return !!a && !!b && !!e && /20 series directas/.test(a.notas) && g(vol(a), 'Glúteo') === 20 && /de 23 \(avanzado\) a 25 \(élite\)/.test(b.notas) && g(vol(b), 'Glúteo') === 23 && g(vol(e), 'Glúteo') === 25; })();
+      return r2;
+    }
+    if(c.caso === 'deportes'){
+      var rec = por(/^bkdep_rec_/), mtb = por(/^bkdep_mtb_/), hyx = por(/^bkdep_hyx_/), r3 = {};
+      r3.recomposicion = rec.length === 6 && rec.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= o['Glúteo'].lo && g(o, 'Gemelos') >= o['Gemelos'].lo && g(o, 'Cuádriceps') <= o['Cuádriceps'].hi + 5; });
+      r3.recomposicionGlutealMayor = rec.every(function(r){ var o = vol(r); return g(o, 'Glúteo') > g(o, 'Cuádriceps') || (r.dias.length === 3 && g(o, 'Glúteo') >= g(o, 'Cuádriceps')); });
+      r3.mtb = mtb.length === 2 && mtb.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= 9 && g(o, 'Gemelos') >= 4; });
+      r3.hyrox = hyx.length === 9 && hyx.every(function(r){ var o = vol(r), minimo = r.dias.length === 5 ? 18 : 9; return g(o, 'Glúteo') >= minimo; });
+      r3.hyroxCorrePrincipal = hyx.every(function(r){ return r.dias.every(function(d){ return d.bloques.some(function(b){ return /Intervalos|Estaciones|Transporte|Simulación|Zona 2|Tríset/i.test(b.titulo || '') && !b.optional; }); }); });
+      r3.textosMujer = rec.concat(mtb, hyx).every(function(r){ return /Versión mujer: /.test(r.notas) && /glúteo/i.test(r.notas); });
+      return r3;
+    }
+    if(c.caso === 'pro'){
+      var pro = banco.filter(function(r){ return /Recomposición Femenina/.test(r.nombre || '') && /(3|4) Días/.test(r.nombre) && (r.dias || []).length; }), r4 = { plantillas: pro.length };
+      r4.glúteoEnRango = pro.length >= 2 && pro.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= o['Glúteo'].lo; });
+      r4.gemelo = pro.every(function(r){ var o = vol(r); return g(o, 'Gemelos') >= o['Gemelos'].lo; });
+      r4.textoDiceGluteo = pro.every(function(r){ return /Enfoque femenino: el glúteo/.test(r.notas); });
+      return r4;
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   /* versión de la sesión (ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN), notas del ejercicio compactas, plan de cargas por semana y valores por defecto del Banco */
   function alumnoVersion(c){
     if(c.caso === 'bancoVersion'){

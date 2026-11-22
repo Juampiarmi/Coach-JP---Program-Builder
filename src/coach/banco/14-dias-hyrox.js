@@ -26,7 +26,8 @@
       filas: [
         R('F', 'Sentadilla con barra', '4x5-6|2|180', '5x4-5|1|210', { p: '5x3-5|1|240', n: 'La sentadilla es la base de todo lo que pasa en una carrera Hyrox: empuje de trineo, zancadas con bolsa y wall balls. Pesada y rápida, sin dejarte sin piernas para los intervalos que vienen después.' }),
         R('H', 'Zancadas caminando', '3x8 por lado|1|90', '4x8 por lado|0-1|90', { p: '4x10 por lado|0-1|90', n: 'Es el patrón de la estación de zancadas con bolsa: paso largo, torso erguido y la rodilla de atrás cerca del piso. Con mancuernas o barra, la carga más alta con la que mantengas la técnica.' }),
-        R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop'),
+        (c.f ? R('A', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120', { tp: ['2012'], n: 'Pausa de 2 segundos arriba, costillas abajo y mentón al pecho. El glúteo es el motor de la zancada con bolsa, del empuje de trineo y de la subida después de cada estación: acá se carga con peso serio y poca fatiga axial.' }) : R('A', 'Curl femoral acostado', '3x10-12|1|75', '4x10-12|0|75|drop')),
+        (c.f ? R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }) : null),
         R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
         R('B', ['Curl nórdico', 'Elevación de talones a una pierna'], '3x5/12|2|75', '3x6/12|1|75', { n: 'Resiliencia de isquios y pantorrilla: son las dos zonas que primero se quejan cuando suma el volumen de carrera. En el nórdico bajá lento (cinco segundos) y ayudate con las manos para subir.' }),
         R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
@@ -51,7 +52,7 @@
            'ARRASTRE: tirá con las piernas y la espalda, no con los brazos. Los brazos son la última palanca.',
            'SKI ERG: tirá con la cadera y la espalda; los brazos acompañan al final.',
            'SENSACIÓN OBJETIVO: piernas llenas, pulso alto y técnica limpia hasta el último metro.']) })
-      ] };
+      ].filter(Boolean) };
   };
 
   /* ---------- B · Fuerza de tracción y empuje + transporte pesado ---------- */
@@ -65,6 +66,7 @@
         R('H', 'Remo con barra inclinado', '4x6-8|2|150', '4x6-8|1|150'),
         R('H', 'Jalón al pecho con agarre ancho', '3x8-10|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
         R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
+        (c.f ? R('A', 'Puente de glúteo a una pierna', '3x10 por lado|1|60', '4x12 por lado|0|60', { n: 'Glúteo a una pierna y con la pelvis cuadrada: sostiene el peso muerto y el transporte sin sumar fatiga axial en un día de torso.' }) : null),
         R('B', ['Flexiones de brazos', 'Remo invertido / Australian Pull-up'], '3x12-15/10-12|2|60', '4x15-20/12-15|1|60', { n: 'Resistencia de fuerza de torso: empuje y tracción sin pausa entre las dos. Son los patrones del ski erg, el remo y las estaciones de empuje.' }),
         R('C', ['Rueda abdominal', 'Plancha lateral'], '3x8/30s|1|45', '3x10/40s|0|45'),
         R('M', null, null, null, { fin: Fin('FINISHER', 'Transporte pesado y agarre', 6 * rr,
@@ -78,7 +80,7 @@
            'POSTURA: costillas abajo y hombros atrás. Si el tronco se inclina, bajá la carga.',
            'ZANCADAS CON BOLSA: bolsa al hombro o al pecho, paso largo y rodilla trasera cerca del piso.',
            'SENSACIÓN OBJETIVO: antebrazos ardiendo, piernas pesadas y la respiración al límite pero controlada.']) })
-      ] };
+      ].filter(Boolean) };
   };
 
   /* ---------- C · Simulación de carrera (carrera comprometida) ---------- */
@@ -197,8 +199,14 @@
     return T.join('\n');
   }
   /* sesión lista para el módulo de deportes: { titulo, nombre, foco, texto(n) } */
+  /* mujeres: el glúteo entra con series directas en los días de pierna y de torso (en la carrera es el motor de zancadas, trineo y subida) */
+  var FOCO_F = {
+    A: 'Mujeres: el hip thrust y la patada de glúteo en polea reemplazan al curl femoral (los isquios quedan cubiertos por el curl nórdico), para sumar glúteo directo sin acumular fatiga de pierna antes de los intervalos.',
+    B: 'Mujeres: un puente de glúteo a una pierna suma glúteo directo en el día de torso, sin fatiga axial extra.'
+  };
   PB.hyroxSesion = function(clave, c){
     var def = HX[clave](c);
+    if(c && c.f && FOCO_F[clave]) def.foco += ' ' + FOCO_F[clave];
     return { titulo: def.titulo, nombre: def.nombre, foco: def.foco, texto: function(n){ return texto(def, c, n); }, def: def };
   };
   PB.hyroxClaves = Object.keys(HX);
