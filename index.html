@@ -6225,6 +6225,21 @@ function impModalidadSB(b, tag){
   return 'hipertrofia';
 }
 const IMP_CAT_DE_MODALIDAD = { fuerza:'strength', hipertrofia:'strength', core:'accessory', accesorio:'accessory', calentamiento:'warmup', metcon:'metcon' };
+/* VERSIÓN DE LA SESIÓN (Sports): ESTÁNDAR · 60 MIN lleva los bloques principales (entrada en calor, fuerza, hipertrofia, accesorios de volumen); EXTENDIDA · 90 MIN suma los complementarios
+   (core, cardio / acondicionamiento, finisher y cierre metabólico). La app del alumno oculta en la estándar los bloques con visibilidad "solo extendida" (b.optional). Esta función decide el
+   valor por defecto según la categoría y la demanda del bloque; el coach lo cambia a mano en "Ícono, subtítulo, color y visibilidad". Intervalos, carrera y estaciones de una sesión Hyrox
+   son el trabajo principal del día, no un agregado: no se marcan como complementarios. */
+const RX_BLOQUE_PRINCIPAL_CARDIO = /intervalos?|umbral|carrera|estaci[oó]n|transporte|tempo run|series de|rondas de/i;
+function jpEsBloqueComplementario(b){
+  if(!b) return false;
+  if(b.tipo === 'finisher' || b.tipo === 'hyrox') return true;
+  if(b.category === 'warmup' || b.modalidad === 'calentamiento') return false;
+  const tit = String(b.titulo || '');
+  if(b.modalidad === 'core' || /^\s*(?:core|zona media|abdominales?)\b/i.test(tit)) return true;
+  if(/^\s*(?:finisher|cierre\s+metab[oó]lico|acondicionamiento|cardio|zona\s*2)\b/i.test(tit)) return true;
+  if(b.category === 'cardio' || b.category === 'endurance' || b.category === 'metcon' || b.modalidad === 'metcon') return !RX_BLOQUE_PRINCIPAL_CARDIO.test(tit);
+  return false;
+}
 function impCerrarBloqueSports(b){
   if(!b || b._cerrado) return;
   b._cerrado = true;
@@ -6586,6 +6601,7 @@ function crearBloqueImportado(b, cf){
      bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
   if(!cf && b.rest !== undefined) bl.restSeconds = b.rest;      /* 0 es un descanso válido ("Rest 0s") */
   if(!cf && b.modalidad){ bl.modalidad = b.modalidad; bl.category = IMP_CAT_DE_MODALIDAD[b.modalidad] || bl.category; }
+  if(!cf) bl.optional = jpEsBloqueComplementario(bl);      /* versión de la sesión: core / cardio / finisher = solo extendida */
   return bl;
 }
 /* primera línea que impidió el parseo (ni cabecera de día, ni FOCO, ni etiqueta) */
@@ -8273,7 +8289,7 @@ function renderDay(){
           '<div class="f"><label>Icono</label><input data-bf="icon" data-b="' + b.id + '" value="' + esc(b.icon||'') + '"></div>' +
           '<div class="f" style="grid-column:span 2"><label>Subtítulo</label><input data-bf="subtitulo" data-b="' + b.id + '" value="' + esc(b.subtitulo||'') + '" placeholder="Ancla de Tracción Horizontal Pesada"></div>' +
           '<div class="f"><label>Color / categoría</label><select data-bf="category" data-b="' + b.id + '">' + catOptions(b.category) + '</select></div>' +
-          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible</option><option value="1"' + (b.optional?' selected':'') + '>Solo Modo Completo</option></select></div>' +
+          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible (estándar · 60 min y extendida)</option><option value="1"' + (b.optional?' selected':'') + '>Solo EXTENDIDA · 90 min (complementario)</option></select></div>' +
         '</div>' +
       '</details>';
     }
@@ -10322,6 +10338,13 @@ JP_I18N.add('es', {
   'app.card.obj.t': 'OBJETIVO FISIOLÓGICO',
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
+  /* notas del ejercicio agrupadas, versión de la sesión y plan de cargas */
+  'app.notas.tips': 'Tips', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
+  'app.ver.t': 'Versión de la sesión', 'app.ver.std': 'ESTÁNDAR', 'app.ver.ext': 'EXTENDIDA', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
+  'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
+  'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
+  'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
   'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
@@ -10357,6 +10380,12 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
+  'app.notas.tips': 'Tips', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
+  'app.ver.t': 'Session version', 'app.ver.std': 'STANDARD', 'app.ver.ext': 'EXTENDED', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
+  'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
+  'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
+  'app.ver.h.igual': 'This session has no complementary blocks: both versions are the same.',
+  'app.plan.t': 'LOAD PLAN · based on your history', 'app.plan.hecho': '✓ done', 'app.plan.desc': 'DELOAD', 'app.plan.pico': 'PEAK',
   'app.notif.work': '💪 Go! · Round {r}/{n}',
   'app.notif.work.simple': '💪 Go!',
   'app.notif.minuto': '⏱️ Minute {r}/{n}',
@@ -14900,11 +14929,10 @@ function renderWeekInfo(){
    RENDER: DAY TABS
 ========================================================= */
 const weekTabsEl = document.getElementById('week-tabs');
+/* los bloques que cuentan para "día completo" y el resumen son los de la VERSIÓN activa (estándar: sin los complementarios; extendida: todos). Los registros de los bloques que quedan
+   ocultos no se tocan: al volver a la versión extendida están tal cual. */
 function dayBlockIds(day){
-  const ids = day.blocks.map(function(b){ return b.id; });
-  if(day.finisher) ids.push(day.finisher.id);
-  if(day.hyrox) ids.push(day.hyrox.id);
-  return ids;
+  return visibleBlocks(day).map(function(b){ return b.id; });
 }
 function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
@@ -14953,6 +14981,44 @@ function aplicarSemanaActivaBlocks(){
     }
   });
 }
+/* ---------- versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ----------
+   Es el mismo interruptor de siempre (state.mode: quick = estándar, complete = extendida) puesto a la vista en el día. Qué bloques son complementarios (solo extendida) lo define el coach
+   en el Builder / Banco de Rutinas con la visibilidad del bloque (optional): core, cardio, finisher y cierre metabólico por defecto. */
+function jpBloquesComplementarios(day){
+  const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
+  return all.filter(function(b){ return b && b.optional; });
+}
+function jpNombreBloqueCorto(b){
+  const t = String(b.title || b.label || '').replace(/^\\s*(?:bloque\\s*\\d+\\s*[|:–-]?\\s*|block\\s*[a-z0-9]+\\s*[:–-]\\s*)/i, '').replace(/\\s*[·–—:|(-].*$/, '').trim();
+  return t.length > 24 ? t.slice(0, 23).trim() + '…' : t;
+}
+function jpVersionHtml(day){
+  const comp = jpBloquesComplementarios(day), ext = state.mode === 'complete';
+  const hint = !comp.length ? jpT('app.ver.h.igual')
+    : (ext ? jpT('app.ver.h.ext', { n: comp.length })
+           : jpT('app.ver.h.std', { n: comp.map(jpNombreBloqueCorto).filter(Boolean).slice(0, 3).join(', ') || comp.length }));
+  const btn = function(modo, tit, min, on){
+    return '<button type="button" class="jp-ver-b' + (on ? ' on' : '') + '" data-ver="' + modo + '" aria-pressed="' + (on ? 'true' : 'false') + '"><b>' + tit + '</b> <i aria-hidden="true">·</i> <span>' + min + '</span></button>';
+  };
+  return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
+    btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
+    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+}
+function jpSetVersion(modo){
+  if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
+  const el = document.getElementById('jpVer'), y0 = el ? el.getBoundingClientRect().top : null;
+  state.mode = modo; saveProgress();
+  document.body.classList.toggle('quick-mode', modo === 'quick');
+  if(typeof modeSwitchEl !== 'undefined' && modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){ b.classList.toggle('active', b.dataset.mode === modo); });
+  renderMain();
+  const n = document.getElementById('jpVer');
+  if(n && y0 != null){ window.scrollBy(0, n.getBoundingClientRect().top - y0); }       /* el selector queda bajo el dedo: no salta la pantalla */
+}
+window.jpSetVersion = jpSetVersion;
+document.addEventListener('click', function(ev){
+  const b = ev.target && ev.target.closest ? ev.target.closest('.jp-ver-b') : null;
+  if(b) jpSetVersion(b.getAttribute('data-ver'));
+});
 function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
   return all.filter(function(b){ return state.mode === 'complete' || !b.optional; });
@@ -15634,6 +15700,7 @@ function renderMain(){
      completo: el scroll baja directo del título de la sesión al primer
      bloque. Sólo sobrevive el Foco Técnico, como banner fijo siempre
      visible (ver renderFocoTecnico() más arriba). */
+  if(window.COACH_DISCIPLINA === 'sports') html += jpVersionHtml(day);
   html += renderFocoTecnico(day);
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
@@ -16390,6 +16457,8 @@ function init(){
     document.body.classList.toggle('quick-mode', state.mode === 'quick');
     if(modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){
       b.classList.toggle('active', b.dataset.mode === state.mode);
+      /* en Sports el mismo interruptor se llama por su versión: ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN (en Perfil y en el día) */
+      if(window.COACH_DISCIPLINA === 'sports') b.textContent = b.dataset.mode === 'quick' ? jpT('app.ver.std') + ' · ' + jpT('app.ver.m60') : jpT('app.ver.ext') + ' · ' + jpT('app.ver.m90');
     });
   }catch(err){
     console.error('init', err);
@@ -17847,6 +17916,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \\u00b7 Ejecuci\\u00f3n \\u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
       fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
   }
+  /* plan de cargas semana a semana con el peso real que el alumno ya registró (ver jpPlanCargas en 087-1): solo aparece si ese ejercicio ya tiene un registro */
+  function qrPlanHtml(c, e){
+    var pl = null; try{ pl = typeof window.jpPlanCargas === 'function' ? window.jpPlanCargas(c, e) : null; }catch(eP){}
+    if(!pl || !pl.semanas || !pl.semanas.length) return '';
+    var fmt = function(n){ return String(Math.round(n * 100) / 100).replace('.', ','); };
+    var cel = pl.semanas.map(function(sm){
+      var et = 'S' + (sm.w + 1) + (sm.tipo === 'descarga' ? ' · ' + jpT('app.plan.desc') : (sm.tipo === 'pico' ? ' · ' + jpT('app.plan.pico') : ''));
+      var pie = sm.origen === 'real' ? jpT('app.plan.hecho') + (sm.reps ? ' · ×' + sm.reps : '') : (sm.rir || '');
+      return '<span class="jp-pl-w jp-pl-' + sm.tipo + (sm.w === pl.actual ? ' hoy' : '') + (sm.origen === 'real' ? ' real' : '') + '" data-w="' + sm.w + '"><small>' + escSB(et) + '</small><b>' + (sm.kg > 0 ? fmt(sm.kg) + '<u>kg</u>' : '—') + '</b><i>' + escSB(pie) + '</i></span>';
+    }).join('');
+    return '<div class="jp-qc-plan"><div class="jp-pl-t">' + escSB(jpT('app.plan.t')) + '</div><div class="jp-pl-g" style="--n:' + pl.semanas.length + '">' + cel + '</div></div>';
+  }
+  window.jpPlanHtml = qrPlanHtml;
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -17878,7 +17960,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
-      cab + '<div class="jp-qc-rows">' + filas + '</div>' +
+      qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
       (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
@@ -17949,13 +18031,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     var objetivoPendiente = !!objetivoHtml;
     unidades.forEach(function(u){
-      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var ya = u.querySelector(':scope > .jp-ex-cajas');
+      if(ya && ya.querySelector('.jp-ex-box')) return;
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
       var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
       if(ex) html += caja('tempo', '&#9201; ' + escSB(jpT('app.card.tempo.t')), escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
       if(!html) return;
+      if(ya){ ya.insertAdjacentHTML('beforeend', html); return; }     /* el agrupador de notas ya la había creado con los coaching tips */
       var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
       u.appendChild(div);
     });
@@ -17963,7 +18047,49 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml);
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
+    try{ jpNotasAgrupar(board); }catch(eN){}
   }
+  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
+     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
+     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  var NOTAS_DEF = [
+    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+  ];
+  function jpNotasAgrupar(root){
+    if(!root || !root.querySelectorAll) return;
+    var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    unidades.forEach(function(u){
+      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
+      if(!caj){
+        if(!tips) return;
+        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      }
+      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
+      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
+      if(!hay.length) return;
+      caj.classList.add('jp-notas');
+      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
+      var fila = caj.querySelector(':scope > .jp-notas-chips');
+      if(fila) fila.parentNode.removeChild(fila);
+      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
+      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
+      fila.innerHTML = hay.map(function(d){
+        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
+        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '"><span class="jp-nota-ic" aria-hidden="true">' + d.ic + '</span>' + escSB(jpT(d.lb)) + extra + '</button>';
+      }).join('');
+      caj.insertBefore(fila, caj.firstChild);
+    });
+  }
+  window.jpNotasAgrupar = jpNotasAgrupar;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
+    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
+    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
+    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
+    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
+  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s*[x\\u00d7]\\s*$/i, '').trim();
@@ -18015,6 +18141,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
       }
       qrTecAbrir(board);
+      try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
   function qrCtx(card){
@@ -18039,6 +18166,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
     var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
     if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
+    /* las notas del ejercicio ya viven agrupadas fuera de la tarjeta de carga: el tip nuevo no se duplica */
+    var uEx = card.closest('.jp-sb-ex, .jp-sb-subex-resumen');
+    if(tipsAhora && uEx && uEx.querySelector(':scope > .jp-ex-cajas > .jp-ex-tips')) tipsAhora.parentNode.removeChild(tipsAhora);
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;
@@ -47188,10 +47318,12 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
           /* Semanas 2, 3 y siguientes: progresión PORCENTUAL calculada sobre lo registrado en la Semana 1 (S2 +2,5%, S3 +5%, y +2,5% más por cada semana siguiente).
              Solo se frena si en S1 no llegaste al mínimo del rango o marcaste RIR 0: ahí se mantiene la carga de S1 */
           var pctP = jpPctProgresion(c.w), llegoMin = ref.reps >= rr.min, holgado = (rirReg == null || rirReg >= 1);
+          /* ajuste por el esfuerzo que el alumno marcó: llegó al tope del rango y le sobraron 3 o más reservas → la carga sube un escalón más (+2,5%) */
+          var sobro = rirReg != null && rirReg >= 3 && ref.reps >= rr.max; if(sobro) pctP += 2.5;
           if(llegoMin && holgado){
             pr = { kg: redondear(ref.kg * (1 + pctP / 100), 1.25), sube: true, motivo: 'tope' };
             if(pr.kg <= ref.kg) pr.kg = redondear(ref.kg + 1.25, 1.25);
-            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg';
+            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg' + (sobro ? ' (te sobraron reservas: un escalón más)' : '');
             nota = ' · ' + calc;
           } else {
             pr = { kg: ref.kg, sube: false, motivo: holgado ? 'rango' : 'fallo' };
@@ -47232,6 +47364,25 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
       if(rr || e.rir) return { kg: 0, pre: false, origen: 'rir', txt: 'Sin carga previa · elegí un peso con RIR ' + (e.rir || rir) + ' (RPE ' + (10 - Math.round(rir)) + ')' };
     }catch(err){ console.warn('sugerir carga', err); }
     return null;
+  };
+  /* plan de cargas del ejercicio semana a semana (sin DOM): usa el peso REAL que el alumno ya cargó como base y lo acomoda a la ondulación del mesociclo
+     (carga · pico · descarga, con el RIR objetivo de cada semana). Una semana ya registrada muestra lo que hizo; las que faltan, la sugerencia de la misma regla que el casillero.
+     Devuelve null si el alumno todavía no registró nunca ese ejercicio (no se inventa una base). */
+  window.jpPlanCargas = function(c, e){
+    try{
+      var n = (typeof WEEKS_META !== 'undefined' && WEEKS_META.length) || 0; if(!n || !e) return null;
+      var sem = [], hayReal = false, w;
+      for(w = 0; w < n; w++){
+        var meta = WEEKS_META[w] || {}, cw = { w: w, d: c.d, b: c.b };
+        var tipo = meta.deload ? 'descarga' : (meta.fail ? 'pico' : 'carga');
+        var rm = /RIR\\s*(\\d[\\d\\-–]*)/i.exec(meta.rpe || ''), rirTxt = rm ? 'RIR ' + rm[1] : '';
+        var real = registroSemana(cw, e, 1, w);
+        if(real && real.ref && real.ref.kg > 0){ hayReal = true; sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: real.ref.kg, reps: real.ref.reps || 0, origen: 'real' }); continue; }
+        var sg = window.jpSugerirCarga(cw, e, 1);
+        sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: (sg && sg.kg > 0 && (sg.origen === 'progresion' || sg.origen === 'descarga')) ? sg.kg : 0, reps: 0, origen: (sg && sg.kg > 0) ? sg.origen : 'sin' });
+      }
+      return hayReal ? { semanas: sem, actual: c.w } : null;
+    }catch(err){ console.warn('plan de cargas', err); return null; }
   };
   /* para los módulos de la tarjeta (referencia "Sem N: kg × reps"): mismo registro previo, también por nombre */
   window.jpRegistroPrevio = function(c, e, setN){ try{ return ultimoRegistro(c, e, setN || 1); }catch(err){ return null; } };
@@ -48547,6 +48698,58 @@ html body:not(#_):not(#__) .cwt-screen .cwt-phase.work.warn{ color:#FF6A1F !impo
 html body:not(#_):not(#__) .cwt-screen .cwt-bar.rest i, html body:not(#_):not(#__) .cwt-screen .cwt-bar.rest.warn i{ background:#00E5FF !important; }
 html body:not(#_):not(#__) .cwt-screen .cwt-bar.work i, html body:not(#_):not(#__) .cwt-screen .cwt-bar.work.warn i{ background:#FF6A1F !important; }
 html body:not(#_):not(#__) .cwt-round, html body:not(#_):not(#__) .cwt-mini-round{ background:none !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; padding:0 !important; }
+/* Notas del ejercicio compactas · selector de versión de la sesión (Sports) · plan de cargas por semana
+   Va después de 094 con el mismo prefijo de especificidad (html body:not(#_):not(#__)) y un atributo más en las notas para ganarle a los estilos de tarjeta del coach. */
+
+/* ---------- 1 · notas del ejercicio: una sola fila de botones chicos en vez de tres desplegables apilados ----------
+   "Registrar carga" sigue siendo la fila principal de la tarjeta; "Tips · Objetivo · Tempo" quedan en una fila discreta y muestran de a una nota por vez. */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 0; align-items:flex-start; }
+html body:not(#_):not(#__) .jp-notas-chips{ display:flex; flex:1 1 100%; flex-wrap:wrap; gap:6px; }
+html body:not(#_):not(#__) .jp-nota-chip{
+  appearance:none; -webkit-appearance:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:0 11px; border-radius:999px;
+  background:transparent; border:1px solid rgba(150,178,240,.24); color:#9FB0D8; font:700 .66rem/1 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase;
+  -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease, border-color .15s ease;
+}
+html body:not(#_):not(#__) .jp-nota-chip b{ font-weight:800; letter-spacing:.06em; color:#C9D6F5; font-variant-numeric:tabular-nums; }
+html body:not(#_):not(#__) .jp-nota-ic{ font-size:.78rem; line-height:1; filter:saturate(.7); }
+html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"]{ color:#FFFFFF; background:rgba(255,194,75,.14); border-color:rgba(255,194,75,.7); }
+html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"] b{ color:#FFC24B; }
+/* solo se ve la nota elegida; el resumen del desplegable original se oculta (el botón ya lo nombra) */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details{ display:none; flex:1 1 100%; margin:0; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tips"] > details.jp-ex-tips,
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="obj"] > details.jp-ex-box-obj,
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tempo"] > details.jp-ex-box-tempo{ display:block; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details > summary{ display:none !important; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-box-b{ border-top:0; padding-top:10px; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-tips-b{ padding-top:10px; }
+
+/* ---------- 2 · selector de versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ---------- */
+html body:not(#_):not(#__) .jp-ver{ margin:2px 0 14px; }
+html body:not(#_):not(#__) .jp-ver-seg{ display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px; border-radius:16px; background:rgba(8,14,34,.55); border:1px solid rgba(150,178,240,.26); }
+html body:not(#_):not(#__) .jp-ver-b{
+  appearance:none; -webkit-appearance:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; min-height:46px; padding:0 8px; border-radius:12px; white-space:nowrap;
+  background:transparent; border:1px solid transparent; color:#9FB0D8; font:800 .74rem/1 'Chakra Petch',sans-serif; letter-spacing:.08em; -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease;
+}
+html body:not(#_):not(#__) .jp-ver-b i{ font-style:normal; opacity:.6; }
+html body:not(#_):not(#__) .jp-ver-b span{ font-weight:700; letter-spacing:.06em; }
+html body:not(#_):not(#__) .jp-ver-b.on{ color:#FFFFFF; background:linear-gradient(180deg,#F26A1B,#E24F0D); border-color:#FF9B5E; box-shadow:0 8px 16px -10px rgba(238,90,18,.85); }
+html body:not(#_):not(#__) .jp-ver-h{ margin:8px 4px 0; font-size:.74rem; line-height:1.45; color:#9FB0D8; }
+
+/* ---------- 3 · plan de cargas por semana (dentro de "Registrar carga") ---------- */
+html body:not(#_):not(#__) .jp-qc-plan{ margin:2px 0 10px; padding:9px 10px 10px; border-radius:12px; background:rgba(8,14,34,.5); border:1px solid rgba(150,178,240,.2); }
+html body:not(#_):not(#__) .jp-pl-t{ font:800 .6rem/1 'Chakra Petch',sans-serif; letter-spacing:.14em; color:#9FB0D8; margin:0 0 8px; }
+html body:not(#_):not(#__) .jp-pl-g{ display:grid; grid-template-columns:repeat(var(--n,4),minmax(0,1fr)); gap:6px; }
+html body:not(#_):not(#__) .jp-pl-w{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 2px 6px; border-radius:10px; border:1px solid rgba(150,178,240,.18); background:rgba(255,255,255,.02); min-width:0; text-align:center; }
+html body:not(#_):not(#__) .jp-pl-w small{ font:800 .56rem/1.1 'Chakra Petch',sans-serif; letter-spacing:.08em; color:#9FB0D8; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w b{ font:800 .98rem/1 'Chakra Petch',sans-serif; color:#EEF3FF; font-variant-numeric:tabular-nums; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w b u{ text-decoration:none; font-size:.56rem; margin-left:2px; color:#9FB0D8; font-weight:700; }
+html body:not(#_):not(#__) .jp-pl-w i{ font:700 .54rem/1.1 'Chakra Petch',sans-serif; font-style:normal; letter-spacing:.04em; color:#7F93C4; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w.real{ border-color:rgba(110,240,200,.4); }
+html body:not(#_):not(#__) .jp-pl-w.real i{ color:#6EF0C8; }
+html body:not(#_):not(#__) .jp-pl-w.hoy{ background:rgba(255,194,75,.12); border-color:rgba(255,194,75,.75); }
+html body:not(#_):not(#__) .jp-pl-w.hoy small, html body:not(#_):not(#__) .jp-pl-w.hoy b{ color:#FFC24B; }
+html body:not(#_):not(#__) .jp-pl-w.jp-pl-descarga small{ color:#5CE1FF; }
+html body:not(#_):not(#__) .jp-pl-w.jp-pl-pico small{ color:#FF9466; }
 </style>
 
 </body>
@@ -51680,7 +51883,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevaciones laterales con mancuernas','Elevaciones laterales en polea baja'] },
                  { grupo:['Brazos'], patron:['Tríceps'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Deltoide lateral y cierre de tríceps con densidad.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], equipo:['Mancuernas','Polea'], prefer:['Curl 21s con mancuernas','Curl de bíceps con mancuernas','Curl martillo'] }],
           tips:'Ritmo constante, sin pausas: buscás sensación muscular, no carga.' }
       ]
@@ -51708,7 +51911,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','zancada','step up'] }, { grupo:['Piernas/Glúteos'], any:['step up','zancada','patada'] }],
           objective:'Demanda unilateral: corrige asimetrías que el trabajo bilateral no detecta.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['patada de glúteo','puente'] }],
           tips:'Empuje desde el talón, sin impulso lumbar.' }
       ]
@@ -51738,7 +51941,7 @@ document.addEventListener('DOMContentLoaded', init);
                  { grupo:['Hombros'], patron:['Aislamiento hombro'], any:['posterior','pájaro','rear'] },
                  { grupo:['Hombros','Espalda'], any:['face pull'] }],
           objective:'Deltoide en sus tres haces más mantenimiento postural.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           tips:'Codos fijos al torso, rango completo y ritmo constante.' }
       ]
@@ -51765,10 +51968,10 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','step up'] }, { grupo:['Piernas/Glúteos'], any:['zancada','step up'] }],
           objective:'Estabilidad de cadera y control del valgo bajo carga.' },
-        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['abducción','monster','banda'] }],
           tips:'Sin pausa entre repeticiones: buscás el glúteo medio ardiendo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado'],
           tips:'Resistí la rotación sin que el torso se vaya al costado; lumbar pegada al piso.' }
       ]
@@ -51797,7 +52000,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl de bíceps con barra Z','Curl de bíceps con barra recta'] },
                  { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl martillo','Curl martillo cruzado al pecho'] }],
           objective:'Bíceps en supinación y braquial en neutro, los dos ángulos que faltan.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado','Plancha frontal — 3x30-40s'],
           tips:'Respiración continua: nunca aguantes el aire para sostener la posición.' }
       ]
@@ -51825,7 +52028,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Extensión de Tríceps en Polea', subtitulo:'Aislamiento · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Cierre de tríceps con tensión constante y sin estrés de codo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Plancha frontal — 3x30-40s','Rueda abdominal — 3x8-10 (regresión: desde rodillas o rango corto)'],
           tips:'Pelvis en retroversión y core apretado: si la lumbar se arquea, acortá el rango.' }
       ]
@@ -51854,7 +52057,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Elevación de Gemelos', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Volumen dedicado de gemelo, el eslabón que casi siempre queda corto.' },
-        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Dead bug — 3x10 por lado','Hollow body — 3x20-25s'],
           tips:'Lumbar pegada al piso todo el recorrido y respiración continua.' }
       ]
@@ -51883,7 +52086,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Gemelos de Pie', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Gastrocnemio con rango completo y pausa en el pico.' },
-        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Plancha lateral — 3x25-30s por lado'],
           tips:'Resistí la rotación sin que la cadera se desplace: el core estabiliza, no gira.' }
       ]
@@ -51936,10 +52139,10 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Espalda','Pectoral'], patron:['Tracción vertical','Empuje horizontal'] },
                  { grupo:['Piernas/Glúteos'], any:['zancada','step up','bulgarian','patada'] }],
           objective:'Densidad de trabajo con poco descanso: hipertrofia y gasto al mismo tiempo.' },
-        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo Modo Completo', category:'cardio', icon:'🏃', optional:true,
+        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo extendida · 90 min', category:'cardio', icon:'🏃', optional:true,
           movements:['12 Kettlebell Swings','200m en Remo Ergómetro','20m Caminata del Granjero (Farmer Carry)','10 Burpees'],
           tips:'La técnica manda sobre la velocidad, sobre todo en las últimas rondas.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado','Plancha frontal — 3x30-40s'],
           tips:'Con el pulso alto la técnica se degrada: sostené la respiración continua.' }
       ]
@@ -89451,6 +89654,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       d.metaChips = [D.ic + ' ' + D.lb, '🎚️ ' + (E.sex === 'f' ? 'Mujer · ' : (E.sex === 'm' ? 'Hombre · ' : '')) + E.nombre.split(' · ')[2], '🧬 ' + (s.nombre || '')];
       d.summary = dia.bloques.length + ' bloques';
       d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
+      /* Hyrox: la carrera, los intervalos y las estaciones SON el trabajo principal (van en la versión estándar); solo el core y el finisher / cierre metabólico quedan para la extendida */
+      if(E.dep === 'hyx') d.bloques.forEach(function(b){ b.optional = b.modalidad === 'core' || /^\s*(?:finisher|cierre\s+metab)/i.test(b.titulo || ''); });
       return d;
     });
     armarDias.avisos = r.avisos || [];

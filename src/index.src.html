@@ -6225,6 +6225,21 @@ function impModalidadSB(b, tag){
   return 'hipertrofia';
 }
 const IMP_CAT_DE_MODALIDAD = { fuerza:'strength', hipertrofia:'strength', core:'accessory', accesorio:'accessory', calentamiento:'warmup', metcon:'metcon' };
+/* VERSIÓN DE LA SESIÓN (Sports): ESTÁNDAR · 60 MIN lleva los bloques principales (entrada en calor, fuerza, hipertrofia, accesorios de volumen); EXTENDIDA · 90 MIN suma los complementarios
+   (core, cardio / acondicionamiento, finisher y cierre metabólico). La app del alumno oculta en la estándar los bloques con visibilidad "solo extendida" (b.optional). Esta función decide el
+   valor por defecto según la categoría y la demanda del bloque; el coach lo cambia a mano en "Ícono, subtítulo, color y visibilidad". Intervalos, carrera y estaciones de una sesión Hyrox
+   son el trabajo principal del día, no un agregado: no se marcan como complementarios. */
+const RX_BLOQUE_PRINCIPAL_CARDIO = /intervalos?|umbral|carrera|estaci[oó]n|transporte|tempo run|series de|rondas de/i;
+function jpEsBloqueComplementario(b){
+  if(!b) return false;
+  if(b.tipo === 'finisher' || b.tipo === 'hyrox') return true;
+  if(b.category === 'warmup' || b.modalidad === 'calentamiento') return false;
+  const tit = String(b.titulo || '');
+  if(b.modalidad === 'core' || /^\s*(?:core|zona media|abdominales?)\b/i.test(tit)) return true;
+  if(/^\s*(?:finisher|cierre\s+metab[oó]lico|acondicionamiento|cardio|zona\s*2)\b/i.test(tit)) return true;
+  if(b.category === 'cardio' || b.category === 'endurance' || b.category === 'metcon' || b.modalidad === 'metcon') return !RX_BLOQUE_PRINCIPAL_CARDIO.test(tit);
+  return false;
+}
 function impCerrarBloqueSports(b){
   if(!b || b._cerrado) return;
   b._cerrado = true;
@@ -6586,6 +6601,7 @@ function crearBloqueImportado(b, cf){
      bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
   if(!cf && b.rest !== undefined) bl.restSeconds = b.rest;      /* 0 es un descanso válido ("Rest 0s") */
   if(!cf && b.modalidad){ bl.modalidad = b.modalidad; bl.category = IMP_CAT_DE_MODALIDAD[b.modalidad] || bl.category; }
+  if(!cf) bl.optional = jpEsBloqueComplementario(bl);      /* versión de la sesión: core / cardio / finisher = solo extendida */
   return bl;
 }
 /* primera línea que impidió el parseo (ni cabecera de día, ni FOCO, ni etiqueta) */
@@ -8273,7 +8289,7 @@ function renderDay(){
           '<div class="f"><label>Icono</label><input data-bf="icon" data-b="' + b.id + '" value="' + esc(b.icon||'') + '"></div>' +
           '<div class="f" style="grid-column:span 2"><label>Subtítulo</label><input data-bf="subtitulo" data-b="' + b.id + '" value="' + esc(b.subtitulo||'') + '" placeholder="Ancla de Tracción Horizontal Pesada"></div>' +
           '<div class="f"><label>Color / categoría</label><select data-bf="category" data-b="' + b.id + '">' + catOptions(b.category) + '</select></div>' +
-          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible</option><option value="1"' + (b.optional?' selected':'') + '>Solo Modo Completo</option></select></div>' +
+          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible (estándar · 60 min y extendida)</option><option value="1"' + (b.optional?' selected':'') + '>Solo EXTENDIDA · 90 min (complementario)</option></select></div>' +
         '</div>' +
       '</details>';
     }
@@ -13358,7 +13374,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevaciones laterales con mancuernas','Elevaciones laterales en polea baja'] },
                  { grupo:['Brazos'], patron:['Tríceps'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Deltoide lateral y cierre de tríceps con densidad.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], equipo:['Mancuernas','Polea'], prefer:['Curl 21s con mancuernas','Curl de bíceps con mancuernas','Curl martillo'] }],
           tips:'Ritmo constante, sin pausas: buscás sensación muscular, no carga.' }
       ]
@@ -13386,7 +13402,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','zancada','step up'] }, { grupo:['Piernas/Glúteos'], any:['step up','zancada','patada'] }],
           objective:'Demanda unilateral: corrige asimetrías que el trabajo bilateral no detecta.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['patada de glúteo','puente'] }],
           tips:'Empuje desde el talón, sin impulso lumbar.' }
       ]
@@ -13416,7 +13432,7 @@ document.addEventListener('DOMContentLoaded', init);
                  { grupo:['Hombros'], patron:['Aislamiento hombro'], any:['posterior','pájaro','rear'] },
                  { grupo:['Hombros','Espalda'], any:['face pull'] }],
           objective:'Deltoide en sus tres haces más mantenimiento postural.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           tips:'Codos fijos al torso, rango completo y ritmo constante.' }
       ]
@@ -13443,10 +13459,10 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','step up'] }, { grupo:['Piernas/Glúteos'], any:['zancada','step up'] }],
           objective:'Estabilidad de cadera y control del valgo bajo carga.' },
-        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['abducción','monster','banda'] }],
           tips:'Sin pausa entre repeticiones: buscás el glúteo medio ardiendo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado'],
           tips:'Resistí la rotación sin que el torso se vaya al costado; lumbar pegada al piso.' }
       ]
@@ -13475,7 +13491,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl de bíceps con barra Z','Curl de bíceps con barra recta'] },
                  { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl martillo','Curl martillo cruzado al pecho'] }],
           objective:'Bíceps en supinación y braquial en neutro, los dos ángulos que faltan.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado','Plancha frontal — 3x30-40s'],
           tips:'Respiración continua: nunca aguantes el aire para sostener la posición.' }
       ]
@@ -13503,7 +13519,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Extensión de Tríceps en Polea', subtitulo:'Aislamiento · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Cierre de tríceps con tensión constante y sin estrés de codo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Plancha frontal — 3x30-40s','Rueda abdominal — 3x8-10 (regresión: desde rodillas o rango corto)'],
           tips:'Pelvis en retroversión y core apretado: si la lumbar se arquea, acortá el rango.' }
       ]
@@ -13532,7 +13548,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Elevación de Gemelos', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Volumen dedicado de gemelo, el eslabón que casi siempre queda corto.' },
-        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Dead bug — 3x10 por lado','Hollow body — 3x20-25s'],
           tips:'Lumbar pegada al piso todo el recorrido y respiración continua.' }
       ]
@@ -13561,7 +13577,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Gemelos de Pie', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Gastrocnemio con rango completo y pausa en el pico.' },
-        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Plancha lateral — 3x25-30s por lado'],
           tips:'Resistí la rotación sin que la cadera se desplace: el core estabiliza, no gira.' }
       ]
@@ -13614,10 +13630,10 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Espalda','Pectoral'], patron:['Tracción vertical','Empuje horizontal'] },
                  { grupo:['Piernas/Glúteos'], any:['zancada','step up','bulgarian','patada'] }],
           objective:'Densidad de trabajo con poco descanso: hipertrofia y gasto al mismo tiempo.' },
-        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo Modo Completo', category:'cardio', icon:'🏃', optional:true,
+        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo extendida · 90 min', category:'cardio', icon:'🏃', optional:true,
           movements:['12 Kettlebell Swings','200m en Remo Ergómetro','20m Caminata del Granjero (Farmer Carry)','10 Burpees'],
           tips:'La técnica manda sobre la velocidad, sobre todo en las últimas rondas.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado','Plancha frontal — 3x30-40s'],
           tips:'Con el pulso alto la técnica se degrada: sostené la respiración continua.' }
       ]
@@ -48804,6 +48820,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       d.metaChips = [D.ic + ' ' + D.lb, '🎚️ ' + (E.sex === 'f' ? 'Mujer · ' : (E.sex === 'm' ? 'Hombre · ' : '')) + E.nombre.split(' · ')[2], '🧬 ' + (s.nombre || '')];
       d.summary = dia.bloques.length + ' bloques';
       d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
+      /* Hyrox: la carrera, los intervalos y las estaciones SON el trabajo principal (van en la versión estándar); solo el core y el finisher / cierre metabólico quedan para la extendida */
+      if(E.dep === 'hyx') d.bloques.forEach(function(b){ b.optional = b.modalidad === 'core' || /^\s*(?:finisher|cierre\s+metab)/i.test(b.titulo || ''); });
       return d;
     });
     armarDias.avisos = r.avisos || [];

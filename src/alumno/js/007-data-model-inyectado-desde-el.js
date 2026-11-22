@@ -2262,11 +2262,10 @@ function renderWeekInfo(){
    RENDER: DAY TABS
 ========================================================= */
 const weekTabsEl = document.getElementById('week-tabs');
+/* los bloques que cuentan para "día completo" y el resumen son los de la VERSIÓN activa (estándar: sin los complementarios; extendida: todos). Los registros de los bloques que quedan
+   ocultos no se tocan: al volver a la versión extendida están tal cual. */
 function dayBlockIds(day){
-  const ids = day.blocks.map(function(b){ return b.id; });
-  if(day.finisher) ids.push(day.finisher.id);
-  if(day.hyrox) ids.push(day.hyrox.id);
-  return ids;
+  return visibleBlocks(day).map(function(b){ return b.id; });
 }
 function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
@@ -2315,6 +2314,44 @@ function aplicarSemanaActivaBlocks(){
     }
   });
 }
+/* ---------- versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ----------
+   Es el mismo interruptor de siempre (state.mode: quick = estándar, complete = extendida) puesto a la vista en el día. Qué bloques son complementarios (solo extendida) lo define el coach
+   en el Builder / Banco de Rutinas con la visibilidad del bloque (optional): core, cardio, finisher y cierre metabólico por defecto. */
+function jpBloquesComplementarios(day){
+  const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
+  return all.filter(function(b){ return b && b.optional; });
+}
+function jpNombreBloqueCorto(b){
+  const t = String(b.title || b.label || '').replace(/^\s*(?:bloque\s*\d+\s*[|:–-]?\s*|block\s*[a-z0-9]+\s*[:–-]\s*)/i, '').replace(/\s*[·–—:|(-].*$/, '').trim();
+  return t.length > 24 ? t.slice(0, 23).trim() + '…' : t;
+}
+function jpVersionHtml(day){
+  const comp = jpBloquesComplementarios(day), ext = state.mode === 'complete';
+  const hint = !comp.length ? jpT('app.ver.h.igual')
+    : (ext ? jpT('app.ver.h.ext', { n: comp.length })
+           : jpT('app.ver.h.std', { n: comp.map(jpNombreBloqueCorto).filter(Boolean).slice(0, 3).join(', ') || comp.length }));
+  const btn = function(modo, tit, min, on){
+    return '<button type="button" class="jp-ver-b' + (on ? ' on' : '') + '" data-ver="' + modo + '" aria-pressed="' + (on ? 'true' : 'false') + '"><b>' + tit + '</b> <i aria-hidden="true">·</i> <span>' + min + '</span></button>';
+  };
+  return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
+    btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
+    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+}
+function jpSetVersion(modo){
+  if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
+  const el = document.getElementById('jpVer'), y0 = el ? el.getBoundingClientRect().top : null;
+  state.mode = modo; saveProgress();
+  document.body.classList.toggle('quick-mode', modo === 'quick');
+  if(typeof modeSwitchEl !== 'undefined' && modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){ b.classList.toggle('active', b.dataset.mode === modo); });
+  renderMain();
+  const n = document.getElementById('jpVer');
+  if(n && y0 != null){ window.scrollBy(0, n.getBoundingClientRect().top - y0); }       /* el selector queda bajo el dedo: no salta la pantalla */
+}
+window.jpSetVersion = jpSetVersion;
+document.addEventListener('click', function(ev){
+  const b = ev.target && ev.target.closest ? ev.target.closest('.jp-ver-b') : null;
+  if(b) jpSetVersion(b.getAttribute('data-ver'));
+});
 function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
   return all.filter(function(b){ return state.mode === 'complete' || !b.optional; });
@@ -2996,6 +3033,7 @@ function renderMain(){
      completo: el scroll baja directo del título de la sesión al primer
      bloque. Sólo sobrevive el Foco Técnico, como banner fijo siempre
      visible (ver renderFocoTecnico() más arriba). */
+  if(window.COACH_DISCIPLINA === 'sports') html += jpVersionHtml(day);
   html += renderFocoTecnico(day);
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
@@ -3752,6 +3790,8 @@ function init(){
     document.body.classList.toggle('quick-mode', state.mode === 'quick');
     if(modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){
       b.classList.toggle('active', b.dataset.mode === state.mode);
+      /* en Sports el mismo interruptor se llama por su versión: ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN (en Perfil y en el día) */
+      if(window.COACH_DISCIPLINA === 'sports') b.textContent = b.dataset.mode === 'quick' ? jpT('app.ver.std') + ' · ' + jpT('app.ver.m60') : jpT('app.ver.ext') + ' · ' + jpT('app.ver.m90');
     });
   }catch(err){
     console.error('init', err);

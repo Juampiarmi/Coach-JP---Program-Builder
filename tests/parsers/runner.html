@@ -54,6 +54,7 @@
 <script src="cases-segundo-plano.js"></script>
 <script src="cases-vista.js"></script>
 <script src="cases-pulido.js"></script>
+<script src="cases-version.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -105,6 +106,7 @@
     alumnoFondo:  { run: function(i){ return alumnoFondo(i); }, valor: function(r){ return r; } },
     alumnoVista:  { run: function(i){ return alumnoVista(i); }, valor: function(r){ return r; } },
     alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
+    alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -1442,6 +1444,102 @@
   /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
      input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
      Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */
+  /* versión de la sesión (ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN), notas del ejercicio compactas, plan de cargas por semana y valores por defecto del Banco */
+  function alumnoVersion(c){
+    if(c.caso === 'bancoVersion'){
+      var PB = win.__jpPB, f = win.jpEsBloqueComplementario; if(!PB || typeof f !== 'function') throw new Error('el Builder no expone jpEsBloqueComplementario');
+      var tpl = PB.LISTA.filter(function(x){ return x.id === 'jp26_m4_i'; })[0], dias = PB.construirDias(tpl);
+      var flat = []; dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ flat.push(b); }); });
+      var por = function(mod){ return flat.filter(function(b){ return b.modalidad === mod; }); };
+      var tabla = { warmup: f({ category: 'warmup', titulo: 'Entrada en calor' }), fuerza: f({ modalidad: 'fuerza', category: 'strength', titulo: 'Fuerza principal – Sentadilla' }), hiper: f({ modalidad: 'hipertrofia', category: 'strength', titulo: 'Hipertrofia – Biset' }),
+        accesorio: f({ modalidad: 'hipertrofia', category: 'strength', titulo: 'Accesorios – Curl femoral' }), core: f({ modalidad: 'core', category: 'accessory', titulo: 'Core – Plancha' }), finisher: f({ tipo: 'finisher', category: 'metcon', titulo: 'Finisher' }),
+        cierre: f({ modalidad: 'metcon', category: 'metcon', titulo: 'Cierre metabólico · Remo y bici' }), umbral: f({ modalidad: 'metcon', category: 'metcon', titulo: 'Intervalos de umbral en cinta' }), nada: f(null) };
+      var hx = (getS().banco || []).filter(function(x){ return x.depDeporte === 'hyx' && (x.dias || []).length; }), bhx = []; hx.forEach(function(x){ x.dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ bhx.push(b); }); }); });
+      var hxCore = bhx.filter(function(b){ return b.modalidad === 'core'; }), hxMain = bhx.filter(function(b){ return b.modalidad === 'metcon' && /Intervalos|Estaciones|Transporte/.test(b.titulo || ''); });
+      return { warmupNo: tabla.warmup === false && tabla.fuerza === false && tabla.hiper === false && tabla.accesorio === false && tabla.nada === false, complementariosSi: tabla.core && tabla.finisher && tabla.cierre,
+        intervalosSonPrincipales: tabla.umbral === false,
+        bancoCoreExtendida: por('core').length > 0 && por('core').every(function(b){ return b.optional === true; }),
+        bancoCierreExtendida: por('metcon').length > 0 && por('metcon').every(function(b){ return b.optional === true; }),
+        hyroxIntervalosEstandar: hxMain.length > 0 && hxMain.every(function(x){ return !x.optional; }) && hxCore.length > 0 && hxCore.every(function(x){ return x.optional === true; }), bancoPrincipalesEstandar: por('calentamiento').concat(por('fuerza'), por('hipertrofia')).length > 5 && por('calentamiento').concat(por('fuerza'), por('hipertrofia')).every(function(b){ return !b.optional; }) };
+    }
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, st = w.eval('state'), modo0 = st.mode, cs = function(e, p){ return w.getComputedStyle(e, p || null); };
+    try{
+      if(c.caso === 'selector'){
+        st.mode = 'complete'; w.renderMain();
+        var ver = d.getElementById('jpVer'); if(!ver) return { sinSelector: true };
+        var bs = ver.querySelectorAll('.jp-ver-b'), txt = function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim(); };
+        var r = { dosBotones: bs.length === 2, textoEstandar: txt(bs[0]) === 'ESTÁNDAR · 60 MIN', textoExtendida: txt(bs[1]) === 'EXTENDIDA · 90 MIN', sinCore: !/core/i.test(ver.textContent), activoExtendida: bs[1].classList.contains('on') && bs[1].getAttribute('aria-pressed') === 'true' && !bs[0].classList.contains('on'),
+          activoNaranja: /242, 106, 27/.test(cs(bs[1]).backgroundImage) && cs(bs[1]).color === 'rgb(255, 255, 255)', visible: ver.getBoundingClientRect().height > 40 && bs[0].getBoundingClientRect().height >= 40 };
+        bs[0].click(); r.cambiaAEstandar = st.mode === 'quick' && d.getElementById('jpVer').querySelector('.jp-ver-b.on').getAttribute('data-ver') === 'quick' && d.body.classList.contains('quick-mode');
+        var pills = [].slice.call(d.querySelectorAll('.mode-pill')).map(function(b){ return String(b.textContent).trim() + (b.classList.contains('active') ? '*' : ''); });
+        r.pastillasDelHeader = pills.join(',') === 'EXTENDIDA · 90 MIN,ESTÁNDAR · 60 MIN*';
+        d.getElementById('jpVer').querySelector('.jp-ver-b[data-ver="complete"]').click(); r.vuelveAExtendida = st.mode === 'complete' && !d.body.classList.contains('quick-mode');
+        return r;
+      }
+      if(c.caso === 'filtra'){
+        var dia = { blocks: [{ id: 'a', title: 'Fuerza' }, { id: 'b', title: 'Core – Plancha', optional: true }], finisher: { id: 'f', title: 'Finisher', optional: true } }, o = {};
+        st.mode = 'complete'; o.extendidaTodos = w.dayBlockIds(dia).join(',') === 'a,b,f' && w.visibleBlocks(dia).length === 3;
+        st.mode = 'quick'; o.estandarSoloPrincipales = w.dayBlockIds(dia).join(',') === 'a' && w.visibleBlocks(dia).length === 1;
+        o.complementarios = w.jpBloquesComplementarios(dia).length === 2;
+        o.hintLista = /Core/.test(w.jpVersionHtml(dia)) && /extendida/.test(w.jpVersionHtml(dia));
+        o.hintSinComplementarios = /las dos versiones son iguales/.test(w.jpVersionHtml({ blocks: [{ id: 'a', title: 'Fuerza' }] }));
+        st.mode = 'complete'; o.hintExtendida = /suma 2/.test(w.jpVersionHtml(dia));
+        return o;
+      }
+      if(c.caso === 'preserva'){
+        var dayX = w.eval('DAYS[0]'), bl0 = dayX.blocks, k = '0|' + dayX.id + '|bComp|e0|1';
+        dayX.blocks = [{ id: 'bPrin', type: 'list', title: 'Fuerza', category: 'strength', items: [] }, { id: 'bComp', type: 'list', title: 'Core – Plancha', category: 'accessory', optional: true, items: [] }];
+        var load0 = st.loads, comp0 = st.completed, ses0 = st.session;
+        try{
+          st.loads = { }; st.loads[k] = { kg: '40', reps: '12', done: true, ex: 'Plancha' }; st.completed = { 0: {} }; st.completed[0][dayX.id] = { bComp: true, bPrin: true };
+          st.mode = 'complete'; w.renderMain();
+          var antes = JSON.stringify([st.loads, st.completed]), enExt = d.querySelectorAll('.blocks-stack > .block').length;
+          w.jpSetVersion('quick'); var enStd = d.querySelectorAll('.blocks-stack > .block').length, resStd = (d.querySelector('.jp-resumen-ses p') || {}).textContent;
+          var intacto = JSON.stringify([st.loads, st.completed]) === antes;
+          w.jpSetVersion('complete'); var vuelta = d.querySelectorAll('.blocks-stack > .block').length;
+          return { extendidaMuestraTodo: enExt === 2, estandarOcultaComplementario: enStd === 1, resumenCuentaSoloVisibles: /1 \/ 1 bloques/.test(resStd || ''), registrosIntactos: intacto && JSON.stringify([st.loads, st.completed]) === antes, volvePorCompleto: vuelta === 2,
+            ocultoNoSeBorra: st.loads[k] && st.loads[k].kg === '40' && st.completed[0][dayX.id].bComp === true };
+        } finally { dayX.blocks = bl0; st.loads = load0; st.completed = comp0; st.session = ses0; }
+      }
+      if(c.caso === 'notas'){
+        var unidad = d.createElement('div'); unidad.className = 'jp-sb-ex';
+        unidad.innerHTML = '<div class="jp-qc"><button type="button" class="jp-qc-tg">Registrar carga</button><details class="jp-ex-tips"><summary>COACHING TIPS</summary><div class="jp-ex-tips-b">SET-UP texto</div></details></div>' +
+          '<div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>OBJETIVO</summary><div class="jp-ex-box-b">obj</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>TEMPO</summary><div class="jp-ex-box-s">3010</div><div class="jp-ex-box-b">t</div></details></div>';
+        var host = d.getElementById('mainContent') || d.body; host.appendChild(unidad);
+        try{
+          w.jpNotasAgrupar(unidad); w.jpNotasAgrupar(unidad);
+          var caj = unidad.querySelector(':scope > .jp-ex-cajas'), chips = caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), vis = function(sel){ return cs(caj.querySelector(sel)).display !== 'none'; };
+          var r2 = { unaFila: caj.querySelectorAll('.jp-notas-chips').length === 1, tresBotones: chips.length === 3, tipsAdentro: !!caj.querySelector(':scope > .jp-ex-tips'), tempoEnElBoton: /3010/.test(chips[2].textContent), registrarSigueArriba: !!unidad.querySelector('.jp-qc > .jp-qc-tg') && cs(unidad.querySelector('.jp-qc-tg')).display !== 'none',
+            cerradasAlInicio: !vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo'), compacta: caj.getBoundingClientRect().height <= 46 };
+          chips[0].click(); r2.muestraSoloTips = vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo') && chips[0].getAttribute('aria-pressed') === 'true';
+          chips[1].click(); r2.cambiaAObjetivo = !vis('.jp-ex-tips') && vis('.jp-ex-box-obj') && chips[0].getAttribute('aria-pressed') === 'false';
+          chips[1].click(); r2.tocarOtraVezCierra = !vis('.jp-ex-box-obj') && !vis('.jp-ex-tips') && !caj.hasAttribute('data-nota');
+          r2.sinResumenesApilados = [].slice.call(caj.querySelectorAll(':scope > details > summary')).every(function(s){ return cs(s).display === 'none'; });
+          return r2;
+        } finally { if(unidad.parentNode) unidad.parentNode.removeChild(unidad); }
+      }
+      if(c.caso === 'plan'){
+        var E = { idx: 'e0', nombre: 'Press de banca plano con barra', reps: '5-7', rir: '2' }, cc = { w: 1, d: 'dia1', b: 'bk1' }, loads0 = st.loads, rir0 = st.rirEx;
+        try{
+          st.rirEx = {}; st.loads = {}; var sinBase = w.jpPlanCargas(cc, E);
+          [1, 2, 3, 4].forEach(function(n){ st.loads['0|dia1|bk1|e0|' + n] = { kg: '80', reps: '7', done: true, ex: E.nombre }; });
+          var pl = w.jpPlanCargas(cc, E), s = pl ? pl.semanas : [], res = { sinRegistroNoInventa: sinBase === null, cuatroSemanas: s.length === 4, s1Real: !!s[0] && s[0].kg === 80 && s[0].origen === 'real', s2Sugerida: !!s[1] && s[1].kg === 82.5 && s[1].origen !== 'real',
+            s3Pico: !!s[2] && s[2].tipo === 'pico' && s[2].kg > s[1].kg, s4Descarga: !!s[3] && s[3].tipo === 'descarga' && s[3].kg === 67.5, rirPorSemana: !!s[3] && /4/.test(s[3].rir) && !!s[2] && /1-0/.test(s[2].rir), semanaActual: pl && pl.actual === 1 };
+          /* ajuste por el esfuerzo marcado: tope del rango y 3 reservas → un escalón más; RIR 0 → no sube */
+          st.rirEx = { '0|dia1|bk1|e0': 3 }; var holgado = w.jpSugerirCarga(cc, E, 1);
+          st.rirEx = { '0|dia1|bk1|e0': 2 }; var normal = w.jpSugerirCarga(cc, E, 1);
+          st.rirEx = { '0|dia1|bk1|e0': 0 }; var fallo = w.jpSugerirCarga(cc, E, 1);
+          res.rirHolgadoSubeMas = holgado.kg > normal.kg && /te sobraron reservas/.test(holgado.txt); res.rirNormalIgual = normal.kg === 82.5; res.rirCeroMantiene = fallo.kg === 80;
+          /* la tarjeta de carga dibuja el plan con la semana de hoy marcada */
+          var cfg = { w: 1, d: 'dia1', b: 'bk1', ex: [E] }, html = typeof w.jpPlanHtml === 'function' ? w.jpPlanHtml(cfg, E) : '';
+          res.tarjetaLoDibuja = /jp-pl-w/.test(html) && /jp-pl-w jp-pl-carga hoy/.test(html) && /PLAN DE CARGAS/.test(html) && /80<u>kg/.test(html);
+          return res;
+        } finally { st.loads = loads0; st.rirEx = rir0; }
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { st.mode = modo0; try{ w.renderMain(); }catch(eR){} }
+  }
   function alumnoProgresion(i){
     var w = alumnoWin(); if(!w || typeof w.jpSugerirCarga !== 'function') throw new Error('la app del alumno no expone jpSugerirCarga');
     var st = w.eval('state'), l0 = st.loads, r0 = st.rirEx;

@@ -7,6 +7,13 @@ JP_I18N.add('es', {
   'app.card.obj.t': 'OBJETIVO FISIOLÓGICO',
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
+  /* notas del ejercicio agrupadas, versión de la sesión y plan de cargas */
+  'app.notas.tips': 'Tips', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
+  'app.ver.t': 'Versión de la sesión', 'app.ver.std': 'ESTÁNDAR', 'app.ver.ext': 'EXTENDIDA', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
+  'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
+  'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
+  'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
   'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
