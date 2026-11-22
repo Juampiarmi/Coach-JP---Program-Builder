@@ -692,10 +692,12 @@
           /* Semanas 2, 3 y siguientes: progresión PORCENTUAL calculada sobre lo registrado en la Semana 1 (S2 +2,5%, S3 +5%, y +2,5% más por cada semana siguiente).
              Solo se frena si en S1 no llegaste al mínimo del rango o marcaste RIR 0: ahí se mantiene la carga de S1 */
           var pctP = jpPctProgresion(c.w), llegoMin = ref.reps >= rr.min, holgado = (rirReg == null || rirReg >= 1);
+          /* ajuste por el esfuerzo que el alumno marcó: llegó al tope del rango y le sobraron 3 o más reservas → la carga sube un escalón más (+2,5%) */
+          var sobro = rirReg != null && rirReg >= 3 && ref.reps >= rr.max; if(sobro) pctP += 2.5;
           if(llegoMin && holgado){
             pr = { kg: redondear(ref.kg * (1 + pctP / 100), 1.25), sube: true, motivo: 'tope' };
             if(pr.kg <= ref.kg) pr.kg = redondear(ref.kg + 1.25, 1.25);
-            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg';
+            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg' + (sobro ? ' (te sobraron reservas: un escalón más)' : '');
             nota = ' · ' + calc;
           } else {
             pr = { kg: ref.kg, sube: false, motivo: holgado ? 'rango' : 'fallo' };
@@ -736,6 +738,25 @@
       if(rr || e.rir) return { kg: 0, pre: false, origen: 'rir', txt: 'Sin carga previa · elegí un peso con RIR ' + (e.rir || rir) + ' (RPE ' + (10 - Math.round(rir)) + ')' };
     }catch(err){ console.warn('sugerir carga', err); }
     return null;
+  };
+  /* plan de cargas del ejercicio semana a semana (sin DOM): usa el peso REAL que el alumno ya cargó como base y lo acomoda a la ondulación del mesociclo
+     (carga · pico · descarga, con el RIR objetivo de cada semana). Una semana ya registrada muestra lo que hizo; las que faltan, la sugerencia de la misma regla que el casillero.
+     Devuelve null si el alumno todavía no registró nunca ese ejercicio (no se inventa una base). */
+  window.jpPlanCargas = function(c, e){
+    try{
+      var n = (typeof WEEKS_META !== 'undefined' && WEEKS_META.length) || 0; if(!n || !e) return null;
+      var sem = [], hayReal = false, w;
+      for(w = 0; w < n; w++){
+        var meta = WEEKS_META[w] || {}, cw = { w: w, d: c.d, b: c.b };
+        var tipo = meta.deload ? 'descarga' : (meta.fail ? 'pico' : 'carga');
+        var rm = /RIR\s*(\d[\d\-–]*)/i.exec(meta.rpe || ''), rirTxt = rm ? 'RIR ' + rm[1] : '';
+        var real = registroSemana(cw, e, 1, w);
+        if(real && real.ref && real.ref.kg > 0){ hayReal = true; sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: real.ref.kg, reps: real.ref.reps || 0, origen: 'real' }); continue; }
+        var sg = window.jpSugerirCarga(cw, e, 1);
+        sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: (sg && sg.kg > 0 && (sg.origen === 'progresion' || sg.origen === 'descarga')) ? sg.kg : 0, reps: 0, origen: (sg && sg.kg > 0) ? sg.origen : 'sin' });
+      }
+      return hayReal ? { semanas: sem, actual: c.w } : null;
+    }catch(err){ console.warn('plan de cargas', err); return null; }
   };
   /* para los módulos de la tarjeta (referencia "Sem N: kg × reps"): mismo registro previo, también por nombre */
   window.jpRegistroPrevio = function(c, e, setN){ try{ return ultimoRegistro(c, e, setN || 1); }catch(err){ return null; } };

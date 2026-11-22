@@ -65,7 +65,7 @@ export function MythEditor({ state, update }: Props) {
           <TextInput value={state.mythLabel} onChange={(mythLabel) => update({ mythLabel })} uppercase placeholder="MITO POPULAR" />
         </Field>
         <Field label="✘ El mito (como lo dice la gente)">
-          <TextArea value={state.mythText} onChange={(mythText) => update({ mythText })} rows={2} />
+          <TextArea value={state.mythText} onChange={(mythText) => update({ mythText })} rows={2} field="mythText" />
         </Field>
       </div>
       <div className="space-y-2 rounded-lg border border-fire/50 p-2.5">
@@ -73,7 +73,7 @@ export function MythEditor({ state, update }: Props) {
           <TextInput value={state.truthLabel} onChange={(truthLabel) => update({ truthLabel })} uppercase placeholder="FISIOLOGÍA REAL" />
         </Field>
         <Field label="✓ La fisiología real (con el mecanismo)">
-          <TextArea value={state.truthText} onChange={(truthText) => update({ truthText })} rows={3} />
+          <TextArea value={state.truthText} onChange={(truthText) => update({ truthText })} rows={3} field="truthText" />
         </Field>
       </div>
       <p className="font-mono text-[9px] leading-relaxed text-steel/70">Pegado en el generador: «Mito: …» + «Realidad: …» arma esta placa sola.</p>

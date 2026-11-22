@@ -1,22 +1,35 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ACCENT_HEX, ACCENT_LABEL } from '../../lib/brand'
 import type { Accent } from '../../types'
 
 /** Sección plegable: el encabezado abre/cierra y muestra un resumen cuando está cerrada. */
+/** Evento de click-to-focus: el detalle es la clave del campo (ver data-field). */
+export const FOCUS_EVENT = 'tc-focus-field'
+
 export function Section({
   index,
   title,
   children,
   summary,
   defaultOpen = true,
+  focusKeys,
 }: {
   index: string
   title: string
   children: ReactNode
   summary?: string
   defaultOpen?: boolean
+  /** Campos que viven en esta sección: un clic en ese elemento del lienzo la abre (click-to-focus) */
+  focusKeys?: string[]
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  const keys = focusKeys?.join('|') ?? ''
+  useEffect(() => {
+    if (!keys) return
+    const onFocus = (e: Event) => keys.split('|').includes((e as CustomEvent<string>).detail) && setOpen(true)
+    window.addEventListener(FOCUS_EVENT, onFocus)
+    return () => window.removeEventListener(FOCUS_EVENT, onFocus)
+  }, [keys])
   return (
     <section className="border-b border-line">
       <button
@@ -63,15 +76,19 @@ export function TextInput({
   onChange,
   placeholder,
   uppercase,
+  field,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   uppercase?: boolean
+  /** Clave del campo para el click-to-focus desde el lienzo */
+  field?: string
 }) {
   return (
     <input
       className={`tc-input ${uppercase ? 'uppercase' : ''}`}
+      data-field={field}
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(uppercase ? e.target.value.toUpperCase() : e.target.value)}
@@ -86,6 +103,7 @@ export function TextArea({
   placeholder,
   mono,
   ariaLabel,
+  field,
 }: {
   value: string
   onChange: (v: string) => void
@@ -94,6 +112,8 @@ export function TextArea({
   mono?: boolean
   /** Nombre accesible cuando el campo no está dentro de un <Field> (lectores de pantalla y tests) */
   ariaLabel?: string
+  /** Clave del campo para el click-to-focus desde el lienzo */
+  field?: string
 }) {
   return (
     <textarea
@@ -101,6 +121,7 @@ export function TextArea({
       rows={rows}
       value={value}
       aria-label={ariaLabel}
+      data-field={field}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
     />

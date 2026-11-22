@@ -23,6 +23,7 @@ export function StatementTemplate({ state, scale }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: (long ? 34 : 44) * scale }}>
       {state.kicker.trim() && (
         <p
+          data-part="kicker"
           style={{
             margin: 0,
             paddingLeft: 30 * scale,

@@ -597,6 +597,7 @@
     f.innerHTML =
       '<button type="button" class="cf-x" id="cfX" title="Salir de pantalla completa">✕</button>' +
       '<svg class="cf-shield" viewBox="0 0 64 74" aria-hidden="true">' +
+        '<defs><linearGradient id="cfOro" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFE98A"/><stop offset="40%" stop-color="#F5C518"/><stop offset="75%" stop-color="#E6B800"/><stop offset="100%" stop-color="#C99A0B"/></linearGradient></defs>' +
         '<path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
         '<path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
       '</svg>' +

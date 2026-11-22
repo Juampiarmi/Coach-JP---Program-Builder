@@ -381,7 +381,7 @@
     var met = [], vol2 = Math.round(parseFloat(d.volumenTotal) || 0), top = parseFloat(d.topLiftKg) || 0;
     if(vol2 > 0) met.push({ v: fmtNum(vol2) + ' KG', l: 'VOLUMEN FUERZA' });
     if(top > 0) met.push({ v: fmtNum(top) + ' KG', l: d.esPR ? 'TOP LIFT · PR' : 'TOP LIFT' });
-    try{ var tS = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null; if(tS && tS.min > 0) met.push({ v: (tS.estimado ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(tS.min)).toUpperCase() : tS.min + ' MIN'), l: tS.estimado ? 'TIEMPO ESTIMADO' : 'TIEMPO DE SESIÓN' }); }catch(eT){}
+    try{ var tS = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null; if(tS && tS.min > 0 && !tS.estimado) met.push({ v: (tS.estimado ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(tS.min)).toUpperCase() : tS.min + ' MIN'), l: tS.estimado ? 'TIEMPO ESTIMADO' : 'TIEMPO DE SESIÓN' }); }catch(eT){}
     try{ var rpeS = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[state.currentWeek + '|' + state.currentDay + '|__sesion'] : null; if(rpeS) met.push({ v: rpeS + '/10', l: 'RPE DE LA SESIÓN' }); }catch(eR){}
     var yMet = yBar - 40 - (met.length ? 112 : 0);
     if(met.length){

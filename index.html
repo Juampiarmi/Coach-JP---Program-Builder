@@ -3522,8 +3522,10 @@ function jpLgFichaEj(ex){
     ? 'Suma capacidad aeróbica y de fuerza-resistencia con ' + ex.es + ': el esfuerzo se regula con el RIR indicado y la técnica no se negocia aunque llegue la fatiga.'
     : 'Estimulás ' + String(ex.grupo || 'el grupo muscular objetivo').toLowerCase() + (ex.patron ? ' (' + String(ex.patron).toLowerCase() + ')' : '') + ' con ' + ex.es + ', técnica controlada y rango completo.');
   const cue = !generico && kb.c ? kb.c : '';
-  const pauta = ex.es.toUpperCase() + ': ' + ([ex.aviso, cue].filter(Boolean).join(' ') || 'Ejecución controlada y rango completo; si una articulación molesta, regresioná el ejercicio.');
-  return { objetivo: objetivo, pauta: pauta };
+  const CAU = window.CoachAuto;
+  const pautaLineas = codigo => (CAU && CAU.tipsBanco) ? CAU.tipsBanco(ex, { ath: null, codigo: codigo || '' }) : [];
+  const pauta = pautaLineas('').join('\n') || (ex.es.toUpperCase() + ': ' + ([ex.aviso, cue].filter(Boolean).join(' ') || 'Ejecución controlada y rango completo; si una articulación molesta, regresioná el ejercicio.'));
+  return { objetivo: objetivo, pauta: pauta, pautaLineas: pautaLineas };
 }
 function jpLgSepararLista(d, b){
   const p = jpLgParsear(b.items), n = p.grupo.length, ks = jpLgEstacionesDe(p);
@@ -3597,7 +3599,13 @@ function jpLgReemplazarLista(b, ath, estricto){
   const claves = [nombreViejo, e.es, e.en].filter(Boolean).map(norm);
   b.tips = String(b.tips || '').split(/\r?\n/).filter(l => { const m = /^\s*([^:]{2,80}):/.exec(l); return !(m && claves.indexOf(norm(m[1])) >= 0); }).join('\n');
   const fichaAlt = jpLgFichaEj(alt);
-  if(fichaAlt.pauta) b.tips = (b.tips ? b.tips + '\n' : '') + fichaAlt.pauta;
+  /* las pautas del ejercicio que se va (con el código de su estación, "A2 · SET-UP: ...") se reemplazan por las del nuevo, en el formato del Banco */
+  const itemViejo = (Array.isArray(b.items) ? b.items : []).map(l => JP_RX_ALINEA.exec(String(l).trim())).filter(m => m && norm(/^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4])[1].trim()) === norm(nuevoNombre))[0];
+  const codigoEst = itemViejo ? itemViejo[1].toUpperCase() + itemViejo[2] : '';
+  if(codigoEst) b.tips = String(b.tips || '').split(/\r?\n/).filter(l => !new RegExp('^\\s*' + codigoEst + '\\s*·', 'i').test(l)).join('\n');
+  else if(p.grupo.length === 1) b.tips = String(b.tips || '').split(/\r?\n/).filter(l => !/^\s*(SET-?UP|CUE EFICIENTE|CUIDADO)/i.test(l)).join('\n');
+  const lineasAlt = fichaAlt.pautaLineas ? fichaAlt.pautaLineas(codigoEst).join('\n') : fichaAlt.pauta;
+  if(lineasAlt) b.tips = (b.tips ? b.tips + '\n' : '') + lineasAlt;
   return { viejo: e.es, nuevo: alt.es, estacion: jpEstacionLb(jpEstacion(alt), alt) };
 }
 /* Plantillas del sistema (y registros guardados que el coach pida reparar): ningún biset / triset puede cruzar el salón. Primero se busca un reemplazo del mismo patrón en la
@@ -6225,6 +6233,21 @@ function impModalidadSB(b, tag){
   return 'hipertrofia';
 }
 const IMP_CAT_DE_MODALIDAD = { fuerza:'strength', hipertrofia:'strength', core:'accessory', accesorio:'accessory', calentamiento:'warmup', metcon:'metcon' };
+/* VERSIÓN DE LA SESIÓN (Sports): ESTÁNDAR · 60 MIN lleva los bloques principales (entrada en calor, fuerza, hipertrofia, accesorios de volumen); EXTENDIDA · 90 MIN suma los complementarios
+   (core, cardio / acondicionamiento, finisher y cierre metabólico). La app del alumno oculta en la estándar los bloques con visibilidad "solo extendida" (b.optional). Esta función decide el
+   valor por defecto según la categoría y la demanda del bloque; el coach lo cambia a mano en "Ícono, subtítulo, color y visibilidad". Intervalos, carrera y estaciones de una sesión Hyrox
+   son el trabajo principal del día, no un agregado: no se marcan como complementarios. */
+const RX_BLOQUE_PRINCIPAL_CARDIO = /intervalos?|umbral|carrera|estaci[oó]n|transporte|tempo run|series de|rondas de/i;
+function jpEsBloqueComplementario(b){
+  if(!b) return false;
+  if(b.tipo === 'finisher' || b.tipo === 'hyrox') return true;
+  if(b.category === 'warmup' || b.modalidad === 'calentamiento') return false;
+  const tit = String(b.titulo || '');
+  if(b.modalidad === 'core' || /^\s*(?:core|zona media|abdominales?)\b/i.test(tit)) return true;
+  if(/^\s*(?:finisher|cierre\s+metab[oó]lico|acondicionamiento|cardio|zona\s*2)\b/i.test(tit)) return true;
+  if(b.category === 'cardio' || b.category === 'endurance' || b.category === 'metcon' || b.modalidad === 'metcon') return !RX_BLOQUE_PRINCIPAL_CARDIO.test(tit);
+  return false;
+}
 function impCerrarBloqueSports(b){
   if(!b || b._cerrado) return;
   b._cerrado = true;
@@ -6586,6 +6609,7 @@ function crearBloqueImportado(b, cf){
      bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
   if(!cf && b.rest !== undefined) bl.restSeconds = b.rest;      /* 0 es un descanso válido ("Rest 0s") */
   if(!cf && b.modalidad){ bl.modalidad = b.modalidad; bl.category = IMP_CAT_DE_MODALIDAD[b.modalidad] || bl.category; }
+  if(!cf) bl.optional = jpEsBloqueComplementario(bl);      /* versión de la sesión: core / cardio / finisher = solo extendida */
   return bl;
 }
 /* primera línea que impidió el parseo (ni cabecera de día, ni FOCO, ni etiqueta) */
@@ -8273,7 +8297,7 @@ function renderDay(){
           '<div class="f"><label>Icono</label><input data-bf="icon" data-b="' + b.id + '" value="' + esc(b.icon||'') + '"></div>' +
           '<div class="f" style="grid-column:span 2"><label>Subtítulo</label><input data-bf="subtitulo" data-b="' + b.id + '" value="' + esc(b.subtitulo||'') + '" placeholder="Ancla de Tracción Horizontal Pesada"></div>' +
           '<div class="f"><label>Color / categoría</label><select data-bf="category" data-b="' + b.id + '">' + catOptions(b.category) + '</select></div>' +
-          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible</option><option value="1"' + (b.optional?' selected':'') + '>Solo Modo Completo</option></select></div>' +
+          '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible (estándar · 60 min y extendida)</option><option value="1"' + (b.optional?' selected':'') + '>Solo EXTENDIDA · 90 min (complementario)</option></select></div>' +
         '</div>' +
       '</details>';
     }
@@ -9177,12 +9201,12 @@ async function generarTipsSportsCore(bid, btn){
     'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
     'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
     'y "coaching tips" en EXACTAMENTE TRES líneas separadas por salto de línea, cada una con una etiqueta de UNA sola palabra en mayúsculas y de 15 a 20 palabras como máximo: ' +
-    '"SET-UP: clave postural y anclaje inicial", "CLAVE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO: la compensación crítica más frecuente a evitar" ' +
+    '"SET-UP: clave postural y anclaje inicial", "CUE EFICIENTE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO / ERROR COMÚN: la compensación crítica más frecuente a evitar" ' +
     '(sin párrafos de justificación biomecánica, citando el ejercicio real). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las tres líneas).';
   const sistema = esBiset
     ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
       'Escribís en español rioplatense, corto y directo (sin emojis, sin relleno): un "objetivo del bloque" (1 frase fisiológica) y "tips" con UNA línea por estación y por etapa, separadas por salto de línea, ' +
-      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CLAVE: ...", "A1 · CUIDADO: ...", "A2 · SET-UP: ...", "A2 · CLAVE: ...", "A2 · CUIDADO: ..." ' +
+      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ...", "A2 · CUE EFICIENTE: ...", "A2 · CUIDADO / ERROR COMÚN: ..." ' +
       '(15 a 20 palabras como máximo por línea; postura, tempo/intención y compensación crítica puntuales de CADA ejercicio; nunca mezcles los dos ejercicios en la misma línea). Cerrá con una última línea "TRANSICIÓN: ..." con la regla de cambio entre estaciones y el descanso final. Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
     : sistemaStd;
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
@@ -9210,7 +9234,10 @@ async function generarTipsSportsCore(bid, btn){
       let lin = tips
         .replace(/\s*(?=(?:SET-?UP|CLAVE|CUIDADO|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, (m, off, whole) => /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : '\n')
         .replace(/\s*(?=\b[A-F]\d\s*·\s*(?:SET-?UP|CLAVE|CUIDADO|ACCI[OÓ]N|ERROR)[^:\n]{0,40}:)/g, '\n')
-        .replace(/^\n+/, '').replace(/\n{2,}/g, '\n').split('\n').filter(Boolean).map(topar);
+        .replace(/^\n+/, '').replace(/\n{2,}/g, '\n').split('\n').filter(Boolean);
+      /* rótulos y largo del Banco de Rutinas: SET-UP / CUE EFICIENTE / CUIDADO / ERROR COMÚN, una frase corta por punto */
+      if(window.CoachAuto && window.CoachAuto.normalizarTips) lin = window.CoachAuto.normalizarTips(lin.join('\n')).split('\n').filter(Boolean);
+      lin = lin.map(topar);
       if(esBiset){ const cuenta = {}; lin = lin.filter(l => { const L = (l.match(/^([A-F]\d)\b/) || [])[1] || '_'; cuenta[L] = (cuenta[L] || 0) + 1; return cuenta[L] <= 3; }); }
       else lin = lin.slice(0, 3);
       b.tips = lin.join('\n');
@@ -9968,10 +9995,13 @@ function bindBuilder(){
     if(t.dataset.bf === 'exId' || t.dataset.sf === 'exId' || t.dataset.ff === 'exId'){
       const b = findBlock(t.dataset.b); if(!b) return;
       if(t.dataset.bf === 'exId'){
+        const exViejo = b.exId ? getEx(b.exId) : null, CA0 = window.CoachAuto;
+        const tipsNuevos = (CA0 && CA0.tipsAlCambiarEjercicio) ? CA0.tipsAlCambiarEjercicio(b, exViejo, getEx(t.value), active()) : null;
         b.exId = t.value;
         const ex = getEx(t.value);
-        if(ex && (!b.titulo || b.titulo === TIPOS.block.lb)) b.titulo = ex.es;
-        if(ex && !b.tips) b.tips = (window.CoachAuto && window.CoachAuto.notaCompleta) ? window.CoachAuto.notaCompleta(ex, b.tempo, active()) : (ex.aviso || '');
+        if(ex && (!b.titulo || b.titulo === TIPOS.block.lb || (exViejo && b.titulo === exViejo.es))) b.titulo = ex.es;
+        /* al cambiar el ejercicio las pautas se reescriben en el formato del Banco; si el coach las había editado a mano, se respetan */
+        if(ex && tipsNuevos != null) b.tips = tipsNuevos;
       }
       if(t.dataset.sf === 'exId'){
         const previoAuto = autoTituloBiset(b.ejercicios);
@@ -10322,6 +10352,13 @@ JP_I18N.add('es', {
   'app.card.obj.t': 'OBJETIVO FISIOLÓGICO',
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
+  /* notas del ejercicio agrupadas, versión de la sesión y plan de cargas */
+  'app.notas.lb': 'Notas', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
+  'app.ver.t': 'Versión de la sesión', 'app.ver.std': 'ESTÁNDAR', 'app.ver.ext': 'EXTENDIDA', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
+  'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
+  'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
+  'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
   'app.notif.work': '💪 ¡A trabajar! · Ronda {r}/{n}',
@@ -10339,6 +10376,7 @@ JP_I18N.add('es', {
   'app.voz.probar': 'Probar',
   'app.voz.sinpaquete': 'Sin paquete de voz',
   'app.voz.ejemplo': '3 - 2 - 1 - ¡Ya!',
+  'app.voz.guia': 'El timer te habla: cuenta 3 - 2 - 1, «Go» al empezar, «Rest» al descansar y «Stop» al terminar. Tocá «Probar» para escuchar un ejemplo.',
   'app.voz.chip.on': 'VOZ: ON',
   'app.voz.chip.off': 'VOZ: OFF',
   'app.voz.chip.mute': 'SIN SONIDO',
@@ -10356,6 +10394,12 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
+  'app.notas.lb': 'Notes', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
+  'app.ver.t': 'Session version', 'app.ver.std': 'STANDARD', 'app.ver.ext': 'EXTENDED', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
+  'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
+  'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
+  'app.ver.h.igual': 'This session has no complementary blocks: both versions are the same.',
+  'app.plan.t': 'LOAD PLAN · based on your history', 'app.plan.hecho': '✓ done', 'app.plan.desc': 'DELOAD', 'app.plan.pico': 'PEAK',
   'app.notif.work': '💪 Go! · Round {r}/{n}',
   'app.notif.work.simple': '💪 Go!',
   'app.notif.minuto': '⏱️ Minute {r}/{n}',
@@ -10371,6 +10415,7 @@ JP_I18N.add('en', {
   'app.voz.probar': 'Test',
   'app.voz.sinpaquete': 'Voice pack unavailable',
   'app.voz.ejemplo': '3 - 2 - 1 - Go!',
+  'app.voz.guia': 'The timer talks to you: a 3 - 2 - 1 countdown, "Go" at the start, "Rest" on breaks and "Stop" at the end. Tap "Test" to hear an example.',
   'app.voz.chip.on': 'VOICE: ON',
   'app.voz.chip.off': 'VOICE: OFF',
   'app.voz.chip.mute': 'MUTED',
@@ -12254,24 +12299,28 @@ JP_I18N.add('en', {
         </div>
       </div>
       <!-- voz del timer (frases pregeneradas, ver 088-voz-del-timer.js): por defecto apagada; el mute de arriba silencia voz y tonos -->
-      <div class="hdp-row hdp-row-uni">
-        <span class="hdp-row-lb" id="hdpVozLb">🗣 Voz del timer</span>
-        <div class="hdp-uni-toggle" id="hdpVozToggle">
-          <button type="button" class="hdp-uni-b" data-voz="on">ON</button>
-          <button type="button" class="hdp-uni-b" data-voz="off">OFF</button>
+      <!-- los tres controles de la voz (activar, idioma, probar) viven en UNA tarjeta con una guía corta, en vez de tres tarjetas sueltas -->
+      <div class="hdp-voz-grupo" id="hdpVozGrupo">
+        <div class="hdp-row hdp-row-uni">
+          <span class="hdp-row-lb" id="hdpVozLb">🗣 Voz del timer</span>
+          <div class="hdp-uni-toggle" id="hdpVozToggle">
+            <button type="button" class="hdp-uni-b" data-voz="on">ON</button>
+            <button type="button" class="hdp-uni-b" data-voz="off">OFF</button>
+          </div>
         </div>
-      </div>
-      <div class="hdp-row hdp-row-uni" id="hdpVozIdiomaRow" style="display:none">
-        <span class="hdp-row-lb" id="hdpVozIdiomaLb">Idioma de la voz</span>
-        <div class="hdp-uni-toggle" id="hdpVozIdioma">
-          <button type="button" class="hdp-uni-b" data-vlang="auto" id="hdpVozAuto">AUTO</button>
-          <button type="button" class="hdp-uni-b" data-vlang="es">ES</button>
-          <button type="button" class="hdp-uni-b" data-vlang="en">EN</button>
+        <p class="hdp-voz-guia" id="hdpVozGuia">El timer te habla: cuenta 3 - 2 - 1, «Go» al empezar, «Rest» al descansar y «Stop» al terminar. Tocá «Probar» para escuchar un ejemplo.</p>
+        <div class="hdp-row hdp-row-uni" id="hdpVozIdiomaRow" style="display:none">
+          <span class="hdp-row-lb" id="hdpVozIdiomaLb">Idioma de la voz</span>
+          <div class="hdp-uni-toggle" id="hdpVozIdioma">
+            <button type="button" class="hdp-uni-b" data-vlang="auto" id="hdpVozAuto">AUTO</button>
+            <button type="button" class="hdp-uni-b" data-vlang="es">ES</button>
+            <button type="button" class="hdp-uni-b" data-vlang="en">EN</button>
+          </div>
         </div>
-      </div>
-      <div class="hdp-row hdp-row-uni" id="hdpVozProbarRow" style="display:none">
-        <span class="hdp-row-lb" id="hdpVozEjemploLb">3 - 2 - 1 - ¡Ya!</span>
-        <div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b" id="hdpVozProbar">▶ Probar</button></div>
+        <div class="hdp-row hdp-row-uni" id="hdpVozProbarRow" style="display:none">
+          <span class="hdp-row-lb" id="hdpVozEjemploLb">3 - 2 - 1 - ¡Ya!</span>
+          <div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b" id="hdpVozProbar">▶ Probar</button></div>
+        </div>
       </div>
       <!-- directiva de accesibilidad (2026-09, seguimiento) -- mismo
            diagnóstico que el switch Aa de acá abajo: el botón "🧰
@@ -12489,7 +12538,7 @@ JP_I18N.add('en', {
     </div>
     <div class="guide-section" id="mesoExplainSection" style="display:none">
       <div class="guide-section-title">📌 Explicación Técnica del Mesociclo</div>
-      <p id="mesoExplainText"></p>
+      <div id="mesoExplainText" class="gd-meso"></div>
       <table class="guide-table" id="mesoExplainTable"></table>
     </div>
     <!-- 10/09 -- Guía expandida en pestañas internas (Técnica / Glosario / Zonas FC)
@@ -14156,12 +14205,12 @@ function jpEscudoPulso(){
     var sh = f.querySelector('.cf-shield');
     if(!sh || !sh.animate) return;
     sh.animate([
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' },
-      { filter: 'drop-shadow(0 0 16px rgba(245,158,11,.5))', offset: .3 },
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' }
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' },
+      { filter: 'drop-shadow(0 0 14px rgba(245,197,24,.5))', offset: .3 },
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' }
     ], { duration: 280, easing: 'ease-out' });
     sh.querySelectorAll('path').forEach(function(p){
-      if(p.animate) p.animate([{ stroke: 'rgba(245,158,11,.15)' }, { stroke: 'rgba(245,158,11,.6)', offset: .3 }, { stroke: 'rgba(245,158,11,.15)' }], { duration: 280, easing: 'ease-out' });
+      if(p.animate) p.animate([{ strokeOpacity: .8 }, { strokeOpacity: 1, offset: .3 }, { strokeOpacity: .8 }], { duration: 280, easing: 'ease-out' });
     });
   }catch(e){}
 }
@@ -14894,11 +14943,10 @@ function renderWeekInfo(){
    RENDER: DAY TABS
 ========================================================= */
 const weekTabsEl = document.getElementById('week-tabs');
+/* los bloques que cuentan para "día completo" y el resumen son los de la VERSIÓN activa (estándar: sin los complementarios; extendida: todos). Los registros de los bloques que quedan
+   ocultos no se tocan: al volver a la versión extendida están tal cual. */
 function dayBlockIds(day){
-  const ids = day.blocks.map(function(b){ return b.id; });
-  if(day.finisher) ids.push(day.finisher.id);
-  if(day.hyrox) ids.push(day.hyrox.id);
-  return ids;
+  return visibleBlocks(day).map(function(b){ return b.id; });
 }
 function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
@@ -14947,6 +14995,44 @@ function aplicarSemanaActivaBlocks(){
     }
   });
 }
+/* ---------- versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ----------
+   Es el mismo interruptor de siempre (state.mode: quick = estándar, complete = extendida) puesto a la vista en el día. Qué bloques son complementarios (solo extendida) lo define el coach
+   en el Builder / Banco de Rutinas con la visibilidad del bloque (optional): core, cardio, finisher y cierre metabólico por defecto. */
+function jpBloquesComplementarios(day){
+  const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
+  return all.filter(function(b){ return b && b.optional; });
+}
+function jpNombreBloqueCorto(b){
+  const t = String(b.title || b.label || '').replace(/^\\s*(?:bloque\\s*\\d+\\s*[|:–-]?\\s*|block\\s*[a-z0-9]+\\s*[:–-]\\s*)/i, '').replace(/\\s*[·–—:|(-].*$/, '').trim();
+  return t.length > 24 ? t.slice(0, 23).trim() + '…' : t;
+}
+function jpVersionHtml(day){
+  const comp = jpBloquesComplementarios(day), ext = state.mode === 'complete';
+  const hint = !comp.length ? jpT('app.ver.h.igual')
+    : (ext ? jpT('app.ver.h.ext', { n: comp.length })
+           : jpT('app.ver.h.std', { n: comp.map(jpNombreBloqueCorto).filter(Boolean).slice(0, 3).join(', ') || comp.length }));
+  const btn = function(modo, tit, min, on){
+    return '<button type="button" class="jp-ver-b' + (on ? ' on' : '') + '" data-ver="' + modo + '" aria-pressed="' + (on ? 'true' : 'false') + '"><b>' + tit + '</b> <i aria-hidden="true">·</i> <span>' + min + '</span></button>';
+  };
+  return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
+    btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
+    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+}
+function jpSetVersion(modo){
+  if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
+  const el = document.getElementById('jpVer'), y0 = el ? el.getBoundingClientRect().top : null;
+  state.mode = modo; saveProgress();
+  document.body.classList.toggle('quick-mode', modo === 'quick');
+  if(typeof modeSwitchEl !== 'undefined' && modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){ b.classList.toggle('active', b.dataset.mode === modo); });
+  renderMain();
+  const n = document.getElementById('jpVer');
+  if(n && y0 != null){ window.scrollBy(0, n.getBoundingClientRect().top - y0); }       /* el selector queda bajo el dedo: no salta la pantalla */
+}
+window.jpSetVersion = jpSetVersion;
+document.addEventListener('click', function(ev){
+  const b = ev.target && ev.target.closest ? ev.target.closest('.jp-ver-b') : null;
+  if(b) jpSetVersion(b.getAttribute('data-ver'));
+});
 function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
   return all.filter(function(b){ return state.mode === 'complete' || !b.optional; });
@@ -15306,6 +15392,8 @@ function datosStoryCF(weekIdx, day){
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
+    /* sin series tildadas: el volumen PRESCRIPTO solo entra si el bloque se marcó como hecho (el alumno lo hizo pero no cargó kilos). Un bloque sin hacer no aporta kilos que nadie movió. */
+    if(!isBlockDone(weekIdx, day.id, b.id)) return { vol: 0, top: 0 };
     let setsActuales = 1, volP = 0, topP = 0;
     (b.items || []).forEach(function(raw){
       const l = String(raw || '').trim();
@@ -15331,7 +15419,16 @@ function datosStoryCF(weekIdx, day){
     if(r.top > topLiftKg) topLiftKg = r.top;
   });
   volumenTotal = Math.round(volumenTotal);
-  const esPR = !!(state.session && state.session.prs && state.session.prs.length > 0);
+  /* PR del día: antes bastaba con que hubiera UN récord en todo el mesociclo (state.session.prs nunca se resetea) para marcar "PR" en cualquier tarjeta.
+     Ahora cuenta solo un récord de HOY en un ejercicio de ESTE día (mismo criterio que la Story de Bodybuilding). */
+  const esPR = (function(){
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    let textoDia = ' ';
+    (day.blocks || []).forEach(function(b){
+      textoDia += ' ' + nrmHist((b.exerciseName || '') + ' ' + (b.title || '') + ' ' + (b.items || []).join(' ') + ' ' + (b.exercises || []).map(function(e){ return e && e.name; }).join(' '));
+    });
+    return ((state.session && state.session.prDetalle) || []).some(function(p){ const n = nrmHist(p && p.ex); return !!n && p.fecha === hoyISO && textoDia.indexOf(n) >= 0; });
+  })();
   /* directiva ("Composición Universal de Movimientos") -- Hero Card 1
      ya no protagoniza con el título de UN solo bloque (el más pesado):
      el título pasa a ser una categoría dinámica según la MEZCLA real de
@@ -15617,6 +15714,7 @@ function renderMain(){
      completo: el scroll baja directo del título de la sesión al primer
      bloque. Sólo sobrevive el Foco Técnico, como banner fijo siempre
      visible (ver renderFocoTecnico() más arriba). */
+  if(window.COACH_DISCIPLINA === 'sports') html += jpVersionHtml(day);
   html += renderFocoTecnico(day);
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
@@ -16035,12 +16133,30 @@ const guideBtnEl = document.getElementById('guideBtn');
 const guideCloseEl = document.getElementById('guideClose');
 function openModal(el){ el.classList.add('open'); }
 function closeModal(el){ el.classList.remove('open'); }
+/* Parte un texto largo en oraciones (corta en ". " / "? " / "! " seguidos de mayúscula, dígito o apertura): la explicación técnica del mesociclo llegaba como UN solo párrafo de ~15 renglones.
+   Solo cambia la presentación: el texto del plan no se toca. Puro y sin RegExp con lookbehind (Safari viejo). */
+function jpPartirTexto(t){
+  const s = String(t == null ? '' : t).replace(/\\s+/g, ' ').trim();
+  if(!s) return [];
+  return s.replace(/([.!?])\\s+(?=[A-ZÁÉÍÓÚÑ¿¡0-9(])/g, '$1\\u0001').split('\\u0001').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+window.jpPartirTexto = jpPartirTexto;
+/* una oración con "Título: detalle" (título corto) lleva el título en negrita para poder escanear la lista */
+function jpOracionConTitulo(o){
+  const m = /^([^:.]{3,44}):\\s+(\\S[\\s\\S]*)$/.exec(o);
+  return m ? '<b>' + m[1] + ':</b> ' + m[2] : o;
+}
 (function pintarMeso(){
   const sec = document.getElementById('mesoExplainSection');
   if(!sec || !PROGRAM_CONFIG.mesoObjetivo) return;
+  /* objetivo del bloque en un párrafo corto y el resto como puntos (una idea por punto) */
+  const puntos = jpPartirTexto(PROGRAM_CONFIG.mesoTexto || '');
+  let objetivo = PROGRAM_CONFIG.mesoObjetivo;
+  /* la primera oración, si es solo un rótulo corto (ej. "Push / Pull / Pierna completa."), sigue pegada al objetivo como en el texto original */
+  if(puntos.length && puntos[0].length <= 48 && puntos[0].indexOf(':') < 0) objetivo += ' — ' + puntos.shift().replace(/\\.$/, '');
   document.getElementById('mesoExplainText').innerHTML =
-    '<b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + PROGRAM_CONFIG.mesoObjetivo +
-    (PROGRAM_CONFIG.mesoTexto ? ' — ' + PROGRAM_CONFIG.mesoTexto : '');
+    '<span class="gd-meso-obj"><b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + objetivo + '</span>' +
+    (puntos.length ? '<ul class="gd-meso-lista">' + puntos.map(function(o){ return '<li>' + jpOracionConTitulo(o) + '</li>'; }).join('') + '</ul>' : '');
   const t = document.getElementById('mesoExplainTable');
   t.innerHTML = '<tr><th>Semana</th><th>Fase</th><th>Intensidad</th></tr>' +
     (PROGRAM_CONFIG.weeks || []).map(function(w){
@@ -16164,10 +16280,13 @@ function closeModal(el){ el.classList.remove('open'); }
     var html = '';
     if(h0 === 'semana'){
       cont.className = 'guide-cards gc-list';
-      html = datos.map(function(c){
+      html = datos.map(function(c, iw){
         var ult = c[c.length - 1];
         var numerica = /^[0-9]+$/.test(c[0].textContent.trim());
-        return '<div class="gc-row"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
+        /* la semana de descarga (deload) y la de pico (a fallo técnico) se distinguen de las de carga con clases propias: el color lo pone el CSS */
+        var wm = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.weeks && PROGRAM_CONFIG.weeks[iw]) || {};
+        var claseSem = wm.deload ? ' gc-row-descarga' : (wm.fail ? ' gc-row-pico' : ' gc-row-carga');
+        return '<div class="gc-row' + claseSem + '"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
           (c.length > 2 ? '<span>' + c[1].innerHTML + '</span>' : '') + '</div>' +
           '<span class="gc-badge gc-badge-rpe">' + ult.textContent.trim() + '</span></div>';
       }).join('');
@@ -16197,6 +16316,20 @@ function closeModal(el){ el.classList.remove('open'); }
     if(tabla.parentNode) tabla.parentNode.replaceChild(cont, tabla);
   }
   Array.prototype.slice.call(document.querySelectorAll('.guide-table')).forEach(convertir);
+})();
+/* pestañas de la Guía (Técnica / Glosario / Zonas FC): íconos de línea del mismo trazo y color en las tres (antes eran emojis de colores distintos: 🎯 📚 ❤️).
+   Solo cambia lo que se ve; el texto y el data-gd de cada pestaña quedan igual. */
+(function guiaPestanasIconos(){
+  const IC = {
+    tecnica: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/>',
+    glosario: '<path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
+    fc: '<path d="M3 12h4l2-5 4 10 2-5h6"/>'
+  };
+  Array.prototype.slice.call(document.querySelectorAll('#guideTabs .tm-tab')).forEach(function(b){
+    const k = b.getAttribute('data-gd'); if(!IC[k] || b.querySelector('.gd-tab-ic')) return;
+    const txt = (b.textContent || '').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/, '').trim();
+    b.innerHTML = '<svg class="gd-tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[k] + '</svg><span class="gd-tab-tx">' + txt + '</span>';
+  });
 })();
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
@@ -16338,6 +16471,8 @@ function init(){
     document.body.classList.toggle('quick-mode', state.mode === 'quick');
     if(modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){
       b.classList.toggle('active', b.dataset.mode === state.mode);
+      /* en Sports el mismo interruptor se llama por su versión: ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN (en Perfil y en el día) */
+      if(window.COACH_DISCIPLINA === 'sports') b.textContent = b.dataset.mode === 'quick' ? jpT('app.ver.std') + ' · ' + jpT('app.ver.m60') : jpT('app.ver.ext') + ' · ' + jpT('app.ver.m90');
     });
   }catch(err){
     console.error('init', err);
@@ -16543,6 +16678,7 @@ var jpVoz = (function(){
     var rowI = document.getElementById('hdpVozIdiomaRow'); if(rowI) rowI.style.display = on ? '' : 'none';
     var rowP = document.getElementById('hdpVozProbarRow'); if(rowP) rowP.style.display = on ? '' : 'none';
     var ej = document.getElementById('hdpVozEjemploLb'); if(ej) ej.textContent = T('app.voz.ejemplo', '3 - 2 - 1 - ¡Ya!');
+    var guia = document.getElementById('hdpVozGuia'); if(guia) guia.textContent = T('app.voz.guia', guia.textContent);
     var lb = document.getElementById('hdpVozLb'); if(lb) lb.textContent = '🗣 ' + T('app.voz.lb', 'Voz del timer');
     var lbI = document.getElementById('hdpVozIdiomaLb'); if(lbI) lbI.textContent = T('app.voz.idioma', 'Idioma de la voz');
     var au = document.getElementById('hdpVozAuto'); if(au) au.textContent = T('app.voz.auto', 'AUTO');
@@ -17794,6 +17930,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \\u00b7 Ejecuci\\u00f3n \\u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
       fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
   }
+  /* plan de cargas semana a semana con el peso real que el alumno ya registró (ver jpPlanCargas en 087-1): solo aparece si ese ejercicio ya tiene un registro */
+  function qrPlanHtml(c, e){
+    var pl = null; try{ pl = typeof window.jpPlanCargas === 'function' ? window.jpPlanCargas(c, e) : null; }catch(eP){}
+    if(!pl || !pl.semanas || !pl.semanas.length) return '';
+    var fmt = function(n){ return String(Math.round(n * 100) / 100).replace('.', ','); };
+    var cel = pl.semanas.map(function(sm){
+      var et = 'S' + (sm.w + 1) + (sm.tipo === 'descarga' ? ' · ' + jpT('app.plan.desc') : (sm.tipo === 'pico' ? ' · ' + jpT('app.plan.pico') : ''));
+      var pie = sm.origen === 'real' ? jpT('app.plan.hecho') + (sm.reps ? ' · ×' + sm.reps : '') : (sm.rir || '');
+      return '<span class="jp-pl-w jp-pl-' + sm.tipo + (sm.w === pl.actual ? ' hoy' : '') + (sm.origen === 'real' ? ' real' : '') + '" data-w="' + sm.w + '"><small>' + escSB(et) + '</small><b>' + (sm.kg > 0 ? fmt(sm.kg) + '<u>kg</u>' : '—') + '</b><i>' + escSB(pie) + '</i></span>';
+    }).join('');
+    return '<div class="jp-qc-plan"><div class="jp-pl-t">' + escSB(jpT('app.plan.t')) + '</div><div class="jp-pl-g" style="--n:' + pl.semanas.length + '">' + cel + '</div></div>';
+  }
+  window.jpPlanHtml = qrPlanHtml;
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -17825,7 +17974,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
-      cab + '<div class="jp-qc-rows">' + filas + '</div>' +
+      qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
       (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
@@ -17896,13 +18045,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     var objetivoPendiente = !!objetivoHtml;
     unidades.forEach(function(u){
-      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var ya = u.querySelector(':scope > .jp-ex-cajas');
+      if(ya && ya.querySelector('.jp-ex-box')) return;
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
       var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
       if(ex) html += caja('tempo', '&#9201; ' + escSB(jpT('app.card.tempo.t')), escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
       if(!html) return;
+      if(ya){ ya.insertAdjacentHTML('beforeend', html); return; }     /* el agrupador de notas ya la había creado con los coaching tips */
       var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
       u.appendChild(div);
     });
@@ -17910,7 +18061,49 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml);
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
+    try{ jpNotasAgrupar(board); }catch(eN){}
   }
+  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
+     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
+     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  var NOTAS_DEF = [
+    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+  ];
+  function jpNotasAgrupar(root){
+    if(!root || !root.querySelectorAll) return;
+    var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    unidades.forEach(function(u){
+      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
+      if(!caj){
+        if(!tips) return;
+        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      }
+      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
+      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
+      if(!hay.length) return;
+      caj.classList.add('jp-notas');
+      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
+      var fila = caj.querySelector(':scope > .jp-notas-chips');
+      if(fila) fila.parentNode.removeChild(fila);
+      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
+      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
+      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
+        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
+        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
+      }).join('');
+      caj.insertBefore(fila, caj.firstChild);
+    });
+  }
+  window.jpNotasAgrupar = jpNotasAgrupar;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
+    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
+    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
+    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
+    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
+  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s*[x\\u00d7]\\s*$/i, '').trim();
@@ -17962,6 +18155,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
       }
       qrTecAbrir(board);
+      try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
   function qrCtx(card){
@@ -17986,6 +18180,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
     var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
     if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
+    /* las notas del ejercicio ya viven agrupadas fuera de la tarjeta de carga: el tip nuevo no se duplica */
+    var uEx = card.closest('.jp-sb-ex, .jp-sb-subex-resumen');
+    if(tipsAhora && uEx && uEx.querySelector(':scope > .jp-ex-cajas > .jp-ex-tips')) tipsAhora.parentNode.removeChild(tipsAhora);
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;
@@ -23342,8 +23539,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     const cols = [
       { icono: '🏋️', v: d.vol.toLocaleString('es-AR') + ' KG', col: '#E5C378', solo: d.vol > 0 },
       { icono: '⚡', v: d.series + ' SERIES', col: '#38BDF8', solo: true },
-      { icono: '⏱️', v: String(d.tiempo).toUpperCase(), col: '#FFFFFF', solo: true }
-    ].filter(function(cc){ return cc.solo; });      /* sin tonelaje (cardio/WOD) no se dibuja un "0 KG" ficticio */
+      { icono: '⏱️', v: String(d.tiempo || '').toUpperCase(), col: '#FFFFFF', solo: !!d.tiempo }
+    ].filter(function(cc){ return cc.solo; });      /* sin tonelaje (cardio/WOD) no se dibuja un "0 KG" ficticio; sin tiempo medido tampoco un tiempo inventado */
     const colW = barW / cols.length;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     cols.forEach((cItem, i) => {
@@ -23951,8 +24148,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        no es creíble o no hay registro real, se cae a una estimación
        coherente en base a las series completadas (20-180 min, 60 por
        defecto si no hay series). */
-    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 150) ? elapsedMin : (r.series > 0 ? Math.min(150, Math.max(20, r.series * 3)) : 60);
-    const tiempoFmt = fmtDuracionStory(minsCrudo);
+    /* solo se informa un tiempo MEDIDO (primera y última serie registradas, ver enriquecer() en 018): ya no se inventa uno a partir de las series */
+    const tiempoFmt = '';
     const f = new Date();
     /* directiva (aislamiento de PRs por día) -- mismo criterio que
        pintarResumen(): state.session.prs es un log de nombres de TODO el
@@ -25428,12 +25625,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     }
     }
 
+    /* solo datos reales: sin tiempo medido no se muestra un tiempo (antes caía a "55 min" fijos) y sin tonelaje no se dibuja un "0 KG" */
     var cajas = [
-      { k:'VOLUMEN', v: (d.vol || 0).toLocaleString('es-AR'), u:'KG' },
+      (d.vol > 0) ? { k:'VOLUMEN', v: (d.vol || 0).toLocaleString('es-AR'), u:'KG' } : null,
       { k:'SERIES',  v: String(d.series || 0), u:'SERIES' },
-      { k:'TIEMPO',  v: String(d.tiempo || fmtDuracionStory(55)), u:'' }
-    ];
-    var x = 100, ancho = (W - 200 - 40) / 3;
+      d.tiempo ? { k:'TIEMPO',  v: String(d.tiempo), u:'' } : null
+    ].filter(Boolean);
+    var x = 100, ancho = (W - 200 - 20 * (cajas.length - 1)) / cajas.length;
     cajas.forEach(function(b, i){
       var bx = x + i * (ancho + 20);
       g.fillStyle = 'rgba(255,255,255,.05)'; rr(g, bx, 1150, ancho, 206, 24); g.fill();
@@ -26724,12 +26922,22 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
   window.CoachTiempoActivo = minutosActivos;
 
+  /* última acción REAL del alumno (series, kilos, repeticiones, bloques): el latido automático de cada minuto solo cuenta mientras haya habido una en los últimos 15 min.
+     Antes sumaba también la app abierta sin entrenar (se abría el celular, se dejaba sobre el banco y el tiempo "de sesión" seguía corriendo). */
+  var ultimaAccion = 0;
   ['change','input','click'].forEach(function(ev){
     document.addEventListener(ev, function(e){
       if(!e.target.closest) return;
-      if(e.target.closest('.set-check, .set-kg, .set-reps, .block-check, .rir-chip, .jp-tool, .tv-nav button')) latido();
+      if(e.target.closest('.set-check, .set-kg, .set-reps, .block-check, .block-done-cb, .rir-chip, .jp-tool, .tv-nav button, .jp-qc-ok, .jp-qc-kg, .jp-qc-rp')){ ultimaAccion = Date.now(); latido(); }
     }, true);
   });
+  function latidoPasivo(){
+    if(document.visibilityState === 'hidden') return;
+    if(!ultimaAccion || Date.now() - ultimaAccion > LIM_INACTIVO) return;
+    latido();
+  }
+  window.__jpUltimaAccion = function(t){ if(t != null) ultimaAccion = t; return ultimaAccion; };    /* tests */
+  window.__jpLatidoPasivo = latidoPasivo;
 
   /* ---------------------------------------------------------
      2 · PAUSA DE SESIÓN
@@ -26924,11 +27132,18 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
         if(sem[d.id] && sem[d.id].__dayDone) hechas++;
       });
     }
-    var actual = Math.min(total, hechas + 1);
-    return { hechas: hechas, total: total, actual: actual };
+    /* "sesión N de M": si el día abierto ya está concluido, ya está contado en "hechas" (antes se sumaba un 1 de más y la tarjeta decía una sesión por delante) */
+    var semAct = (state.completed || {})[state.currentWeek] || {}, hoyHecho = !!(semAct[state.currentDay] && semAct[state.currentDay].__dayDone);
+    var actual = Math.min(total, hechas + (hoyHecho ? 0 : 1));
+    return { hechas: hechas, total: total, actual: Math.max(1, actual) };
   }
   function rpePromedio(){
-    var k = Object.keys(state.rir || {}).filter(function(x){ return x.indexOf(state.currentWeek + '|' + state.currentDay + '|') === 0; });
+    var vig = bloquesVigentes();    /* sin restos de bloques viejos guardados en el progreso de un plan anterior con el mismo id de día */
+    var k = Object.keys(state.rir || {}).filter(function(x){
+      if(x.indexOf(state.currentWeek + '|' + state.currentDay + '|') !== 0) return false;
+      if(vig && !vig[x.split('|')[2]]) return false;
+      return typeof state.rir[x] === 'number' && isFinite(state.rir[x]);
+    });
     if(!k.length) return 0;
     var suma = 0;
     k.forEach(function(x){ suma += (10 - Math.min(3, state.rir[x])); });
@@ -27020,8 +27235,15 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function enriquecer(d){
     d = d || {};
     var r = rachaMesociclo(), t = topLift();
-    var minsT = (typeof window.jpMinutosSesion === 'function') ? window.jpMinutosSesion(minutosActivos()) : minutosActivos();
-    d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minsT) : String(minsT);
+    /* TIEMPO: solo el medido. La estimación por lo programado (que podía mostrar "2 h 00 m" tras cargar tres series) ya no sale en la tarjeta: sin registro creíble
+       el dato queda vacío y la tarjeta no dibuja el casillero. */
+    d.tiempo = '';
+    d.tiempoReal = 0;
+    try{
+      var tj = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null, ds = (typeof window.CoachDuracionSesion === 'function') ? window.CoachDuracionSesion() : null;
+      var minsR = (ds && ds.min > 0 && !ds.estimada) ? ds.min : ((tj && tj.min > 0 && !tj.estimado) ? tj.min : 0);
+      if(minsR > 0){ d.tiempoReal = minsR; d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minsR) : String(minsR) + ' min'; }
+    }catch(eT){}
     d.sesionN = r.actual; d.sesionTotal = r.total;
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
@@ -27036,7 +27258,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 
   function mount(){
     botonPausa();
-    latido();
+    /* abrir la app no es entrenar: el primer latido llega con la primera serie, no al cargar */
     /* engancha la Story Card: enriquece los datos y reescribe el pie */
     if(window.CoachStory && typeof window.CoachStory.abrir === 'function' && !window.CoachStory.__fino){
       var _ab = window.CoachStory.abrir;
@@ -27067,7 +27289,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
         return x;
       };
     }
-    setInterval(latido, 60000);
+    setInterval(latidoPasivo, 60000);
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 60); });
   else setTimeout(mount, 60);
@@ -27458,7 +27680,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     var met = [], vol2 = Math.round(parseFloat(d.volumenTotal) || 0), top = parseFloat(d.topLiftKg) || 0;
     if(vol2 > 0) met.push({ v: fmtNum(vol2) + ' KG', l: 'VOLUMEN FUERZA' });
     if(top > 0) met.push({ v: fmtNum(top) + ' KG', l: d.esPR ? 'TOP LIFT · PR' : 'TOP LIFT' });
-    try{ var tS = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null; if(tS && tS.min > 0) met.push({ v: (tS.estimado ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(tS.min)).toUpperCase() : tS.min + ' MIN'), l: tS.estimado ? 'TIEMPO ESTIMADO' : 'TIEMPO DE SESIÓN' }); }catch(eT){}
+    try{ var tS = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null; if(tS && tS.min > 0 && !tS.estimado) met.push({ v: (tS.estimado ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(tS.min)).toUpperCase() : tS.min + ' MIN'), l: tS.estimado ? 'TIEMPO ESTIMADO' : 'TIEMPO DE SESIÓN' }); }catch(eT){}
     try{ var rpeS = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[state.currentWeek + '|' + state.currentDay + '|__sesion'] : null; if(rpeS) met.push({ v: rpeS + '/10', l: 'RPE DE LA SESIÓN' }); }catch(eR){}
     var yMet = yBar - 40 - (met.length ? 112 : 0);
     if(met.length){
@@ -34663,6 +34885,7 @@ body.cf-modo .block .ex-tip{display:none}
     f.innerHTML =
       '<button type="button" class="cf-x" id="cfX" title="Salir de pantalla completa">✕</button>' +
       '<svg class="cf-shield" viewBox="0 0 64 74" aria-hidden="true">' +
+        '<defs><linearGradient id="cfOro" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFE98A"/><stop offset="40%" stop-color="#F5C518"/><stop offset="75%" stop-color="#E6B800"/><stop offset="100%" stop-color="#C99A0B"/></linearGradient></defs>' +
         '<path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
         '<path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
       '</svg>' +
@@ -47109,10 +47332,12 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
           /* Semanas 2, 3 y siguientes: progresión PORCENTUAL calculada sobre lo registrado en la Semana 1 (S2 +2,5%, S3 +5%, y +2,5% más por cada semana siguiente).
              Solo se frena si en S1 no llegaste al mínimo del rango o marcaste RIR 0: ahí se mantiene la carga de S1 */
           var pctP = jpPctProgresion(c.w), llegoMin = ref.reps >= rr.min, holgado = (rirReg == null || rirReg >= 1);
+          /* ajuste por el esfuerzo que el alumno marcó: llegó al tope del rango y le sobraron 3 o más reservas → la carga sube un escalón más (+2,5%) */
+          var sobro = rirReg != null && rirReg >= 3 && ref.reps >= rr.max; if(sobro) pctP += 2.5;
           if(llegoMin && holgado){
             pr = { kg: redondear(ref.kg * (1 + pctP / 100), 1.25), sube: true, motivo: 'tope' };
             if(pr.kg <= ref.kg) pr.kg = redondear(ref.kg + 1.25, 1.25);
-            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg';
+            var calc = 'S1 ' + fmtKg(ref.kg) + ' kg × ' + ref.reps + ' → +' + fmtPct(pctP) + '% = ' + fmtKg(pr.kg) + ' kg' + (sobro ? ' (te sobraron reservas: un escalón más)' : '');
             nota = ' · ' + calc;
           } else {
             pr = { kg: ref.kg, sube: false, motivo: holgado ? 'rango' : 'fallo' };
@@ -47153,6 +47378,25 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
       if(rr || e.rir) return { kg: 0, pre: false, origen: 'rir', txt: 'Sin carga previa · elegí un peso con RIR ' + (e.rir || rir) + ' (RPE ' + (10 - Math.round(rir)) + ')' };
     }catch(err){ console.warn('sugerir carga', err); }
     return null;
+  };
+  /* plan de cargas del ejercicio semana a semana (sin DOM): usa el peso REAL que el alumno ya cargó como base y lo acomoda a la ondulación del mesociclo
+     (carga · pico · descarga, con el RIR objetivo de cada semana). Una semana ya registrada muestra lo que hizo; las que faltan, la sugerencia de la misma regla que el casillero.
+     Devuelve null si el alumno todavía no registró nunca ese ejercicio (no se inventa una base). */
+  window.jpPlanCargas = function(c, e){
+    try{
+      var n = (typeof WEEKS_META !== 'undefined' && WEEKS_META.length) || 0; if(!n || !e) return null;
+      var sem = [], hayReal = false, w;
+      for(w = 0; w < n; w++){
+        var meta = WEEKS_META[w] || {}, cw = { w: w, d: c.d, b: c.b };
+        var tipo = meta.deload ? 'descarga' : (meta.fail ? 'pico' : 'carga');
+        var rm = /RIR\\s*(\\d[\\d\\-–]*)/i.exec(meta.rpe || ''), rirTxt = rm ? 'RIR ' + rm[1] : '';
+        var real = registroSemana(cw, e, 1, w);
+        if(real && real.ref && real.ref.kg > 0){ hayReal = true; sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: real.ref.kg, reps: real.ref.reps || 0, origen: 'real' }); continue; }
+        var sg = window.jpSugerirCarga(cw, e, 1);
+        sem.push({ w: w, tipo: tipo, rir: rirTxt, kg: (sg && sg.kg > 0 && (sg.origen === 'progresion' || sg.origen === 'descarga')) ? sg.kg : 0, reps: 0, origen: (sg && sg.kg > 0) ? sg.origen : 'sin' });
+      }
+      return hayReal ? { semanas: sem, actual: c.w } : null;
+    }catch(err){ console.warn('plan de cargas', err); return null; }
   };
   /* para los módulos de la tarjeta (referencia "Sem N: kg × reps"): mismo registro previo, también por nombre */
   window.jpRegistroPrevio = function(c, e, setN){ try{ return ultimoRegistro(c, e, setN || 1); }catch(err){ return null; } };
@@ -47356,6 +47600,30 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     try{ new MutationObserver(programar).observe(D.body, { childList: true, subtree: true }); }catch(e){}
   }
   if(D.readyState === 'loading') D.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
+/* Header del atleta · dato de contexto bajo el nombre (disciplina · nivel), estilo ficha. Solo suma una línea de texto: no toca el nombre ni ningún dato del plan. */
+(function(){
+  'use strict';
+  function etiqueta(){
+    var pc = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG) || {}, nombre = String(pc.mesoName || ''), disc = String(pc.disciplina || '').toLowerCase();
+    var d;
+    if(/hyrox/i.test(nombre)) d = 'Hyrox';
+    else if(window.COACH_DISCIPLINA === 'crossfit' || disc === 'crossfit') d = 'CrossFit';
+    else if(/rugby|mtb|mountain|golf|running|tenis|f[uú]tbol|deport/i.test(nombre)) d = (/(rugby|mtb|mountain bike|golf|running|tenis|f[uú]tbol)/i.exec(nombre) || ['Deportes'])[0];
+    else d = 'Bodybuilding';
+    d = d.charAt(0).toUpperCase() + d.slice(1);
+    var niv = String(pc.mesoNivel || pc.cfNivel || '').trim().toLowerCase();
+    var nivTxt = ({ intermedio: 'Intermedio', avanzado: 'Avanzado', principiante: 'Principiante', pro: 'Pro', elite: 'Élite', 'élite': 'Élite' })[niv] || (niv ? niv.charAt(0).toUpperCase() + niv.slice(1) : '');
+    return nivTxt ? d + ' · ' + nivTxt : d;
+  }
+  function pintar(){
+    var nom = document.getElementById('hdcName'); if(!nom) return;
+    var c = document.getElementById('hdcCtx');
+    if(!c){ c = document.createElement('span'); c.id = 'hdcCtx'; c.className = 'hdc-ctx'; nom.parentNode.insertBefore(c, nom.nextSibling); }
+    var t = etiqueta(); if(c.textContent !== t) c.textContent = t;
+  }
+  try{ pintar(); }catch(e){ console.warn('header·contexto', e); }
+  window.jpHeaderContexto = pintar;
 })();
 <\/script>
 <!--/UX-FINAL-JP-->
@@ -47709,12 +47977,14 @@ html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rest{padding:0 !important; border:0 !important; background:none !important; letter-spacing:.06em !important; font-size:.9rem !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-carga{padding:0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex-head{border-bottom:1px solid var(--xc-bd) !important; padding-bottom:8px !important; margin-bottom:8px !important;}
-html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{border-left:4px solid #F0CD7D !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{padding-left:17px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#F0CD7D; pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-r1{background:linear-gradient(135deg,rgba(240,205,125,.2),rgba(240,205,125,.06)); border:1px solid rgba(240,205,125,.5); border-radius:10px; padding:10px 12px !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.1);}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-vn{text-shadow:0 0 24px rgba(255,214,107,.55);}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rest{font-weight:800 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tips-t{color:#F0CD7D;}
-html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important; border-left:3px solid #FFC24B !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important; padding-left:12px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#FFC24B; pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex-head{margin-bottom:4px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}
@@ -48151,14 +48421,14 @@ html body #cwtFull#cwtFull{
   background:radial-gradient(circle at 50% 40%, rgba(98,126,214,.18), rgba(11,19,43,0) 62%), #0B132B !important;
   color:#EEF3FF; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
 }
-html body #cwtFull#cwtFull .cf-shield path{ stroke:rgba(150,178,240,.12) !important; }
+html body #cwtFull#cwtFull .cf-shield path{ stroke:url(#cfOro) !important; stroke-opacity:.8; stroke-width:2px !important; stroke-linejoin:round; }
 html body #cwtFull#cwtFull .cf-time{ color:#EFEFEF !important; font-family:'Chakra Petch',monospace !important; text-shadow:0 0 38px rgba(98,126,214,.32) !important; }
 html body #cwtFull#cwtFull .cf-time.alerta{ color:#EFEFEF !important; text-shadow:0 0 46px rgba(150,178,240,.5) !important; }
-html body #cwtFull#cwtFull .cf-round{
-  background:#131F43 !important; border:1px solid rgba(150,178,240,.52) !important; color:#EEF3FF !important;
-  font-family:'Chakra Petch',sans-serif !important; box-shadow:0 14px 30px -18px rgba(0,0,0,.8);
+/* "RONDA 1 / 8": texto limpio, sin pastilla ni caja (antes cápsula con borde que cargaba la pantalla) */
+html body #cwtFull#cwtFull .cf-round, html body #cwtFull#cwtFull.warn .cf-round, html body #cwtFull#cwtFull[data-fase] .cf-round{
+  background:none !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; padding:0 !important; color:#C9D6F5 !important;
+  font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.24em !important;
 }
-html body #cwtFull#cwtFull.warn .cf-round{ background:rgba(245,158,11,.12) !important; border-color:rgba(245,158,11,.6) !important; color:#FFE3A6 !important; }
 html body #cwtFull#cwtFull .cf-bar{ background:rgba(255,255,255,.08) !important; }
 html body #cwtFull#cwtFull .cf-acts button, html body #cwtFull#cwtFull #cfReset{
   background:#1A2850 !important; border:1px solid rgba(150,178,240,.52) !important; color:#EEF3FF !important;
@@ -48175,13 +48445,14 @@ html body #cwtFull#cwtFull .cf-sign b{ color:#EEF3FF !important; font-family:'Ch
 html body #cwtFull#cwtFull .cf-sign b em{ color:#FF5500 !important; }
 html body #cwtFull#cwtFull .cf-sign span{ color:#9FB0D8 !important; font-family:'Chakra Petch',sans-serif !important; }
 
-/* ---------- borde del escudo y color por fase ----------
-   Marco amarillo del escudo (#F5C518) alrededor de toda la pantalla, con un toque suave de naranja arriba a la izquierda y de cyan abajo a la derecha.
-   La fase manda el color (data-fase, ver espejo() en 053): TRABAJO naranja, DESCANSO cyan, PREPARACIÓN amarillo del escudo. Se aplica al rótulo de la fase, al reloj, a la barra
-   y a la pastilla de ronda, así el descanso y la actividad se distinguen al instante y con cualquier distancia. */
+/* ---------- fondo sin marcos fijos y color por fase ----------
+   SIN marco ni recuadro amarillo estático alrededor de la pantalla: el borde solo se enciende de forma rítmica (los destellos perimetrales #jpRayo y el pulso del escudo) cuando
+   faltan 3 - 2 - 1. Quedan solo toques suaves de naranja arriba a la izquierda y de cyan abajo a la derecha, que no son bordes.
+   La fase manda el color (data-fase, ver espejo() en 053): rótulo de la fase, barra y reloj en TRABAJO naranja, DESCANSO cyan, PREPARACIÓN amarillo del escudo;
+   el reloj va en naranja salvo en el descanso, que va en cyan (sin resplandor); "RONDA n / N" es texto sin pastilla. El contorno del escudo de fondo es dorado (degradé #cfOro, ver armarFull() en 053). */
 html body #cwtFull#cwtFull{
-  box-shadow:inset 0 0 0 2px rgba(245,197,24,.62), inset 0 0 70px rgba(245,197,24,.07) !important;
-  background-image:radial-gradient(circle at 12% 8%, rgba(238,90,18,.16), rgba(238,90,18,0) 42%), radial-gradient(circle at 88% 94%, rgba(0,229,255,.12), rgba(0,229,255,0) 44%), radial-gradient(circle at 50% 40%, rgba(98,126,214,.16), rgba(11,19,43,0) 62%) !important;
+  box-shadow:none !important; border:0 !important; outline:0 !important;
+  background-image:radial-gradient(circle at 12% 8%, rgba(238,90,18,.14), rgba(238,90,18,0) 42%), radial-gradient(circle at 88% 94%, rgba(0,229,255,.10), rgba(0,229,255,0) 44%), radial-gradient(circle at 50% 40%, rgba(98,126,214,.16), rgba(11,19,43,0) 62%) !important;
   background-color:#0B132B !important;
 }
 html body #cwtFull#cwtFull .cf-phase{ color:#EEF3FF !important; }
@@ -48189,18 +48460,24 @@ html body #cwtFull#cwtFull[data-fase="work"] .cf-phase{ color:#FF6A1F !important
 html body #cwtFull#cwtFull[data-fase="rest"] .cf-phase{ color:#00E5FF !important; }
 html body #cwtFull#cwtFull[data-fase="prep"] .cf-phase{ color:#F5C518 !important; }
 html body #cwtFull#cwtFull .cf-phase::before{ background:currentColor !important; box-shadow:0 0 10px currentColor !important; }
-html body #cwtFull#cwtFull[data-fase="work"] .cf-time{ color:#FFFFFF !important; text-shadow:0 0 44px rgba(255,106,31,.5) !important; }
-html body #cwtFull#cwtFull[data-fase="rest"] .cf-time{ color:#BDF7FF !important; text-shadow:0 0 44px rgba(0,229,255,.5) !important; }
-html body #cwtFull#cwtFull[data-fase="prep"] .cf-time{ color:#FFF4C2 !important; text-shadow:0 0 44px rgba(245,197,24,.45) !important; }
+/* números del reloj: naranja de la marca en trabajo y preparación, CYAN táctico en descanso (se distingue de un vistazo de la actividad), sin neón: una sombra dura apenas marcada da lectura sobre el azul, no resplandor */
+html body #cwtFull#cwtFull .cf-time, html body #cwtFull#cwtFull .cf-time.alerta,
+html body #cwtFull#cwtFull[data-fase] .cf-time, html body #cwtFull#cwtFull.warn[data-fase] .cf-time{ color:#FF6A1F !important; text-shadow:0 2px 0 rgba(0,0,0,.32) !important; -webkit-text-stroke:0 !important; }
+html body #cwtFull#cwtFull[data-fase="rest"] .cf-time, html body #cwtFull#cwtFull[data-fase="rest"] .cf-time.alerta, html body #cwtFull#cwtFull.warn[data-fase="rest"] .cf-time{ color:#00E5FF !important; }
 html body #cwtFull#cwtFull .cf-bar i{ background:#EEF3FF !important; }
 html body #cwtFull#cwtFull[data-fase="work"] .cf-bar i{ background:linear-gradient(90deg,#EE5A12,#FF8A3D) !important; }
 html body #cwtFull#cwtFull[data-fase="rest"] .cf-bar i{ background:linear-gradient(90deg,#00B8D4,#00E5FF) !important; }
 html body #cwtFull#cwtFull[data-fase="prep"] .cf-bar i{ background:linear-gradient(90deg,#C99A0B,#F5C518) !important; }
-html body #cwtFull#cwtFull[data-fase="work"] .cf-round{ border-color:rgba(255,106,31,.6) !important; }
-html body #cwtFull#cwtFull[data-fase="rest"] .cf-round{ border-color:rgba(0,229,255,.6) !important; }
-html body #cwtFull#cwtFull[data-fase="prep"] .cf-round{ border-color:rgba(245,197,24,.6) !important; }
-html body #cwtFull#cwtFull.warn[data-fase] .cf-round{ background:#131F43 !important; color:#EEF3FF !important; }
 html body #cwtFull#cwtFull .cf-time.alerta{ animation:cfPulse .5s ease; }
+
+/* firma "COACH JP · HIGH PERFORMANCE COACHING": anclada abajo (con la zona segura del iPhone) y con más presencia */
+html body #cwtFull#cwtFull .cf-sign{
+  position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom, 0px) + 26px); margin:0; gap:7px; align-items:center; pointer-events:none;
+}
+html body #cwtFull#cwtFull .cf-sign b{ font-size:1.5rem !important; font-weight:900 !important; letter-spacing:.3em !important; color:#FFFFFF !important; line-height:1; padding-left:.3em; }
+html body #cwtFull#cwtFull .cf-sign b em{ color:#EE5A12 !important; font-style:normal !important; font-size:1.18em; letter-spacing:.22em; }
+html body #cwtFull#cwtFull .cf-sign span{ font-size:.68rem !important; font-weight:700 !important; letter-spacing:.32em !important; color:#9FB0D8 !important; padding-left:.32em; }
+html body #cwtFull#cwtFull .cf-sign::after{ content:''; width:46px; height:2px; border-radius:2px; background:linear-gradient(90deg,#EE5A12,#00E5FF); opacity:.85; margin-top:3px; }
 </style>
 <style id="jpVistaPulida">
 /* Vista del entrenamiento · pulido móvil (alineación, subtítulos, acordeón de pautas, encabezado de cardio, firma)
@@ -48289,6 +48566,298 @@ html body:not(#_):not(#__) .site-footer .jp-firma-d{ display:none !important; }
 html body:not(#_):not(#__) .site-footer .jp-firma-r{ display:block; color:var(--jp-azul-sub) !important; font-size:.74rem !important; line-height:1.55; letter-spacing:.02em; }
 html body:not(#_):not(#__) .site-footer .jp-firma-r::after{ content:''; display:block; width:30px; height:2px; margin:10px auto 0; border-radius:2px; background:var(--jp-cyan); opacity:.7; }
 html body:not(#_):not(#__) .site-footer .jp-build{ margin:10px 0 0 !important; color:rgba(159,176,216,.5) !important; font-size:.62rem !important; letter-spacing:.16em; text-transform:uppercase; }
+</style>
+<style id="jpPulidoFino">
+/* Pulido fino · esquinas y bordes nítidos, marca del header, pautas alineadas, Perfil & Ajustes y Guía de entrenamiento
+   Va después de 093 y con el mismo prefijo de especificidad que la piel azul noche (html body:not(#_):not(#__)): pisa generaciones viejas de CSS sin tocar datos ni lógica.
+   Paleta: naranja de la marca #EE5A12, amarillo del escudo #F5C518, cyan táctico #00E5FF, azul noche de la app.
+   Estado activo de cualquier selector / interruptor = relleno naranja con texto blanco (antes: texto naranja sobre fondo casi igual, no se notaba cuál estaba elegido). */
+
+/* ---------- 1 · esquinas y bordes nítidos ----------
+   Causas de las esquinas "sucias": (a) el desenfoque de fondo (backdrop-filter) anidado en la tarjeta del bloque Y en su tablero, que borronea los cuatro bordes;
+   (b) el resumen de "Activación" con fondo de esquinas rectas dentro de una tarjeta redondeada que no recorta; (c) la barra dorada de la tarjeta del ejercicio hecha con un borde
+   izquierdo grueso sobre una esquina redondeada (se afina en punta); (d) bordes de 0,8 px y radios de 4,8 / 6 / 8 px mezclados en cajas hermanas. */
+html body:not(#_):not(#__) .block,
+html body:not(#_):not(#__) .jp-sb-board,
+html body:not(#_):not(#__) .day-view .day-header,
+html body:not(#_):not(#__) .info-card{ -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }
+html body:not(#_):not(#__) .block{ border-width:1px !important; border-style:solid !important; border-radius:16px !important; }
+html body:not(#_):not(#__) .block.cat-warmup{ overflow:hidden !important; }
+html body:not(#_):not(#__) .block.cat-warmup .block-body, html body:not(#_):not(#__) .block.cat-warmup .jp-warm-acc{ border-radius:15px !important; overflow:hidden; }
+html body:not(#_):not(#__) .jp-warm-acc > summary{ border-radius:15px !important; }
+html body:not(#_):not(#__) .jp-sb-board{ border-radius:15px !important; }
+/* líneas finas que sobresalían arriba de "Activación", "Pautas técnicas" y "Completar bloque": el filete de categoría del bloque (.block::before, una raya de 1 a 3 px pegada al borde de
+   arriba, de lado a lado, que no sigue la esquina redondeada) y el borde de arriba de la fila de "Activación" (un segundo filete pegado al del bloque). Ya no se dibujan: el contorno de cada
+   caja es uno solo, con su radio. */
+html body:not(#_):not(#__) .block::before, html body:not(#_):not(#__) .block::after{ content:none !important; display:none !important; }
+html body:not(#_):not(#__) .block.cat-warmup .jp-warm-acc{ border:0 !important; box-shadow:none !important; }
+html body:not(#_):not(#__) .jp-sb-board::before, html body:not(#_):not(#__) .jp-sb-board::after, html body:not(#_):not(#__) .wod-board::after{ content:none !important; display:none !important; }
+
+/* tarjeta del ejercicio: su forma la fijan los estilos de tarjeta del coach (src/shared/tarjeta-ejercicio.css); la barra de color de los estilos 2 y 4 se dibuja ahí como una pieza
+   recortada por la esquina (ya no es un borde izquierdo grueso que se afina en punta). Acá solo se unifican las cajas hermanas.
+   cajas hermanas del mismo nivel: mismo borde (1 px entero, nítido en pantallas 2x y 3x) y mismo radio */
+html body:not(#_):not(#__) .jp-qc-tg,
+html body:not(#_):not(#__) .jp-ex-tips,
+html body:not(#_):not(#__) .jp-ex-box,
+html body:not(#_):not(#__) details.jp-block-details > summary.jp-summary-btn{ border-width:1px !important; border-radius:12px !important; }
+html body:not(#_):not(#__) .jp-dose-bar:not(.jp-cont-pill){ border-width:1px !important; border-radius:12px !important; }
+html body:not(#_):not(#__) .jp-qc-bx{ border-width:1px !important; border-radius:14px !important; }
+html body:not(#_):not(#__) .jp-ux-vid, html body:not(#_):not(#__) .jp-sb-vid-card{ border-radius:10px !important; }
+/* rótulo del bloque con su duración: respira y no se pega al borde de la tarjeta */
+html body:not(#_):not(#__) .jp-sb-tag{ padding:8px 2px 6px !important; line-height:1.55 !important; }
+html body:not(#_):not(#__) .jp-sb-tag .jp-sb-tmin{ display:inline-block; white-space:nowrap; }
+
+/* ---------- 2 · marca "COACH JP" del header ----------
+   COACH y JP del mismo tamaño, peso y espaciado (JP solo se distingue por el naranja de la marca, sin resplandor) y el escudo sin recuadro: sin caja, borde, fondo ni auras
+   alrededor, solo el isotipo dorado con una sombra apenas marcada para que se despegue del azul. */
+html body:not(#_):not(#__) .hdc-brand-mark{ display:inline-flex !important; align-items:baseline; line-height:1 !important; font-size:12px !important; font-weight:800 !important; letter-spacing:.2em !important; }
+html body:not(#_):not(#__) .hdc-brand-mark em{
+  font-size:1em !important; font-weight:inherit !important; letter-spacing:inherit !important; line-height:inherit !important; color:#EE5A12 !important;
+  text-shadow:none !important; margin-left:0;
+}
+html body:not(#_):not(#__) .hdc-shield{
+  background:none !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; transform:none !important; margin-right:0 !important;
+}
+html body:not(#_):not(#__) .hdc-shield::before, html body:not(#_):not(#__) .hdc-shield::after{ content:none !important; display:none !important; }
+html body:not(#_):not(#__) .hdc-shield svg{ width:28px !important; height:33px !important; filter:drop-shadow(0 2px 3px rgba(0,0,0,.45)) !important; }
+
+/* ---------- 3 · "Pautas técnicas & tips del bloque" alineada con las filas desplegables de adentro de la tarjeta ----------
+   Las filas "Registrar carga / Coaching tips / Objetivo fisiológico / Tempo" van adentro de la tarjeta del ejercicio (borde + relleno de cada estilo); la fila de pautas vive afuera,
+   a todo el ancho del tablero, y se veía más ancha. Mismos márgenes laterales que las de adentro, según el estilo de tarjeta (4 por defecto: 1 + 12 / 1 + 10; 2: 1 + 17 / 1 + 14; 1: 1 + 14). */
+html body:not(#_):not(#__) .jp-sb-board > details.jp-block-details{ margin:6px 11px 6px 13px !important; }
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-board > details.jp-block-details{ margin:6px 15px 6px 18px !important; }
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-board > details.jp-block-details{ margin:6px 15px 6px 15px !important; }
+
+/* ---------- 5 · Perfil & Ajustes ---------- */
+/* "Programa activo": más aire y la semana activa a la vista */
+html body:not(#_):not(#__) .hd-full-drawer .hdp-athlete{ padding:22px 20px 20px !important; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-athlete .hdp-badge{ margin:12px 0 18px !important; padding:12px 16px !important; line-height:1.45; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-meso-curve{ margin-top:16px !important; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-curve-row{ gap:8px !important; margin-top:10px; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-curve-chip{ padding:9px 13px !important; border-radius:11px !important; color:#8FA0C8 !important; background:rgba(8,14,34,.5) !important; border:1px solid rgba(150,178,240,.24) !important; font-weight:700; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-curve-chip.cur{ color:#FFFFFF !important; background:linear-gradient(180deg,#F26A1B,#E24F0D) !important; border-color:#FF9B5E !important; font-weight:800; box-shadow:0 8px 16px -10px rgba(238,90,18,.8) !important; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-sync{ margin-top:16px !important; }
+
+/* selectores e interruptores: el elegido se ve de lejos (KG / LBS, ON / OFF, AUTO / ES / EN, A / A+ / A++, modo completo / rápido) */
+html body:not(#_):not(#__) .hd-full-drawer .hdp-uni-toggle{
+  display:inline-flex; gap:6px; padding:4px !important; border-radius:14px !important; background:rgba(8,14,34,.55) !important; border:1px solid rgba(150,178,240,.22) !important;
+}
+html body:not(#_):not(#__) .hd-full-drawer .hdp-uni-b,
+html body:not(#_):not(#__) .hd-full-drawer .jp-btn-font,
+html body:not(#_):not(#__) .hd-full-drawer .uni-switch button,
+html body:not(#_):not(#__) .hd-full-drawer .nav-pill.mode-pill{
+  color:#8FA0C8 !important; background:transparent !important; border:1px solid transparent !important; box-shadow:none !important; border-radius:10px !important; font-weight:700 !important; letter-spacing:.05em;
+}
+html body:not(#_):not(#__) .hd-full-drawer .hdp-uni-b.on,
+html body:not(#_):not(#__) .hd-full-drawer .jp-btn-font.on,
+html body:not(#_):not(#__) .hd-full-drawer .uni-switch button.on,
+html body:not(#_):not(#__) .hd-full-drawer .nav-pill.mode-pill.active{
+  color:#FFFFFF !important; background:linear-gradient(180deg,#F26A1B,#E24F0D) !important; border-color:#FF9B5E !important; font-weight:800 !important;
+  box-shadow:0 8px 16px -10px rgba(238,90,18,.85) !important;
+}
+/* "apagado" elegido: relleno gris azulado (se ve que está seleccionado, pero no se lee como "encendido") */
+html body:not(#_):not(#__) .hd-full-drawer .hdp-uni-b.on[data-audio="off"],
+html body:not(#_):not(#__) .hd-full-drawer .hdp-uni-b.on[data-voz="off"]{
+  background:linear-gradient(180deg,#46557F,#38466B) !important; border-color:#8FA0C8 !important; color:#FFFFFF !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__) .hd-full-drawer .mode-switch{ gap:8px; }
+html body:not(#_):not(#__) .hd-full-drawer .mode-switch .nav-pill.mode-pill{ background:rgba(8,14,34,.55) !important; border-color:rgba(150,178,240,.22) !important; }
+html body:not(#_):not(#__) .hd-full-drawer .mode-switch .nav-pill.mode-pill.active{ background:linear-gradient(180deg,#F26A1B,#E24F0D) !important; border-color:#FF9B5E !important; }
+html body:not(#_):not(#__) .hd-full-drawer .jp-font-scaler{ display:inline-flex; gap:6px; }
+html body:not(#_):not(#__) .hd-full-drawer .jp-btn-font{ background:rgba(8,14,34,.55) !important; border-color:rgba(150,178,240,.22) !important; min-width:50px; }
+html body:not(#_):not(#__) .hd-full-drawer .jp-btn-font.on{ background:linear-gradient(180deg,#F26A1B,#E24F0D) !important; border-color:#FF9B5E !important; }
+
+/* voz del timer: los tres controles en UNA tarjeta, con su guía corta */
+html body:not(#_):not(#__) .hd-full-drawer .hdp-voz-grupo{
+  background:#131F43 !important; border:1px solid rgba(150,178,240,.24) !important; border-radius:14px !important; overflow:hidden; margin:0 0 10px !important;
+}
+html body:not(#_):not(#__) .hd-full-drawer .hdp-voz-grupo > .hdp-row{ background:transparent !important; border:0 !important; border-radius:0 !important; margin:0 !important; border-top:1px solid rgba(150,178,240,.14) !important; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-voz-grupo > .hdp-row:first-child{ border-top:0 !important; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-voz-guia{ margin:0 !important; padding:0 16px 14px !important; font-size:.76rem; line-height:1.5; color:#9FB0D8; }
+
+/* "Pausar sesión": ocupa el ancho de su fila, no queda suelto en un espacio vacío */
+html body:not(#_):not(#__) .hd-full-drawer #hdpQtSlot{ display:flex !important; flex-wrap:wrap; gap:10px; padding:12px !important; }
+html body:not(#_):not(#__) .hd-full-drawer #hdpQtSlot .ses-pause{ flex:1 1 100%; width:100%; min-height:48px; display:flex; align-items:center; justify-content:center; gap:8px; margin:0 !important; }
+
+/* margen inferior del scroll: el bloque "Coach" del final queda entero por encima del botón flotante y de la barra del navegador */
+html body:not(#_):not(#__) .hd-full-drawer{ padding-bottom:calc(120px + env(safe-area-inset-bottom, 0px)) !important; scroll-padding-bottom:120px; }
+html body:not(#_):not(#__) .hd-full-drawer .hdp-coach{ margin-bottom:28px !important; }
+
+/* ---------- Guía de entrenamiento ---------- */
+/* explicación técnica del mesociclo: objetivo en un párrafo corto y el resto en puntos */
+html body:not(#_):not(#__) #guideModal .gd-meso{ margin:0 0 6px; }
+html body:not(#_):not(#__) #guideModal .gd-meso-obj{ display:block; margin:0 0 12px; line-height:1.6; font-size:.88rem; color:#E4EAFB; }
+html body:not(#_):not(#__) #guideModal .gd-meso-lista{ margin:0 0 16px; padding:0; list-style:none; display:grid; gap:9px; }
+html body:not(#_):not(#__) #guideModal .gd-meso-lista li{ position:relative; padding:0 0 0 18px; line-height:1.55; font-size:.86rem; color:#C9D3EE; }
+html body:not(#_):not(#__) #guideModal .gd-meso-lista li::before{ content:''; position:absolute; left:2px; top:.62em; width:6px; height:6px; border-radius:50%; background:#EE5A12; }
+html body:not(#_):not(#__) #guideModal .gd-meso-lista li b{ color:#F5C518; font-weight:800; }
+
+/* tarjetas de semana: título + badge en la primera línea (sin que el badge parta el texto) y la descripción a todo el ancho debajo */
+html body:not(#_):not(#__) #guideModal .gc-row{
+  display:grid !important; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; align-items:center; padding:13px 14px 13px 16px !important;
+  border-radius:12px !important; border:1px solid rgba(150,178,240,.2) !important; border-left:3px solid #EE5A12 !important; background:rgba(8,14,34,.42) !important;
+}
+html body:not(#_):not(#__) #guideModal .gc-row-main{ display:contents !important; }
+html body:not(#_):not(#__) #guideModal .gc-row-main > b{ grid-column:1; grid-row:1; font-size:.9rem !important; color:#F5C518 !important; }
+html body:not(#_):not(#__) #guideModal .gc-row > .gc-badge-rpe{
+  grid-column:2; grid-row:1; white-space:nowrap; align-self:center; font-size:.7rem !important; font-weight:800; padding:4px 10px !important; border-radius:999px;
+  color:#FF9B5E !important; background:rgba(238,90,18,.14) !important; border:1px solid rgba(238,90,18,.55) !important;
+}
+html body:not(#_):not(#__) #guideModal .gc-row-main > span{ grid-column:1 / -1; grid-row:2; font-size:.8rem !important; line-height:1.5; color:#C9D3EE !important; }
+/* pico de intensidad (a fallo técnico): el más fuerte de las semanas de carga */
+html body:not(#_):not(#__) #guideModal .gc-row.gc-row-pico{ border-left-color:#FF5A1F !important; background:rgba(238,90,18,.1) !important; }
+html body:not(#_):not(#__) #guideModal .gc-row.gc-row-pico > .gc-badge-rpe{ color:#FFFFFF !important; background:#EE5A12 !important; border-color:#FF9B5E !important; }
+/* descarga: cyan de recuperación, claramente distinta de las semanas de carga */
+html body:not(#_):not(#__) #guideModal .gc-row.gc-row-descarga{ border-color:rgba(0,229,255,.32) !important; border-left-color:#00E5FF !important; background:rgba(0,229,255,.07) !important; }
+html body:not(#_):not(#__) #guideModal .gc-row.gc-row-descarga > .gc-row-main > b{ color:#7FEFFF !important; }
+html body:not(#_):not(#__) #guideModal .gc-row.gc-row-descarga > .gc-badge-rpe{ color:#7FEFFF !important; background:rgba(0,229,255,.12) !important; border-color:rgba(0,229,255,.5) !important; }
+
+/* pestañas Técnica / Glosario / Zonas FC: barra a todo el ancho (sin franja negra ni contenido asomando por los costados), íconos de línea y pestaña activa en naranja */
+html body:not(#_):not(#__) #guideModal .gd-tabs{
+  position:sticky; top:-22px; z-index:10; margin:0 -22px 14px !important; padding:14px 22px 12px !important; gap:8px !important;    /* top:-22px = el padding del modal: la barra se pega al borde de arriba, sin dejar pasar el contenido por encima */
+  background:#131F43 !important; border-bottom:1px solid rgba(150,178,240,.18);
+}
+html body:not(#_):not(#__) #guideModal .tm-tab{
+  display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border-radius:12px !important; font-size:.74rem !important; font-weight:800 !important; letter-spacing:.04em;
+  background:rgba(150,178,240,.07) !important; border:1px solid rgba(150,178,240,.24) !important; color:#9FB0D8 !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__) #guideModal .tm-tab .gd-tab-ic{ width:17px; height:17px; flex:0 0 auto; }
+html body:not(#_):not(#__) #guideModal .tm-tab.on{ background:linear-gradient(180deg,#F26A1B,#E24F0D) !important; border-color:#FF9B5E !important; color:#FFFFFF !important; }
+
+/* ---------- 7 · timer chico (modal y mini-HUD): el descanso se distingue de la actividad, "Ronda n de N" sin pastilla ----------
+   Trabajo = números en naranja de la marca; descanso = cyan táctico (también en los últimos segundos: antes la alerta pintaba cualquier fase de cyan y el descanso no se distinguía).
+   La fase viaja en la clase del rótulo (.cwt-phase.work / .rest, ver el motor en 016-1) y el reloj es su hermano siguiente. Misma lógica que la pantalla completa (092). */
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.work ~ .cwt-time,
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.work ~ .cwt-time.alerta{ color:#FF6A1F !important; text-shadow:none !important; }
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.rest ~ .cwt-time,
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.rest ~ .cwt-time.alerta{ color:#00E5FF !important; text-shadow:none !important; }
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.rest, html body:not(#_):not(#__) .cwt-screen .cwt-phase.rest.warn{ color:#00E5FF !important; }
+html body:not(#_):not(#__) .cwt-screen .cwt-phase.work.warn{ color:#FF6A1F !important; }
+html body:not(#_):not(#__) .cwt-screen .cwt-bar.rest i, html body:not(#_):not(#__) .cwt-screen .cwt-bar.rest.warn i{ background:#00E5FF !important; }
+html body:not(#_):not(#__) .cwt-screen .cwt-bar.work i, html body:not(#_):not(#__) .cwt-screen .cwt-bar.work.warn i{ background:#FF6A1F !important; }
+html body:not(#_):not(#__) .cwt-round, html body:not(#_):not(#__) .cwt-mini-round{ background:none !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; padding:0 !important; }
+/* Notas del ejercicio compactas · selector de versión de la sesión (Sports) · plan de cargas por semana
+   Va después de 094 con el mismo prefijo de especificidad (html body:not(#_):not(#__)) y un atributo más en las notas para ganarle a los estilos de tarjeta del coach. */
+
+/* ---------- 1 · notas del ejercicio: una sola fila de botones chicos en vez de tres desplegables apilados ----------
+   "Registrar carga" sigue siendo la fila principal de la tarjeta; "Tips · Objetivo · Tempo" quedan en una fila discreta y muestran de a una nota por vez. */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 0; align-items:flex-start; }
+html body:not(#_):not(#__) .jp-notas-chips{ display:flex; flex:1 1 100%; flex-wrap:wrap; gap:6px; }
+html body:not(#_):not(#__) .jp-nota-chip{
+  appearance:none; -webkit-appearance:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:0 11px; border-radius:999px;
+  background:transparent; border:1px solid rgba(150,178,240,.24); color:#9FB0D8; font:700 .66rem/1 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase;
+  -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease, border-color .15s ease;
+}
+html body:not(#_):not(#__) .jp-nota-chip b{ font-weight:800; letter-spacing:.06em; color:#C9D6F5; font-variant-numeric:tabular-nums; }
+html body:not(#_):not(#__) .jp-nota-ic{ font-size:.78rem; line-height:1; filter:saturate(.7); }
+html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"]{ color:#FFFFFF; background:rgba(255,194,75,.14); border-color:rgba(255,194,75,.7); }
+html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"] b{ color:#FFC24B; }
+/* solo se ve la nota elegida; el resumen del desplegable original se oculta (el botón ya lo nombra) */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details{ display:none; flex:1 1 100%; margin:0; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tips"] > details.jp-ex-tips,
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="obj"] > details.jp-ex-box-obj,
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tempo"] > details.jp-ex-box-tempo{ display:block; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details > summary{ display:none !important; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-box-b{ border-top:0; padding-top:10px; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-tips-b{ padding-top:10px; }
+
+/* ---------- 2 · selector de versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ---------- */
+html body:not(#_):not(#__) .jp-ver{ margin:2px 0 14px; }
+html body:not(#_):not(#__) .jp-ver-seg{ display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px; border-radius:16px; background:rgba(8,14,34,.55); border:1px solid rgba(150,178,240,.26); }
+html body:not(#_):not(#__) .jp-ver-b{
+  appearance:none; -webkit-appearance:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; min-height:46px; padding:0 8px; border-radius:12px; white-space:nowrap;
+  background:transparent; border:1px solid transparent; color:#9FB0D8; font:800 .74rem/1 'Chakra Petch',sans-serif; letter-spacing:.08em; -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease;
+}
+html body:not(#_):not(#__) .jp-ver-b i{ font-style:normal; opacity:.6; }
+html body:not(#_):not(#__) .jp-ver-b span{ font-weight:700; letter-spacing:.06em; }
+html body:not(#_):not(#__) .jp-ver-b.on{ color:#FFFFFF; background:linear-gradient(180deg,#F26A1B,#E24F0D); border-color:#FF9B5E; box-shadow:0 8px 16px -10px rgba(238,90,18,.85); }
+html body:not(#_):not(#__) .jp-ver-h{ margin:8px 4px 0; font-size:.74rem; line-height:1.45; color:#9FB0D8; }
+
+/* ---------- 3 · plan de cargas por semana (dentro de "Registrar carga") ---------- */
+html body:not(#_):not(#__) .jp-qc-plan{ margin:2px 0 10px; padding:9px 10px 10px; border-radius:12px; background:rgba(8,14,34,.5); border:1px solid rgba(150,178,240,.2); }
+html body:not(#_):not(#__) .jp-pl-t{ font:800 .6rem/1 'Chakra Petch',sans-serif; letter-spacing:.14em; color:#9FB0D8; margin:0 0 8px; }
+html body:not(#_):not(#__) .jp-pl-g{ display:grid; grid-template-columns:repeat(var(--n,4),minmax(0,1fr)); gap:6px; }
+html body:not(#_):not(#__) .jp-pl-w{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 2px 6px; border-radius:10px; border:1px solid rgba(150,178,240,.18); background:rgba(255,255,255,.02); min-width:0; text-align:center; }
+html body:not(#_):not(#__) .jp-pl-w small{ font:800 .56rem/1.1 'Chakra Petch',sans-serif; letter-spacing:.08em; color:#9FB0D8; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w b{ font:800 .98rem/1 'Chakra Petch',sans-serif; color:#EEF3FF; font-variant-numeric:tabular-nums; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w b u{ text-decoration:none; font-size:.56rem; margin-left:2px; color:#9FB0D8; font-weight:700; }
+html body:not(#_):not(#__) .jp-pl-w i{ font:700 .54rem/1.1 'Chakra Petch',sans-serif; font-style:normal; letter-spacing:.04em; color:#7F93C4; white-space:nowrap; }
+html body:not(#_):not(#__) .jp-pl-w.real{ border-color:rgba(110,240,200,.4); }
+html body:not(#_):not(#__) .jp-pl-w.real i{ color:#6EF0C8; }
+html body:not(#_):not(#__) .jp-pl-w.hoy{ background:rgba(255,194,75,.12); border-color:rgba(255,194,75,.75); }
+html body:not(#_):not(#__) .jp-pl-w.hoy small, html body:not(#_):not(#__) .jp-pl-w.hoy b{ color:#FFC24B; }
+html body:not(#_):not(#__) .jp-pl-w.jp-pl-descarga small{ color:#5CE1FF; }
+html body:not(#_):not(#__) .jp-pl-w.jp-pl-pico small{ color:#FF9466; }
+
+/* ---------- 4 · contornos únicos: sin líneas rectas pegadas a las esquinas redondeadas ----------
+   "Pautas técnicas & tips del bloque": el <details> de afuera dibujaba un filete recto de 1 px arriba (border-top, 084) que chocaba con la esquina redondeada del botón de adentro. El contorno
+   es solo el del botón. Lo mismo en "Criterio del día": la caja de afuera (radio 6) y su botón (radio 12) ahora comparten una sola esquina recortada. */
+html body:not(#_):not(#__) details.jp-block-details{ border:0 !important; border-top:0 !important; border-radius:0 !important; background:none !important; box-shadow:none !important; padding-top:0 !important; }
+html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia{ border-radius:12px !important; overflow:hidden !important; }
+html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia > summary{ border-radius:0 !important; border-width:0 !important; box-shadow:none !important; }
+
+/* ---------- 5 · notas del ejercicio: la fila se lee como parte de la tarjeta y no como un botón suelto ---------- */
+html body:not(#_):not(#__) .jp-notas-lb{ flex:0 0 auto; align-self:center; font:800 .58rem/1 'Chakra Petch',sans-serif; letter-spacing:.16em; text-transform:uppercase; color:#7F93C4; margin-right:2px; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ margin:10px 0 2px; }
+html body:not(#_):not(#__) .jp-sb-ex + .jp-sb-vid-title, html body:not(#_):not(#__) .jp-sb-bracket + .jp-sb-vid-title{ margin-top:12px; }
+
+/* ---------- 6 · firma de la programación: nombre una sola vez, un solo acento y un ritmo vertical parejo ---------- */
+html body:not(#_):not(#__) .site-footer{
+  margin:34px 20px 0 !important; padding:22px 20px 18px !important; border:1px solid rgba(150,178,240,.24) !important; box-shadow:0 18px 40px -26px rgba(0,0,0,.85) !important;
+}
+html body:not(#_):not(#__) .site-footer p{ margin:0 0 4px !important; font-size:.74rem; line-height:1.5; color:#9FB0D8 !important; }
+html body:not(#_):not(#__) .site-footer p:first-child{ font-size:.78rem; margin-bottom:6px !important; }
+html body:not(#_):not(#__) .site-footer p b{ color:#EE5A12 !important; letter-spacing:.14em; }
+html body:not(#_):not(#__) .site-footer .jp-firma{ margin:18px 0 0 !important; padding:18px 0 0 !important; border-top:1px solid rgba(150,178,240,.18) !important; }
+html body:not(#_):not(#__) .site-footer .jp-firma-n{ margin:0 0 6px; }
+html body:not(#_):not(#__) .site-footer .jp-firma-n::after, html body:not(#_):not(#__) .site-footer .jp-firma-r::after{ content:none !important; display:none !important; }
+html body:not(#_):not(#__) .site-footer .jp-firma .jp-firma-n{ color:#FFFFFF !important; }
+html body:not(#_):not(#__) .site-footer .jp-build{ margin:16px 0 0 !important; }
+/* la fila de notas cabe en una línea también a 360 px: botones y rótulo más compactos */
+html body:not(#_):not(#__) .jp-notas-chips{ flex-wrap:nowrap; gap:5px; align-items:center; }
+html body:not(#_):not(#__) .jp-nota-chip{ min-height:28px; padding:0 8px; gap:4px; font-size:.6rem; letter-spacing:.06em; white-space:nowrap; flex:0 1 auto; min-width:0; }
+html body:not(#_):not(#__) .jp-nota-chip b{ letter-spacing:.04em; }
+html body:not(#_):not(#__) .jp-notas-lb{ font-size:.54rem; letter-spacing:.12em; margin-right:0; }
+/* Header del atleta refinado · escudo con aire y centro óptico, "ACTIVO" sobrio, nombre estilo ficha con dato de contexto y controles (…, SEM, DÍA) con el mismo contorno y los mismos márgenes.
+   Va después de 095 con el mismo prefijo de especificidad (html body:not(#_):not(#__)). Paleta: naranja de la marca #EE5A12 solo en «JP»; el resto, blanco y azules apagados. */
+
+/* ---------- marco de la fila superior: márgenes laterales parejos (16 px) y todo centrado en vertical ---------- */
+html body:not(#_):not(#__) .hd-compact .hdc-top{ padding:6px 16px 6px 16px !important; gap:12px !important; align-items:center !important; }
+
+/* escudo: más aire a los costados y centrado en una caja fija (sin recuadro) para que su centro óptico coincida con el bloque de texto */
+html body:not(#_):not(#__) .hdc-shield{ flex:0 0 40px !important; width:40px !important; height:40px !important; margin:0 !important; display:flex !important; align-items:center; justify-content:center; }
+html body:not(#_):not(#__) .hdc-shield svg{ width:30px !important; height:35px !important; }
+
+/* bloque de identidad: marca + estado / nombre / dato de contexto */
+html body:not(#_):not(#__) .hdc-id{ min-width:0; row-gap:2px !important; column-gap:10px !important; grid-template-areas:"brand chip" "name name" "ctx ctx" !important; }
+html body:not(#_):not(#__) .hdc-brand-mark{ font-size:12px !important; letter-spacing:.2em !important; font-weight:800 !important; }
+
+/* «ACTIVO»: discreto, sin cápsula ni borde (no compite con la marca ni con el nombre) */
+html body:not(#_):not(#__) .hdc-chip-row{ align-self:center; }
+html body:not(#_):not(#__) .hdc-chip-row .jp-status-pill{
+  background:none !important; border:0 !important; box-shadow:none !important; padding:0 !important; border-radius:0 !important;
+  font:700 .56rem/1 'Chakra Petch',sans-serif !important; letter-spacing:.16em !important; text-transform:uppercase; opacity:.9;
+}
+html body:not(#_):not(#__) .hdc-chip-row .jp-status-pill.jp-status-active{ color:#7FE3B8 !important; }
+
+/* nombre estilo ficha de atleta: más firme, en mayúsculas, con su dato de contexto debajo */
+html body:not(#_):not(#__) .hdc-name{
+  font-size:1.22rem !important; font-weight:800 !important; letter-spacing:.06em !important; text-transform:uppercase; line-height:1.15 !important; color:#FFFFFF !important;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+html body:not(#_):not(#__) .hdc-ctx{
+  grid-area:ctx; font:700 .6rem/1.2 'Chakra Petch',sans-serif; letter-spacing:.16em; text-transform:uppercase; color:#8FA0C8; font-variant-numeric:tabular-nums;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+
+/* ---------- controles: mismo contorno, radio y altura en «…», SEM y DÍA; mismos márgenes que el escudo (#hdCompact para ganarle a 084 / 086 / 093) ---------- */
+html body:not(#_):not(#__) #hdCompact .jp-ux-menu-btn, html body:not(#_):not(#__) #hdCompact .hdc-info,
+html body:not(#_):not(#__) #hdCompact .jp-wk-btn{
+  height:40px !important; min-height:40px !important; border-radius:10px !important; border:1px solid rgba(150,178,240,.42) !important; box-sizing:border-box !important;
+}
+html body:not(#_):not(#__) #hdCompact .jp-ux-menu-btn, html body:not(#_):not(#__) #hdCompact .hdc-info{ width:40px !important; min-width:40px !important; margin:0 !important; }
+html body:not(#_):not(#__) #hdCompact .jp-wk-btn, html body:not(#_):not(#__) #hdCompact .jp-wk-btn b{ font-variant-numeric:tabular-nums; }
+html body:not(#_):not(#__) #hdCompact .hdc-days-row{ padding:6px 16px 10px !important; gap:8px !important; height:auto !important; min-height:0 !important; box-sizing:border-box !important; }
 </style>
 
 </body>
@@ -49164,7 +49733,8 @@ function compile(ath){
     HERO_H1: (M.heroTitle || '') + (M.heroEm ? ' <em>' + M.heroEm + '</em>' : ''),
     HERO_SUB: M.heroSub || '',
     FOOTER_1: '<b>Coach JP</b> — Programación generada para ' + nombre,
-    FOOTER_2: M.footer2 || '',
+    /* el nombre del alumno figura UNA sola vez arriba (FOOTER_1): a los planes guardados con "… personalizada para <nombre>" se les quita el nombre repetido al compilar (el dato guardado no se toca) */
+    FOOTER_2: String(M.footer2 || '').replace(/(personalizada)\s+para\s+.+$/i, '$1'),
     STORAGE_KEY: 'coachjp_' + slug(nombre) + '_progress_v1',
     GUIDE_PROGRESSION_ROWS: guideRows,
     PAIN_RESTRICTIONS: painRestrictionsHtml(ath),
@@ -51422,7 +51992,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevaciones laterales con mancuernas','Elevaciones laterales en polea baja'] },
                  { grupo:['Brazos'], patron:['Tríceps'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Deltoide lateral y cierre de tríceps con densidad.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Congestión', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], equipo:['Mancuernas','Polea'], prefer:['Curl 21s con mancuernas','Curl de bíceps con mancuernas','Curl martillo'] }],
           tips:'Ritmo constante, sin pausas: buscás sensación muscular, no carga.' }
       ]
@@ -51450,7 +52020,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','zancada','step up'] }, { grupo:['Piernas/Glúteos'], any:['step up','zancada','patada'] }],
           objective:'Demanda unilateral: corrige asimetrías que el trabajo bilateral no detecta.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Glúteo', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['patada de glúteo','puente'] }],
           tips:'Empuje desde el talón, sin impulso lumbar.' }
       ]
@@ -51480,7 +52050,7 @@ document.addEventListener('DOMContentLoaded', init);
                  { grupo:['Hombros'], patron:['Aislamiento hombro'], any:['posterior','pájaro','rear'] },
                  { grupo:['Hombros','Espalda'], any:['face pull'] }],
           objective:'Deltoide en sus tres haces más mantenimiento postural.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher de Tríceps', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           tips:'Codos fijos al torso, rango completo y ritmo constante.' }
       ]
@@ -51507,10 +52077,10 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','step up'] }, { grupo:['Piernas/Glúteos'], any:['zancada','step up'] }],
           objective:'Estabilidad de cadera y control del valgo bajo carga.' },
-        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo extendida · 90 min', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
           picks:[{ grupo:['Piernas/Glúteos'], any:['abducción','monster','banda'] }],
           tips:'Sin pausa entre repeticiones: buscás el glúteo medio ardiendo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado'],
           tips:'Resistí la rotación sin que el torso se vaya al costado; lumbar pegada al piso.' }
       ]
@@ -51539,7 +52109,7 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl de bíceps con barra Z','Curl de bíceps con barra recta'] },
                  { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl martillo','Curl martillo cruzado al pecho'] }],
           objective:'Bíceps en supinación y braquial en neutro, los dos ángulos que faltan.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado','Plancha frontal — 3x30-40s'],
           tips:'Respiración continua: nunca aguantes el aire para sostener la posición.' }
       ]
@@ -51567,7 +52137,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Extensión de Tríceps en Polea', subtitulo:'Aislamiento · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
           picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
           objective:'Cierre de tríceps con tensión constante y sin estrés de codo.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Plancha frontal — 3x30-40s','Rueda abdominal — 3x8-10 (regresión: desde rodillas o rango corto)'],
           tips:'Pelvis en retroversión y core apretado: si la lumbar se arquea, acortá el rango.' }
       ]
@@ -51596,7 +52166,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Elevación de Gemelos', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Volumen dedicado de gemelo, el eslabón que casi siempre queda corto.' },
-        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Dead bug — 3x10 por lado','Hollow body — 3x20-25s'],
           tips:'Lumbar pegada al piso todo el recorrido y respiración continua.' }
       ]
@@ -51625,7 +52195,7 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'block', titulo:'Block D: Gemelos de Pie', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
           picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
           objective:'Gastrocnemio con rango completo y pausa en el pico.' },
-        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado, sostén 2s','Plancha lateral — 3x25-30s por lado'],
           tips:'Resistí la rotación sin que la cadera se desplace: el core estabiliza, no gira.' }
       ]
@@ -51678,10 +52248,10 @@ document.addEventListener('DOMContentLoaded', init);
           picks:[{ grupo:['Espalda','Pectoral'], patron:['Tracción vertical','Empuje horizontal'] },
                  { grupo:['Piernas/Glúteos'], any:['zancada','step up','bulgarian','patada'] }],
           objective:'Densidad de trabajo con poco descanso: hipertrofia y gasto al mismo tiempo.' },
-        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo Modo Completo', category:'cardio', icon:'🏃', optional:true,
+        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo extendida · 90 min', category:'cardio', icon:'🏃', optional:true,
           movements:['12 Kettlebell Swings','200m en Remo Ergómetro','20m Caminata del Granjero (Farmer Carry)','10 Burpees'],
           tips:'La técnica manda sobre la velocidad, sobre todo en las últimas rondas.' },
-        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo extendida · 90 min', category:'accessory', icon:'🌀', optional:true,
           items:['Pallof press — 3x10-12 por lado','Plancha frontal — 3x30-40s'],
           tips:'Con el pulso alto la técnica se degrada: sostené la respiración continua.' }
       ]
@@ -52016,14 +52586,14 @@ document.addEventListener('DOMContentLoaded', init);
         if(P) b.restSeconds = P.rest;
         if(!b.tips && b.ejercicios.length){
           const pr = S.exercises.find(e => e.id === b.ejercicios[0].exId);
-          b.tips = 'Encadenado sin pausa entre A y B; el descanso va recién al cerrar la ronda. ' + autoNota(pr, b.ejercicios[0].tempo, ath);
+          b.tips = 'Encadenado sin pausa entre A y B; el descanso va recién al cerrar la ronda.\n' + autoNota(pr, b.ejercicios[0].tempo, ath);
         }
       }
       if(spec.tipo === 'finisher'){
         const ex = pick(spec.picks[0], ath, used);
         if(ex){ used.push(ex.id); b.fin.push({ exId: ex.id, repsRange: P ? P.reps : '15-20' }); }
         else notas.push('Sin candidato seguro para el finisher.');
-        if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + autoNota(ex, '1010', ath);
+        if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + autoNota(ex, '1010', ath);
       }
       /* dosificación auditada: si la estructura la trae, manda sobre el preset */
       if(spec.dosis){
@@ -53029,7 +53599,7 @@ document.addEventListener('DOMContentLoaded', init);
         if(b.ejercicios.length < 2) notasOut.push('«' + b.titulo + '» (' + arch.titulo + ') quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
         if(!b.tips && b.ejercicios.length){
           var pr = getEx(b.ejercicios[0].exId);
-          b.tips = (spec.pap ? 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa. ' : 'Encadenado sin pausa entre A y B. ') + autoNotaElite(pr, ath);
+          b.tips = (spec.pap ? 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa.\n' : 'Encadenado sin pausa entre A y B.\n') + autoNotaElite(pr, ath);
         }
       }
       if(spec.tipo === 'finisher'){
@@ -54657,39 +55227,69 @@ body{overflow-x:hidden}
     'Cardio / Metcon':'Respiración rítmica y sostenida; si te quedás sin aire, bajá el ritmo antes que la técnica.'
   };
 
-  /* pauta técnica completa: cues + respiración + tempo + riesgo + reglas del alumno */
-  function notaCompleta(ex, tempo, ath){
-    if(!ex) return '';
-    const partes = [];
-
-    /* a) ejecución, postura y respiración */
-    if(ex.aviso) partes.push(ex.aviso);
-    else if(CUE_PATRON[ex.patron]) partes.push(CUE_PATRON[ex.patron]);
-    const resp = RESP[ex.patron];
-    if(resp) partes.push(resp);
-
-    /* b) lectura del tempo configurado */
-    const t = explicarTempo(tempo);
-    if(t) partes.push(t);
-
-    /* c) advertencia articular por zona comprometida */
-    const zonas = (ex.riesgo || []).filter(z => CUES[z]);
-    if(zonas.length){
-      partes.push('⚠️ Riesgo articular (' + zonas.map(z => (ZONA_LB[z] || z).toLowerCase()).join(', ') + '): ' +
-        zonas.map(z => CUES[z]).join(' '));
+  /* PAUTAS EN EL FORMATO DEL BANCO DE RUTINAS: tres puntos cortos (SET-UP · CUE EFICIENTE · CUIDADO / ERROR COMÚN), un ejercicio por tres líneas ("A1 · SET-UP: ..." dentro de un biset).
+     Los textos salen de la misma base de conocimiento que el Banco (window.__jpPB.kbDe); si el ejercicio no está ahí se arma con su Coach Note, su patrón y sus zonas de riesgo.
+     Las reglas del alumno/a (restricciones, advertencias) se suman al CUIDADO: nunca se pierden. Una sola fuente para: cambiar un ejercicio, generar semana, importar, "Coach Note" de la biblioteca. */
+  const RX_KB_GENERICO = /grupo muscular objetivo con técnica controlada/;
+  function recortarPalabras(t, max){
+    const w = String(t || '').trim().split(/\s+/);
+    return w.length > max ? w.slice(0, max).join(' ').replace(/[,;:]+$/, '') + '…' : String(t || '').trim();
+  }
+  function tipsBanco(ex, o){
+    o = o || {};
+    if(!ex) return [];
+    const pre = o.codigo ? o.codigo + ' · ' : '';
+    /* una Coach Note ya escrita en el formato del Banco se respeta tal cual */
+    const propio = String(ex.aviso || '');
+    if(/(^|\n)\s*SET-?UP\s*:/i.test(propio) && /CUE EFICIENTE\s*:/i.test(propio)){
+      return propio.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => /^[A-F]\d\s*·/.test(l) ? l : pre + l);
     }
-
-    /* d) cruce con las reglas del alumno/a activo */
-    const A = ath || active();
+    const kb = (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null;
+    const generico = !kb || RX_KB_GENERICO.test(kb.o || '');
+    let su, cue, cu;
+    if(!generico){ su = kb.s; cue = kb.c; cu = kb.x; }
+    else {
+      su = propio || CUE_PATRON[ex.patron] || 'Posición estable, columna neutra y rango completo, de punta a punta.';
+      cue = RESP[ex.patron] || 'Movimiento controlado y respiración sostenida: la técnica manda por encima de la carga.';
+      const zonas = (ex.riesgo || []).filter(z => CUES[z]);
+      cu = zonas.length ? zonas.map(z => CUES[z]).join(' ') : 'No compenses con el tronco ni cortes el recorrido; si una articulación molesta, regresioná el ejercicio.';
+    }
+    const tp = String(o.tempo || '').replace(/\D/g, '');
+    if(o.codigo && /^\d{4}$/.test(tp)) cue = 'Tempo ' + tp + ' — ' + cue;      /* en un biset el tempo de cada estación viaja en su CUE (igual que el Banco) */
+    const A = o.ath === undefined ? active() : o.ath;
     if(A){
-      const al = checkExercise(A, ex);
-      al.forEach(a => {
-        if(a.level === 'danger') partes.push('⛔ RESTRINGIDO para ' + fullName(A) + ' — ' + a.msg);
-        else if(a.level === 'warn') partes.push('⚠️ ' + a.msg);
-        else if(a.level === 'good') partes.push('⭐ Ejercicio prioritario para ' + fullName(A) + '.');
+      const msgs = [];
+      checkExercise(A, ex).forEach(a => {
+        if(a.level === 'danger') msgs.push('Restringido para ' + fullName(A) + ': ' + a.msg);
+        else if(a.level === 'warn') msgs.push(a.msg);
       });
+      if(msgs.length) cu += ' ' + msgs.join(' ');
     }
-    return partes.join(' ');
+    return [pre + 'SET-UP: ' + recortarPalabras(su, 26), pre + 'CUE EFICIENTE: ' + recortarPalabras(cue, 30), pre + 'CUIDADO / ERROR COMÚN: ' + recortarPalabras(cu, 40)];
+  }
+  /* cualquier texto de tips (IA, importado, escrito a mano) → rótulos del Banco; las líneas sin rótulo conocido quedan como están */
+  function normalizarTips(texto){
+    return String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const m = /^(?:([A-F]\d)\s*·\s*)?([^:]{2,40}):\s*(.+)$/.exec(l); if(!m) return l;
+      const et = m[2].trim().toUpperCase(), pre = m[1] ? m[1] + ' · ' : '';
+      let rotulo = null;
+      if(/^SET-?\s*UP/.test(et) || /^(POSTURA|POSICI)/.test(et)) rotulo = 'SET-UP';
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO|T[ÉE]CNICA|INTENCI)/.test(et)) rotulo = 'CUE EFICIENTE';
+      else if(/^(CUIDADO|ERROR|PRECAUCI|EVIT|RIESGO|ALERTA)/.test(et)) rotulo = 'CUIDADO / ERROR COMÚN';
+      if(!rotulo) return l;
+      return pre + rotulo + ': ' + recortarPalabras(m[3], 28);
+    }).join('\n');
+  }
+  function notaCompleta(ex, tempo, ath){
+    return tipsBanco(ex, { tempo: tempo, ath: ath }).join('\n');
+  }
+  /* al cambiar el ejercicio de un bloque: devuelve las pautas nuevas (formato del Banco) si las actuales estaban vacías o eran las automáticas del ejercicio anterior;
+     null = el coach las editó a mano y se respetan */
+  function tipsAlCambiarEjercicio(b, exViejo, exNuevo, ath){
+    if(!b || !exNuevo) return null;
+    const actual = String(b.tips || '').trim();
+    const auto = !actual || (exViejo && actual === String(notaCompleta(exViejo, b.tempo, ath)).trim());
+    return auto ? notaCompleta(exNuevo, b.tempo, ath) : null;
   }
   function nota(ex, tempo){ return notaCompleta(ex, tempo, active()); }
 
@@ -54797,7 +55397,7 @@ body{overflow-x:hidden}
         e.repsRange = autoParams(ex, 'finisher').reps;
       });
       const primero = getEx((b.fin[0] || {}).exId);
-      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + notaCompleta(primero, '1010', active());
+      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + notaCompleta(primero, '1010', active());
       resumen.push('rango 15-20 reps · bombeo');
     }
     else { toast('El autocompletado aplica a bloques con ejercicios', 'warn'); return; }
@@ -54865,7 +55465,7 @@ body{overflow-x:hidden}
 
     if(S.ui.view === 'biblioteca') renderLibrary();
     addMagic();
-    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo };
+    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo, tipsBanco: tipsBanco, normalizarTips: normalizarTips, tipsAlCambiarEjercicio: tipsAlCambiarEjercicio };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
@@ -56559,14 +57159,14 @@ body{overflow-x:hidden}
         b.efSets = par.efSets; b.restSeconds = par.rest;
         b.subtitulo = b.ejercicios.length > 2 ? 'Tri-set sin pausa entre ejercicios' : 'Biset sin pausa entre A y B';
         const pr = b.ejercicios.length ? getEx(b.ejercicios[0].exId) : null;
-        b.tips = (b.ejercicios.length > 2 ? 'Tri-set: encadenás A, B y C sin soltar. ' : 'Encadenado sin pausa entre A y B. ') + nota(pr, par.tempo, ath);
+        b.tips = (b.ejercicios.length > 2 ? 'Tri-set: encadenás A, B y C sin soltar.\n' : 'Encadenado sin pausa entre A y B.\n') + nota(pr, par.tempo, ath);
       }
       else if(sl.t === 'finisher'){
         const ex = pick(sl.sp[0], ath, used);
         if(!ex){ avisos.push('Sin finisher seguro'); return; }
         used.push(ex.id);
         b.fin.push({ exId: ex.id, repsRange: P.fin.reps });
-        b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + nota(ex, '1010', ath);
+        b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + nota(ex, '1010', ath);
       }
       else if(sl.t === 'list' || sl.t === 'hyrox'){
         /* bloque metabólico / WOD */
@@ -58857,10 +59457,8 @@ body.man-mode .gs-fab{right:318px}
   /* ---------- motor local (sin API) ---------- */
   function localTips(ex){
     const CA = window.CoachAuto;
-    const base = CA && CA.notaCompleta ? CA.notaCompleta(ex, '2011', null) : '';
-    const cue = base.split('.').slice(0, 3).join('.').trim();
-    return (cue || 'Buscá una posición estable, columna neutra y control en todo el recorrido.') +
-           (/\.$/.test(cue) ? '' : '.');
+    const lineas = CA && CA.tipsBanco ? CA.tipsBanco(ex, { ath: null }) : [];
+    return lineas.length ? lineas.join('\n') : 'SET-UP: Buscá una posición estable y columna neutra.\nCUE EFICIENTE: Controlá todo el recorrido.\nCUIDADO / ERROR COMÚN: No compenses con el tronco.';
   }
   const OBJ_PATRON = {
     'Cadera dominante':'Tensión máxima en glúteo mayor e isquiotibiales en el rango de estiramiento; es el patrón que más transfiere a sprint, salto y subida.',
@@ -58896,7 +59494,7 @@ body.man-mode .gs-fab{right:318px}
       '. Grupo: ' + ex.grupo + '. Patrón: ' + ex.patron + '. Equipamiento: ' + ex.equipo +
       (ex.riesgo && ex.riesgo.length ? '. Zonas de riesgo: ' + ex.riesgo.join(', ') : '') +
       '.\nDevolvé SOLO un JSON: {"tips":"...","objetivo":"..."}\n' +
-      '- "tips": 2 o 3 frases directas en español rioplatense, tuteo con "vos" (decí "apretá", "llevá", "exhalá"), sobre postura, alineación y respiración. Sin listas ni markdown.\n' +
+      '- "tips": EXACTAMENTE tres líneas separadas por salto de línea (\\n), en el formato del Banco de Rutinas: "SET-UP: ..." (postura y anclaje inicial), "CUE EFICIENTE: ..." (indicación corta y accionable de la ejecución) y "CUIDADO / ERROR COMÚN: ..." (la compensación típica a evitar). De 10 a 20 palabras por línea, español rioplatense con "vos" (apretá, llevá, exhalá), sin relleno, sin listas ni markdown.\n' +
       '- "objetivo": 1 o 2 frases explicando el beneficio o estímulo muscular/deportivo del ejercicio.';
   }
   async function generar(conIA){
@@ -58933,7 +59531,7 @@ body.man-mode .gs-fab{right:318px}
         if(m) { try{ j = JSON.parse(m[0]); }catch(e2){} }
       }
       if(j && (j.tips || j.objetivo)){
-        setVals(j.tips || localTips(ex), j.objetivo || localObjetivo(ex), 'con IA');
+        setVals(j.tips ? (window.CoachAuto && window.CoachAuto.normalizarTips ? window.CoachAuto.normalizarTips(j.tips) : j.tips) : localTips(ex), j.objetivo || localObjetivo(ex), 'con IA');
         toast('✨ Coach Note y objetivo generados con IA');
       } else {
         setVals(localTips(ex), localObjetivo(ex), 'con el motor local: la IA no devolvió JSON válido');
@@ -59831,7 +60429,7 @@ body.man-mode .gs-fab{right:318px}
       else { b.efSets = 3; b.reps = '10-12'; b.tempo = '3011'; b.restSeconds = 90; }
       b.failCapable = false;
       b.objective = sl.objective || (ex.objetivo || '');
-      b.tips = 'Rango 100% indoloro: si aparece molestia, cortás el recorrido antes. ' + nota(ex, b.tempo, ath);
+      b.tips = 'Rango 100% indoloro: si aparece molestia, cortás el recorrido antes.\n' + nota(ex, b.tempo, ath);
       b.altNote = 'Protocolo activo: ' + prot.resumen;
       bloques.push(b);
     });
@@ -59917,7 +60515,7 @@ body.man-mode .gs-fab{right:318px}
         if(b.tipo === 'superset' && b.ejercicios[s.i]) b.ejercicios[s.i].exId = s.to.id;
         if(b.tipo === 'finisher' && b.fin[s.i]) b.fin[s.i].exId = s.to.id;
         b.altNote = 'Sustituido por protocolo de ' + prot.lb + ' (' + s.from.es + ' → ' + s.to.es + ').';
-        if(!b.tips) b.tips = 'Rango indoloro y control total. ' + nota(s.to, b.tempo || '2011', ath);
+        if(!b.tips) b.tips = 'Rango indoloro y control total.\n' + nota(s.to, b.tempo || '2011', ath);
         n++;
       });
       save(); renderBuilder(); pintarSwaps();
@@ -89193,6 +89791,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       d.metaChips = [D.ic + ' ' + D.lb, '🎚️ ' + (E.sex === 'f' ? 'Mujer · ' : (E.sex === 'm' ? 'Hombre · ' : '')) + E.nombre.split(' · ')[2], '🧬 ' + (s.nombre || '')];
       d.summary = dia.bloques.length + ' bloques';
       d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
+      /* Hyrox: la carrera, los intervalos y las estaciones SON el trabajo principal (van en la versión estándar); solo el core y el finisher / cierre metabólico quedan para la extendida */
+      if(E.dep === 'hyx') d.bloques.forEach(function(b){ b.optional = b.modalidad === 'core' || /^\s*(?:finisher|cierre\s+metab)/i.test(b.titulo || ''); });
       return d;
     });
     armarDias.avisos = r.avisos || [];
@@ -91955,12 +92555,14 @@ html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rest{padding:0 !important; border:0 !important; background:none !important; letter-spacing:.06em !important; font-size:.9rem !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-carga{padding:0 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex-head{border-bottom:1px solid var(--xc-bd) !important; padding-bottom:8px !important; margin-bottom:8px !important;}
-html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{border-left:4px solid #F0CD7D !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{padding-left:17px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#F0CD7D; pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-r1{background:linear-gradient(135deg,rgba(240,205,125,.2),rgba(240,205,125,.06)); border:1px solid rgba(240,205,125,.5); border-radius:10px; padding:10px 12px !important; box-shadow:inset 0 1px 0 rgba(255,255,255,.1);}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-vn{text-shadow:0 0 24px rgba(255,214,107,.55);}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rest{font-weight:800 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tips-t{color:#F0CD7D;}
-html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important; border-left:3px solid #FFC24B !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important; padding-left:12px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex::before, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#FFC24B; pointer-events:none;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex-head{margin-bottom:4px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}

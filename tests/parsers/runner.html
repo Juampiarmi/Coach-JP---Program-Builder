@@ -53,6 +53,9 @@
 <script src="cases-voz.js"></script>
 <script src="cases-segundo-plano.js"></script>
 <script src="cases-vista.js"></script>
+<script src="cases-pulido.js"></script>
+<script src="cases-version.js"></script>
+<script src="cases-tips-bordes.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -103,6 +106,8 @@
     alumnoVoz:    { run: function(i){ return alumnoVoz(i); }, valor: function(r){ return r; } },
     alumnoFondo:  { run: function(i){ return alumnoFondo(i); }, valor: function(r){ return r; } },
     alumnoVista:  { run: function(i){ return alumnoVista(i); }, valor: function(r){ return r; } },
+    alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
+    alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -547,8 +552,8 @@
       if(c.caso === 'firma'){
         var ft = d.querySelector('.site-footer'); if(!ft) return { sinFooter: true };
         var n = ft.querySelector('.jp-firma-n'), rol = ft.querySelector('.jp-firma-r');
-        return { bordeEscudo: /245, 197, 24/.test(cs(ft).borderTopColor), tarjeta: parseFloat(cs(ft).borderTopLeftRadius) >= 12 && parseFloat(cs(ft).borderTopWidth) > 0.5, nombreBlanco: cs(n).color === 'rgb(238, 243, 255)', rolSinCyanPleno: cs(rol).color !== 'rgb(0, 229, 255)' && cs(rol).color !== 'rgb(34, 211, 238)',
-          acentos: /238, 90, 18/.test(cs(n, '::after').backgroundColor) && /0, 229, 255/.test(cs(rol, '::after').backgroundColor) };
+        return { bordeSutil: /150, 178, 240/.test(cs(ft).borderTopColor), tarjeta: parseFloat(cs(ft).borderTopLeftRadius) >= 12 && parseFloat(cs(ft).borderTopWidth) > 0.5, nombreBlanco: cs(n).color === 'rgb(255, 255, 255)', rolSinCyanPleno: cs(rol).color !== 'rgb(0, 229, 255)' && cs(rol).color !== 'rgb(34, 211, 238)',
+          sinAdornos: cs(n, '::after').display === 'none' && cs(rol, '::after').display === 'none', unSoloAcento: !!ft.querySelector('p b') && cs(ft.querySelector('p b')).color === 'rgb(238, 90, 18)' };
       }
       if(c.caso === 'pantallaCompletaFases'){
         var TM = w.CoachWodTimer, FS = w.CoachTimerFull, DN = w.Date.now, T0 = 1700000000000, reloj = T0, o = {}, cls = d.body.className, sa = d.createElement('style');
@@ -558,11 +563,24 @@
           try{ TM.cerrar(); }catch(e0){}
           TM.configurar({ modo: 'tabata', work: 20, rest: 10, rondas: 3 }); TM.arrancar(); TM.paso(); FS.entrar();
           var full = d.getElementById('cwtFull'), col = function(s){ return cs(full.querySelector(s)).color; }, bg = function(s){ return cs(full.querySelector(s)).backgroundImage; };
-          o.marcoEscudo = /245, 197, 24/.test(cs(full).boxShadow); o.prep = col('.cf-phase');
+          /* sin marco ni recuadro amarillo estático: el borde solo se enciende de forma rítmica (#jpRayo) en el 3-2-1 */
+          o.sinMarco = cs(full).boxShadow === 'none' && parseFloat(cs(full).borderTopWidth) === 0 && !/245, 197, 24/.test(cs(full).boxShadow);
+          o.prep = col('.cf-phase'); var relojP = col('.cf-time');
           reloj = T0 + 10012; TM.paso(); FS.entrar(); o.trabajo = col('.cf-phase'); o.barraTrabajo = /238, 90, 18/.test(bg('.cf-bar i')); var relojT = col('.cf-time');
-          reloj = T0 + 10012 + 20000; TM.paso(); FS.entrar(); o.descanso = col('.cf-phase'); o.relojDescanso = col('.cf-time'); o.barraDescanso = /0, 184, 212/.test(bg('.cf-bar i'));
-          reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn');    /* últimos 10 s del descanso: sigue en cyan */
-          o.distintos = o.trabajo !== o.descanso && relojT !== o.relojDescanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
+          reloj = T0 + 10012 + 20000; TM.paso(); FS.entrar(); o.descanso = col('.cf-phase'); var relojD = col('.cf-time'); o.barraDescanso = /0, 184, 212/.test(bg('.cf-bar i'));
+          reloj += 5000; TM.paso(); FS.entrar(); var enWarn = full.classList.contains('warn'); var relojW = col('.cf-time');    /* últimos 10 s del descanso: la fase conserva su color */
+          o.distintos = o.trabajo !== o.descanso && (!enWarn || col('.cf-phase') === 'rgb(0, 229, 255)');
+          /* números del reloj: naranja en todas las fases y sin neón (sombra sin desenfoque) */
+          o.relojNaranja = relojP === 'rgb(255, 106, 31)' && relojT === 'rgb(255, 106, 31)';
+          o.relojDescansoCyan = relojD === 'rgb(0, 229, 255)' && relojW === 'rgb(0, 229, 255)';    /* el descanso va en cyan, también en los últimos 10 s */
+          /* "RONDA n / N": texto limpio, sin pastilla ni borde */
+          var rd = cs(full.querySelector('.cf-round')); o.rondaSinPastilla = parseFloat(rd.borderTopWidth) === 0 && rd.boxShadow === 'none' && (rd.backgroundColor === 'rgba(0, 0, 0, 0)' || rd.backgroundColor === 'transparent') && rd.backgroundImage === 'none' && parseFloat(rd.paddingLeft) === 0;
+          /* contorno del escudo de fondo: dorado (degradé #cfOro con el amarillo del escudo) */
+          var gr = full.querySelector('#cfOro'), pth = full.querySelector('.cf-shield path'); o.escudoOro = !!gr && /F5C518/i.test(gr.innerHTML) && /cfOro/.test(cs(pth).stroke) && parseFloat(cs(pth).strokeWidth) >= 1.5;
+          var tsh = cs(full.querySelector('.cf-time')).textShadow; o.sinNeon = tsh === 'none' || /\s0px$/.test(tsh.trim());
+          var sg = full.querySelector('.cf-sign'), rf = full.getBoundingClientRect(), rs = sg.getBoundingClientRect();
+          o.firmaAbajo = cs(sg).position === 'absolute' && rs.top > rf.top + rf.height * 0.78 && rs.bottom <= rf.bottom + 1;
+          o.firmaGrande = parseFloat(cs(sg.querySelector('b')).fontSize) >= 20 && parseFloat(cs(sg.querySelector('b em')).fontSize) > parseFloat(cs(sg.querySelector('b')).fontSize);
           return o;
         } finally { w.Date.now = DN; FS.salir(); d.body.className = cls; sa.remove(); try{ TM.reset(); TM.cerrar(); }catch(e9){} }
       }
@@ -586,6 +604,156 @@
       }
       throw new Error('caso desconocido: ' + c.caso);
     } finally { aÑadidos.forEach(function(e){ if(e.parentNode) e.parentNode.removeChild(e); }); }
+  }
+  /* ---------- pulido fino: esquinas, marca, pautas alineadas, Perfil & Ajustes, Guía de entrenamiento y datos reales de la Story Card ---------- */
+  function alumnoPulido(c){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, cs = function(e, p){ return w.getComputedStyle(e, p || null); }, aÑadidos = [], fs = function(e){ return parseFloat(cs(e).fontSize); };
+    function poner(html, donde){ var t = d.createElement('div'); t.innerHTML = html; var e = t.firstElementChild; (donde || d.getElementById('mainContent') || d.body).appendChild(e); aÑadidos.push(e); return e; }
+    var overlay = d.getElementById('guideModal'), estabaAbierto = overlay && overlay.classList.contains('open'), estiloPrev = d.body.getAttribute('data-jp-estilo');
+    if((c.caso === 'esquinas' || c.caso === 'pautas') && typeof w.jpEstiloTarjeta === 'function') w.jpEstiloTarjeta(4);      /* el estilo por defecto: «Compacto de élite» */
+    try{
+      if(c.caso === 'esquinas'){
+        var blk = poner('<div class="block cat-strength"><div class="block-body"><div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas"><details class="jp-ex-tips"><summary>T</summary></details><details class="jp-ex-box"><summary>O</summary></details></div></div><details class="jp-block-details"><summary class="jp-summary-btn"><span>P</span></summary><div>z</div></details></div></div></div>');
+        var warm = poner('<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary>a</summary></details></div></div>');
+        var ex = blk.querySelector('.jp-sb-ex'), board = blk.querySelector('.jp-sb-board'), rad = function(e){ return parseFloat(cs(e).borderTopLeftRadius); }, bw = function(e){ return parseFloat(cs(e).borderTopWidth); };
+        var s1 = blk.querySelector('.jp-ex-tips > summary'), s2 = blk.querySelector('.jp-ex-box > summary'), s3 = blk.querySelector('.jp-block-details > summary'), cb = cs(ex, '::before');
+        return { sinDesenfoqueAnidado: cs(blk).backdropFilter === 'none' && cs(board).backdropFilter === 'none',
+          bloqueRedondo: rad(blk) === 16 && bw(blk) > 0.5, tarjetaRedonda: rad(ex) === parseFloat(cs(ex).getPropertyValue('--xc-r')), barraDorada: cb.content !== 'none' && /255, 194, 75/.test(cb.backgroundColor) && parseFloat(cb.width) >= 2.5 && cb.position === 'absolute',
+          sinBordeGruesoIzq: Math.abs(parseFloat(cs(ex).borderLeftWidth) - parseFloat(cs(ex).borderTopWidth)) < 0.01,
+          radiosHermanos: rad(s3) === 12 && rad(blk.querySelector('.jp-ex-tips')) === 12 && rad(blk.querySelector('.jp-ex-box')) === 12 && rad(s1) === rad(s2),
+          activacionRecortada: cs(warm).overflow === 'hidden' && rad(warm) >= 15 && rad(warm.querySelector('summary')) >= 15 && cs(warm).backdropFilter === 'none',
+          _medidas: [rad(blk), bw(blk), rad(ex), cs(ex).borderLeftWidth, cs(ex).borderTopWidth, d.body.className, d.body.getAttribute('data-jp-estilo')].join(' | ') };
+      }
+      if(c.caso === 'marca'){
+        var m = d.querySelector('.hdc-brand-mark'), em = m && m.querySelector('em'); if(!m || !em) return { sinMarca: true };
+        return { mismoTamano: fs(em) === fs(m), mismoPeso: cs(em).fontWeight === cs(m).fontWeight && parseInt(cs(m).fontWeight, 10) >= 700, mismoEspaciado: cs(em).letterSpacing === cs(m).letterSpacing, jpNaranja: cs(em).color === 'rgb(238, 90, 18)', coachBlanco: cs(m).color === 'rgb(255, 255, 255)', sinResplandor: cs(em).textShadow === 'none' };
+      }
+      if(c.caso === 'escudoLimpio'){
+        var sh = d.querySelector('.hdc-shield'); if(!sh) return { sinEscudo: true };
+        var svgS = sh.querySelector('svg'), b4 = cs(sh, '::before'), a4 = cs(sh, '::after');
+        return { sinBorde: parseFloat(cs(sh).borderTopWidth) === 0 && parseFloat(cs(sh).borderLeftWidth) === 0, sinFondo: cs(sh).backgroundImage === 'none' && (cs(sh).backgroundColor === 'rgba(0, 0, 0, 0)' || cs(sh).backgroundColor === 'transparent'),
+          sinSombraDeCaja: cs(sh).boxShadow === 'none', sinAuras: (b4.display === 'none' || b4.content === 'none') && (a4.display === 'none' || a4.content === 'none'), sinResplandorEnIsotipo: !/245, 197, 24|255, 85, 0/.test(cs(svgS).filter), isotipoVisible: svgS.getBoundingClientRect().width >= 26 };
+      }
+      if(c.caso === 'timerChico'){
+        var sinT = poner('<style>.cwt-screen, .cwt-screen *{ transition:none !important; animation:none !important; }</style>', d.head);
+        var pant = poner('<div class="cwt-screen"><div class="cwt-phase work">TABATA · TRABAJO</div><div class="cwt-time">00:12</div><div class="cwt-round">Ronda <b>1</b> de <b>8</b></div><div class="cwt-bar work"><i></i></div></div>');
+        var ph = pant.querySelector('.cwt-phase'), tm = pant.querySelector('.cwt-time'), br = pant.querySelector('.cwt-bar'), rnd = pant.querySelector('.cwt-round'), r2 = {};
+        r2.trabajoNaranja = cs(tm).color === 'rgb(255, 106, 31)' && cs(br.querySelector('i')).backgroundColor === 'rgb(255, 106, 31)';
+        tm.classList.add('alerta'); r2.trabajoAlertaNaranja = cs(tm).color === 'rgb(255, 106, 31)'; tm.classList.remove('alerta');
+        ph.className = 'cwt-phase rest'; br.className = 'cwt-bar rest'; ph.textContent = 'TABATA · DESCANSO';
+        r2.descansoCyan = cs(tm).color === 'rgb(0, 229, 255)' && cs(ph).color === 'rgb(0, 229, 255)' && cs(br.querySelector('i')).backgroundColor === 'rgb(0, 229, 255)';
+        tm.classList.add('alerta'); ph.classList.add('warn'); br.classList.add('warn'); r2.descansoEnLosUltimosSegundos = cs(tm).color === 'rgb(0, 229, 255)' && cs(ph).color === 'rgb(0, 229, 255)' && cs(br.querySelector('i')).backgroundColor === 'rgb(0, 229, 255)';
+        r2.rondaSinPastilla = parseFloat(cs(rnd).borderTopWidth) === 0 && cs(rnd).boxShadow === 'none' && cs(rnd).backgroundImage === 'none' && (cs(rnd).backgroundColor === 'rgba(0, 0, 0, 0)' || cs(rnd).backgroundColor === 'transparent') && parseFloat(cs(rnd).paddingLeft) === 0;
+        return r2;
+      }
+      if(c.caso === 'lineasSuperiores'){
+        var estaba = d.body.className, res = {};
+        try{
+          ['jp-mission', 'cf-disc'].forEach(function(k){
+            d.body.classList.remove('jp-mission', 'cf-disc'); d.body.classList.add(k);
+            var bl = poner('<div class="block cat-strength"><div class="block-body"><div class="wod-board jp-sb-board"><details class="jp-block-details"><summary class="jp-summary-btn"><span>P</span></summary></details></div></div></div>');
+            var wr = poner('<div class="block cat-warmup"><div class="block-body"><details class="jp-warm-acc"><summary>a</summary></details></div></div>');
+            var vis = function(e, p){ var x = cs(e, p); return x.display !== 'none' && x.content !== 'none' && x.content !== 'normal'; };
+            res[k] = !vis(bl, '::before') && !vis(bl, '::after') && !vis(wr, '::before') && !vis(wr, '::after') && parseFloat(cs(wr.querySelector('.jp-warm-acc')).borderTopWidth) === 0;
+            if(bl.parentNode) bl.parentNode.removeChild(bl); if(wr.parentNode) wr.parentNode.removeChild(wr);
+          });
+        } finally { d.body.className = estaba; }
+        return { sinFileteEnSports: res['jp-mission'], sinFileteEnCrossfit: res['cf-disc'] };
+      }
+      if(c.caso === 'pautas'){
+        var bd = poner('<div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas"><details class="jp-ex-tips"><summary>COACHING</summary></details></div></div><details class="jp-block-details"><summary class="jp-summary-btn"><span>PAUTAS</span></summary></details></div>');
+        var fila = bd.querySelector('.jp-ex-tips').getBoundingClientRect(), pau = bd.querySelector('.jp-block-details > summary').getBoundingClientRect();
+        return { izquierda: Math.abs(fila.left - pau.left) < 2, derecha: Math.abs(fila.right - pau.right) < 2, mismoAncho: Math.abs(fila.width - pau.width) < 3 };
+      }
+      if(c.caso === 'ajustes'){
+        var cfg = d.querySelector('.hdp-settings'), cur = d.querySelector('.hdp-curve-row'); if(!cfg || !cur) return { sinAjustes: true };
+        var tg = poner('<div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b on">KG</button><button type="button" class="hdp-uni-b">LBS</button></div>', cfg);
+        var tg2 = poner('<div class="hdp-uni-toggle"><button type="button" class="hdp-uni-b on" data-voz="off">OFF</button></div>', cfg);
+        var chip = poner('<span class="hdp-curve-chip cur">S1 70%</span>', cur), chip2 = poner('<span class="hdp-curve-chip">S2 78%</span>', cur);
+        var on = tg.querySelector('.on'), off = tg.querySelector('button:not(.on)'), apag = tg2.querySelector('button');
+        return { activoNaranja: /242, 106, 27/.test(cs(on).backgroundImage) && cs(on).color === 'rgb(255, 255, 255)', inactivoApagado: cs(off).backgroundImage === 'none' && cs(off).color === 'rgb(143, 160, 200)',
+          apagadoGris: /70, 85, 127/.test(cs(apag).backgroundImage) && !/242, 106, 27/.test(cs(apag).backgroundImage), semanaActivaResaltada: /242, 106, 27/.test(cs(chip).backgroundImage) && cs(chip2).backgroundImage === 'none',
+          tarjetaProgramaConAire: parseFloat(cs(d.querySelector('.hdp-athlete')).paddingLeft) >= 18 };
+      }
+      if(c.caso === 'voz'){
+        var gr = d.getElementById('hdpVozGrupo'), idi = w.JP_I18N.lang(); if(!gr) return { sinGrupo: true };
+        var r = { juntos: !!(gr.querySelector('#hdpVozToggle') && gr.querySelector('#hdpVozIdioma') && gr.querySelector('#hdpVozProbar') && gr.querySelector('.hdp-voz-guia')), unaTarjeta: parseFloat(cs(gr).borderTopLeftRadius) >= 12 && parseFloat(cs(gr).borderTopWidth) > 0.5 };
+        var primera = gr.querySelector('.hdp-row'); r.filasSinTarjeta = cs(primera).borderTopWidth === '0px' && parseFloat(cs(primera).borderTopLeftRadius) === 0;
+        try{ w.JP_I18N.setLang('es'); w.jpVoz.pintar(); r.guiaEs = /El timer te habla/.test(gr.querySelector('.hdp-voz-guia').textContent) && /3 - 2 - 1/.test(gr.querySelector('.hdp-voz-guia').textContent);
+          w.JP_I18N.setLang('en'); w.jpVoz.pintar(); r.guiaEn = /The timer talks to you/.test(gr.querySelector('.hdp-voz-guia').textContent);
+        } finally { w.JP_I18N.setLang(idi); try{ w.localStorage.removeItem('coachjp_lang'); }catch(eL){} w.jpVoz.pintar(); }
+        var slot = d.getElementById('hdpQtSlot'), pb = poner('<button type="button" class="ses-pause">⏸ Pausar sesión</button>', slot), interior = slot.clientWidth - parseFloat(cs(slot).paddingLeft) - parseFloat(cs(slot).paddingRight);
+        r.pausarAnchoCompleto = pb.getBoundingClientRect().width >= interior * 0.95;
+        r.margenInferior = parseFloat(cs(d.getElementById('hdFullDrawer')).paddingBottom) >= 100;
+        return r;
+      }
+      if(c.caso === 'guiaTexto'){
+        if(typeof w.jpPartirTexto !== 'function') return { sinFuncion: true };
+        var t = 'Push / Pull / Pierna completa. Split analítico de tres días: Push (pecho), Pull. Cada grupo se entrena una vez por semana. Mesociclo de 4 semanas: S1 a S3 siempre a RIR 1-2 (nunca al fallo) con sobrecarga progresiva de kilos (S1 base, S2 +2,5%, S3 +5%) y S4 descarga activa (una serie menos, RIR 3-4). Los ejercicios se repiten las 4 semanas.';
+        var s = w.jpPartirTexto(t), vacio = w.jpPartirTexto('  ') , nulo = w.jpPartirTexto(null);
+        return { n: s.length, primera: s[0], decimalesEnteros: s[3].indexOf('+2,5%') >= 0 && s[3].indexOf('RIR 3-4)') >= 0, vacio: vacio.length + nulo.length, tituloEnNegrita: w.jpOracionConTitulo(s[3]).indexOf('<b>Mesociclo de 4 semanas:</b>') === 0, sinTitulo: w.jpOracionConTitulo(s[2]) === s[2], contenedorEsDiv: !!d.getElementById('mesoExplainText') && d.getElementById('mesoExplainText').tagName === 'DIV' };
+      }
+      if(c.caso === 'semanas'){
+        overlay.classList.add('open');
+        var fila0 = function(cls, ti, bg){ return '<div class="gc-row ' + cls + '"><div class="gc-row-main"><b>' + ti + '</b><span>Bloque X · Acumulación base (Volumen útil)<div style="font-size:.82rem">Ajustás cargas y técnica en las anclas pesadas de cada día — todavía no buscás el límite.</div></span></div><span class="gc-badge gc-badge-rpe">' + bg + '</span></div>'; };
+        var lst = poner('<div class="guide-cards gc-list">' + fila0('gc-row-carga', 'Semana 1', 'RPE 7-8 (RIR 3-2)') + fila0('gc-row-pico', 'Semana 3', 'RPE 9-10 (RIR 1-0)') + fila0('gc-row-descarga', 'Semana 4', 'RPE 6-7 (RIR 4)') + '</div>', overlay.querySelector('.modal'));
+        var fr = lst.querySelectorAll('.gc-row'), q = function(r, sel){ return r.querySelector(sel).getBoundingClientRect(); };
+        var misma = function(r){ var a = q(r, '.gc-row-main > b'), b2 = q(r, '.gc-badge-rpe'); return Math.abs((a.top + a.height / 2) - (b2.top + b2.height / 2)) < 14; };
+        var abajo = function(r){ var a = q(r, '.gc-row-main > b'), t2 = q(r, '.gc-row-main > span'), rr = r.getBoundingClientRect(); return t2.top >= a.bottom - 2 && t2.width > rr.width * 0.8; };
+        var col = function(r, p){ return cs(r)[p]; };
+        var real = { descarga: d.querySelectorAll('#mesoExplainSection .gc-row-descarga, .gc-list .gc-row-descarga').length, carga: d.querySelectorAll('.gc-list .gc-row-carga').length };
+        return { badgeEnLaPrimeraLinea: misma(fr[0]) && misma(fr[1]) && misma(fr[2]), descripcionAnchoCompleto: abajo(fr[0]) && abajo(fr[2]), cargaNaranja: col(fr[0], 'borderLeftColor') === 'rgb(238, 90, 18)', picoRelleno: col(fr[1].querySelector('.gc-badge-rpe'), 'backgroundColor') === 'rgb(238, 90, 18)',
+          descargaCyan: col(fr[2], 'borderLeftColor') === 'rgb(0, 229, 255)' && /0, 229, 255|127, 239, 255/.test(col(fr[2].querySelector('.gc-badge-rpe'), 'color')), distintasDeCarga: col(fr[2], 'borderLeftColor') !== col(fr[0], 'borderLeftColor'),
+          semanasReales: real.descarga >= 1 && real.carga >= 1, _medidas: [col(fr[2], 'borderLeftColor'), col(fr[2].querySelector('.gc-badge-rpe'), 'color')].join(' | ') };
+      }
+      if(c.caso === 'pestanas'){
+        overlay.classList.add('open');
+        var tabs = d.getElementById('guideTabs'), todas = tabs.querySelectorAll('.tm-tab'), mod = overlay.querySelector('.modal'), onT = tabs.querySelector('.tm-tab.on'), offT = tabs.querySelector('.tm-tab:not(.on)');
+        var ics = Array.prototype.map.call(todas, function(b){ return b.querySelector('svg.gd-tab-ic'); });
+        return { tresIconosDeLinea: ics.length === 3 && ics.every(Boolean), mismoTamano: ics.every(function(i){ return i && cs(i).width === cs(ics[0]).width && i.getAttribute('stroke-width') === '1.8'; }), sinEmoji: Array.prototype.every.call(todas, function(b){ return !/[\u{1F300}-\u{1FAFF}❤]/u.test(b.textContent); }),
+          activaNaranja: /242, 106, 27/.test(cs(onT).backgroundImage) && cs(onT).color === 'rgb(255, 255, 255)', inactivaAzul: cs(offT).color === 'rgb(159, 176, 216)' && cs(offT).backgroundImage === 'none',
+          barraAzulNoche: cs(tabs).backgroundColor === 'rgb(19, 31, 67)', barraAlBordeDeArriba: cs(tabs).position === 'sticky' && parseFloat(cs(tabs).top) === -parseFloat(cs(mod).paddingTop), barraAnchoCompleto: parseFloat(cs(tabs).marginLeft) === -parseFloat(cs(mod).paddingLeft) };
+      }
+      if(c.caso === 'storyDatos'){
+        var st = w.eval('state'), dv = d.documentElement, wk = st.currentWeek || 0, day = w.eval('DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0]'), bid = (day.blocks && day.blocks[0]) ? day.blocks[0].id : 'b_test';
+        var salvado = { loads: st.loads, session: st.session, completed: st.completed, rir: st.rir }, origPres = w.jpMinutosPrescriptos, o = {}, hoyISO = new Date().toISOString().slice(0, 10);
+        Object.defineProperty(d, 'visibilityState', { get: function(){ return 'visible'; }, configurable: true });
+        try{
+          w.jpMinutosPrescriptos = function(){ return 0; };
+          var K = function(n){ return wk + '|' + day.id + '|' + bid + '|e0|' + n; }, t0 = Date.now() - 20 * 60000;
+          function cargar(conTiempo){
+            st.loads = {}; st.session = { marcasTiempo: [] }; st.completed = {}; st.rir = {};
+            [[80, 6], [80, 6], [60, 8], [60, 8]].forEach(function(kr, i){ st.loads[K(i + 1)] = { kg: String(kr[0]), reps: String(kr[1]), done: true, ex: 'Press de banca' }; if(conTiempo){ st.loads[K(i + 1)].tsDone = t0 + i * 3 * 60000; st.loads[K(i + 1)].ts = st.loads[K(i + 1)].tsDone; } });
+            st.loads[K(5)] = { kg: '100', reps: '10', done: false, ex: 'Press de banca' };      /* cargada pero SIN tildar: no cuenta */
+          }
+          cargar(false); var a = w.CoachStoryDatos(w.CoachStory.datosSports(wk, day));
+          o.tonelaje = a.vol; o.series = a.series; o.reps = a.reps; o.sinTiempoInventado = a.tiempo === '' && a.tiempoReal === 0;
+          cargar(true); var b = w.CoachStoryDatos(w.CoachStory.datosSports(wk, day));
+          o.tiempoMedido = b.tiempo === '12 min' && b.tiempoReal === 12; o.mismoTonelaje = b.vol === a.vol;
+          /* latido pasivo: abrir la app sin entrenar no suma tiempo */
+          st.session = { marcasTiempo: [] }; w.__jpUltimaAccion(0); w.__jpLatidoPasivo(); var sinAccion = st.session.marcasTiempo.length;
+          w.__jpUltimaAccion(Date.now()); w.__jpLatidoPasivo(); o.latidoSoloConAccion = sinAccion === 0 && st.session.marcasTiempo.length === 1;
+          w.__jpUltimaAccion(Date.now() - 20 * 60000); st.session.marcasTiempo = []; w.__jpLatidoPasivo(); o.latidoVencido = st.session.marcasTiempo.length === 0;
+          /* sesión N de M: el día concluido no se cuenta dos veces */
+          st.completed = {}; var r0 = w.CoachMetricas.racha(); st.completed[wk] = {}; st.completed[wk][day.id] = { __dayDone: true }; var r1 = w.CoachMetricas.racha();
+          o.sesionSinHacer = r0.actual === 1 && r0.hechas === 0; o.sesionHecha = r1.hechas === 1 && r1.actual === 1;
+          /* RPE: solo bloques del día (sin restos de otro plan con el mismo id de día) */
+          if(day.blocks && day.blocks.length){ st.rir = {}; st.rir[wk + '|' + day.id + '|' + bid] = 1; st.rir[wk + '|' + day.id + '|bloque_viejo'] = 3; o.rpeSoloDelDia = w.CoachMetricas.rpe() === 9; } else o.rpeSoloDelDia = true;
+          /* CrossFit / Hyrox: PR del día y kilos del bloque */
+          var dia = { id: 'dx', short: 'D1', label: 'Fuerza', blocks: [{ id: 'bx1', category: 'strength', title: 'Back Squat', items: ['3x5 Back Squat @ 100kg'] }] };
+          st.completed = {}; st.loads = {}; st.session = { marcasTiempo: [], prDetalle: [{ ex: 'Back Squat', fecha: hoyISO }] };
+          o.prDeHoy = w.datosStoryCF(wk, dia).esPR === true;
+          st.session.prDetalle = [{ ex: 'Back Squat', fecha: '2001-01-01' }]; o.prViejoNoCuenta = w.datosStoryCF(wk, dia).esPR === false;
+          st.session.prDetalle = [{ ex: 'Bulgarian Split Squat', fecha: hoyISO }]; o.prDeOtroDiaNoCuenta = w.datosStoryCF(wk, dia).esPR === false;
+          o.sinHacerSinKilos = w.datosStoryCF(wk, dia).volumenTotal === 0;
+          st.loads[wk + '|dx|bx1|e0|1'] = { kg: '100', reps: '5', done: true, ex: 'Back Squat' }; o.kilosRegistrados = w.datosStoryCF(wk, dia).volumenTotal === 500;
+        } finally { st.loads = salvado.loads; st.session = salvado.session; st.completed = salvado.completed; st.rir = salvado.rir; w.jpMinutosPrescriptos = origPres; delete d.visibilityState; }
+        return o;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { aÑadidos.forEach(function(e){ if(e.parentNode) e.parentNode.removeChild(e); }); if(overlay && !estabaAbierto) overlay.classList.remove('open');
+      if(estiloPrev == null) d.body.removeAttribute('data-jp-estilo'); else d.body.setAttribute('data-jp-estilo', estiloPrev); }
   }
   /* ---------- timer en segundo plano: avisos por fase (cronograma + service worker) y aviso de pantalla encendida en iPhone ---------- */
   function alumnoFondo(c){
@@ -844,7 +1012,7 @@
           var full = d.getElementById('cwtFull'), q = function(s){ return w.getComputedStyle(d.querySelector(s)); };
           var fondo = w.getComputedStyle(full).backgroundColor, go = q('#cfGo'), rs = q('#cfReset'), rd = q('#cfRound'), tm = q('#cfTime');
           return { fondoAzul: fondo === 'rgb(11, 19, 43)', botonDorado: go.backgroundColor === 'rgb(255, 194, 75)' && go.color === 'rgb(11, 19, 43)', secundarioAzul: rs.backgroundColor === 'rgb(26, 40, 80)' && /150, 178, 240/.test(rs.borderColor),
-            pastillaAzul: rd.backgroundColor === 'rgb(19, 31, 67)', tipografia: /Chakra Petch/.test(tm.fontFamily) && /Chakra Petch/.test(go.fontFamily) && /Chakra Petch/.test(rd.fontFamily), sinNaranjaDeFondo: !/255, 85, 0/.test(w.getComputedStyle(full).backgroundImage) };
+            rondaSinPastilla: parseFloat(rd.borderTopWidth) === 0 && (rd.backgroundColor === 'rgba(0, 0, 0, 0)' || rd.backgroundColor === 'transparent'), tipografia: /Chakra Petch/.test(tm.fontFamily) && /Chakra Petch/.test(go.fontFamily) && /Chakra Petch/.test(rd.fontFamily), sinNaranjaDeFondo: !/255, 85, 0/.test(w.getComputedStyle(full).backgroundImage) };
         } finally { FS.salir(); d.body.className = cls; sinAnim2.remove(); }
       }
       if(c.caso === 'minimizado'){
@@ -1277,6 +1445,190 @@
   /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
      input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
      Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */
+  /* versión de la sesión (ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN), notas del ejercicio compactas, plan de cargas por semana y valores por defecto del Banco */
+  function alumnoVersion(c){
+    if(c.caso === 'bancoVersion'){
+      var PB = win.__jpPB, f = win.jpEsBloqueComplementario; if(!PB || typeof f !== 'function') throw new Error('el Builder no expone jpEsBloqueComplementario');
+      var tpl = PB.LISTA.filter(function(x){ return x.id === 'jp26_m4_i'; })[0], dias = PB.construirDias(tpl);
+      var flat = []; dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ flat.push(b); }); });
+      var por = function(mod){ return flat.filter(function(b){ return b.modalidad === mod; }); };
+      var tabla = { warmup: f({ category: 'warmup', titulo: 'Entrada en calor' }), fuerza: f({ modalidad: 'fuerza', category: 'strength', titulo: 'Fuerza principal – Sentadilla' }), hiper: f({ modalidad: 'hipertrofia', category: 'strength', titulo: 'Hipertrofia – Biset' }),
+        accesorio: f({ modalidad: 'hipertrofia', category: 'strength', titulo: 'Accesorios – Curl femoral' }), core: f({ modalidad: 'core', category: 'accessory', titulo: 'Core – Plancha' }), finisher: f({ tipo: 'finisher', category: 'metcon', titulo: 'Finisher' }),
+        cierre: f({ modalidad: 'metcon', category: 'metcon', titulo: 'Cierre metabólico · Remo y bici' }), umbral: f({ modalidad: 'metcon', category: 'metcon', titulo: 'Intervalos de umbral en cinta' }), nada: f(null) };
+      var hx = (getS().banco || []).filter(function(x){ return x.depDeporte === 'hyx' && (x.dias || []).length; }), bhx = []; hx.forEach(function(x){ x.dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ bhx.push(b); }); }); });
+      var hxCore = bhx.filter(function(b){ return b.modalidad === 'core'; }), hxMain = bhx.filter(function(b){ return b.modalidad === 'metcon' && /Intervalos|Estaciones|Transporte/.test(b.titulo || ''); });
+      return { warmupNo: tabla.warmup === false && tabla.fuerza === false && tabla.hiper === false && tabla.accesorio === false && tabla.nada === false, complementariosSi: tabla.core && tabla.finisher && tabla.cierre,
+        intervalosSonPrincipales: tabla.umbral === false,
+        bancoCoreExtendida: por('core').length > 0 && por('core').every(function(b){ return b.optional === true; }),
+        bancoCierreExtendida: por('metcon').length > 0 && por('metcon').every(function(b){ return b.optional === true; }),
+        hyroxIntervalosEstandar: hxMain.length > 0 && hxMain.every(function(x){ return !x.optional; }) && hxCore.length > 0 && hxCore.every(function(x){ return x.optional === true; }), bancoPrincipalesEstandar: por('calentamiento').concat(por('fuerza'), por('hipertrofia')).length > 5 && por('calentamiento').concat(por('fuerza'), por('hipertrofia')).every(function(b){ return !b.optional; }) };
+    }
+    /* generadores de tips del Builder en el formato del Banco de Rutinas y firma sin nombre repetido (Builder real) */
+    if(c.caso === 'tipsBanco' || c.caso === 'normaliza' || c.caso === 'cambioEj' || c.caso === 'footerUnNombre'){
+      var CA = win.CoachAuto; if(!CA || !CA.tipsBanco) throw new Error('el Builder no expone CoachAuto.tipsBanco');
+      var S0 = getS(), exs = S0.exercises, exPor = function(n){ return exs.filter(function(e){ return e.es === n; })[0]; };
+      if(c.caso === 'tipsBanco'){
+        var ex1 = exPor('Press de banca plano con barra') || exs[0], kb = win.__jpPB.kbDe(ex1.es), L = CA.tipsBanco(ex1, { ath: null }), L2 = CA.tipsBanco(ex1, { ath: null, codigo: 'A2', tempo: '3011' });
+        var palabras = function(t){ return String(t).replace(/^[^:]+:\s*/, '').trim().split(/\s+/).length; };
+        return { tresLineas: L.length === 3, rotulosDelBanco: /^SET-UP: /.test(L[0]) && /^CUE EFICIENTE: /.test(L[1]) && /^CUIDADO \/ ERROR COMÚN: /.test(L[2]), textoDelBanco: L[0].indexOf(kb.s.split(' ').slice(0, 6).join(' ')) > 0 && L[1].indexOf(kb.c.split(' ').slice(0, 6).join(' ')) > 0 && L[2].indexOf(kb.x.split(' ').slice(0, 6).join(' ')) > 0,
+          concisas: L.every(function(l){ return palabras(l) <= 41; }), sinEmojis: !/[⚠⛔⭐]|\uD83D/.test(L.join(' ')),
+          bisetConEstacion: L2.length === 3 && L2.every(function(l){ return /^A2 · /.test(l); }) && /A2 · CUE EFICIENTE: Tempo 3011 — /.test(L2[1]),
+          notaCompletaIgual: CA.notaCompleta(ex1, '2011', null) === L.join('\n'),
+          bibliotecaLocal: win.CoachEx.localTips(ex1).split('\n').length === 3 && /^SET-UP: /.test(win.CoachEx.localTips(ex1)),
+          respetaNotaEnFormatoBanco: CA.tipsBanco({ es: 'Ejercicio X', aviso: 'SET-UP: a\nCUE EFICIENTE: b\nCUIDADO / ERROR COMÚN: c' }, { ath: null }).join('|') === 'SET-UP: a|CUE EFICIENTE: b|CUIDADO / ERROR COMÚN: c' };
+      }
+      if(c.caso === 'normaliza'){
+        var n1 = CA.normalizarTips('SET-UP: postura firme\nCLAVE: tempo 3110 y rango largo\nCUIDADO: no arquees la lumbar\nTRANSICIÓN: pasá al A2 sin pausa'), n2 = CA.normalizarTips('A1 · CLAVE: empujá\nA1 · CUIDADO: sin rebote\nA2 · SET-UP: apoyo firme');
+        var largo = CA.normalizarTips('SET-UP: ' + new Array(60).join('palabra '));
+        return { rotulosEstandar: n1.split('\n').slice(0, 3).map(function(l){ return l.split(':')[0]; }).join('|') === 'SET-UP|CUE EFICIENTE|CUIDADO / ERROR COMÚN', otrasLineasIntactas: /^TRANSICIÓN: pasá al A2/.test(n1.split('\n')[3]),
+          bisetConserva: n2 === 'A1 · CUE EFICIENTE: empujá\nA1 · CUIDADO / ERROR COMÚN: sin rebote\nA2 · SET-UP: apoyo firme', recortaLargos: largo.split(' ').length <= 31 && /…$/.test(largo) };
+      }
+      if(c.caso === 'cambioEj'){
+        var a = exPor('Press de banca plano con barra') || exs[0], b2 = exs.filter(function(e){ return e.id !== a.id && /remo/i.test(e.es); })[0] || exs[1], blk = { tempo: '3010', tips: '' };
+        var cambio = CA.tipsAlCambiarEjercicio;
+        var vacio = cambio(blk, a, b2, null); blk.tips = CA.notaCompleta(a, '3010', null); var auto = cambio(blk, a, b2, null); blk.tips = 'Mi nota propia: no bajes tanto la barra.'; var manual = cambio(blk, a, b2, null);
+        return { vacioSeEscribe: typeof vacio === 'string' && /^SET-UP: /.test(vacio), automaticaSeReescribe: auto === CA.notaCompleta(b2, '3010', null) && auto !== CA.notaCompleta(a, '3010', null), manualSeRespeta: manual === null, mismoFormatoQueElBanco: /CUE EFICIENTE: /.test(auto) && auto.split('\n').length === 3 };
+      }
+      if(c.caso === 'footerUnNombre'){
+        var id = 'ath_test_footer', fake = { id: id, nombre: 'Ana', apellido: 'Pérez', freq: 3, nivel: 'intermedio', genero: 'F', createdAt: Date.now() }, out = {};
+        S0.athletes.push(fake);
+        try{
+          S0.plans[id] = win.newPlan(fake); var p0 = S0.plans[id];
+          var tomar = function(h){ var i = h.indexOf('<footer class="site-footer">'), j = h.indexOf('</footer>', i); return h.slice(i, j); };
+          var conNombre = tomar(win.compile(fake)), nPor = function(h){ return h.split('Ana').length - 1; };
+          p0.meta.footer2 = 'Mesociclo de 4 semanas · Planificación personalizada para Ana Pérez';
+          var guardado = tomar(win.compile(fake));
+          out = { nombreUnaVez: nPor(guardado) === 1 && nPor(conNombre) <= 1, arribaConElNombre: /Programación generada para Ana/.test(guardado), segundaSinNombre: /Planificación personalizada<\/p>/.test(guardado) && !/personalizada para/.test(guardado),
+            conservaFirma: /jp-firma/.test(guardado) && /build /.test(guardado), datoGuardadoIntacto: p0.meta.footer2.indexOf('para Ana Pérez') > 0 };
+        } finally { delete S0.plans[id]; S0.athletes.splice(S0.athletes.indexOf(fake), 1); }
+        return out;
+      }
+    }
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var d = w.document, st = w.eval('state'), modo0 = st.mode, cs = function(e, p){ return w.getComputedStyle(e, p || null); };
+    try{
+      if(c.caso === 'bordes'){
+        var host = d.getElementById('mainContent') || d.body, caja = d.createElement('div');
+        caja.innerHTML = '<div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas jp-notas"><div class="jp-notas-chips"><span class="jp-notas-lb">Notas</span><button type="button" class="jp-nota-chip">Coaching</button></div></div></div><details class="jp-block-details" open><summary class="jp-summary-btn"><span>PAUTAS</span></summary><div>texto</div></details></div>' +
+          '<details class="jp-criterio jp-criterio-dia" open><summary><span>CRITERIO DEL DÍA</span></summary><div>x</div></details>';
+        host.appendChild(caja);
+        try{
+          var det = caja.querySelector('details.jp-block-details'), sm = det.querySelector('summary'), cr = caja.querySelector('details.jp-criterio-dia'), crs = cr.querySelector('summary');
+          return { sinFileteRecto: parseFloat(cs(det).borderTopWidth) === 0 && parseFloat(cs(det).borderLeftWidth) === 0 && parseFloat(cs(det).borderBottomWidth) === 0, contornoSoloDelBoton: parseFloat(cs(sm).borderTopWidth) > 0.5 && parseFloat(cs(sm).borderTopLeftRadius) === 12,
+            criterioUnaEsquina: parseFloat(cs(cr).borderTopLeftRadius) === 12 && cs(cr).overflow === 'hidden' && parseFloat(cs(crs).borderTopWidth) === 0, criterioContornoPropio: parseFloat(cs(cr).borderTopWidth) > 0.5 };
+        } finally { caja.parentNode.removeChild(caja); }
+      }
+      if(c.caso === 'notasEtiqueta'){
+        var u2 = d.createElement('div'); u2.className = 'jp-sb-ex';
+        u2.innerHTML = '<div class="jp-qc"><details class="jp-ex-tips"><summary>T</summary><div class="jp-ex-tips-b">x</div></details></div><div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>O</summary><div class="jp-ex-box-b">o</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>T</summary><div class="jp-ex-box-s">2011</div><div class="jp-ex-box-b">t</div></details></div>';
+        (d.getElementById('mainContent') || d.body).appendChild(u2);
+        try{
+          w.jpNotasAgrupar(u2);
+          var fl = u2.querySelector('.jp-notas-chips'), tx = [].slice.call(fl.querySelectorAll('.jp-nota-chip')).map(function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim().toUpperCase(); });
+          return { conRotuloNotas: /^NOTAS$/i.test(String(fl.querySelector('.jp-notas-lb').textContent).trim()), sinBotonTipsSuelto: tx.indexOf('TIPS') < 0 && tx[0] === 'COACHING', botones: tx.join('|') === 'COACHING|OBJETIVO|TEMPO 2011', sinIconos: !fl.querySelector('.jp-nota-ic'), enUnaLinea: fl.getBoundingClientRect().height <= 34, aireAntesDeLasPautas: parseFloat(cs(u2.querySelector('.jp-ex-cajas')).marginTop) >= 8 };
+        } finally { if(u2.parentNode) u2.parentNode.removeChild(u2); }
+      }
+      if(c.caso === 'headerAtleta'){
+        var rc = function(e){ return e.getBoundingClientRect(); }, q1 = function(s){ return d.querySelector(s); }, fs = function(e){ return parseFloat(cs(e).fontSize); };
+        var sh = q1('.hdc-shield'), svgH = sh.querySelector('svg'), idb = q1('.hdc-id'), mk = q1('.hdc-brand-mark'), jp = mk.querySelector('em'), pill = q1('.hdc-chip-row .jp-status-pill'), nmH = q1('.hdc-name'), ctx = q1('#hdcCtx');
+        var menu = q1('.jp-ux-menu-btn'), wk = q1('#jpWkBtn'), dy = q1('#jpDayBtn'), top1 = q1('.hdc-top'), fila = q1('.hdc-days-row'), creados = [];
+        /* los selectores SEM / DÍA los arma el módulo 083 con un retraso: si todavía no están se insertan con la misma estructura para medir el estilo */
+        [['jpWkBtn', 'jp-wk-btn'], ['jpDayBtn', 'jp-wk-btn jp-day-btn']].forEach(function(p){ if(!q1('#' + p[0]) && fila){ var bt = d.createElement('button'); bt.id = p[0]; bt.className = p[1]; bt.innerHTML = '<b>SEM 1</b>'; fila.appendChild(bt); creados.push(bt); } });
+        wk = q1('#jpWkBtn'); dy = q1('#jpDayBtn');
+        try{
+        var faltan = { sh: sh, svgH: svgH, idb: idb, mk: mk, jp: jp, pill: pill, nmH: nmH, ctx: ctx, menu: menu, wk: wk, dy: dy, top1: top1, fila: fila }; var nulos = Object.keys(faltan).filter(function(k){ return !faltan[k]; }); if(nulos.length) return { faltan: nulos.join(',') };
+        var cx = function(r){ return r.top + r.height / 2; };
+        return { escudoConAire: rc(svgH).left - rc(top1).left >= 18 && rc(idb).left - rc(sh).right >= 10, centroOpticoConElTexto: Math.abs(cx(rc(svgH)) - cx(rc(idb))) <= 3, sinRecuadro: cs(sh).borderTopWidth === '0px' && cs(sh).boxShadow === 'none',
+          marcaProporcionada: fs(jp) === fs(mk) && cs(jp).color === 'rgb(238, 90, 18)' && cs(jp).textShadow === 'none',
+          activoSobrio: !!pill && cs(pill).borderTopWidth === '0px' && cs(pill).backgroundImage === 'none' && (cs(pill).backgroundColor === 'rgba(0, 0, 0, 0)' || cs(pill).backgroundColor === 'transparent') && fs(pill) <= 9.5,
+          nombreDeFicha: parseInt(cs(nmH).fontWeight, 10) >= 800 && cs(nmH).textTransform === 'uppercase' && fs(nmH) >= 18 && fs(nmH) > fs(mk) * 1.4,
+          contextoSutil: !!ctx && /^(Bodybuilding|CrossFit|Hyrox|[A-Za-zÁÉÍÓÚáéíóú ]+)( · [A-Za-zÁÉÍÓÚáéíóú ]+)?$/.test(ctx.textContent) && fs(ctx) < fs(nmH) / 1.8 && cs(ctx).fontVariantNumeric.indexOf('tabular') >= 0,
+          controlesMismoContorno: [menu, wk, dy].every(function(b){ return cs(b).borderTopLeftRadius === '10px' && parseFloat(cs(b).borderTopWidth) > 0.5 && Math.abs(rc(b).height - 40) <= 1; }) && cs(menu).borderTopColor === cs(wk).borderTopColor && cs(wk).borderTopColor === cs(dy).borderTopColor,
+          margenesParejos: Math.abs(rc(wk).left - rc(sh).left) <= 1 && Math.abs((rc(top1).right - rc(menu).right) - parseFloat(cs(fila).paddingRight)) <= 1,
+          _pill: [cs(pill).borderTopWidth, cs(pill).backgroundImage, cs(pill).backgroundColor, cs(pill).fontSize, pill.className, pill.textContent].join(' | '), _mg: [rc(wk).left, rc(sh).left, rc(top1).right - rc(menu).right, cs(fila).paddingRight].join(' | '),
+          numerosTabulares: cs(wk).fontVariantNumeric.indexOf('tabular') >= 0 };
+        } finally { creados.forEach(function(x){ if(x.parentNode) x.parentNode.removeChild(x); }); }
+      }
+      if(c.caso === 'firmaFooter'){
+        var ft2 = d.querySelector('.site-footer'), ps = [].slice.call(ft2.querySelectorAll('p')), nom = (d.getElementById('hdcName') || {}).textContent || '';
+        var textos = ps.map(function(p){ return String(p.textContent); }).join(' || ');
+        return { nombreUnaSolaVez: !nom || textos.split(nom.trim()).length - 1 <= 1, sinDivisoresDeColor: cs(ft2.querySelector('.jp-firma-n'), '::after').display === 'none' && cs(ft2.querySelector('.jp-firma-r'), '::after').display === 'none', espaciadoParejo: parseFloat(cs(ft2.querySelector('.jp-firma')).paddingTop) >= 16 && parseFloat(cs(ft2.querySelector('.jp-build')).marginTop) >= 12 };
+      }
+      if(c.caso === 'selector'){
+        st.mode = 'complete'; w.renderMain();
+        var ver = d.getElementById('jpVer'); if(!ver) return { sinSelector: true };
+        var bs = ver.querySelectorAll('.jp-ver-b'), txt = function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim(); };
+        var r = { dosBotones: bs.length === 2, textoEstandar: txt(bs[0]) === 'ESTÁNDAR · 60 MIN', textoExtendida: txt(bs[1]) === 'EXTENDIDA · 90 MIN', sinCore: !/core/i.test(ver.textContent), activoExtendida: bs[1].classList.contains('on') && bs[1].getAttribute('aria-pressed') === 'true' && !bs[0].classList.contains('on'),
+          activoNaranja: /242, 106, 27/.test(cs(bs[1]).backgroundImage) && cs(bs[1]).color === 'rgb(255, 255, 255)', visible: ver.getBoundingClientRect().height > 40 && bs[0].getBoundingClientRect().height >= 40 };
+        bs[0].click(); r.cambiaAEstandar = st.mode === 'quick' && d.getElementById('jpVer').querySelector('.jp-ver-b.on').getAttribute('data-ver') === 'quick' && d.body.classList.contains('quick-mode');
+        var pills = [].slice.call(d.querySelectorAll('.mode-pill')).map(function(b){ return String(b.textContent).trim() + (b.classList.contains('active') ? '*' : ''); });
+        r.pastillasDelHeader = pills.join(',') === 'EXTENDIDA · 90 MIN,ESTÁNDAR · 60 MIN*';
+        d.getElementById('jpVer').querySelector('.jp-ver-b[data-ver="complete"]').click(); r.vuelveAExtendida = st.mode === 'complete' && !d.body.classList.contains('quick-mode');
+        return r;
+      }
+      if(c.caso === 'filtra'){
+        var dia = { blocks: [{ id: 'a', title: 'Fuerza' }, { id: 'b', title: 'Core – Plancha', optional: true }], finisher: { id: 'f', title: 'Finisher', optional: true } }, o = {};
+        st.mode = 'complete'; o.extendidaTodos = w.dayBlockIds(dia).join(',') === 'a,b,f' && w.visibleBlocks(dia).length === 3;
+        st.mode = 'quick'; o.estandarSoloPrincipales = w.dayBlockIds(dia).join(',') === 'a' && w.visibleBlocks(dia).length === 1;
+        o.complementarios = w.jpBloquesComplementarios(dia).length === 2;
+        o.hintLista = /Core/.test(w.jpVersionHtml(dia)) && /extendida/.test(w.jpVersionHtml(dia));
+        o.hintSinComplementarios = /las dos versiones son iguales/.test(w.jpVersionHtml({ blocks: [{ id: 'a', title: 'Fuerza' }] }));
+        st.mode = 'complete'; o.hintExtendida = /suma 2/.test(w.jpVersionHtml(dia));
+        return o;
+      }
+      if(c.caso === 'preserva'){
+        var dayX = w.eval('DAYS[0]'), bl0 = dayX.blocks, k = '0|' + dayX.id + '|bComp|e0|1';
+        dayX.blocks = [{ id: 'bPrin', type: 'list', title: 'Fuerza', category: 'strength', items: [] }, { id: 'bComp', type: 'list', title: 'Core – Plancha', category: 'accessory', optional: true, items: [] }];
+        var load0 = st.loads, comp0 = st.completed, ses0 = st.session;
+        try{
+          st.loads = { }; st.loads[k] = { kg: '40', reps: '12', done: true, ex: 'Plancha' }; st.completed = { 0: {} }; st.completed[0][dayX.id] = { bComp: true, bPrin: true };
+          st.mode = 'complete'; w.renderMain();
+          var antes = JSON.stringify([st.loads, st.completed]), enExt = d.querySelectorAll('.blocks-stack > .block').length;
+          w.jpSetVersion('quick'); var enStd = d.querySelectorAll('.blocks-stack > .block').length, resStd = (d.querySelector('.jp-resumen-ses p') || {}).textContent;
+          var intacto = JSON.stringify([st.loads, st.completed]) === antes;
+          w.jpSetVersion('complete'); var vuelta = d.querySelectorAll('.blocks-stack > .block').length;
+          return { extendidaMuestraTodo: enExt === 2, estandarOcultaComplementario: enStd === 1, resumenCuentaSoloVisibles: /1 \/ 1 bloques/.test(resStd || ''), registrosIntactos: intacto && JSON.stringify([st.loads, st.completed]) === antes, volvePorCompleto: vuelta === 2,
+            ocultoNoSeBorra: st.loads[k] && st.loads[k].kg === '40' && st.completed[0][dayX.id].bComp === true };
+        } finally { dayX.blocks = bl0; st.loads = load0; st.completed = comp0; st.session = ses0; }
+      }
+      if(c.caso === 'notas'){
+        var unidad = d.createElement('div'); unidad.className = 'jp-sb-ex';
+        unidad.innerHTML = '<div class="jp-qc"><button type="button" class="jp-qc-tg">Registrar carga</button><details class="jp-ex-tips"><summary>COACHING TIPS</summary><div class="jp-ex-tips-b">SET-UP texto</div></details></div>' +
+          '<div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>OBJETIVO</summary><div class="jp-ex-box-b">obj</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>TEMPO</summary><div class="jp-ex-box-s">3010</div><div class="jp-ex-box-b">t</div></details></div>';
+        var host = d.getElementById('mainContent') || d.body; host.appendChild(unidad);
+        try{
+          w.jpNotasAgrupar(unidad); w.jpNotasAgrupar(unidad);
+          var caj = unidad.querySelector(':scope > .jp-ex-cajas'), chips = caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), vis = function(sel){ return cs(caj.querySelector(sel)).display !== 'none'; };
+          var r2 = { unaFila: caj.querySelectorAll('.jp-notas-chips').length === 1, tresBotones: chips.length === 3, tipsAdentro: !!caj.querySelector(':scope > .jp-ex-tips'), tempoEnElBoton: /3010/.test(chips[2].textContent), registrarSigueArriba: !!unidad.querySelector('.jp-qc > .jp-qc-tg') && cs(unidad.querySelector('.jp-qc-tg')).display !== 'none',
+            cerradasAlInicio: !vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo'), compacta: caj.getBoundingClientRect().height <= 46 };
+          chips[0].click(); r2.muestraSoloTips = vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo') && chips[0].getAttribute('aria-pressed') === 'true';
+          chips[1].click(); r2.cambiaAObjetivo = !vis('.jp-ex-tips') && vis('.jp-ex-box-obj') && chips[0].getAttribute('aria-pressed') === 'false';
+          chips[1].click(); r2.tocarOtraVezCierra = !vis('.jp-ex-box-obj') && !vis('.jp-ex-tips') && !caj.hasAttribute('data-nota');
+          r2.sinResumenesApilados = [].slice.call(caj.querySelectorAll(':scope > details > summary')).every(function(s){ return cs(s).display === 'none'; });
+          return r2;
+        } finally { if(unidad.parentNode) unidad.parentNode.removeChild(unidad); }
+      }
+      if(c.caso === 'plan'){
+        var E = { idx: 'e0', nombre: 'Press de banca plano con barra', reps: '5-7', rir: '2' }, cc = { w: 1, d: 'dia1', b: 'bk1' }, loads0 = st.loads, rir0 = st.rirEx;
+        try{
+          st.rirEx = {}; st.loads = {}; var sinBase = w.jpPlanCargas(cc, E);
+          [1, 2, 3, 4].forEach(function(n){ st.loads['0|dia1|bk1|e0|' + n] = { kg: '80', reps: '7', done: true, ex: E.nombre }; });
+          var pl = w.jpPlanCargas(cc, E), s = pl ? pl.semanas : [], res = { sinRegistroNoInventa: sinBase === null, cuatroSemanas: s.length === 4, s1Real: !!s[0] && s[0].kg === 80 && s[0].origen === 'real', s2Sugerida: !!s[1] && s[1].kg === 82.5 && s[1].origen !== 'real',
+            s3Pico: !!s[2] && s[2].tipo === 'pico' && s[2].kg > s[1].kg, s4Descarga: !!s[3] && s[3].tipo === 'descarga' && s[3].kg === 67.5, rirPorSemana: !!s[3] && /4/.test(s[3].rir) && !!s[2] && /1-0/.test(s[2].rir), semanaActual: pl && pl.actual === 1 };
+          /* ajuste por el esfuerzo marcado: tope del rango y 3 reservas → un escalón más; RIR 0 → no sube */
+          st.rirEx = { '0|dia1|bk1|e0': 3 }; var holgado = w.jpSugerirCarga(cc, E, 1);
+          st.rirEx = { '0|dia1|bk1|e0': 2 }; var normal = w.jpSugerirCarga(cc, E, 1);
+          st.rirEx = { '0|dia1|bk1|e0': 0 }; var fallo = w.jpSugerirCarga(cc, E, 1);
+          res.rirHolgadoSubeMas = holgado.kg > normal.kg && /te sobraron reservas/.test(holgado.txt); res.rirNormalIgual = normal.kg === 82.5; res.rirCeroMantiene = fallo.kg === 80;
+          /* la tarjeta de carga dibuja el plan con la semana de hoy marcada */
+          var cfg = { w: 1, d: 'dia1', b: 'bk1', ex: [E] }, html = typeof w.jpPlanHtml === 'function' ? w.jpPlanHtml(cfg, E) : '';
+          res.tarjetaLoDibuja = /jp-pl-w/.test(html) && /jp-pl-w jp-pl-carga hoy/.test(html) && /PLAN DE CARGAS/.test(html) && /80<u>kg/.test(html);
+          return res;
+        } finally { st.loads = loads0; st.rirEx = rir0; }
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { st.mode = modo0; try{ w.renderMain(); }catch(eR){} }
+  }
   function alumnoProgresion(i){
     var w = alumnoWin(); if(!w || typeof w.jpSugerirCarga !== 'function') throw new Error('la app del alumno no expone jpSugerirCarga');
     var st = w.eval('state'), l0 = st.loads, r0 = st.rirEx;

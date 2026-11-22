@@ -11,7 +11,8 @@ interface Props {
   compact?: boolean
 }
 
-export function ExportButtons({ target, state, compact }: Props) {
+/** Exportación de la placa activa a PNG 4K (descarga o compartir). La usan el botón y el menú ⬇ Exportar. */
+export function useExportPng(target: RefObject<HTMLDivElement | null>, state: CanvasState) {
   const [status, setStatus] = useState<Status>('idle')
   const [note, setNote] = useState('')
   const [shareable] = useState(canShareFiles)
@@ -43,7 +44,11 @@ export function ExportButtons({ target, state, compact }: Props) {
 
   const label =
     status === 'busy' ? 'RENDERIZANDO 4X…' : status === 'done' ? 'PLACA DESCARGADA ✓' : 'DESCARGAR PLACA TÁCTICA [PNG 4K]'
+  return { run, status, note, shareable, label }
+}
 
+export function ExportButtons({ target, state, compact }: Props) {
+  const { run, status, note, shareable, label } = useExportPng(target, state)
   return (
     <div className="flex w-full flex-col gap-1.5">
       <div className="flex gap-2">

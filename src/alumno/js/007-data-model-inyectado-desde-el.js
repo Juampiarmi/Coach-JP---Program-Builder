@@ -1524,12 +1524,12 @@ function jpEscudoPulso(){
     var sh = f.querySelector('.cf-shield');
     if(!sh || !sh.animate) return;
     sh.animate([
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' },
-      { filter: 'drop-shadow(0 0 16px rgba(245,158,11,.5))', offset: .3 },
-      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' }
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' },
+      { filter: 'drop-shadow(0 0 14px rgba(245,197,24,.5))', offset: .3 },
+      { filter: 'drop-shadow(0 0 0 rgba(245,197,24,0))' }
     ], { duration: 280, easing: 'ease-out' });
     sh.querySelectorAll('path').forEach(function(p){
-      if(p.animate) p.animate([{ stroke: 'rgba(245,158,11,.15)' }, { stroke: 'rgba(245,158,11,.6)', offset: .3 }, { stroke: 'rgba(245,158,11,.15)' }], { duration: 280, easing: 'ease-out' });
+      if(p.animate) p.animate([{ strokeOpacity: .8 }, { strokeOpacity: 1, offset: .3 }, { strokeOpacity: .8 }], { duration: 280, easing: 'ease-out' });
     });
   }catch(e){}
 }
@@ -2262,11 +2262,10 @@ function renderWeekInfo(){
    RENDER: DAY TABS
 ========================================================= */
 const weekTabsEl = document.getElementById('week-tabs');
+/* los bloques que cuentan para "día completo" y el resumen son los de la VERSIÓN activa (estándar: sin los complementarios; extendida: todos). Los registros de los bloques que quedan
+   ocultos no se tocan: al volver a la versión extendida están tal cual. */
 function dayBlockIds(day){
-  const ids = day.blocks.map(function(b){ return b.id; });
-  if(day.finisher) ids.push(day.finisher.id);
-  if(day.hyrox) ids.push(day.hyrox.id);
-  return ids;
+  return visibleBlocks(day).map(function(b){ return b.id; });
 }
 function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
@@ -2315,6 +2314,44 @@ function aplicarSemanaActivaBlocks(){
     }
   });
 }
+/* ---------- versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ----------
+   Es el mismo interruptor de siempre (state.mode: quick = estándar, complete = extendida) puesto a la vista en el día. Qué bloques son complementarios (solo extendida) lo define el coach
+   en el Builder / Banco de Rutinas con la visibilidad del bloque (optional): core, cardio, finisher y cierre metabólico por defecto. */
+function jpBloquesComplementarios(day){
+  const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
+  return all.filter(function(b){ return b && b.optional; });
+}
+function jpNombreBloqueCorto(b){
+  const t = String(b.title || b.label || '').replace(/^\s*(?:bloque\s*\d+\s*[|:–-]?\s*|block\s*[a-z0-9]+\s*[:–-]\s*)/i, '').replace(/\s*[·–—:|(-].*$/, '').trim();
+  return t.length > 24 ? t.slice(0, 23).trim() + '…' : t;
+}
+function jpVersionHtml(day){
+  const comp = jpBloquesComplementarios(day), ext = state.mode === 'complete';
+  const hint = !comp.length ? jpT('app.ver.h.igual')
+    : (ext ? jpT('app.ver.h.ext', { n: comp.length })
+           : jpT('app.ver.h.std', { n: comp.map(jpNombreBloqueCorto).filter(Boolean).slice(0, 3).join(', ') || comp.length }));
+  const btn = function(modo, tit, min, on){
+    return '<button type="button" class="jp-ver-b' + (on ? ' on' : '') + '" data-ver="' + modo + '" aria-pressed="' + (on ? 'true' : 'false') + '"><b>' + tit + '</b> <i aria-hidden="true">·</i> <span>' + min + '</span></button>';
+  };
+  return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
+    btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
+    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+}
+function jpSetVersion(modo){
+  if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
+  const el = document.getElementById('jpVer'), y0 = el ? el.getBoundingClientRect().top : null;
+  state.mode = modo; saveProgress();
+  document.body.classList.toggle('quick-mode', modo === 'quick');
+  if(typeof modeSwitchEl !== 'undefined' && modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){ b.classList.toggle('active', b.dataset.mode === modo); });
+  renderMain();
+  const n = document.getElementById('jpVer');
+  if(n && y0 != null){ window.scrollBy(0, n.getBoundingClientRect().top - y0); }       /* el selector queda bajo el dedo: no salta la pantalla */
+}
+window.jpSetVersion = jpSetVersion;
+document.addEventListener('click', function(ev){
+  const b = ev.target && ev.target.closest ? ev.target.closest('.jp-ver-b') : null;
+  if(b) jpSetVersion(b.getAttribute('data-ver'));
+});
 function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
   return all.filter(function(b){ return state.mode === 'complete' || !b.optional; });
@@ -2674,6 +2711,8 @@ function datosStoryCF(weekIdx, day){
       if(kg > top) top = kg;
     });
     if(huboLoads) return { vol: vol, top: top };
+    /* sin series tildadas: el volumen PRESCRIPTO solo entra si el bloque se marcó como hecho (el alumno lo hizo pero no cargó kilos). Un bloque sin hacer no aporta kilos que nadie movió. */
+    if(!isBlockDone(weekIdx, day.id, b.id)) return { vol: 0, top: 0 };
     let setsActuales = 1, volP = 0, topP = 0;
     (b.items || []).forEach(function(raw){
       const l = String(raw || '').trim();
@@ -2699,7 +2738,16 @@ function datosStoryCF(weekIdx, day){
     if(r.top > topLiftKg) topLiftKg = r.top;
   });
   volumenTotal = Math.round(volumenTotal);
-  const esPR = !!(state.session && state.session.prs && state.session.prs.length > 0);
+  /* PR del día: antes bastaba con que hubiera UN récord en todo el mesociclo (state.session.prs nunca se resetea) para marcar "PR" en cualquier tarjeta.
+     Ahora cuenta solo un récord de HOY en un ejercicio de ESTE día (mismo criterio que la Story de Bodybuilding). */
+  const esPR = (function(){
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    let textoDia = ' ';
+    (day.blocks || []).forEach(function(b){
+      textoDia += ' ' + nrmHist((b.exerciseName || '') + ' ' + (b.title || '') + ' ' + (b.items || []).join(' ') + ' ' + (b.exercises || []).map(function(e){ return e && e.name; }).join(' '));
+    });
+    return ((state.session && state.session.prDetalle) || []).some(function(p){ const n = nrmHist(p && p.ex); return !!n && p.fecha === hoyISO && textoDia.indexOf(n) >= 0; });
+  })();
   /* directiva ("Composición Universal de Movimientos") -- Hero Card 1
      ya no protagoniza con el título de UN solo bloque (el más pesado):
      el título pasa a ser una categoría dinámica según la MEZCLA real de
@@ -2985,6 +3033,7 @@ function renderMain(){
      completo: el scroll baja directo del título de la sesión al primer
      bloque. Sólo sobrevive el Foco Técnico, como banner fijo siempre
      visible (ver renderFocoTecnico() más arriba). */
+  if(window.COACH_DISCIPLINA === 'sports') html += jpVersionHtml(day);
   html += renderFocoTecnico(day);
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
@@ -3403,12 +3452,30 @@ const guideBtnEl = document.getElementById('guideBtn');
 const guideCloseEl = document.getElementById('guideClose');
 function openModal(el){ el.classList.add('open'); }
 function closeModal(el){ el.classList.remove('open'); }
+/* Parte un texto largo en oraciones (corta en ". " / "? " / "! " seguidos de mayúscula, dígito o apertura): la explicación técnica del mesociclo llegaba como UN solo párrafo de ~15 renglones.
+   Solo cambia la presentación: el texto del plan no se toca. Puro y sin RegExp con lookbehind (Safari viejo). */
+function jpPartirTexto(t){
+  const s = String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+  if(!s) return [];
+  return s.replace(/([.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡0-9(])/g, '$1\u0001').split('\u0001').map(function(x){ return x.trim(); }).filter(Boolean);
+}
+window.jpPartirTexto = jpPartirTexto;
+/* una oración con "Título: detalle" (título corto) lleva el título en negrita para poder escanear la lista */
+function jpOracionConTitulo(o){
+  const m = /^([^:.]{3,44}):\s+(\S[\s\S]*)$/.exec(o);
+  return m ? '<b>' + m[1] + ':</b> ' + m[2] : o;
+}
 (function pintarMeso(){
   const sec = document.getElementById('mesoExplainSection');
   if(!sec || !PROGRAM_CONFIG.mesoObjetivo) return;
+  /* objetivo del bloque en un párrafo corto y el resto como puntos (una idea por punto) */
+  const puntos = jpPartirTexto(PROGRAM_CONFIG.mesoTexto || '');
+  let objetivo = PROGRAM_CONFIG.mesoObjetivo;
+  /* la primera oración, si es solo un rótulo corto (ej. "Push / Pull / Pierna completa."), sigue pegada al objetivo como en el texto original */
+  if(puntos.length && puntos[0].length <= 48 && puntos[0].indexOf(':') < 0) objetivo += ' — ' + puntos.shift().replace(/\.$/, '');
   document.getElementById('mesoExplainText').innerHTML =
-    '<b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + PROGRAM_CONFIG.mesoObjetivo +
-    (PROGRAM_CONFIG.mesoTexto ? ' — ' + PROGRAM_CONFIG.mesoTexto : '');
+    '<span class="gd-meso-obj"><b style="color:var(--text-primary)">Objetivo del bloque:</b> ' + objetivo + '</span>' +
+    (puntos.length ? '<ul class="gd-meso-lista">' + puntos.map(function(o){ return '<li>' + jpOracionConTitulo(o) + '</li>'; }).join('') + '</ul>' : '');
   const t = document.getElementById('mesoExplainTable');
   t.innerHTML = '<tr><th>Semana</th><th>Fase</th><th>Intensidad</th></tr>' +
     (PROGRAM_CONFIG.weeks || []).map(function(w){
@@ -3532,10 +3599,13 @@ function closeModal(el){ el.classList.remove('open'); }
     var html = '';
     if(h0 === 'semana'){
       cont.className = 'guide-cards gc-list';
-      html = datos.map(function(c){
+      html = datos.map(function(c, iw){
         var ult = c[c.length - 1];
         var numerica = /^[0-9]+$/.test(c[0].textContent.trim());
-        return '<div class="gc-row"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
+        /* la semana de descarga (deload) y la de pico (a fallo técnico) se distinguen de las de carga con clases propias: el color lo pone el CSS */
+        var wm = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.weeks && PROGRAM_CONFIG.weeks[iw]) || {};
+        var claseSem = wm.deload ? ' gc-row-descarga' : (wm.fail ? ' gc-row-pico' : ' gc-row-carga');
+        return '<div class="gc-row' + claseSem + '"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
           (c.length > 2 ? '<span>' + c[1].innerHTML + '</span>' : '') + '</div>' +
           '<span class="gc-badge gc-badge-rpe">' + ult.textContent.trim() + '</span></div>';
       }).join('');
@@ -3565,6 +3635,20 @@ function closeModal(el){ el.classList.remove('open'); }
     if(tabla.parentNode) tabla.parentNode.replaceChild(cont, tabla);
   }
   Array.prototype.slice.call(document.querySelectorAll('.guide-table')).forEach(convertir);
+})();
+/* pestañas de la Guía (Técnica / Glosario / Zonas FC): íconos de línea del mismo trazo y color en las tres (antes eran emojis de colores distintos: 🎯 📚 ❤️).
+   Solo cambia lo que se ve; el texto y el data-gd de cada pestaña quedan igual. */
+(function guiaPestanasIconos(){
+  const IC = {
+    tecnica: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none"/>',
+    glosario: '<path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
+    fc: '<path d="M3 12h4l2-5 4 10 2-5h6"/>'
+  };
+  Array.prototype.slice.call(document.querySelectorAll('#guideTabs .tm-tab')).forEach(function(b){
+    const k = b.getAttribute('data-gd'); if(!IC[k] || b.querySelector('.gd-tab-ic')) return;
+    const txt = (b.textContent || '').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/, '').trim();
+    b.innerHTML = '<svg class="gd-tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[k] + '</svg><span class="gd-tab-tx">' + txt + '</span>';
+  });
 })();
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
@@ -3706,6 +3790,8 @@ function init(){
     document.body.classList.toggle('quick-mode', state.mode === 'quick');
     if(modeSwitchEl) modeSwitchEl.querySelectorAll('.mode-pill').forEach(function(b){
       b.classList.toggle('active', b.dataset.mode === state.mode);
+      /* en Sports el mismo interruptor se llama por su versión: ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN (en Perfil y en el día) */
+      if(window.COACH_DISCIPLINA === 'sports') b.textContent = b.dataset.mode === 'quick' ? jpT('app.ver.std') + ' · ' + jpT('app.ver.m60') : jpT('app.ver.ext') + ' · ' + jpT('app.ver.m90');
     });
   }catch(err){
     console.error('init', err);

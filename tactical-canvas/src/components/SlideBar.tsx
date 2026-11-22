@@ -6,10 +6,6 @@ interface Props {
   onSelect: (i: number) => void
   onAdd: () => void
   onRemove: () => void
-  onExportAll: () => void
-  onExportZip: () => void
-  /** ZIP unificado con /feed_4x5/ y /stories_9x16/ */
-  onExportDual: () => void
   onRegenerate: () => void
   onMove: (dir: -1 | 1) => void
   regenBusy: boolean
@@ -19,13 +15,13 @@ interface Props {
   trailing?: ReactNode
 }
 
-/** Paginación de la secuencia: [ PLACA 1 | PLACA 2 | ... ] + exportar todas (PNG sueltos o .zip). */
+/** Tira de placas debajo del lienzo: [ PLACA 1 | PLACA 2 | ... ] + ◀ ▶ + − y ✨ IA en esta placa. */
 /**
  * Barra superior en dos zonas: a la izquierda las pestañas de placas (ocupan todo el espacio
  * libre, nunca se encogen: si no entran, scroll horizontal) y a la derecha las utilidades fijas.
  * Si la fila no alcanza, las utilidades bajan a una segunda línea en vez de aplastar las pestañas.
  */
-export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, onExportDual, exporting, onRegenerate, onMove, regenBusy, regenNote, trailing }: Props) {
+export function SlideBar({ count, active, onSelect, onAdd, onRemove, exporting, onRegenerate, onMove, regenBusy, regenNote, trailing }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null)
   // La pestaña activa siempre queda a la vista dentro del scroll.
   useEffect(() => {
@@ -98,55 +94,22 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
         type="button"
         onClick={onRegenerate}
         disabled={Boolean(exporting)}
-        title={regenBusy ? 'Cancelar' : `Pide a la IA una versión nueva de la placa ${active + 1} sin tocar las demás`}
+        title={regenBusy ? 'Cancelar' : `Reescribe o varía la placa ${active + 1} con IA, sin tocar las demás`}
         className={`shrink-0 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider transition disabled:opacity-50 ${
           regenBusy ? 'animate-pulse border-cyan/60 bg-cyan/10 text-cyan' : 'border-cyan/40 text-cyan/90 hover:bg-cyan/10'
         }`}
       >
-        {regenBusy ? '[ ⚡ RE-GENERANDO… ]' : <><span className="hidden sm:inline">[ ⚡ RE-GENERAR ESTA ]</span><span className="sm:hidden">⚡</span></>}
+        {regenBusy ? '[ ✨ REESCRIBIENDO… ]' : <><span className="hidden sm:inline">[ ✨ IA EN ESTA PLACA ]</span><span className="sm:hidden">✨ IA</span></>}
       </button>
       {regenNote && (
         <span className={`hidden max-w-[200px] shrink truncate font-mono text-[10px] xl:inline ${/✓/.test(regenNote) ? 'text-cyan' : regenBusy ? 'text-gold' : 'text-fire'}`} title={regenNote}>
           {regenNote}
         </span>
       )}
-      {exporting ? (
+      {exporting && (
         <span className="shrink-0 rounded-lg border border-fire/40 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire">
           {exporting}
         </span>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={onExportDual}
-            title="Un solo .zip con /feed_4x5/ y /stories_9x16/ (historias con zonas de sticker) + caption.txt"
-            className="shrink-0 rounded-lg border border-gold/60 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-gold transition hover:bg-gold/10"
-          >
-            <span className="hidden sm:inline">[ ⬇ FEED + HISTORIAS ]</span>
-            <span className="sm:hidden">4:5+9:16</span>
-          </button>
-          {count > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={onExportZip}
-              aria-label="Descargar todas (.zip)"
-              className="shrink-0 rounded-lg bg-fire px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-wider text-carbon transition hover:brightness-110"
-            >
-              <span className="hidden sm:inline">[ DESCARGAR TODAS (.ZIP) ]</span>
-              <span className="sm:hidden">.ZIP</span>
-            </button>
-            <button
-              type="button"
-              onClick={onExportAll}
-              title="Descargar cada placa por separado (en el celular: compartir todas)"
-              className="shrink-0 rounded-lg border border-fire/60 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire transition hover:bg-fire/10"
-            >
-              {count} PNG
-            </button>
-          </>
-          )}
-        </>
       )}
       {trailing}
       </div>

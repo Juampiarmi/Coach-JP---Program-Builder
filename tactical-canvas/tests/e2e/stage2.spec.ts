@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { openApp } from './helpers'
+import { loadDay, openApp } from './helpers'
 
 const KEY = 'jp-tactical-canvas'
 const store = (page: Page, key: string) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), `${KEY}:${key}`)
@@ -79,13 +79,10 @@ test('banco de fotos: subir con etiquetas, usar en la placa, Plan Semanal y resp
   await expect.poll(async () => (await store(page, 'v3'))?.slides[0].bgImageId).toBe(photoId)
 
   // Plan Semanal: el día de ciclistas (Rønnestad) usa la foto de MTB en lugar del fondo del pack.
-  const bar = page.getByRole('group', { name: 'Plan semanal' }).first()
-  await bar.getByRole('button', { name: 'MIÉ', exact: true }).click()
-  await expect(bar.getByRole('button', { name: 'MIÉ', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await loadDay(page, 'MIÉ')
   await expect.poll(async () => (await store(page, 'v3'))?.slides.filter((s: { template: string }) => s.template !== 'athletic').every((s: { bgImageId: string }) => s.bgImageId === photoId)).toBe(true)
   // El día de mindset (sin disciplina en el tema) no fuerza ninguna foto.
-  await bar.getByRole('button', { name: 'JUE', exact: true }).click()
-  await expect(bar.getByRole('button', { name: 'JUE', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await loadDay(page, 'JUE')
   await expect.poll(async () => (await store(page, 'v3'))?.slides.some((s: { bgImageId: string }) => s.bgImageId === photoId)).toBe(false)
 
   // Respaldo: viaja el banco con su imagen.
@@ -99,7 +96,7 @@ test('banco de fotos: subir con etiquetas, usar en la placa, Plan Semanal y resp
 
 test('vista feed 3×3: portada nueva arriba a la izquierda, capturas y lectura de contraste', async ({ page }) => {
   await openApp(page)
-  await page.getByRole('button', { name: /VISTA FEED 3×3/ }).click()
+  await page.getByRole('button', { name: 'Grilla 3×3' }).click()
   const dialog = page.getByRole('dialog', { name: 'Vista previa en grilla de Instagram' })
   await expect(dialog.getByTestId('feed-cover')).toBeVisible()
   await expect(dialog.getByTestId('grid-verdict')).toContainText('Subí capturas de tus últimos posts')

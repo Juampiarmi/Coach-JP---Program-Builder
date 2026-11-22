@@ -49,7 +49,7 @@ export function QuoteEditor({ state, update, discipline, topic }: Props) {
   return (
     <div className="space-y-2">
       <Field label="Cita" hint={`${chars} car. · sin comillas, la placa las pone`}>
-        <TextArea value={state.quoteText ?? ''} onChange={(quoteText) => update({ quoteText })} rows={3} />
+        <TextArea value={state.quoteText ?? ''} onChange={(quoteText) => update({ quoteText })} rows={3} field="quoteText" />
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Nombre">

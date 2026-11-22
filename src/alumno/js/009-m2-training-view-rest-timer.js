@@ -936,6 +936,19 @@
     return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \u00b7 Ejecuci\u00f3n \u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
       fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
   }
+  /* plan de cargas semana a semana con el peso real que el alumno ya registró (ver jpPlanCargas en 087-1): solo aparece si ese ejercicio ya tiene un registro */
+  function qrPlanHtml(c, e){
+    var pl = null; try{ pl = typeof window.jpPlanCargas === 'function' ? window.jpPlanCargas(c, e) : null; }catch(eP){}
+    if(!pl || !pl.semanas || !pl.semanas.length) return '';
+    var fmt = function(n){ return String(Math.round(n * 100) / 100).replace('.', ','); };
+    var cel = pl.semanas.map(function(sm){
+      var et = 'S' + (sm.w + 1) + (sm.tipo === 'descarga' ? ' · ' + jpT('app.plan.desc') : (sm.tipo === 'pico' ? ' · ' + jpT('app.plan.pico') : ''));
+      var pie = sm.origen === 'real' ? jpT('app.plan.hecho') + (sm.reps ? ' · ×' + sm.reps : '') : (sm.rir || '');
+      return '<span class="jp-pl-w jp-pl-' + sm.tipo + (sm.w === pl.actual ? ' hoy' : '') + (sm.origen === 'real' ? ' real' : '') + '" data-w="' + sm.w + '"><small>' + escSB(et) + '</small><b>' + (sm.kg > 0 ? fmt(sm.kg) + '<u>kg</u>' : '—') + '</b><i>' + escSB(pie) + '</i></span>';
+    }).join('');
+    return '<div class="jp-qc-plan"><div class="jp-pl-t">' + escSB(jpT('app.plan.t')) + '</div><div class="jp-pl-g" style="--n:' + pl.semanas.length + '">' + cel + '</div></div>';
+  }
+  window.jpPlanHtml = qrPlanHtml;
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -967,7 +980,7 @@
     }
     return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
-      cab + '<div class="jp-qc-rows">' + filas + '</div>' +
+      qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
       (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
@@ -1038,13 +1051,15 @@
     var unidades = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     var objetivoPendiente = !!objetivoHtml;
     unidades.forEach(function(u){
-      if(u.querySelector(':scope > .jp-ex-cajas')) return;
+      var ya = u.querySelector(':scope > .jp-ex-cajas');
+      if(ya && ya.querySelector('.jp-ex-box')) return;
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
       var tp = chip ? String(chip.textContent || '').trim() : '', ex = jpExplicarTempoSB(tp);
       if(ex) html += caja('tempo', '&#9201; ' + escSB(jpT('app.card.tempo.t')), escSB(tp), '<div class="jp-tempo-row"><b>' + escSB(tp) + '</b> → ' + escSB(ex) + '</div>');
       if(!html) return;
+      if(ya){ ya.insertAdjacentHTML('beforeend', html); return; }     /* el agrupador de notas ya la había creado con los coaching tips */
       var div = document.createElement('div'); div.className = 'jp-ex-cajas'; div.innerHTML = html;
       u.appendChild(div);
     });
@@ -1052,7 +1067,49 @@
       var d2 = document.createElement('div'); d2.className = 'jp-ex-cajas'; d2.innerHTML = caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml);
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
+    try{ jpNotasAgrupar(board); }catch(eN){}
   }
+  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
+     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
+     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  var NOTAS_DEF = [
+    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+  ];
+  function jpNotasAgrupar(root){
+    if(!root || !root.querySelectorAll) return;
+    var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+    unidades.forEach(function(u){
+      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
+      if(!caj){
+        if(!tips) return;
+        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      }
+      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
+      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
+      if(!hay.length) return;
+      caj.classList.add('jp-notas');
+      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
+      var fila = caj.querySelector(':scope > .jp-notas-chips');
+      if(fila) fila.parentNode.removeChild(fila);
+      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
+      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
+      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
+        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
+        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
+      }).join('');
+      caj.insertBefore(fila, caj.firstChild);
+    });
+  }
+  window.jpNotasAgrupar = jpNotasAgrupar;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
+    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
+    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
+    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
+    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
+  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s*[x\u00d7]\s*$/i, '').trim();
@@ -1104,6 +1161,7 @@
         }
       }
       qrTecAbrir(board);
+      try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
   function qrCtx(card){
@@ -1128,6 +1186,9 @@
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
     var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
     if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
+    /* las notas del ejercicio ya viven agrupadas fuera de la tarjeta de carga: el tip nuevo no se duplica */
+    var uEx = card.closest('.jp-sb-ex, .jp-sb-subex-resumen');
+    if(tipsAhora && uEx && uEx.querySelector(':scope > .jp-ex-cajas > .jp-ex-tips')) tipsAhora.parentNode.removeChild(tipsAhora);
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;

@@ -48,8 +48,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { estado: '2/3 work', restante: 1, dicho: 'n1', sinPitidos: true, alFinal: '', terminado: true }, modo: 'subset',
     nota: 'Simula el teléfono bloqueado (22 s sin ningún tick): al volver, UNA sola resincronización contra el reloj de pared deja el timer exactamente donde corresponde (ronda 2 de 3, trabajo, 1 s) y no suelta una ráfaga de frases viejas; si pasó más tiempo todavía (>3 s de atraso) termina sin repetir frases' },
   { id: 'voz.18', area: 'Timer · pantalla completa', fn: 'alumnoVoz', input: { caso: 'pantallaCompleta' },
-    expect: { fondoAzul: true, botonDorado: true, secundarioAzul: true, pastillaAzul: true, tipografia: true, sinNaranjaDeFondo: true }, modo: 'subset',
-    nota: 'La pantalla completa del timer usa el diseño actual: fondo azul noche, pastilla de ronda y botones con las mismas superficies del HUD, botón principal dorado y tipografía Chakra Petch (antes quedaba negro con naranja)' },
+    expect: { fondoAzul: true, botonDorado: true, secundarioAzul: true, rondaSinPastilla: true, tipografia: true, sinNaranjaDeFondo: true }, modo: 'subset',
+    nota: 'La pantalla completa del timer usa el diseño actual: fondo azul noche, «RONDA n / N» como texto limpio (sin pastilla) y botones con las mismas superficies del HUD, botón principal dorado y tipografía Chakra Petch (antes quedaba negro con naranja)' },
   { id: 'voz.12', area: 'Voz del timer · HUD', fn: 'alumnoVoz', input: { caso: 'hud' }, expect: { controlesDebajoDelTitulo: true, sinSolapes: true, dentroDelAncho: true }, modo: 'subset',
     nota: 'En el HUD Timer el título queda arriba y VOZ, minimizar y cerrar van en su propia fila, sin solaparse entre sí ni con el título y sin salirse del ancho (también en 360 px)' }
 ]);

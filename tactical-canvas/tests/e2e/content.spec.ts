@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { canvas, doctorScore, isClipped, openApp } from './helpers'
+import { canvas, doctorScore, isClipped, openApp, remix } from './helpers'
 
 const BACKUP = 'content/coachjp_respaldo_4_carruseles.json'
 const NAMES = [
@@ -27,7 +27,7 @@ test('respaldo de contenido: 4 carruseles con 100 en el Doctor en feed e histori
     await page.locator(`li[data-project="${name}"]`).getByRole('button', { name: 'ABRIR', exact: true }).click()
     await expect(page.getByRole('tab', { name: 'PLACA 5', exact: true })).toBeVisible()
     for (const aspect of ['feed', 'story'] as const) {
-      if (aspect === 'story') await page.getByRole('button', { name: /REMIX 9:16/ }).click()
+      if (aspect === 'story') await remix(page)
       for (let i = 1; i <= 5; i++) {
         await page.getByRole('tab', { name: `PLACA ${i}`, exact: true }).click()
         await page.waitForTimeout(300)

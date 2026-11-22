@@ -5,6 +5,7 @@ export function Paragraph({ text, scale, size = 31, color = BRAND.gray, leading 
   if (!text.trim()) return null
   return (
     <p
+      data-part="body"
       style={{
         margin: 0,
         fontFamily: FONT_BODY,

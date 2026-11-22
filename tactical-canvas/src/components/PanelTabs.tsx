@@ -1,24 +1,25 @@
 import type { PanelTab } from './controls/ControlPanel'
 
 export const PANEL_TABS: { id: PanelTab; n: string; icon: string; label: string; title: string }[] = [
-  { id: 'ai', n: '01', icon: '🎯', label: 'IA & PLAN', title: 'Generador IA, Plan semanal 7 días, cita célebre y ráfagas de mindset' },
-  { id: 'text', n: '02', icon: '✍️', label: 'TEXTO', title: 'Titular, remate, párrafos, editor de la plantilla y evaluador de gancho' },
-  { id: 'style', n: '03', icon: '🎨', label: 'ESTILO', title: 'Plantillas por categoría, kits de marca, fondos y layout' },
-  { id: 'services', n: '04', icon: '🚀', label: 'SERVICIOS', title: 'Disciplinas, catálogo, ficha técnica y caso de atleta' },
-  { id: 'export', n: '05', icon: '⚙️', label: 'EXPORTAR', title: 'Carrusel continuo, historias 9:16 y doctor de retención' },
+  { id: 'text', n: '01', icon: '✍️', label: 'CONTENIDO', title: 'Los campos de la placa activa (sólo los de su plantilla), fuente científica y Biblioteca de Papers' },
+  { id: 'style', n: '02', icon: '🎨', label: 'DISEÑO & FOTO', title: 'Plantilla, fondo, banco de fotos reales, kit de marca y layout' },
+  { id: 'export', n: '03', icon: '🎞️', label: 'CARRUSEL & CAPTION', title: 'Caption + hashtags, doctor de retención, hilo continuo, remix 9:16 y exportación' },
 ]
+
+/** Pestañas viejas guardadas (IA & Plan, Servicios): ahora viven en «+ Crear» y en Contenido. */
+export const normalizeTab = (t: string): PanelTab => (t === 'style' || t === 'export' ? t : 'text')
 
 interface Props {
   tab: PanelTab
   onChange: (t: PanelTab) => void
-  /** Puntaje del doctor de retención (se muestra en la pestaña 05) */
+  /** Puntaje del doctor de retención (se muestra en la pestaña 03) */
   score?: number
 }
 
-/** Pestañas del panel lateral: 5 módulos con jerarquía clara en lugar de una columna larga de secciones. */
+/** Pestañas del panel lateral: 3 módulos (contenido · diseño · carrusel) en lugar de una columna larga de secciones. */
 export function PanelTabs({ tab, onChange, score }: Props) {
   return (
-    <div role="tablist" aria-label="Módulos del panel" className="sticky top-0 z-20 grid grid-cols-5 gap-1 border-b border-line bg-carbon/95 px-2 py-2 backdrop-blur">
+    <div role="tablist" aria-label="Módulos del panel" className="sticky top-0 z-20 grid grid-cols-3 gap-1 border-b border-line bg-carbon/95 px-2 py-2 backdrop-blur">
       {PANEL_TABS.map((t) => {
         const on = t.id === tab
         return (

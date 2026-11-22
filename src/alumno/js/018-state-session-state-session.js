@@ -47,12 +47,22 @@
   }
   window.CoachTiempoActivo = minutosActivos;
 
+  /* última acción REAL del alumno (series, kilos, repeticiones, bloques): el latido automático de cada minuto solo cuenta mientras haya habido una en los últimos 15 min.
+     Antes sumaba también la app abierta sin entrenar (se abría el celular, se dejaba sobre el banco y el tiempo "de sesión" seguía corriendo). */
+  var ultimaAccion = 0;
   ['change','input','click'].forEach(function(ev){
     document.addEventListener(ev, function(e){
       if(!e.target.closest) return;
-      if(e.target.closest('.set-check, .set-kg, .set-reps, .block-check, .rir-chip, .jp-tool, .tv-nav button')) latido();
+      if(e.target.closest('.set-check, .set-kg, .set-reps, .block-check, .block-done-cb, .rir-chip, .jp-tool, .tv-nav button, .jp-qc-ok, .jp-qc-kg, .jp-qc-rp')){ ultimaAccion = Date.now(); latido(); }
     }, true);
   });
+  function latidoPasivo(){
+    if(document.visibilityState === 'hidden') return;
+    if(!ultimaAccion || Date.now() - ultimaAccion > LIM_INACTIVO) return;
+    latido();
+  }
+  window.__jpUltimaAccion = function(t){ if(t != null) ultimaAccion = t; return ultimaAccion; };    /* tests */
+  window.__jpLatidoPasivo = latidoPasivo;
 
   /* ---------------------------------------------------------
      2 · PAUSA DE SESIÓN
@@ -247,11 +257,18 @@
         if(sem[d.id] && sem[d.id].__dayDone) hechas++;
       });
     }
-    var actual = Math.min(total, hechas + 1);
-    return { hechas: hechas, total: total, actual: actual };
+    /* "sesión N de M": si el día abierto ya está concluido, ya está contado en "hechas" (antes se sumaba un 1 de más y la tarjeta decía una sesión por delante) */
+    var semAct = (state.completed || {})[state.currentWeek] || {}, hoyHecho = !!(semAct[state.currentDay] && semAct[state.currentDay].__dayDone);
+    var actual = Math.min(total, hechas + (hoyHecho ? 0 : 1));
+    return { hechas: hechas, total: total, actual: Math.max(1, actual) };
   }
   function rpePromedio(){
-    var k = Object.keys(state.rir || {}).filter(function(x){ return x.indexOf(state.currentWeek + '|' + state.currentDay + '|') === 0; });
+    var vig = bloquesVigentes();    /* sin restos de bloques viejos guardados en el progreso de un plan anterior con el mismo id de día */
+    var k = Object.keys(state.rir || {}).filter(function(x){
+      if(x.indexOf(state.currentWeek + '|' + state.currentDay + '|') !== 0) return false;
+      if(vig && !vig[x.split('|')[2]]) return false;
+      return typeof state.rir[x] === 'number' && isFinite(state.rir[x]);
+    });
     if(!k.length) return 0;
     var suma = 0;
     k.forEach(function(x){ suma += (10 - Math.min(3, state.rir[x])); });
@@ -343,8 +360,15 @@
   function enriquecer(d){
     d = d || {};
     var r = rachaMesociclo(), t = topLift();
-    var minsT = (typeof window.jpMinutosSesion === 'function') ? window.jpMinutosSesion(minutosActivos()) : minutosActivos();
-    d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minsT) : String(minsT);
+    /* TIEMPO: solo el medido. La estimación por lo programado (que podía mostrar "2 h 00 m" tras cargar tres series) ya no sale en la tarjeta: sin registro creíble
+       el dato queda vacío y la tarjeta no dibuja el casillero. */
+    d.tiempo = '';
+    d.tiempoReal = 0;
+    try{
+      var tj = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null, ds = (typeof window.CoachDuracionSesion === 'function') ? window.CoachDuracionSesion() : null;
+      var minsR = (ds && ds.min > 0 && !ds.estimada) ? ds.min : ((tj && tj.min > 0 && !tj.estimado) ? tj.min : 0);
+      if(minsR > 0){ d.tiempoReal = minsR; d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minsR) : String(minsR) + ' min'; }
+    }catch(eT){}
     d.sesionN = r.actual; d.sesionTotal = r.total;
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
@@ -359,7 +383,7 @@
 
   function mount(){
     botonPausa();
-    latido();
+    /* abrir la app no es entrenar: el primer latido llega con la primera serie, no al cargar */
     /* engancha la Story Card: enriquece los datos y reescribe el pie */
     if(window.CoachStory && typeof window.CoachStory.abrir === 'function' && !window.CoachStory.__fino){
       var _ab = window.CoachStory.abrir;
@@ -390,7 +414,7 @@
         return x;
       };
     }
-    setInterval(latido, 60000);
+    setInterval(latidoPasivo, 60000);
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 60); });
   else setTimeout(mount, 60);
