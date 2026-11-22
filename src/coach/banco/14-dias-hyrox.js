@@ -191,7 +191,7 @@
     var T = ['=== DÍA ' + n + ': ' + def.titulo + ' ===', '[NOMBRE DEL DÍA] ' + def.nombre, '[FOCO DEL COACH] ' + def.foco];
     T.push(PB.textoWarmup(1, def.wu, def.nombre));
     var k = 2, primero = true;
-    def.filas.filter(function(r){ return !(r.soloA && !av) && !(r.soloI && av); }).forEach(function(r){
+    (PB.agruparHipertrofia ? PB.agruparHipertrofia : function(f){ return f; })(def.filas.filter(function(r){ return !(r.soloA && !av) && !(r.soloI && av); }), av, c.f ? 'f' : 'm').forEach(function(r){
       var b = PB.textoBloque(k, r, niv, primero && r.rol === 'F');
       if(r.rol === 'F') primero = false;
       T.push(b.txt); k++;

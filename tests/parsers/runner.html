@@ -1495,6 +1495,29 @@
       r3.textosMujer = rec.concat(mtb, hyx).every(function(r){ return /Versión mujer: /.test(r.notas) && /glúteo/i.test(r.notas); });
       return r3;
     }
+    if(c.caso === 'bisets'){
+      var sis = banco.filter(function(r){ return (/^bkstd_jp26_/.test(r.id) || (r.depDeporte === 'hyx')) && (r.dias || []).length; }), jp = sis.filter(function(r){ return /^bkstd_jp26_/.test(r.id); }), rr = { plantillas: sis.length };
+      var bloquesDe = function(lista){ var o = []; lista.forEach(function(r){ r.dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ o.push({ r: r, b: b, m: EST.parsearBloque(b) }); }); }); }); return o; };
+      var todos = bloquesDe(sis), hip = todos.filter(function(x){ return /^(Hipertrofia|Accesorios) – /.test(x.b.titulo || '') && x.m; });
+      var biset = hip.filter(function(x){ return x.m.ex.length > 1; }), recto = hip.filter(function(x){ return x.m.ex.length === 1; });
+      rr.fuerzaRecta = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || '') && x.m; }).every(function(x){ return x.m.ex.length === 1; });
+      rr.hayFuerza = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || ''); }).length > 40;
+      rr.masBisets = biset.length / (biset.length + recto.length) >= 0.35;
+      rr.mismasSeries = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets === x.m.ex[0].sets; }); });
+      rr.noDosGuiados = biset.every(function(x){ var t = x.m.ex.map(function(e){ return EST.infoEj(e.nombre).t; }); return t.filter(function(k){ return k === 'M' || k === 'P'; }).length < 2; });
+      rr.mismaEstacion = biset.every(function(x){ if(typeof win.jpEstacion !== 'function') return true; var libs = x.m.ex.map(function(e){ return PB.exLib(e.nombre); }); return libs.every(function(l){ return !l || !libs[0] || win.jpEstacionCompat(win.jpEstacion(libs[0]), win.jpEstacion(l)); }); });
+      rr.cadaDiaConBiset = jp.every(function(r){ return r.dias.every(function(d){ return (d.bloques || []).some(function(b){ return /Biset|Triset/.test(b.titulo || ''); }); }); });
+      rr.descansoDeRonda = biset.every(function(x){ return x.m.rest >= 45 && x.m.rest <= 150; });
+      /* la función pura: básicos pesados rectos, pares lógicos con las mismas series, dos guiados no se juntan */
+      var R = PB.R, fil = [R('F', 'Press de banca plano con barra', '4x5-7|2|180', '5x4-6|1|210'), R('H', 'Press inclinado con mancuernas', '4x8-10|1|120', '4x8-10|0-1|120'), R('H', 'Remo unilateral a una mano', '4x8-12|1|90', '4x8-10|0-1|90'),
+        R('H', 'Peso muerto rumano', '3x6-8|2|150', '4x6-8|1|180'), R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45'), R('A', 'Patada de tríceps con mancuerna', '3x12-15|1|60', '4x12-15|0|45'),
+        R('A', 'Jalón al pecho con agarre ancho', '3x10-12|1|75', '4x10-12|0|60'), R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'), R('C', ['Plancha frontal'], '3x30s|1|45', '3x40s|0|45')];
+      var sal = PB.agruparHipertrofia(fil, false, 'm');
+      rr.funcionPura = sal[0].rol === 'F' && sal.filter(function(f){ return f.rol === 'H' && [].concat(f.ej)[0] === 'Peso muerto rumano'; }).length === 1 && sal.filter(function(f){ return f.agrupada; }).length >= 2
+        && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length === 2 && d.sets >= 3 && d.reps.length === 2; })
+        && !sal.some(function(f){ return f.agrupada && [].concat(f.ej).indexOf('Jalón al pecho con agarre ancho') >= 0 && [].concat(f.ej).indexOf('Cruce de cables en polea alta') >= 0; });
+      return rr;
+    }
     if(c.caso === 'pro'){
       var pro = banco.filter(function(r){ return /Recomposición Femenina/.test(r.nombre || '') && /(3|4) Días/.test(r.nombre) && (r.dias || []).length; }), r4 = { plantillas: pro.length };
       r4.glúteoEnRango = pro.length >= 2 && pro.every(function(r){ var o = vol(r); return g(o, 'Glúteo') >= o['Glúteo'].lo; });
@@ -1523,7 +1546,7 @@
         hyroxIntervalosEstandar: hxMain.length > 0 && hxMain.every(function(x){ return !x.optional; }) && hxCore.length > 0 && hxCore.every(function(x){ return x.optional === true; }), bancoPrincipalesEstandar: por('calentamiento').concat(por('fuerza'), por('hipertrofia')).length > 5 && por('calentamiento').concat(por('fuerza'), por('hipertrofia')).every(function(b){ return !b.optional; }) };
     }
     /* generadores de tips del Builder en el formato del Banco de Rutinas y firma sin nombre repetido (Builder real) */
-    if(c.caso === 'tipsBanco' || c.caso === 'normaliza' || c.caso === 'cambioEj' || c.caso === 'footerUnNombre'){
+    if(c.caso === 'tipsBanco' || c.caso === 'normaliza' || c.caso === 'cambioEj' || c.caso === 'footerUnNombre' || c.caso === 'tipsIA'){
       var CA = win.CoachAuto; if(!CA || !CA.tipsBanco) throw new Error('el Builder no expone CoachAuto.tipsBanco');
       var S0 = getS(), exs = S0.exercises, exPor = function(n){ return exs.filter(function(e){ return e.es === n; })[0]; };
       if(c.caso === 'tipsBanco'){
@@ -1538,15 +1561,32 @@
       }
       if(c.caso === 'normaliza'){
         var n1 = CA.normalizarTips('SET-UP: postura firme\nCLAVE: tempo 3110 y rango largo\nCUIDADO: no arquees la lumbar\nTRANSICIÓN: pasá al A2 sin pausa'), n2 = CA.normalizarTips('A1 · CLAVE: empujá\nA1 · CUIDADO: sin rebote\nA2 · SET-UP: apoyo firme');
-        var largo = CA.normalizarTips('SET-UP: ' + new Array(60).join('palabra '));
+        var oracion = new Array(26).join('palabra ').trim() + '.', largo = CA.normalizarTips('SET-UP: ' + [oracion, oracion, oracion].join(' '));
         return { rotulosEstandar: n1.split('\n').slice(0, 3).map(function(l){ return l.split(':')[0]; }).join('|') === 'SET-UP|CUE EFICIENTE|CUIDADO / ERROR COMÚN', otrasLineasIntactas: /^TRANSICIÓN: pasá al A2/.test(n1.split('\n')[3]),
-          bisetConserva: n2 === 'A1 · CUE EFICIENTE: empujá\nA1 · CUIDADO / ERROR COMÚN: sin rebote\nA2 · SET-UP: apoyo firme', recortaLargos: largo.split(' ').length <= 31 && /…$/.test(largo) };
+          bisetConserva: n2 === 'A1 · CUE EFICIENTE: empujá\nA1 · CUIDADO / ERROR COMÚN: sin rebote\nA2 · SET-UP: apoyo firme', recortaPorOracion: largo.split(' ').length <= 56 && /.$/.test(largo) && !/…/.test(largo) };
       }
       if(c.caso === 'cambioEj'){
         var a = exPor('Press de banca plano con barra') || exs[0], b2 = exs.filter(function(e){ return e.id !== a.id && /remo/i.test(e.es); })[0] || exs[1], blk = { tempo: '3010', tips: '' };
         var cambio = CA.tipsAlCambiarEjercicio;
         var vacio = cambio(blk, a, b2, null); blk.tips = CA.notaCompleta(a, '3010', null); var auto = cambio(blk, a, b2, null); blk.tips = 'Mi nota propia: no bajes tanto la barra.'; var manual = cambio(blk, a, b2, null);
         return { vacioSeEscribe: typeof vacio === 'string' && /^SET-UP: /.test(vacio), automaticaSeReescribe: auto === CA.notaCompleta(b2, '3010', null) && auto !== CA.notaCompleta(a, '3010', null), manualSeRespeta: manual === null, mismoFormatoQueElBanco: /CUE EFICIENTE: /.test(auto) && auto.split('\n').length === 3 };
+      }
+      if(c.caso === 'tipsIA'){
+        var TI = CA.tipsIA; if(!TI) throw new Error('el Builder no expone CoachAuto.tipsIA');
+        var itemsBiset = ['A1. Press de banca plano con barra | 4x6-8 | RIR 1 | Tempo 3010', 'A2. Remo con barra inclinado | 4x6-8 | RIR 1 | Tempo 2011', 'Rest 120s'];
+        var est2 = TI.estacionesDe(itemsBiset, 'Biset'), cortado = 'A1 · SET-UP: Espalda alta apoyada en el banco, escápulas atrás y abajo, pies firmes bajo las rodillas y la barra sobre la línea de los ojos antes de desengancharla.\nA1 · CUE EFICIENTE: Bajá en tres segundos hasta rozar el pecho y empujá en línea recta con RIR 1.\nA1 · CUIDADO /';
+        var p1 = TI.procesar(cortado, est2, {}), lin1 = p1.texto.split('\n');
+        var v1 = TI.validar(cortado, est2), simple = TI.estacionesDe(['Sentadilla con barra', '4x5 | RIR 1', 'Rest 180s'], 'Fuerza principal – Sentadilla con barra');
+        var dem = TI.demanda({ tipo: 'list', items: ['Sentadilla con barra', '4x5 | RIR 1 | Tempo 3010', 'Rest 180s'], titulo: 'Fuerza principal – Sentadilla' }), dem2 = TI.demanda({ tipo: 'list', items: itemsBiset, titulo: 'Biset' });
+        var largo = CA.normalizarTips('SET-UP: ' + new Array(70).join('palabra ') + '. Segunda oración corta.\nCUE EFICIENTE: ok'), srcGen = String(win.generarTipsSportsCore);
+        return { detectaCorte: v1.ok === false && v1.colgada === true && v1.faltan.length >= 3, completaTodo: p1.cortada === true && lin1.length === 6 && lin1.every(function(l){ return /^A[12] · (SET-UP|CUE EFICIENTE|CUIDADO \/ ERROR COMÚN): .{20,}[.!?)]$/.test(l); }),
+          conservaLoQueVinoBien: /^A1 · SET-UP: Espalda alta apoyada/.test(lin1[0]) && /^A1 · CUE EFICIENTE: Bajá en tres segundos/.test(lin1[1]), sinFragmentoColgado: !/CUIDADO \/\s*$/m.test(p1.texto) && !/…/.test(p1.texto),
+          unaSolaEstacionSuelta: simple.length === 1 && simple[0].codigo === '' && /Sentadilla/.test(simple[0].nombre), bisetDosEstaciones: est2.length === 2 && est2[1].codigo === 'A2',
+          completoNoSeToca: TI.procesar('SET-UP: Pies al ancho de los hombros y barra baja en el trapecio con el pecho alto.\nCUE EFICIENTE: Bajá en tres segundos hasta la paralela y subí empujando el piso.\nCUIDADO / ERROR COMÚN: Si las rodillas colapsan hacia adentro cortá la serie y bajá la carga.', simple, {}).cortada === false,
+          demandaConNumeros: /4 series/.test(dem) && /RIR 1/.test(dem) && /3010/.test(dem) && /180 s/.test(dem) && /ALTA/.test(dem), demandaBiset: /A1 · Press de banca/.test(dem2) && /A2 · Remo con barra/.test(dem2) && /2011/.test(dem2),
+          reglasDeProfundidad: /25 y 45 palabras/.test(TI.REGLAS) && /CUIDADO \/ ERROR COMÚN/.test(TI.REGLAS) && /RIR/.test(TI.REGLAS) && /nunca dejes/i.test(TI.REGLAS),
+          recorteSinPuntosSuspensivos: !/…/.test(largo) && !/Segunda/.test(largo.split('\n')[0]) && largo.split('\n')[0].split(/\s+/).length > 20,
+          masEspacioQueAntes: !/maxTokens: esBiset \? 560 : 320/.test(srcGen) && /esBiset \? 3400 : 2200/.test(srcGen) && /TI\.CORRECCION/.test(srcGen) };
       }
       if(c.caso === 'footerUnNombre'){
         var id = 'ath_test_footer', fake = { id: id, nombre: 'Ana', apellido: 'Pérez', freq: 3, nivel: 'intermedio', genero: 'F', createdAt: Date.now() }, out = {};

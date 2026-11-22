@@ -9196,54 +9196,55 @@ async function generarTipsSportsCore(bid, btn){
     b.tempo ? 'Tempo prescripto: ' + b.tempo : '',
     b.metodologia ? 'Técnica avanzada asignada: ' + b.metodologia : ''
   ].filter(Boolean).join('\n');
-  const esBiset = (b.items || []).some(l => /^\s*[A-F]\d\s*[.)]/.test(String(l)));
-  const sistemaStd = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Dado un bloque de fuerza/hipertrofia, ' +
-    'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
-    'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
-    'y "coaching tips" en EXACTAMENTE TRES líneas separadas por salto de línea, cada una con una etiqueta de UNA sola palabra en mayúsculas y de 15 a 20 palabras como máximo: ' +
-    '"SET-UP: clave postural y anclaje inicial", "CUE EFICIENTE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO / ERROR COMÚN: la compensación crítica más frecuente a evitar" ' +
-    '(sin párrafos de justificación biomecánica, citando el ejercicio real). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las tres líneas).';
+  const TI = window.CoachAuto && window.CoachAuto.tipsIA;
+  const estaciones = TI ? TI.estacionesBloque(b) : [];
+  const esBiset = estaciones.length > 1 || (b.items || []).some(l => /^\s*[A-F]\d\s*[.)]/.test(String(l)));
+  const REGLAS = TI ? TI.REGLAS : '';
+  const demanda = TI ? TI.demanda(b) : '';
+  const sistemaStd = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Escribís en español rioplatense, claro, técnico y sin emojis ni relleno. Dado un bloque de fuerza/hipertrofia escribís dos textos: un "objetivo del bloque" ' +
+    '(2 oraciones completas: qué estímulo fisiológico busca este ejercicio con esta dosis y por qué) y los "coaching tips" en EXACTAMENTE TRES líneas separadas por salto de línea con estas etiquetas: "SET-UP:", "CUE EFICIENTE:", "CUIDADO / ERROR COMÚN:". ' + REGLAS +
+    ' Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las tres líneas).';
   const sistema = esBiset
-    ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
-      'Escribís en español rioplatense, corto y directo (sin emojis, sin relleno): un "objetivo del bloque" (1 frase fisiológica) y "tips" con UNA línea por estación y por etapa, separadas por salto de línea, ' +
-      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ...", "A2 · CUE EFICIENTE: ...", "A2 · CUIDADO / ERROR COMÚN: ..." ' +
-      '(15 a 20 palabras como máximo por línea; postura, tempo/intención y compensación crítica puntuales de CADA ejercicio; nunca mezcles los dos ejercicios en la misma línea). Cerrá con una última línea "TRANSICIÓN: ..." con la regla de cambio entre estaciones y el descanso final. Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
+    ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. Escribís en español rioplatense, claro, técnico y sin emojis ni relleno: ' +
+      'un "objetivo del bloque" (2 oraciones fisiológicas completas) y "tips" con TRES líneas por estación, cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ...", etc. ' +
+      'Nunca mezcles dos ejercicios en la misma línea. Cerrá con una última línea "TRANSICIÓN: ..." con la regla de cambio entre estaciones y el descanso al cerrar la ronda. ' + REGLAS +
+      ' Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
     : sistemaStd;
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
-    'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas;
+    'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas + (demanda ? '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + demanda : '');
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-  try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: esBiset ? 560 : 320 });
-    const raw = String(out || '').trim();
+  /* una respuesta de la IA → { objetivo, tips }; si el JSON vino cortado se rescatan los campos que alcanzaron a llegar */
+  const extraer = raw => {
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
-    let objetivo = j ? String(j.objetivo || '').trim() : '';
-    let tips = j ? String(j.tips || '').trim() : '';
-    if(!objetivo && !tips){
-      const partes = raw.split('\n').filter(Boolean);
-      objetivo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
-      tips = partes.slice(1).join('\n').trim();
+    if(j) return { objetivo: String(j.objetivo || '').trim(), tips: String(j.tips || '').trim() };
+    if(/^\s*\{/.test(raw)){
+      const campo = n => { const m = new RegExp('"' + n + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)').exec(raw); return m ? m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') : ''; };
+      return { objetivo: campo('objetivo').trim(), tips: campo('tips').trim() };
     }
-    if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
-    if(objetivo) b.objective = objetivo;
-    if(tips){
-      /* máximo 3 puntos por ejercicio y 20 palabras por punto */
-      const topar = l => { const mm = l.match(/^([^:]{2,40}:)\s*(.*)$/); if(!mm) return l; const w = mm[2].split(/\s+/); return w.length > 20 ? mm[1] + ' ' + w.slice(0, 20).join(' ').replace(/[,;:]+$/, '') + '…' : l; };
-      let lin = tips
-        .replace(/\s*(?=(?:SET-?UP|CLAVE|CUIDADO|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, (m, off, whole) => /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : '\n')
-        .replace(/\s*(?=\b[A-F]\d\s*·\s*(?:SET-?UP|CLAVE|CUIDADO|ACCI[OÓ]N|ERROR)[^:\n]{0,40}:)/g, '\n')
-        .replace(/^\n+/, '').replace(/\n{2,}/g, '\n').split('\n').filter(Boolean);
-      /* rótulos y largo del Banco de Rutinas: SET-UP / CUE EFICIENTE / CUIDADO / ERROR COMÚN, una frase corta por punto */
-      if(window.CoachAuto && window.CoachAuto.normalizarTips) lin = window.CoachAuto.normalizarTips(lin.join('\n')).split('\n').filter(Boolean);
-      lin = lin.map(topar);
-      if(esBiset){ const cuenta = {}; lin = lin.filter(l => { const L = (l.match(/^([A-F]\d)\b/) || [])[1] || '_'; cuenta[L] = (cuenta[L] || 0) + 1; return cuenta[L] <= 3; }); }
-      else lin = lin.slice(0, 3);
-      b.tips = lin.join('\n');
+    const partes = raw.split('\n').filter(Boolean);
+    return { objetivo: (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g, '').trim(), tips: partes.slice(1).join('\n').trim() };
+  };
+  try{
+    const pedir = async (tokens, extra) => extraer(String(await window.CoachAI.generarTexto(user + (extra || ''), sistema, { maxTokens: tokens }) || '').trim());
+    let r = await pedir(esBiset ? 3400 : 2200, '');
+    if(!r.objetivo && !r.tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    const ath = (typeof active === 'function') ? active() : null;
+    let proc = TI ? TI.procesar(r.tips, estaciones, { ath: ath, tempo: b.tempo }) : { texto: r.tips, cortada: false };
+    /* salida cortada o incompleta: un reintento con más espacio y la instrucción de terminar cada línea; lo que siga faltando se completa con la base del Banco */
+    if(TI && proc.cortada){
+      const r2 = await pedir(esBiset ? 5200 : 3600, '\n\n' + TI.CORRECCION);
+      const p2 = TI.procesar(r2.tips, estaciones, { ath: ath, tempo: b.tempo });
+      if(r2.tips){ proc = p2; if(r2.objetivo) r.objetivo = r2.objetivo; }
+    }
+    if(r.objetivo) b.objective = r.objetivo;
+    if(proc.texto){
+      b.tips = proc.texto;
     }
     save(); renderBuilder();
-    toast('Tips y objetivo generados con IA ⚡');
+    toast(proc.cortada ? 'Tips generados: se completó con la base del Banco lo que la IA dejó a medias ⚡' : 'Tips y objetivo generados con IA ⚡');
   }catch(e){
     console.warn('generarTipsSports', e);
     if(!(e && e.__toast)) toast('Error en API: ' + String((e && e.message) || e).slice(0, 220), 'err');
@@ -16628,9 +16629,15 @@ body{overflow-x:hidden}
      Los textos salen de la misma base de conocimiento que el Banco (window.__jpPB.kbDe); si el ejercicio no está ahí se arma con su Coach Note, su patrón y sus zonas de riesgo.
      Las reglas del alumno/a (restricciones, advertencias) se suman al CUIDADO: nunca se pierden. Una sola fuente para: cambiar un ejercicio, generar semana, importar, "Coach Note" de la biblioteca. */
   const RX_KB_GENERICO = /grupo muscular objetivo con técnica controlada/;
+  /* recorta por ORACIÓN completa (nunca a mitad de frase ni con puntos suspensivos): si la primera oración ya supera el máximo se deja entera */
   function recortarPalabras(t, max){
-    const w = String(t || '').trim().split(/\s+/);
-    return w.length > max ? w.slice(0, max).join(' ').replace(/[,;:]+$/, '') + '…' : String(t || '').trim();
+    t = String(t || '').trim();
+    if(t.split(/\s+/).length <= max) return t;
+    const oraciones = t.match(/[^.!?]+[.!?]+(?:\s|$)/g);
+    if(!oraciones) return t;
+    let acc = '';
+    for(let i = 0; i < oraciones.length; i++){ if((acc + oraciones[i]).trim().split(/\s+/).length > max && acc) break; acc += oraciones[i]; }
+    return acc.trim() || t;
   }
   function tipsBanco(ex, o){
     o = o || {};
@@ -16662,7 +16669,7 @@ body{overflow-x:hidden}
       });
       if(msgs.length) cu += ' ' + msgs.join(' ');
     }
-    return [pre + 'SET-UP: ' + recortarPalabras(su, 26), pre + 'CUE EFICIENTE: ' + recortarPalabras(cue, 30), pre + 'CUIDADO / ERROR COMÚN: ' + recortarPalabras(cu, 40)];
+    return [pre + 'SET-UP: ' + recortarPalabras(su, 50), pre + 'CUE EFICIENTE: ' + recortarPalabras(cue, 55), pre + 'CUIDADO / ERROR COMÚN: ' + recortarPalabras(cu, 65)];
   }
   /* cualquier texto de tips (IA, importado, escrito a mano) → rótulos del Banco; las líneas sin rótulo conocido quedan como están */
   function normalizarTips(texto){
@@ -16674,9 +16681,109 @@ body{overflow-x:hidden}
       else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO|T[ÉE]CNICA|INTENCI)/.test(et)) rotulo = 'CUE EFICIENTE';
       else if(/^(CUIDADO|ERROR|PRECAUCI|EVIT|RIESGO|ALERTA)/.test(et)) rotulo = 'CUIDADO / ERROR COMÚN';
       if(!rotulo) return l;
-      return pre + rotulo + ': ' + recortarPalabras(m[3], 28);
+      return pre + rotulo + ': ' + recortarPalabras(m[3], 55);
     }).join('\n');
   }
+  /* ====== TIPS CON IA: profundidad, completitud y reintento ======
+     Los tres generadores con IA (generar tips del bloque, recalcular tips, regenerar en el Banco) pasan por acá: la salida nunca queda cortada a mitad de una línea ("CUIDADO /"),
+     tiene los tres apartados por estación y se completa con la base del Banco si la IA se quedó corta después del reintento. */
+  const ETQ_TIPS = ['SET-UP', 'CUE EFICIENTE', 'CUIDADO / ERROR COMÚN'];
+  const RX_LINEA_TIP = /^(?:([A-F]\d{1,2})\s*·\s*)?(SET-UP|CUE EFICIENTE|CUIDADO \/ ERROR COMÚN)\s*:\s*([\s\S]*)$/;
+  const RX_TIP_COLGADA = /^(?:[A-F]\d{1,2}\s*·\s*)?(?:SET-?\s*UP|CUE(?:\s+EFICIENTE)?|CUIDADO(?:\s*\/(?:\s*ERROR(?:\s+COM[UÚ]N)?)?)?|ERROR(?:\s+COM[UÚ]N)?)\s*[:\/]?\s*$/i;
+  function nombreLimpio(t){ return String(t || '').replace(/\s*\|.*$/, '').replace(/\s+[—–]\s+.*$/, '').trim(); }
+  function exPorNombre(t){
+    const n = nombreLimpio(t), k = norm(n.replace(/\s*\([^)]*\)\s*$/, '')), m2 = /\(([^)]*)\)\s*$/.exec(n), k2 = m2 ? norm(m2[1]) : '';
+    return (S.exercises || []).filter(e => norm(e.es) === k || (e.en && norm(e.en) === k) || (k2 && e.en && norm(e.en) === k2))[0] || null;
+  }
+  /* las estaciones de un bloque de pizarra (items): A1 / A2 ... o un ejercicio suelto */
+  function estacionesDe(items, titulo){
+    const out = [], RX = /^([A-Fa-f])(\d{1,2})[.):]\s*(.+)$/;
+    (items || []).forEach(l => { const m = RX.exec(String(l).trim()); if(m) out.push({ codigo: m[1].toUpperCase() + m[2], nombre: nombreLimpio(m[3]) }); });
+    if(!out.length){
+      const f = (items || []).map(x => String(x).trim()).filter(x => x && !/^\d+\s*x/i.test(x) && !/^(rest|descanso)\b/i.test(x))[0];
+      out.push({ codigo: '', nombre: nombreLimpio(f || String(titulo || '').replace(/^.*[–-]\s*/, '')) });
+    }
+    return out.map(e => Object.assign(e, { ex: exPorNombre(e.nombre) }));
+  }
+  /* las estaciones de cualquier tipo de bloque del Builder (ancla, biset / triset, pizarra) */
+  function estacionesBloque(b){
+    if(!b) return [];
+    if(b.tipo === 'block'){ const ex = b.exId ? getEx(b.exId) : null; return [{ codigo: '', nombre: ex ? ex.es : String(b.titulo || ''), ex: ex }]; }
+    if(b.tipo === 'superset'){ const ls = (b.ejercicios || []).map(e => e.exId ? getEx(e.exId) : null).filter(Boolean); return ls.map((ex, i) => ({ codigo: ls.length > 1 ? 'A' + (i + 1) : '', nombre: ex.es, ex: ex })); }
+    return estacionesDe(b.items || [], b.titulo);
+  }
+  function tipCompleto(cuerpo){
+    const t = String(cuerpo || '').trim();
+    return t.split(/\s+/).length >= 6 && /[.!?)"»]$/.test(t);
+  }
+  function validarTips(texto, est){
+    const lineas = String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean), mapa = {};
+    lineas.forEach(l => { const m = RX_LINEA_TIP.exec(l); if(m) mapa[(m[1] || '') + '|' + m[2]] = m[3]; });
+    const faltan = [], cortadas = [];
+    est.forEach(e => ETQ_TIPS.forEach(et => { const k = (e.codigo || '') + '|' + et, c = mapa[k]; if(c == null || !c.trim()) faltan.push(k); else if(!tipCompleto(c)) cortadas.push(k); }));
+    const colgada = lineas.some(l => RX_TIP_COLGADA.test(l));
+    return { ok: !faltan.length && !cortadas.length && !colgada, faltan: faltan, cortadas: cortadas, colgada: colgada };
+  }
+  /* completa lo que falta o quedó a medias con la base del Banco; conserva las demás líneas (TEMPO, TRANSICIÓN) y descarta los fragmentos colgados */
+  function completarTips(texto, est, o){
+    o = o || {};
+    const lineas = String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean), mapa = {}, otras = [];
+    lineas.forEach(l => {
+      const m = RX_LINEA_TIP.exec(l);
+      if(m){ if(tipCompleto(m[3])) mapa[(m[1] || '') + '|' + m[2]] = m[3].trim(); }
+      else if(!RX_TIP_COLGADA.test(l) && /:\s*\S/.test(l) && tipCompleto(l.replace(/^[^:]+:\s*/, ''))) otras.push(l);
+    });
+    const out = [];
+    est.forEach(e => {
+      const base = tipsBanco(e.ex || { es: e.nombre }, { ath: o.ath, codigo: e.codigo, tempo: o.tempo });
+      ETQ_TIPS.forEach((et, i) => { const pre = e.codigo ? e.codigo + ' · ' : ''; out.push(pre + et + ': ' + (mapa[(e.codigo || '') + '|' + et] || String(base[i] || '').replace(/^(?:[A-F]\d{1,2}\s*·\s*)?[^:]+:\s*/, ''))); });
+    });
+    return out.concat(otras).join('\n');
+  }
+  /* normaliza rótulos, valida y completa: { texto, cortada } (cortada = la IA no entregó todo y hubo que completar) */
+  function procesarTips(texto, est, o){
+    const t = normalizarTips(texto), v = validarTips(t, est);
+    return v.ok ? { texto: t, cortada: false, faltantes: [] } : { texto: completarTips(t, est, o), cortada: true, faltantes: v.faltan.concat(v.cortadas) };
+  }
+  const REPS_MAX = r => { const n = String(r || '').match(/\d+/g); return n ? Math.max.apply(null, n.map(Number)) : 0; };
+  function nivelDemanda(reps, rir){
+    const mx = REPS_MAX(reps), r = String(rir == null ? '' : rir).match(/\d+/);
+    const rirMin = r ? parseInt(r[0], 10) : null;
+    if(mx && mx <= 8) return rirMin != null && rirMin <= 1 ? 'ALTA: básico pesado cerca del límite' : 'ALTA: carga alta y pocas repeticiones';
+    if(mx && mx <= 12) return rirMin === 0 ? 'MEDIA-ALTA: hipertrofia a fallo técnico' : 'MEDIA-ALTA: hipertrofia';
+    return 'METABÓLICA: repeticiones altas, congestión y estrés metabólico';
+  }
+  /* la demanda REAL del bloque (series, repeticiones, RIR, tempo, descanso) para que la IA escriba tips con números y no frases genéricas */
+  function demandaBloque(b){
+    const L = [], f = (cod, nombre, sets, reps, rir, tempo, rest) => L.push((cod ? cod + ' · ' : '') + nombre + ': ' + [sets ? sets + ' series' : '', reps ? 'de ' + reps + ' repeticiones' : '', rir !== '' && rir != null ? 'RIR ' + rir : '', tempo ? 'tempo ' + tempo : '', rest ? 'descanso ' + rest + ' s' : ''].filter(Boolean).join(', ') + (reps ? ' → demanda ' + nivelDemanda(reps, rir) : ''));
+    if(!b) return '';
+    if(b.tipo === 'block'){ const ex = b.exId ? getEx(b.exId) : null; f('', ex ? ex.es : b.titulo, b.efSets, b.reps, b.rir, b.tempo, b.restSeconds); if(b.hasApprox) L.push('Lleva ' + (b.approxSets || 2) + ' series de aproximación antes de las efectivas.'); if(b.metodologia) L.push('Técnica de intensidad: ' + b.metodologia + '.'); }
+    else if(b.tipo === 'superset'){ (b.ejercicios || []).forEach((e, i) => { const ex = e.exId ? getEx(e.exId) : null; f('A' + (i + 1), ex ? ex.es : '', b.efSets, e.reps || b.reps, e.rir != null ? e.rir : b.rir, e.tempo || b.tempo, b.restSeconds); }); }
+    else {
+      let nombre = '', dosis = null, rest = null;
+      const volcar = () => { if(nombre && dosis) f(dosis.cod, nombre, dosis.sets, dosis.reps, dosis.rir, dosis.tempo, rest); nombre = ''; dosis = null; rest = null; };
+      (b.items || []).forEach(l => {
+        const t = String(l).trim(); if(!t) return;
+        const mA = /^([A-F]\d{1,2})[.):]\s*(.+)$/.exec(t), mD = /^(\d+)\s*x\s*([^|]+?)\s*(?:\|(.*))?$/i.exec(t), mR = /^(?:rest|descanso)\s*(\d+)/i.exec(t);
+        if(mA){ volcar(); nombre = nombreLimpio(mA[2]); dosis = { cod: mA[1].toUpperCase() };
+          const m2 = /\|\s*(\d+)\s*x\s*([^|]+)/.exec(mA[2]);        /* la dosis puede venir en la misma línea de la estación */
+          if(m2){ dosis.sets = m2[1]; dosis.reps = m2[2].trim(); const r2 = /RIR\s*([\d\-–]+)/i.exec(mA[2]), t2 = /Tempo\s*([0-9Xx]{4})/i.exec(mA[2]); dosis.rir = r2 ? r2[1] : ''; dosis.tempo = t2 ? t2[1] : ''; }
+          return; }
+        if(mD){ if(!dosis) dosis = { cod: '' }; dosis.sets = mD[1]; dosis.reps = mD[2].trim(); const rest2 = mD[3] || ''; const r = /RIR\s*([\d\-–]+)/i.exec(rest2), tp = /Tempo\s*([0-9Xx]{4})/i.exec(rest2); dosis.rir = r ? r[1] : ''; dosis.tempo = tp ? tp[1] : ''; return; }
+        if(mR){ rest = mR[1]; return; }
+        if(!nombre) nombre = nombreLimpio(t);
+      });
+      volcar();
+    }
+    return L.join('\n');
+  }
+  const REGLAS_TIPS_IA = 'PROFUNDIDAD OBLIGATORIA: cada punto lleva entre 25 y 45 palabras, en oraciones COMPLETAS que terminan en punto; nunca dejes una línea, un rótulo ni una oración a medias (si te quedás sin espacio, escribí menos palabras pero terminá cada línea). ' +
+    'SET-UP: posición inicial, apoyos, agarre o ancho de pies, ajuste de la máquina o el banco y la activación previa (escápulas, glúteo, abdomen). ' +
+    'CUE EFICIENTE: qué empujar, tirar o pensar, el rango de movimiento (tramo estirado), el TEMPO real del ejercicio y qué se siente cuando sale bien; atalo a la intensidad de la dosis: con RIR 0-1 decí cómo es la última repetición y dónde termina la serie, en un básico pesado el descanso y el top set, en un aislamiento el control de la fase excéntrica. ' +
+    'CUIDADO / ERROR COMÚN: la compensación más frecuente de ESE ejercicio, cómo se corrige y la señal concreta para cortar la serie (más la restricción o lesión de la ficha si corresponde). ' +
+    'Usá los números reales de la DEMANDA DEL BLOQUE (series, repeticiones, RIR, tempo, descanso, carga); no escribas frases genéricas que valgan para cualquier ejercicio ni telegramas de pocas palabras.';
+  const CORRECCION_TIPS_IA = 'Tu respuesta anterior quedó INCOMPLETA o cortada a mitad de una línea. Escribila de nuevo COMPLETA: las tres líneas de cada estación (SET-UP, CUE EFICIENTE, CUIDADO / ERROR COMÚN), cada una con oraciones completas que terminan en punto. Si hace falta, usá menos palabras, pero no dejes ninguna línea a medias.';
+
   function notaCompleta(ex, tempo, ath){
     return tipsBanco(ex, { tempo: tempo, ath: ath }).join('\n');
   }
@@ -16862,7 +16969,8 @@ body{overflow-x:hidden}
 
     if(S.ui.view === 'biblioteca') renderLibrary();
     addMagic();
-    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo, tipsBanco: tipsBanco, normalizarTips: normalizarTips, tipsAlCambiarEjercicio: tipsAlCambiarEjercicio };
+    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo, tipsBanco: tipsBanco, normalizarTips: normalizarTips, tipsAlCambiarEjercicio: tipsAlCambiarEjercicio,
+      tipsIA: { estacionesDe: estacionesDe, estacionesBloque: estacionesBloque, validar: validarTips, completar: completarTips, procesar: procesarTips, demanda: demandaBloque, REGLAS: REGLAS_TIPS_IA, CORRECCION: CORRECCION_TIPS_IA } };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
@@ -20891,7 +20999,7 @@ body.man-mode .gs-fab{right:318px}
       '. Grupo: ' + ex.grupo + '. Patrón: ' + ex.patron + '. Equipamiento: ' + ex.equipo +
       (ex.riesgo && ex.riesgo.length ? '. Zonas de riesgo: ' + ex.riesgo.join(', ') : '') +
       '.\nDevolvé SOLO un JSON: {"tips":"...","objetivo":"..."}\n' +
-      '- "tips": EXACTAMENTE tres líneas separadas por salto de línea (\\n), en el formato del Banco de Rutinas: "SET-UP: ..." (postura y anclaje inicial), "CUE EFICIENTE: ..." (indicación corta y accionable de la ejecución) y "CUIDADO / ERROR COMÚN: ..." (la compensación típica a evitar). De 10 a 20 palabras por línea, español rioplatense con "vos" (apretá, llevá, exhalá), sin relleno, sin listas ni markdown.\n' +
+      '- "tips": EXACTAMENTE tres líneas separadas por salto de línea (\\n), en el formato del Banco de Rutinas: "SET-UP: ..." (postura y anclaje inicial), "CUE EFICIENTE: ..." (indicación corta y accionable de la ejecución) y "CUIDADO / ERROR COMÚN: ..." (la compensación típica a evitar). De 25 a 40 palabras por línea, en oraciones completas que terminan en punto (nunca dejes una línea a medias), español rioplatense con "vos" (apretá, llevá, exhalá), sin relleno, sin listas ni markdown.\n' +
       '- "objetivo": 1 o 2 frases explicando el beneficio o estímulo muscular/deportivo del ejercicio.';
   }
   async function generar(conIA){
@@ -44576,7 +44684,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 
   /* ---------- coaching tips con IA (misma infraestructura de claves que el generador del Builder) ---------- */
   var SIS_TIPS = 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio. Te paso UN bloque de entrenamiento ya armado (ejercicios con dosis) y tenés que redactar SOLO su objetivo fisiológico y sus coaching tips.\n' +
-    'REGLAS: (1) Lenguaje simple y directo, como si le hablaras a alguien que hace el ejercicio por primera vez; sin jerga, sin citas de estudios ni nombres de autores. (2) Cada tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 30 palabras). (3) El TEMPO nunca va en la dosis: si te paso tempos, incluilos solo en una línea "TEMPO: Tempo 3010 (3 s bajada, sin pausa abajo, 1 s subida, sin pausa arriba)".\n' +
+    'REGLAS: (1) Lenguaje simple y directo, como si le hablaras a alguien que hace el ejercicio por primera vez; sin jerga, sin citas de estudios ni nombres de autores. (2) Cada tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (entre 25 y 45 palabras, oraciones completas). (3) El TEMPO nunca va en la dosis: si te paso tempos, incluilos solo en una línea "TEMPO: Tempo 3010 (3 s bajada, sin pausa abajo, 1 s subida, sin pausa arriba)".\n' +
     '(4) ' + jpIA('ciencia') + 'Aplicalo en el objetivo y en el CUE EFICIENTE (rango de movimiento, tramo estirado, apoyo/estabilidad y tempo), sin citar estudios.\n' +
     'FORMATO EXACTO (texto plano, sin markdown):\n[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones}\n[COACHING TIPS & ESTRATEGIA]\nEjercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\nBiserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ...".';
   function tempoDe(b){
@@ -44587,15 +44695,24 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function hayIA(){ return !!(window.CoachAI && window.CoachAI.generarTexto); }
   function pedirTips(r, b){
+    return pedirTipsUna(r, b, false).then(function(o){ return o && o.cortada ? pedirTipsUna(r, b, true) : o; });
+  }
+  function pedirTipsUna(r, b, reintento){
     var tempos = tempoDe(b), items = (b.items || []).map(function(l){ return String(l).replace(/\s*\|\s*Tempo\s*[0-9Xx]{4}/i, ''); }).join('\n');
     var user = 'PLANTILLA: ' + (r.nombre || '') + ' · nivel ' + (r.niv || 'intermedio') + (r.genero ? ' · ' + (r.genero === 'f' ? 'mujer' : 'hombre') : '') + '\nBLOQUE: ' + (b.titulo || '') +
       '\nEJERCICIOS Y DOSIS:\n' + items + (tempos.length ? '\n\nTEMPOS ACTUALES (mantenelos, solo en la línea TEMPO):\n' + tempos.join('\n') : '') + '\n\nEscribí ahora el objetivo fisiológico y los coaching tips de este bloque.';
-    return window.CoachAI.generarTexto(user, SIS_TIPS, { maxTokens: 1600, plain: true, sinEspera: true }).then(function(out){
+    var TI = window.CoachAuto && window.CoachAuto.tipsIA, est = TI ? TI.estacionesDe(b.items || [], b.titulo) : [], dem = TI ? TI.demanda({ tipo: 'list', items: b.items || [], titulo: b.titulo }) : '';
+    if(dem) user = user.replace(/\n\nEscribí ahora/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + dem + '\n\nEscribí ahora');
+    if(reintento && TI) user += '\n\n' + TI.CORRECCION;
+    return window.CoachAI.generarTexto(user, SIS_TIPS + (TI ? '\n' + TI.REGLAS : ''), { maxTokens: reintento ? 5200 : 3400, plain: true, sinEspera: true }).then(function(out){
       var t = String(out || '').replace(/\x60{3}[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
       var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
       var obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : '';
       var lines = mt ? mt[1].split(/\n+/).map(function(l){ return l.replace(/^[-•*\s]+/, '').trim(); }).filter(Boolean) : [];
       if(!obj && !lines.length) throw new Error('La IA no devolvió objetivo ni tips válidos');
+      var proc = TI ? TI.procesar(lines.join('\n'), est, {}) : { texto: lines.join('\n'), cortada: false };
+      if(proc.cortada && !reintento) return { cortada: true };      /* salida cortada: pedirTips reintenta una vez con más espacio */
+      lines = proc.texto.split('\n').filter(Boolean);
       tempos.forEach(function(l){ if(!lines.some(function(x){ return /^TEMPO\s*:/i.test(x); })) lines.push(l); });
       var cl = (typeof window.jpAclararTexto === 'function'), cp = (typeof window.jpAclararPautas === 'function');
       return { objective: obj ? (cl ? window.jpAclararTexto(obj) : obj) : '', tips: lines.length ? (cp ? window.jpAclararPautas(lines.join('\n')) : lines.join('\n')) : '' };
@@ -46056,9 +46173,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 
   /* ---- recalcular objetivo y tips con IA ---- */
   function sistemaTips(ath){
+    var TI = window.CoachAuto && window.CoachAuto.tipsIA;
+    return sistemaTipsBase(ath) + (TI ? '\n' + TI.REGLAS : '');
+  }
+  function sistemaTipsBase(ath){
     return 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio, hipertrofia y biomecánica. Te paso UN bloque de entrenamiento ya armado (ejercicios con dosis) y tenés que redactar SOLO su objetivo fisiológico y sus coaching tips, acordes a los ejercicios ACTUALES.\n' +
       'REGLAS: (1) DIDÁCTICA: escribí como si le hablaras a alguien que hace el ejercicio por primera vez, en lenguaje simple y directo, sin jerga de manual universitario; cada término técnico se explica en palabras cotidianas ("tensión mecánica = el peso estira y exige al músculo"). Rigor científico intacto (tensión mecánica, reclutamiento de fibras, estiramiento bajo carga, perfil de resistencia, metabolitos). ' +
-      '(2) Cada línea de tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 35 palabras). (3) CUIDADO / ERROR COMÚN: nombrá la compensación típica y vinculala a las restricciones o lesiones de la ficha. (4) NIVEL: ' + perfilNivel(ath) + ' (5) Los tempos actuales que te paso NO van en la dosis: incluilos así: en un ejercicio suelto, una línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; en biseries/triseries dentro de la línea de la estación ("A1 · CUE EFICIENTE: Tempo 3011 — ...").\n' +
+      '(2) Cada línea de tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (entre 25 y 45 palabras, oraciones completas). (3) CUIDADO / ERROR COMÚN: nombrá la compensación típica y vinculala a las restricciones o lesiones de la ficha. (4) NIVEL: ' + perfilNivel(ath) + ' (5) Los tempos actuales que te paso NO van en la dosis: incluilos así: en un ejercicio suelto, una línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; en biseries/triseries dentro de la línea de la estación ("A1 · CUE EFICIENTE: Tempo 3011 — ...").\n' +
       '(6) ' + jpIA('ciencia') + 'Aplicalo en el objetivo y en el CUE EFICIENTE (rango de movimiento, tramo estirado, apoyo/estabilidad y tempo), sin citar estudios.\n' +
       'FORMATO EXACTO (texto plano, sin markdown ni nada fuera del formato):\n' +
       '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones didácticas: qué se entrena, por qué funciona y qué va a sentir el atleta}\n' +
@@ -46084,11 +46205,21 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var original = btn ? btn.innerHTML : '';
     if(btn){ btn.disabled = true; btn.innerHTML = '<span class="gs-spin"></span> Recalculando…'; }
     try{
-      var out = await llamarSimple(user, sistemaTips(ath), btn);
-      var t = String(out || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
-      var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
-      var obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : '', tips = limpiarBloque({ items: [], cierre: { tips: mt ? mt[1].trim() : '' } }).tips;
-      if(!obj && !tips.length){ toast('La IA no devolvió objetivo ni tips válidos: probá de nuevo', 'err'); return false; }
+      var TI = window.CoachAuto && window.CoachAuto.tipsIA, itemsArr = items.split(/\r?\n/), est = TI ? TI.estacionesDe(itemsArr, b.titulo) : [];
+      var demanda = TI ? TI.demanda({ tipo: 'list', items: itemsArr, titulo: b.titulo }) : '';
+      if(demanda) user = user.replace(/\n\nEscribí ahora el objetivo/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + demanda + '\n\nEscribí ahora el objetivo');
+      var obj = '', tips = [], proc = null;
+      for(var intento = 1; intento <= 2; intento++){
+        var out = await llamarSimple(user + (intento > 1 && TI ? '\n\n' + TI.CORRECCION : ''), sistemaTips(ath), btn, intento > 1 ? 5200 : 3400);
+        var t = String(out || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
+        var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
+        obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : ''; tips = limpiarBloque({ items: [], cierre: { tips: mt ? mt[1].trim() : '' } }).tips;
+        if(!obj && !tips.length){ toast('La IA no devolvió objetivo ni tips válidos: probá de nuevo', 'err'); return false; }
+        /* nunca queda un tip cortado a mitad de línea: un reintento con más espacio y, si aun falta algo, se completa con la base del Banco */
+        proc = TI ? TI.procesar(tips.join('\n'), est, { ath: ath }) : { texto: tips.join('\n'), cortada: false };
+        if(!proc.cortada || intento > 1) break;
+      }
+      tips = proc.texto.split('\n').filter(Boolean);
       /* el tempo se conserva: si la IA no lo puso, se re-agregan las lineas de tempo que ya tenia el bloque */
       tempos.forEach(function(l){
         var k = (l.match(/^([A-F]\d)\s*[·.]/) || [])[1];
