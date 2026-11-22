@@ -30,7 +30,7 @@
         (c.f ? R('A', 'Patada de glúteo en polea cruzada', '3x12-15 por lado|1|60', '4x12-15 por lado|0|45|drop', { tp: ['3011'] }) : null),
         R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '5x10-15|0|60'),
         R('B', ['Curl nórdico', 'Elevación de talones a una pierna'], '3x5/12|2|75', '3x6/12|1|75', { n: 'Resiliencia de isquios y pantorrilla: son las dos zonas que primero se quejan cuando suma el volumen de carrera. En el nórdico bajá lento (cinco segundos) y ayudate con las manos para subir.' }),
-        R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
+        R('C', ['Crunch en polea alta', 'Dead bug'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
         R('K', null, null, null, { fin: Fin('CARDIO', 'Cardio · Intervalos de umbral en cinta', 6 * n,
           [w(n).charAt(0).toUpperCase() + w(n).slice(1) + ' intervalos de ' + t + ' en la cinta al ritmo de umbral (esfuerzo ' + esf + ')',
            'Trote muy suave de ' + pausa + ' entre cada intervalo',

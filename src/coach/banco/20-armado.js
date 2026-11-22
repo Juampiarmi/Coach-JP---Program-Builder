@@ -59,6 +59,14 @@
       return !!jpEstacionCompat(jpEstacion(e1), jpEstacion(e2));
     }catch(e){ return true; }
   }
+  /* estación fija: polea o máquina (no se mueve de lugar); se combina solo con material portátil y sin tocar el volumen del grupo */
+  function esFija(n){
+    try{
+      if(typeof jpEstacion !== 'function') return false;
+      var e = PB.exLib(n); if(!e) return false;
+      var k = jpEstacion(e); return (typeof jpEsPolea === 'function' && jpEsPolea(k)) || String(k).indexOf('maq:') === 0;
+    }catch(x){ return false; }
+  }
   function esBasicoPesado(fila, d){
     var mx = Math.max.apply(null, (d.reps.join(' ').match(/\d+/g) || ['12']).map(Number));
     return (mx <= 8 && d.rest >= 120) || d.rest >= 150;
@@ -102,9 +110,11 @@
           if(vy) cambio = { c: y, a: vy }; else if(vx) cambio = { c: x, a: vx }; else continue;
           pts -= 0.5;
         }
-        /* una serie de diferencia solo si no se infla un grupo que ya está en su techo (pecho y cuádriceps): ahí las dos estaciones deben tener las mismas series */
+        /* una serie de diferencia solo si no se infla un grupo que ya está en su techo (pecho y cuádriceps): ahí las dos estaciones deben tener las mismas series.
+           Los pares con una polea o una máquina (regla anti-colisión: máquina fija + material portátil) exigen las mismas series: el volumen semanal del grupo no se mueve */
         var menor = x.d.sets < y.d.sets ? x : (y.d.sets < x.d.sets ? y : null);
         if(menor && (menor.g === 'Pecho' || menor.g === 'Cuádriceps')) continue;
+        if(menor && (esFija(x.n) || esFija(y.n))) continue;
         pts = pts * 10 - Math.abs(x.d.sets - y.d.sets) * 3 - (j - k) - (cambio ? 8 : 0);
         if(pts > mejorPts){ mejorPts = pts; mejor = y; mejorCambio = cambio; }
       }

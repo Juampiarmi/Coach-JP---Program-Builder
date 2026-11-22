@@ -221,10 +221,16 @@
         var r = rirMin(e.rir);
         if(elite && r != null && r >= 2 && m.rol !== 'C') out.push({ k: 'rir', bi: bi, msg: 'RIR ' + e.rir + ' en «' + e.nombre + '»: en el nivel élite toda serie efectiva va a RIR 0-1.' });
       });
+      /* regla anti-colisión: nunca dos poleas en un mismo biset o triset (se pisan en la torre); la polea va con mancuernas o peso corporal */
+      if(typeof jpEsPolea === 'function'){
+        var pol = m.ex.filter(function(e){ return jpEsPolea(estacionDe(e)); });
+        if(m.ex.length > 1 && pol.length > 1) out.push({ k: 'poleas', bi: bi, msg: 'Dos poleas en el mismo biset: «' + pol[0].nombre + '» + «' + pol[1].nombre + '». Combiná la polea con un ejercicio de mancuernas o peso corporal, o pasalos a series rectas.' });
+      }
       for(var k = 0; k < m.ex.length - 1; k++){
         var a = m.ex[k], c = m.ex[k + 1];
-        if(a.t !== 'L' && c.t !== 'L') out.push({ k: 'guiados', bi: bi, msg: 'Dos ejercicios guiados seguidos en el mismo bloque: «' + a.nombre + '» + «' + c.nombre + '». Cambiá uno por un ejercicio libre.' });
         var ea = estacionDe(a), ec = estacionDe(c);
+        if(typeof jpEsPolea === 'function' && jpEsPolea(ea) && jpEsPolea(ec)) continue; /* ya avisado arriba como «poleas» */
+        if(a.t !== 'L' && c.t !== 'L') out.push({ k: 'guiados', bi: bi, msg: 'Dos ejercicios guiados seguidos en el mismo bloque: «' + a.nombre + '» + «' + c.nombre + '». Cambiá uno por un ejercicio libre.' });
         if(ea && ec && typeof jpEstacionCompat === 'function' && !jpEstacionCompat(ea, ec)) out.push({ k: 'estacion', bi: bi, msg: '«' + a.nombre + '» y «' + c.nombre + '» se hacen en estaciones distintas (' + jpEstacionLb(ea, a.lib) + ' y ' + jpEstacionLb(ec, c.lib) + '): el biset obliga a cruzar el gimnasio.' });
       }
     });

@@ -1274,8 +1274,19 @@
       return { base: base, conPoleas: conPoleas, conAxial: conAxial, conRir: conRir, rirInter: rirInter };
     }
     if(c.caso === 'estacion'){
-      dias = eliteDias('jp26_m3_a'); d = dias[1]; b = bloqueCon(d, 'Biset Curl'); EST.cambiarEjercicio(d, b, 0, 'Curl de bíceps tras la espalda', 'avanzado');
-      return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).filter(function(a){ return a.k === 'estacion'; }).map(function(a){ return a.msg; });
+      dias = eliteDias('jp26_m3_a'); d = dias[1]; b = bloqueCon(d, 'Biset Curl');
+      var tiposDe = function(){ return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).map(function(a){ return a.k; }).sort().join(','); };
+      var base = tiposDe();
+      /* polea + mancuernas: combinación permitida (material portátil junto a la polea) */
+      EST.cambiarEjercicio(d, b, 0, 'Curl de bíceps tras la espalda', 'avanzado');
+      var poleaMancuernas = tiposDe();
+      /* dos máquinas distintas: cruce de estaciones */
+      EST.cambiarEjercicio(d, b, 0, 'Curl femoral acostado', 'avanzado'); EST.cambiarEjercicio(d, b, 1, 'Extensión de cuádriceps', 'avanzado');
+      var dosMaquinas = tiposDe();
+      /* máquina + peso corporal (colchoneta al lado): permitido */
+      EST.cambiarEjercicio(d, b, 1, 'Plancha lateral', 'avanzado');
+      var maquinaColchoneta = tiposDe();
+      return { base: base, poleaMancuernas: poleaMancuernas, dosMaquinas: dosMaquinas, maquinaColchoneta: maquinaColchoneta };
     }
     if(c.caso === 'core'){
       dias = eliteDias('jp26_f3_a');
@@ -1505,7 +1516,7 @@
       rr.masBisets = biset.length / (biset.length + recto.length) >= 0.35;
       rr.mismasSeries = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets === x.m.ex[0].sets; }); });
       rr.noDosGuiados = biset.every(function(x){ var t = x.m.ex.map(function(e){ return EST.infoEj(e.nombre).t; }); return t.filter(function(k){ return k === 'M' || k === 'P'; }).length < 2; });
-      rr.mismaEstacion = biset.every(function(x){ if(typeof win.jpEstacion !== 'function') return true; var libs = x.m.ex.map(function(e){ return PB.exLib(e.nombre); }); return libs.every(function(l){ return !l || !libs[0] || win.jpEstacionCompat(win.jpEstacion(libs[0]), win.jpEstacion(l)); }); });
+      rr.mismaEstacion = biset.every(function(x){ if(typeof win.jpEstacion !== 'function') return true; var libs = x.m.ex.map(function(e){ return PB.exLib(e.nombre); }); return libs.every(function(l, i){ return !l || libs.every(function(o, j){ return j >= i || !o || win.jpEstacionCompat(win.jpEstacion(o), win.jpEstacion(l)); }); }); });
       rr.cadaDiaConBiset = jp.every(function(r){ return r.dias.every(function(d){ return (d.bloques || []).some(function(b){ return /Biset|Triset/.test(b.titulo || ''); }); }); });
       rr.descansoDeRonda = biset.every(function(x){ return x.m.rest >= 45 && x.m.rest <= 150; });
       /* la función pura: básicos pesados rectos, pares lógicos con las mismas series, dos guiados no se juntan */
@@ -1517,6 +1528,41 @@
         && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length === 2 && d.sets >= 3 && d.reps.length === 2; })
         && !sal.some(function(f){ return f.agrupada && [].concat(f.ej).indexOf('Jalón al pecho con agarre ancho') >= 0 && [].concat(f.ej).indexOf('Cruce de cables en polea alta') >= 0; });
       return rr;
+    }
+    if(c.caso === 'reglaEstaciones'){
+      /* la regla pura: estaciones, avisos del Builder y armado automático de bisets */
+      var K = win.jpEstacionCompat, E = function(n){ var l = PB.exLib(n); return l ? win.jpEstacion(l) : '?'; };
+      var res = {
+        dosPoleasNo: K(E('Patada de glúteo en polea'), E('Extensión tríceps polea alta con cuerda')) === false && K(E('Remo sentado con agarre estrecho'), E('Face Pull con cuerda')) === false,
+        poleaConMancuernasSi: K(E('Patada de glúteo en polea'), E('Elevaciones laterales con mancuernas')) === true && K(E('Extensión tríceps polea alta con cuerda'), E('Curl martillo')) === true,
+        poleaConPesoCorporalSi: K(E('Patada de glúteo en polea'), E('Plancha lateral')) === true,
+        dosMaquinasNo: K(E('Curl femoral acostado'), E('Extensión de cuádriceps')) === false && K(E('Abducción de cadera en máquina'), E('Elevación de gemelos de pie')) === false,
+        maquinaConPesoCorporalSi: K(E('Curl femoral acostado'), E('Elevación de talones a una pierna')) === true,
+        poleaConMaquinaNo: K(E('Patada de glúteo en polea'), E('Abducción de cadera en máquina')) === false
+      };
+      /* el Builder avisa «Dos poleas en un mismo biset» y el saneador separa el par en bloques rectos */
+      var blq = { id: 'bx', tipo: 'superset', ejercicios: [{ exId: PB.exLib('Patada de glúteo en polea').id }, { exId: PB.exLib('Extensión tríceps polea alta con cuerda').id }] };
+      res.avisaDosPoleas = win.jpLogisticaBloque(blq).map(function(i){ return i.titulo; }).join('|') === 'Dos poleas en un mismo biset';
+      var sep = win.jpSepararPorEstacion(JSON.parse(JSON.stringify(blq)));
+      res.separaEnRectos = sep.bloques.length === 2 && sep.bloques.every(function(b2){ return b2.tipo !== 'superset'; });
+      /* el armado automático nunca junta dos poleas ni dos máquinas (aunque tengan afinidad) y sí junta polea con mancuernas */
+      var fil = [PB.R('H', 'Jalón al pecho con agarre ancho', '3x10-12|1|75', '3x10-12|0|75'), PB.R('H', 'Cruce de cables en polea alta', '3x12-15|1|60', '3x12-15|0|60'), PB.R('A', 'Curl de bíceps con barra Z', '3x10-12|1|60', '3x10-12|0|60'), PB.R('A', 'Extensión tríceps polea alta con cuerda', '3x12-15|1|60', '3x12-15|0|60')];
+      var sal = PB.agruparHipertrofia(fil, false, 'm'), pares = sal.filter(function(f2){ return f2.agrupada; });
+      res.armadoSinDosPoleas = pares.every(function(f2){ var ks = [].concat(f2.ej).map(E); return !(ks.length > 1 && win.jpEsPolea(ks[0]) && win.jpEsPolea(ks[1])); });
+      return res;
+    }
+    if(c.caso === 'colision'){
+      /* regla anti-colisión sobre TODAS las plantillas del sistema: ningún biset/triset junta dos poleas ni dos estaciones distantes */
+      var sisC = banco.filter(function(r){ return (r.dias || []).length && (r.std || r.sbSys || r.fbSys || r.elbSys || r.depSys || r.proVer != null || r.depDeporte || /^(bkstd_|bkdep_|bk_)/.test(r.id || '')); }), malos = [], nBis = 0;
+      sisC.forEach(function(r){ r.dias.forEach(function(d, di){ (d.bloques || []).forEach(function(b){
+        var m = EST.parsearBloque(b); if(!m || m.ex.length < 2) return;
+        if(b.category === 'warmup' || b.modalidad === 'calentamiento') return; /* la entrada en calor es un circuito de movilidad, no un biset de trabajo */
+        nBis++;
+        var libs = m.ex.map(function(e){ return PB.exLib(e.nombre); }), ks = libs.map(function(l){ return l ? win.jpEstacion(l) : ''; }), np = ks.filter(function(k){ return win.jpEsPolea(k); }).length;
+        if(np > 1) { malos.push(r.id + ' d' + (di + 1) + ' «' + (b.titulo || '') + '»: dos poleas (' + m.ex.map(function(e){ return e.nombre; }).join(' + ') + ')'); return; }
+        for(var i = 1; i < ks.length; i++) for(var j = 0; j < i; j++) if(ks[i] && ks[j] && !win.jpEstacionCompat(ks[j], ks[i])){ malos.push(r.id + ' d' + (di + 1) + ' «' + (b.titulo || '') + '»: estaciones distintas (' + m.ex[j].nombre + ' [' + ks[j] + '] + ' + m.ex[i].nombre + ' [' + ks[i] + '])'); return; }
+      }); }); });
+      return { plantillas: sisC.length > 60, bisets: nBis > 200, sinColisiones: malos.length === 0 ? 'ok' : malos.length + ' · ' + malos.slice(0, 40).join(' || ') };
     }
     if(c.caso === 'pro'){
       var pro = banco.filter(function(r){ return /Recomposición Femenina/.test(r.nombre || '') && /(3|4) Días/.test(r.nombre) && (r.dias || []).length; }), r4 = { plantillas: pro.length };
