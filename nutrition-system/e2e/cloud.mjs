@@ -69,6 +69,7 @@ try {
   const coach = await cctx.newPage();
   watch(coach, 'builder');
   coach.on('dialog', (d) => d.accept());
+  coach.on('console', (m) => m.type() === 'warning' && /plantilla/i.test(m.text()) && console.log('  ⚠ ' + m.text()));
   await coach.goto(ROOT, { waitUntil: 'networkidle' });
   await coach.getByRole('button', { name: 'Entrar a la nube' }).first().click();
   await coach.getByLabel('Email').fill('coach@jp.com');
@@ -173,6 +174,9 @@ try {
 
   // ================= Traspaso de historial desde la app en archivo =================
   const dir = mkdtempSync(join(tmpdir(), 'cjp-cloud-'));
+  // Con la nube, la descarga manual vive en «Opciones avanzadas / Respaldo».
+  const adv = coach.locator('[data-export-advanced]');
+  if ((await adv.count()) && !(await adv.evaluate((e) => e.open))) await adv.locator('summary').click();
   const [dl] = await Promise.all([coach.waitForEvent('download'), coach.getByRole('button', { name: /Descargar index.html/ }).click()]);
   const file = join(dir, 'index.html');
   await dl.saveAs(file);
@@ -208,6 +212,29 @@ try {
   await coach2.locator('form').getByRole('button', { name: 'Entrar' }).click();
   check(await until(() => coach2.getByText('2 EN BASE LOCAL').isVisible()), 'Otro dispositivo del coach: trae al atleta de la nube');
 
+  // ================= Check-in semanal del atleta =================
+  await ath.bringToFront();
+  await ath.locator('#checkin-card [data-panel="checkin"]').click();
+  await ath.locator('[data-ci="energy|2"]').click();
+  await ath.locator('[data-ci="hunger|5"]').click();
+  await ath.locator('[data-ci="heavy|1"]').click();
+  await ath.locator('#ci-note').fill('La cena del martes');
+  await ath.locator('[data-cisave]').click();
+  check(await until(() => ath.locator('#checkin-card').innerText().then((t) => /Enviado/.test(t))), 'Atleta: check-in semanal enviado (30 segundos)');
+  check(await until(async () => (await sb.sql('select energy, hunger, heavy, note from checkins'))[0]?.hunger === 5, 10000), 'Base: el check-in llegó a Supabase (energía 2 · hambre 5 · digestión)');
+
+  // ================= Plantillas propias en la nube =================
+  await coach.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  coach.removeAllListeners('dialog');
+  coach.once('dialog', (d) => d.accept('Plantilla nube e2e'));
+  await coach.locator('[data-save-template]').click();
+  await coach.waitForTimeout(200);
+  coach.on('dialog', (d) => d.accept());
+  check(await until(async () => (await sb.sql('select name from coach_templates')).some((r) => r.name === 'Plantilla nube e2e'), 10000), 'Plantillas: «Guardar como plantilla» la sube a Supabase');
+  await coach2.reload({ waitUntil: 'networkidle' });
+  await coach2.locator('section nav button', { hasText: 'Planes listos' }).click();
+  check(await until(() => coach2.locator('[data-template-card]', { hasText: 'Plantilla nube e2e' }).isVisible(), 10000), 'Plantillas: aparecen en el otro dispositivo del coach');
+
   // ================= Panel del coach =================
   await coach.getByRole('button', { name: /Mis atletas/ }).first().click();
   check(await until(() => coach.locator('[data-athlete-row]').first().isVisible()), 'Panel: fila del atleta');
@@ -217,6 +244,22 @@ try {
   await coach.waitForTimeout(300);
   await shot(coach, 'cloud-board');
   check(/Hoy 2\/\d+ comidas/.test(rowText), 'Panel: muestra las comidas tildadas de hoy');
+  check(await until(() => coach.locator('[data-checkin]').innerText().then((t) => /Hambre: 5\/5/.test(t) && /La cena del martes/.test(t))), 'Panel: muestra el último check-in (hambre, energía, digestión)');
+  check(await coach.getByText('Hambre alta y poca energía').first().isVisible(), 'Panel: alerta cruzada con el check-in');
+  await coach.locator('[data-board-filter="adjust"]').click();
+  check((await coach.locator('[data-athlete-row]').count()) === 1, 'Panel: filtro «Requieren ajuste»');
+  await coach.locator('[data-board-search]').fill('nadie-asi');
+  check((await coach.locator('[data-athlete-row]').count()) === 0, 'Panel: buscador por nombre');
+  await coach.locator('[data-board-search]').fill('');
+  await coach.locator('[data-board-filter="all"]').click();
+  check((await coach.locator('[data-row-wa]').count()) === 1 && (await coach.locator('[data-row-edit]').count()) === 1, 'Panel: accesos directos Editar plan y Copiar link WhatsApp');
+  const vBefore = (await sb.sql('select max(version) as v from published_plans'))[0].v;
+  await coach.locator('[data-row-adjust]').first().click();
+  const am = coach.locator('[data-adjust-modal]');
+  check(await am.getByText('Subir 150 kcal en días de entreno').isVisible(), 'Ajuste sugerido: «Subir 150 kcal en días de entreno» con vista previa');
+  await am.locator('[data-adjust-apply]').click();
+  check(await until(async () => (await sb.sql('select max(version) as v from published_plans'))[0].v === vBefore + 1, 15000), `Aplicar y publicar: versión ${vBefore + 1} publicada en un clic`);
+  check(await until(async () => (await coach.locator('[data-adjust-modal]').count()) === 0), 'Aplicar y publicar: la vista previa se cierra');
 
   // ================= Cerrar sesiones (celular perdido) =================
   await coach.locator('aside nav button', { hasText: 'Publicar' }).click();

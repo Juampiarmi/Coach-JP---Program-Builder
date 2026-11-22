@@ -56,6 +56,10 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   'yogur-deslactosado': YOGURT,
   leche: MILK,
   'leche-deslactosada': MILK,
+  'bebida-soja': MILK,
+  'bebida-almendra': MILK,
+  'yogur-vegetal': YOGURT,
+  'proteina-vegetal': both(20, 40),
   untable: both(15, 40),
   'queso-light': both(30, 60),
   ricota: bySex([50, 120], [50, 150]),
@@ -174,7 +178,7 @@ export const MEAL_VOLUME: Record<Sex, { main: number; breakfast: number; snack: 
   F: { main: 550, breakfast: 450, snack: 350, peri: 250 },
   M: { main: 750, breakfast: 600, snack: 450, peri: 350 },
 };
-const LIQUIDS = new Set(['leche', 'leche-deslactosada', 'isotonica', 'yogur-proteico']);
+const LIQUIDS = new Set(['leche', 'leche-deslactosada', 'bebida-soja', 'bebida-almendra', 'isotonica', 'yogur-proteico']);
 export const mealVolumeCap = (sex: Sex, role?: MealRole) => MEAL_VOLUME[sex][role === 'lunch' || role === 'dinner' ? 'main' : role === 'breakfast' ? 'breakfast' : role === 'peri' ? 'peri' : 'snack'];
 export const isLiquid = (id?: string) => !!id && LIQUIDS.has(id);
 /** Gramos sólidos de una toma (para el tope de volumen). */

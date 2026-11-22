@@ -8,7 +8,7 @@ import { BANK_PLAN_IDS, BANK_VARIANTS, buildBankPlan, planLabel, REF_WEIGHTS, se
 import { portionCap } from './portionCaps';
 import { seedPlan } from './seed';
 
-const SETS: Allergen[][] = [['gluten'], ['lactose'], ['nuts'], ['legumes'], ['shellfish'], ['egg'], ['gluten', 'lactose'], ['lactose', 'nuts'], ['egg', 'lactose'], ['gluten', 'lactose', 'nuts', 'legumes', 'shellfish', 'egg']];
+const SETS: Allergen[][] = [['gluten'], ['lactose'], ['dairy'], ['nuts'], ['legumes'], ['shellfish'], ['egg'], ['gluten', 'lactose'], ['lactose', 'nuts'], ['egg', 'lactose'], ['dairy', 'legumes'], ['dairy', 'nuts', 'legumes'], ['gluten', 'lactose', 'nuts', 'legumes', 'shellfish', 'egg']];
 const fails: string[] = [];
 let checks = 0;
 let worst = 0;
@@ -32,7 +32,7 @@ for (const plan of BANK_PLAN_IDS)
             const opts = [{ title: m.title ?? '', items: m.items }, ...(m.alts ?? [])];
             minOpts = Math.min(minOpts, opts.length);
             // Vegetariano sin huevo ni legumbres: casi toda la proteína es láctea; se aceptan 2 opciones (caso extremo).
-            const extreme = variant === 'veg' && set.includes('egg') && set.includes('legumes');
+            const extreme = variant === 'veg' && set.includes('legumes') && (set.includes('egg') || set.includes('dairy'));
             if (opts.length < (extreme ? 2 : 3)) fails.push(`${tag} · ${m.name}: sólo ${opts.length} opciones aptas`);
             for (const o of opts) {
               for (const it of o.items) {
@@ -64,6 +64,13 @@ for (const plan of BANK_PLAN_IDS)
   if (!before) fails.push('Plan manual: no se detectó ningún alérgeno en el plan de prueba');
   if (!n) fails.push('Plan manual: el corrector no sustituyó nada');
   if (left.length !== 1 || left[0].food !== 'Tostado de jamón y queso con manteca') fails.push(`Plan manual: tras corregir deberían quedar sólo los alimentos libres (${left.map((c) => c.food).join(', ')})`);
+  // APLV: los deslactosados y el whey aislado NO son aptos (sí lo son para la intolerancia a la lactosa).
+  for (const id of ['leche-deslactosada', 'yogur-deslactosado', 'whey-isolate', 'queso-deslactosado']) {
+    if (!conflictOf({ foodId: id }, ['dairy']).length) fails.push(`APLV: ${id} figura como apto`);
+    if (conflictOf({ foodId: id }, ['lactose']).length) fails.push(`Lactosa: ${id} figura como no apto`);
+  }
+  if (conflictOf({ food: 'Leche de almendras' }, ['dairy']).length) fails.push('APLV: una bebida vegetal escrita a mano figura como láctea');
+  if (!conflictOf({ food: 'Leche descremada deslactosada' }, ['dairy']).length) fails.push('APLV: una leche deslactosada escrita a mano no se detecta');
   const seals = sealsFor([{ foodId: 'pollo', food: 'Pechuga' }, { foodId: 'arroz', food: 'Arroz' }], ['gluten', 'lactose'], false);
   if (seals.join() !== 'Sin TACC,Sin lactosa') fails.push(`Sellos: ${seals.join()}`);
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
+import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCcw, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
@@ -15,7 +15,9 @@ import { BlockHeader, Cite, cx, HudButton, Label, NumInput, Panel, Segmented, To
 import { BalanceBanner } from './BalanceBanner';
 import { NewDishButton } from './FoodBrandDatabase';
 import { fixedFromAnamnesis, hhmm, mainAnchors, trainingOf } from '@/lib/agenda';
-import { ALLERGEN_INFO, allergiesOf, conflictOf, foodIsSafe } from '@/lib/allergens';
+import { acceptFor, ALLERGEN_INFO, allergiesOf, conflictOf, foodIsSafe } from '@/lib/allergens';
+import { baseOptions, bases, kindOf } from '@/lib/baseSwap';
+import { StickySummary } from './StickySummary';
 import { timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
@@ -282,6 +284,9 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
   const lowLeu = isMpsMeal(meal) && t.leucine < LEUCINE_THRESHOLD;
   const [view, setView] = useState<'cards' | 'table'>('cards');
   const hasAlts = (meal.alts?.length ?? 0) > 0;
+  // Vista compacta: la Opción 1 a la vista y las alternativas plegadas (sin scroll infinito).
+  const [showAlts, setShowAlts] = useState(false);
+  const [baseOpen, setBaseOpen] = useState(false);
 
   return (
     <Panel tone={lowLeu ? 'fire' : meal.day === 'off' ? 'gold' : 'cyan'} className={cx(lowLeu && 'border-fire/35')}>
@@ -303,7 +308,18 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
             title={`Clonar esta comida en el día ${meal.day === 'on' ? 'OFF' : 'ON'}`}
             className="flex items-center gap-1.5 rounded-md border border-cyan-hud/25 px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud/60 hover:bg-cyan-hud/10"
           >
-            <CopyPlus className="h-3.5 w-3.5" /> [ + DUPLICAR AL OTRO DÍA ]
+            <CopyPlus className="h-3.5 w-3.5" /> {meal.day === 'on' ? 'Copiar al día de descanso' : 'Copiar al día de entreno'}
+          </button>
+        )}
+        {bases(meal).length > 0 && (
+          <button
+            data-base-swap
+            onClick={() => setBaseOpen((v) => !v)}
+            aria-expanded={baseOpen}
+            title="Cambiar la proteína o el carbo de esta comida en todas sus opciones"
+            className="flex items-center gap-1.5 rounded-md border border-fire/30 px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.1em] text-fire transition hover:border-fire/60 hover:bg-fire/10"
+          >
+            <RefreshCcw className="h-3.5 w-3.5" /> Cambiar base proteica / carbo
           </button>
         )}
         <button onClick={() => removeMeal(meal.id)} title="Eliminar comida" className="rounded-md p-1.5 text-steel hover:bg-fire/10 hover:text-fire">
@@ -330,6 +346,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         </span>
       </div>
 
+      {baseOpen && <BaseSwapper meal={meal} onDone={() => setBaseOpen(false)} />}
       <OptionHeader meal={meal} />
       <div className="mt-3 hidden grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] gap-x-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-steel sm:grid">
         <span>Alimento</span>
@@ -349,6 +366,17 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
       </div>
       <TechniqueBox meal={meal} />
       {hasAlts && (
+        <button
+          type="button"
+          data-show-alts
+          onClick={() => setShowAlts((v) => !v)}
+          aria-expanded={showAlts}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#34D399]/30 bg-[#34D399]/[0.05] py-2 text-[12.5px] font-semibold text-[#6EE7B7] hover:border-[#34D399]/60"
+        >
+          {showAlts ? `Ocultar las otras ${meal.alts!.length} opciones` : `+ Ver ${meal.alts!.length} opciones más`}
+        </button>
+      )}
+      {hasAlts && showAlts && (
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-[11.5px] text-mute">{(meal.alts?.length ?? 0) + 1} opciones para esta comida</span>
           <div className="flex rounded-lg border border-line bg-carbon p-0.5" role="group" aria-label="Vista de opciones">
@@ -371,8 +399,47 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
           </div>
         </div>
       )}
-      {hasAlts && view === 'table' ? <OptionsTable meal={meal} onEdit={() => setView('cards')} /> : <AltOptions meal={meal} />}
+      {!hasAlts ? <AltOptions meal={meal} /> : showAlts && (view === 'table' ? <OptionsTable meal={meal} onEdit={() => setView('cards')} /> : <AltOptions meal={meal} />)}
     </Panel>
+  );
+}
+
+/** Cambiar la base de la comida (pollo → cuadril, arroz → papa) en la Opción 1 y en todas las alternativas. */
+function BaseSwapper({ meal, onDone }: { meal: Meal; onDone: () => void }) {
+  const swapMealBase = usePlanStore((s) => s.swapMealBase);
+  const accept = acceptFor(allergiesOf(usePlanStore.getState().plan));
+  const list = bases(meal);
+  const [from, setFrom] = useState(list[0]?.foodId ?? '');
+  const opts = from ? baseOptions(meal, from, accept) : [];
+  return (
+    <div data-base-panel className="mt-3 rounded-lg border border-fire/30 bg-fire/[0.04] p-3">
+      <div className="text-[12px] font-semibold text-steel">Cambiar en toda la comida (todas las opciones que la llevan):</div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {list.map((i) => (
+          <button key={i.foodId} type="button" onClick={() => setFrom(i.foodId!)} className={cx('rounded-md border px-2.5 py-1 text-[12px] font-semibold', from === i.foodId ? 'border-fire bg-fire/10 text-ink' : 'border-line text-steel')}>
+            {kindOf(i.foodId) === 'protein' ? '🥩' : '🍚'} {i.food.split(' (')[0]}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 text-[11.5px] text-mute">por…</div>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {opts.slice(0, 12).map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            data-base-to={f.id}
+            onClick={() => {
+              swapMealBase(meal.id, from, f.id);
+              onDone();
+            }}
+            className="rounded-md border border-line px-2.5 py-1 text-[12px] text-ink hover:border-cyan-hud/60 hover:bg-cyan-hud/10"
+          >
+            {f.name.split(' (')[0]}
+          </button>
+        ))}
+        {!opts.length && <span className="text-[12px] text-mute">No hay otra base apta para este momento del día.</span>}
+      </div>
+    </div>
   );
 }
 
@@ -719,6 +786,7 @@ export function MealsTab() {
 
   return (
     <div className="space-y-4">
+      <StickySummary />
       <BlockHeader block="estructura" />
       <Panel title="ESTRUCTURA DEL DÍA · COMIDAS Y HORARIOS" block="estructura" tone="fire" right={<Utensils className="h-4 w-4 text-fire/80" />}>
         <p className="-mt-1 mb-3 text-[13px] text-steel">Armá las comidas del día de entreno y de descanso. Cada comida puede tener hasta 5 opciones con los mismos macros; tu alumno elige la que quiera. La línea de proteína te avisa si desayuno, almuerzo y cena llegan al mínimo para el músculo.</p>

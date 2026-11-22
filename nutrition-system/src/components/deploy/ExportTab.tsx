@@ -137,6 +137,7 @@ export function ExportTab() {
     <div className="space-y-4">
       <QualityLights />
       {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
+      <Advanced on={cloudConfigured}>
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
           Genera <b className="text-ink">un único archivo</b> (index.html) con la app completa de <b className="text-ink">{plan.profile.name}</b>: plan, comidas, herramientas e ícono para instalarla.
@@ -211,6 +212,20 @@ export function ExportTab() {
         </Tag>
         <p className="text-[13px] text-steel">Abre el link en Chrome → toca «Instalar app» (aparece dentro de la misma app o en el menú ⋮).</p>
       </Panel>
+      </Advanced>
     </div>
+  );
+}
+
+/** Con la nube, la descarga manual (HTML / SW) y la guía de GitHub Pages quedan plegadas: menos ruido visual. */
+function Advanced({ on, children }: { on: boolean; children: React.ReactNode }) {
+  if (!on) return <>{children}</>;
+  return (
+    <details data-export-advanced className="group rounded-xl border border-line bg-panel/60">
+      <summary className="cursor-pointer list-none px-4 py-3 text-[13px] font-semibold text-steel hover:text-ink">
+        <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span> Opciones avanzadas / Respaldo · descargar el archivo HTML, sw.js y guía de GitHub Pages
+      </summary>
+      <div className="space-y-4 border-t border-line p-3">{children}</div>
+    </details>
   );
 }

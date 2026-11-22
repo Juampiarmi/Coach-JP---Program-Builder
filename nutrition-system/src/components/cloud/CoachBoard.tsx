@@ -1,7 +1,11 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, BellOff, Check, ChevronDown, Cloud, ExternalLink, Minus, RefreshCw, Users } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BellOff, Check, ChevronDown, Cloud, Copy, ExternalLink, Minus, Pencil, RefreshCw, Search, Users, Wand2 } from 'lucide-react';
+import { applyDelta, type Adjustment } from '@/lib/adjust';
+import { athleteLink } from '@/lib/cloud/config';
+import { computeTelemetry } from '@/lib/bioenergetics';
+import { createPortal } from 'react-dom';
 import { cloudConfigured } from '@/lib/cloud/config';
 import { humanError } from '@/lib/cloud/client';
 import { ackAlert, loadBoard, localToday, type BoardRow } from '@/lib/cloud/board';
@@ -63,6 +67,10 @@ export function CoachBoard() {
   const [at, setAt] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [login, setLogin] = useState(false);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [adjust, setAdjust] = useState<{ row: BoardRow; adj: Adjustment } | null>(null);
+  const [copied, setCopied] = useState('');
 
   const refresh = useCallback(async () => {
     setErr('');
@@ -101,6 +109,21 @@ export function CoachBoard() {
   };
 
   const need = rows?.filter((r) => r.alerts.some((a) => a.level !== 'info')).length ?? 0;
+  const planIdOf = (athleteId: string) => Object.entries(links).find(([, l]) => l.athleteId === athleteId)?.[0];
+  const q = query.trim().toLowerCase();
+  const shown = (rows ?? []).filter((r) => (!q || r.input.name.toLowerCase().includes(q)) && FILTERS[filter].test(r));
+  const copyLink = async (r: BoardRow) => {
+    const l = links[planIdOf(r.input.id) ?? ''];
+    const url = athleteLink(r.input.slug, l?.token ?? null);
+    const msg = `¡Hola ${r.input.name.split(' ')[0]}! Acá tenés tu plan de nutrición (se actualiza solo cuando lo cambio): ${url}`;
+    try {
+      await navigator.clipboard.writeText(msg);
+    } catch {
+      window.prompt('Copiá el mensaje para WhatsApp:', msg);
+    }
+    setCopied(r.input.id);
+    setTimeout(() => setCopied(''), 2000);
+  };
   const th = 'whitespace-nowrap px-3 py-2 text-left text-[11px] font-semibold text-mute';
   const td = 'px-3 py-3 align-top text-[12.5px]';
 
@@ -126,6 +149,26 @@ export function CoachBoard() {
         </button>
       </div>
 
+      {rows && rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2">
+            <Search className="h-4 w-4 text-mute" />
+            <input data-board-search value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar atleta por nombre" className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-mute" />
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(FILTERS) as Filter[]).map((f) => (
+              <button
+                key={f}
+                data-board-filter={f}
+                onClick={() => setFilter(f)}
+                className={cx('rounded-lg border px-3 py-1.5 text-[12px] font-semibold', filter === f ? 'border-cyan-hud bg-cyan-hud/10 text-ink' : 'border-line text-steel hover:text-ink')}
+              >
+                {FILTERS[f].label} <span className="text-mute">{(rows ?? []).filter((r) => FILTERS[f].test(r)).length}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {rows && rows.length > 0 && <Legend />}
       {err && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-[#FCA5A5]">{err}</div>}
       {rows === null && !err && <div className="rounded-xl border border-line bg-panel p-6 text-center text-[13px] text-mute">Cargando tus atletas…</div>}
@@ -154,10 +197,18 @@ export function CoachBoard() {
                 <th className={th} title="Último peso y cambio en 7 días / 4 semanas (verde: hacia el objetivo)">Peso</th>
                 <th className={th} title="Días seguidos en adherencia total">Racha</th>
                 <th className={th}>Alertas</th>
+                <th className={th}>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {shown.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="px-4 py-6 text-center text-[13px] text-mute">
+                    Ningún atleta coincide con la búsqueda o el filtro.
+                  </td>
+                </tr>
+              )}
+              {shown.map((r) => {
                 const s = r.stats, a = r.input, isOpen = open === a.id;
                 return (
                   <Fragment key={a.id}>
@@ -236,11 +287,26 @@ export function CoachBoard() {
                           )}
                         </div>
                       </td>
+                      <td className={td} onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-col gap-1">
+                          <button data-row-edit disabled={!planIdOf(a.id)} onClick={() => openInBuilder(a.id)} title={planIdOf(a.id) ? 'Abrir su plan en Comidas' : 'Su plan no está en este dispositivo'} className="flex items-center gap-1 whitespace-nowrap rounded-md border border-cyan-hud/40 px-2 py-1 text-[11.5px] font-semibold text-cyan-hud hover:bg-cyan-hud/10 disabled:border-line disabled:text-mute">
+                            <Pencil className="h-3 w-3" /> Editar plan
+                          </button>
+                          <button data-row-wa onClick={() => void copyLink(r)} className="flex items-center gap-1 whitespace-nowrap rounded-md border border-[#22C55E]/40 px-2 py-1 text-[11.5px] font-semibold text-[#4ADE80] hover:bg-[#22C55E]/10">
+                            <Copy className="h-3 w-3" /> {copied === a.id ? '¡Copiado!' : 'Copiar link WhatsApp'}
+                          </button>
+                          {r.adjustments.length > 0 && (
+                            <button data-row-adjust onClick={() => setAdjust({ row: r, adj: r.adjustments[0] })} className="flex items-center gap-1 whitespace-nowrap rounded-md bg-fire px-2 py-1 text-[11.5px] font-bold text-white hover:bg-fire-hot">
+                              <Wand2 className="h-3 w-3" /> Ver ajuste sugerido
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-line bg-carbon/40">
-                        <td colSpan={12} className="px-4 py-4">
-                          <Detail row={r} onOpen={() => openInBuilder(a.id)} canOpen={Object.values(links).some((l) => l.athleteId === a.id)} onAck={refresh} />
+                        <td colSpan={13} className="px-4 py-4">
+                          <Detail row={r} onOpen={() => openInBuilder(a.id)} canOpen={Object.values(links).some((l) => l.athleteId === a.id)} onAck={refresh} onAdjust={(adj) => setAdjust({ row: r, adj })} />
                         </td>
                       </tr>
                     )}
@@ -251,7 +317,142 @@ export function CoachBoard() {
           </table>
         </div>
       )}
+      {adjust && (
+        <AdjustModal
+          row={adjust.row}
+          adj={adjust.adj}
+          planId={planIdOf(adjust.row.input.id)}
+          onClose={() => setAdjust(null)}
+          onDone={() => {
+            setAdjust(null);
+            void refresh();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+type Filter = 'all' | 'adjust' | 'nocheckin' | 'ok';
+const daysSince = (week: string) => Math.round((Date.parse(`${localToday()}T12:00:00Z`) - Date.parse(`${week}T12:00:00Z`)) / 864e5);
+const FILTERS: Record<Filter, { label: string; test: (r: BoardRow) => boolean }> = {
+  all: { label: 'Todos', test: () => true },
+  adjust: { label: 'Requieren ajuste', test: (r) => r.adjustments.length > 0 || r.alerts.some((a) => a.level === 'red' || a.level === 'orange') },
+  nocheckin: { label: 'Sin check-in', test: (r) => !r.lastCheckin || daysSince(r.lastCheckin.week) > 13 },
+  ok: { label: 'Al día', test: (r) => !r.alerts.some((a) => a.level !== 'info') },
+};
+
+const ENERGY = ['Agotado', 'Cansado', 'Normal', 'Bien', 'A full'];
+const HUNGER = ['Nada', 'Poca', 'Normal', 'Bastante', 'Mucha'];
+
+/** Último check-in semanal del atleta (energía, hambre, digestión, peso y foto). */
+function CheckinCard({ c }: { c: BoardRow['lastCheckin'] }) {
+  if (!c) return <p className="text-[12.5px] text-mute">Todavía no hizo su check-in semanal.</p>;
+  return (
+    <div data-checkin className="rounded-lg border border-line bg-panel px-3 py-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <b className="text-[13px] text-ink">Check-in · semana del {c.week.split('-').reverse().join('/')}</b>
+        <span className="text-[11px] text-mute">hace {daysSince(c.week)} días</span>
+      </div>
+      <div className="mt-2 flex gap-3">
+        {c.photo && <img src={c.photo} alt="Foto de progreso" className="h-20 w-20 flex-none rounded-md object-cover" />}
+        <ul className="grid flex-1 gap-1 text-[12.5px] text-steel sm:grid-cols-2">
+          <li>⚡ Energía: <b className={c.energy <= 2 ? 'text-[#FCA5A5]' : 'text-ink'}>{c.energy}/5 · {ENERGY[c.energy - 1]}</b></li>
+          <li>🍽 Hambre: <b className={c.hunger >= 4 ? 'text-[#FDBA74]' : 'text-ink'}>{c.hunger}/5 · {HUNGER[c.hunger - 1]}</b></li>
+          <li className="sm:col-span-2">🫃 Digestión: <b className={c.heavy ? 'text-[#FDE68A]' : 'text-ink'}>{c.heavy ? `algo le cayó pesado${c.note ? ` — «${c.note}»` : ''}` : 'bien'}</b></li>
+          {c.kg !== null && <li>⚖ Peso: <b className="text-ink">{kg(c.kg)} kg</b></li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vista previa del ajuste sugerido: macros y calorías de antes y después, con «Aplicar y publicar» en un clic
+ * (abre su plan, aplica los nuevos g/kg, reescala las comidas y publica la versión nueva).
+ */
+function AdjustModal({ row, adj, planId, onClose, onDone }: { row: BoardRow; adj: Adjustment; planId?: string; onClose: () => void; onDone: () => void }) {
+  const roster = usePlanStore((s) => s.roster);
+  const active = usePlanStore((s) => s.plan);
+  const selectAthlete = usePlanStore((s) => s.selectAthlete);
+  const adjustMacros = usePlanStore((s) => s.adjustMacros);
+  const publish = useCloudStore((s) => s.publish);
+  const cloudErr = useCloudStore((s) => s.error);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const plan = planId ? (active.id === planId ? active : roster[planId]) : undefined;
+  const others = row.adjustments.filter((x) => x.key !== adj.key);
+  const apply = async () => {
+    if (!plan || !planId) return;
+    setBusy(true);
+    setMsg('');
+    if (usePlanStore.getState().plan.id !== planId) selectAthlete(planId);
+    const cur = usePlanStore.getState().plan.periodization;
+    adjustMacros(applyDelta({ on: cur.on, off: cur.off }, adj));
+    const v = await publish(`Ajuste: ${adj.title}`);
+    if (v) {
+      try {
+        if (!adj.alertKey.startsWith('bulk_')) await ackAlert(row.input.id, adj.alertKey, 14);
+      } catch {}
+      onDone();
+    } else {
+      setBusy(false);
+      setMsg(useCloudStore.getState().error || 'No se pudo publicar. El ajuste quedó aplicado en su plan: publicalo desde Publicar.');
+    }
+  };
+  let table: React.ReactNode = null;
+  if (plan) {
+    const before = computeTelemetry(plan);
+    const next = applyDelta({ on: plan.periodization.on, off: plan.periodization.off }, adj);
+    const after = computeTelemetry({ ...plan, periodization: { ...plan.periodization, ...next } });
+    const rowsT: [string, string, string][] = [
+      ['Día de entreno · kcal', `${Math.round(before.kcalOn)}`, `${Math.round(after.kcalOn)}`],
+      ['Día de descanso · kcal', `${Math.round(before.kcalOff)}`, `${Math.round(after.kcalOff)}`],
+      ['Entreno · P / C / G (g/kg)', `${plan.periodization.on.p} / ${plan.periodization.on.c} / ${plan.periodization.on.f}`, `${next.on.p} / ${next.on.c} / ${next.on.f}`],
+      ['Descanso · P / C / G (g/kg)', `${plan.periodization.off.p} / ${plan.periodization.off.c} / ${plan.periodization.off.f}`, `${next.off.p} / ${next.off.c} / ${next.off.f}`],
+    ];
+    table = (
+      <table className="tnum mt-3 w-full text-[12.5px]">
+        <thead>
+          <tr className="text-left text-[11px] text-mute">
+            <th className="py-1 font-normal"> </th>
+            <th className="py-1 font-normal">Ahora</th>
+            <th className="py-1 font-normal">Con el ajuste</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowsT.map(([l, a, b]) => (
+            <tr key={l} className="border-t border-line">
+              <td className="py-1.5 text-steel">{l}</td>
+              <td className="py-1.5 text-steel">{a}</td>
+              <td className={cx('py-1.5 font-semibold', a === b ? 'text-steel' : 'text-[#4ADE80]')}>{b}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Ajuste sugerido" onClick={onClose}>
+      <div data-adjust-modal className="w-full max-w-lg rounded-2xl border border-line bg-panel p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="font-mono text-[10px] font-bold tracking-[0.16em] text-fire">AJUSTE SUGERIDO · {row.input.name.toUpperCase()}</div>
+        <h3 className="mt-1 text-[17px] font-bold leading-snug text-ink">{adj.title}</h3>
+        <p className="mt-1.5 text-[13px] text-steel">{adj.why}</p>
+        <p className="mt-1 text-[12px] text-mute">La proteína no cambia. Las porciones de sus comidas se reescalan solas y sigue dentro de los topes por toma.</p>
+        {table ?? <p className="mt-3 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-[12.5px] text-[#FDE68A]">Su plan no está guardado en este dispositivo. Abrilo desde la nube en el Builder para poder aplicar el ajuste.</p>}
+        {others.length > 0 && <p className="mt-3 text-[12px] text-mute">También sugerido: {others.map((o) => o.title).join(' · ')}</p>}
+        {(msg || (busy && cloudErr)) && <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-[#FCA5A5]">{msg || cloudErr}</p>}
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-line px-4 py-2.5 text-[13px] font-semibold text-steel hover:text-ink">
+            Cancelar
+          </button>
+          <button data-adjust-apply disabled={!plan || busy} onClick={() => void apply()} className="flex items-center gap-1.5 rounded-lg bg-fire px-4 py-2.5 text-[13px] font-bold text-white hover:bg-fire-hot disabled:opacity-50">
+            <Wand2 className="h-4 w-4" /> {busy ? 'Publicando…' : 'Aplicar y publicar'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -277,7 +478,7 @@ function Legend() {
   );
 }
 
-function Detail({ row, onOpen, canOpen, onAck }: { row: BoardRow; onOpen: () => void; canOpen: boolean; onAck: () => void }) {
+function Detail({ row, onOpen, canOpen, onAck, onAdjust }: { row: BoardRow; onOpen: () => void; canOpen: boolean; onAck: () => void; onAdjust: (a: Adjustment) => void }) {
   const today = localToday();
   const byDay = Object.fromEntries(row.input.logs.map((l) => [l.day, l]));
   const days = Array.from({ length: 28 }, (_, i) => addDays(today, -27 + i));
@@ -308,8 +509,24 @@ function Detail({ row, onOpen, canOpen, onAck }: { row: BoardRow; onOpen: () => 
               </span>
             </div>
             <p className="mt-1 text-[12.5px] text-steel">{x.detail}</p>
+            {row.adjustments.filter((j) => j.alertKey === x.key).map((j) => (
+              <button key={j.key} data-alert-adjust onClick={() => onAdjust(j)} className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-fire px-2.5 py-1 text-[12px] font-bold text-white hover:bg-fire-hot">
+                <Wand2 className="h-3.5 w-3.5" /> Ver ajuste sugerido
+              </button>
+            ))}
           </div>
         ))}
+        {row.adjustments.filter((j) => !row.alerts.some((x) => x.key === j.alertKey)).map((j) => (
+          <div key={j.key} className="rounded-lg border border-fire/40 bg-fire/10 px-3 py-2.5 text-[#FDBA74]">
+            <b className="text-[13px]">{j.title}</b>
+            <p className="mt-1 text-[12.5px] text-steel">{j.why}</p>
+            <button data-alert-adjust onClick={() => onAdjust(j)} className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-fire px-2.5 py-1 text-[12px] font-bold text-white hover:bg-fire-hot">
+              <Wand2 className="h-3.5 w-3.5" /> Ver ajuste sugerido
+            </button>
+          </div>
+        ))}
+        <div className="pt-1 text-[12px] font-semibold text-steel">Check-in semanal</div>
+        <CheckinCard c={row.lastCheckin} />
         {canOpen && (
           <button onClick={onOpen} className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-cyan-hud/40 bg-cyan-hud/10 px-3 py-2 text-[12.5px] font-semibold text-cyan-hud hover:border-cyan-hud">
             <ExternalLink className="h-3.5 w-3.5" /> Abrir su plan en el Builder

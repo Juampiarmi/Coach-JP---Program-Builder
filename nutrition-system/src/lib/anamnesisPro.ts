@@ -11,7 +11,8 @@ export const CONDITIONS = [
 
 export const ALLERGIES = [
   { id: 'gluten', label: 'Gluten / Celíaco (TACC)' },
-  { id: 'lactose', label: 'Lactosa / Lácteos' },
+  { id: 'lactose', label: 'Intolerancia a la lactosa' },
+  { id: 'dairy', label: 'Alergia a lácteos / APLV' },
   { id: 'nuts', label: 'Frutos secos / Maní' },
   { id: 'legumes', label: 'Legumbres' },
   { id: 'shellfish', label: 'Pescados / Mariscos' },
@@ -107,6 +108,7 @@ export function sleepHours(bed: string, wake: string) {
  */
 const ALLERGEN_RE: Record<string, RegExp> = {
   lactose: /\b(leche|yogur|queso|ricota|untable|whey|crema|manteca|dulce de leche)\b/i,
+  dairy: /\b(leche|yogur|queso|ricota|untable|whey|crema|manteca|dulce de leche|case[ií]na|suero de leche|lácteos?)\b/i,
   gluten: /\b(pan|fideos?|pasta seca|galletitas?|almohaditas?|avena|harina|tarta|milanesa|rebozad|empanada|pizza|trigo|cebada|centeno)\b/i,
   nuts: /\b(nuez|nueces|almendras?|man[ií]|pasta de man[ií]|avellanas?|casta[ñn]as?|pistachos?|frutos secos)\b/i,
   shellfish: /\b(camar[oó]n|camarones|langostinos?|mariscos?|mejillones|calamar|pulpo|vieiras?|pescados?|merluza|at[uú]n|salm[oó]n|caballa|sardinas?|surub[ií]|pejerrey|abadejo|tilapia|trucha|anchoas?)\b/i,
@@ -115,6 +117,7 @@ const ALLERGEN_RE: Record<string, RegExp> = {
 };
 const SAFE_RE: Record<string, RegExp> = {
   lactose: /deslactosad|sin lactosa|zero lactosa|whey isolate|aislad|vegetal/i,
+  dairy: /vegetal|de soja|de almendras?|de arroz|de coco|de avena|arveja/i,
   gluten: /sin tacc|sin gluten|libre de gluten/i,
 };
 

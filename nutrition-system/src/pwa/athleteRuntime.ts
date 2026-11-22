@@ -65,6 +65,8 @@ const runtime = String.raw`
     help: '',
     hyOpen: store.get('hyOpen', false),
     weights: store.get('weights', {}),
+    checkins: store.get('checkins', {}),
+    ci: null,
     dirOpen: false,
     extras: store.get('extras:' + today, {}),
     free: store.get('free:' + today, {}),
@@ -479,6 +481,75 @@ const runtime = String.raw`
     } else h += '<p class="w-hint">Registrá tu peso 2 días o más para ver la curva de las últimas 4 semanas.</p>';
     return h + '</section>';
   }
+  // ---------- Check-in semanal (30 segundos) ----------
+  var CI_ENERGY = ['Agotado', 'Cansado', 'Normal', 'Bien', 'A full'];
+  var CI_HUNGER = ['Nada de hambre', 'Poca', 'Normal', 'Bastante', 'Mucha hambre'];
+  function checkinCard() {
+    var c = S.checkins[weekKey];
+    var h = '<section class="card cicard" id="checkin-card"><div class="row"><span class="tag">[ CHECK-IN SEMANAL ]</span><span class="hv">' + (c ? '✓ Enviado' : '30 segundos') + '</span></div>';
+    if (c) {
+      h += '<div class="ci-sum"><span>⚡ Energía <b>' + c.energy + '/5</b></span><span>🍽 Hambre <b>' + c.hunger + '/5</b></span><span>' + (c.heavy ? '🫃 Algo te cayó pesado' : '✓ Buena digestión') + '</span>' + (c.kg ? '<span>⚖ <b>' + n1(c.kg) + ' kg</b></span>' : '') + '</div>';
+      h += '<button class="ci-edit" data-panel="checkin">Editar el check-in de esta semana</button>';
+    } else {
+      h += '<p class="muted" style="font-size:13px;margin-top:6px">Contale a tu coach cómo venís: energía, hambre, digestión y tu peso. Con esto ajusta tu plan.</p>';
+      h += '<button class="ci-go" data-panel="checkin">📋 Hacer mi check-in</button>';
+    }
+    return h + '</section>';
+  }
+  function ciScale(key, val, labels) {
+    var h = '<div class="ci-scale">';
+    for (var i = 1; i <= 5; i++) h += '<button data-ci="' + key + '|' + i + '" class="' + (val === i ? 'on' : '') + '" aria-label="' + labels[i - 1] + '"><b>' + i + '</b><span>' + labels[i - 1] + '</span></button>';
+    return h + '</div>';
+  }
+  function checkinPanel() {
+    if (!S.ci) {
+      var prev = S.checkins[weekKey], pts = weightSeries(today, 28), lastW = pts.length ? pts[pts.length - 1].v : null;
+      S.ci = prev ? JSON.parse(JSON.stringify(prev)) : { energy: 0, hunger: 0, heavy: null, note: '', kg: S.weights[today] || lastW || '', photo: '' };
+    }
+    var c = S.ci;
+    var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ CHECK-IN SEMANAL · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>¿Cómo venís esta semana?</h3>';
+    h += '<div class="ci-q">⚡ Energía y descanso</div>' + ciScale('energy', c.energy, CI_ENERGY);
+    h += '<div class="ci-q">🍽 Hambre y saciedad</div>' + ciScale('hunger', c.hunger, CI_HUNGER);
+    h += '<div class="ci-q">🫃 ¿Alguna comida te cayó pesada?</div><div class="ci-yn"><button data-ci="heavy|1" class="' + (c.heavy === true ? 'on' : '') + '">Sí</button><button data-ci="heavy|0" class="' + (c.heavy === false ? 'on' : '') + '">No</button></div>';
+    if (c.heavy) h += '<textarea id="ci-note" maxlength="280" rows="2" placeholder="¿Cuál? (opcional) Ej: la cena del martes, el licuado antes de entrenar">' + esc(c.note || '') + '</textarea>';
+    h += '<div class="ci-q">⚖ Tu peso de esta semana</div><div class="w-in"><input id="ci-kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" value="' + (c.kg || '') + '" aria-label="Peso en kg"><span>kg</span></div>';
+    h += '<div class="ci-q">📷 Foto de progreso <span class="muted">(opcional, sólo la ve tu coach)</span></div>';
+    h += c.photo ? '<div class="ci-photo"><img src="' + c.photo + '" alt="Foto de progreso"><button data-ci="photo|0" class="ghost">Quitar foto</button></div>' : '<label class="ci-pick">Elegir o sacar una foto<input id="ci-photo" type="file" accept="image/*" capture="environment" hidden></label>';
+    var ok = c.energy && c.hunger && c.heavy !== null;
+    h += '<button class="ci-save" data-cisave="1"' + (ok ? '' : ' disabled') + '>' + (ok ? 'Enviar a mi coach' : 'Completá energía, hambre y digestión') + '</button>';
+    return h;
+  }
+  function saveCheckin() {
+    var c = S.ci;
+    if (!c || !c.energy || !c.hunger || c.heavy === null) return;
+    var kg = parseFloat(String(c.kg).replace(',', '.'));
+    var row = { energy: c.energy, hunger: c.hunger, heavy: !!c.heavy, note: c.heavy ? String(c.note || '').slice(0, 280) : '', kg: kg >= 30 && kg <= 250 ? Math.round(kg * 10) / 10 : null, photo: c.photo || '', at: Date.now() };
+    S.checkins[weekKey] = row;
+    store.set('checkins', S.checkins);
+    if (row.kg && S.weights[today] !== row.kg) { S.weights[today] = row.kg; store.set('weights', S.weights); }
+    S.ci = null; S.panel = null; haptic(); render();
+    toast('¡Check-in enviado a tu coach! Gracias 🙌');
+  }
+  // Foto chica (lado mayor 480 px, JPEG): entra en el check-in sin gastar datos.
+  function ciPhoto(file) {
+    if (!file || !S.ci) return;
+    var fr = new FileReader();
+    fr.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 480 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        var url = cv.toDataURL('image/jpeg', 0.7);
+        if (url.length > 290000) url = cv.toDataURL('image/jpeg', 0.45);
+        if (url.length > 290000) return toast('La foto es muy pesada, probá con otra');
+        S.ci.photo = url; renderSheet();
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+
   function saveWeight() {
     var el = $('#w-in'), v = el ? parseFloat(String(el.value).replace(',', '.')) : NaN;
     if (el && !String(el.value).trim()) { delete S.weights[S.date]; store.set('weights', S.weights); toast('Registro de peso borrado'); return render(); }
@@ -650,6 +721,7 @@ const runtime = String.raw`
       h += '<ol class="steps">' + steps.map(function (t, i) { return '<li><span class="n">' + (i + 1) + '</span><span>' + t + '</span></li>'; }).join('') + '</ol>';
       return open(bg, sh, h);
     }
+    if (S.panel === 'checkin') return open(bg, sh, checkinPanel());
     if (S.panel === 'shop') {
       var list = shoppingList();
       var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco.</p>';
@@ -1466,7 +1538,7 @@ const runtime = String.raw`
 
     h += hydration(mode);
     h += timeline(mode, list);
-    if (!D.preview) h += weightCard();
+    if (!D.preview) h += weightCard() + checkinCard();
 
     D.protocols.forEach(function (p) {
       h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-weight:700;font-size:16px;color:#FFFFFF">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
@@ -1767,10 +1839,21 @@ const runtime = String.raw`
   // ---------- Eventos ----------
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'w-in') { e.preventDefault(); saveWeight(); } });
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-ci],[data-cisave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
-    if (ds.close) return closeSheet();
+    if (ds.close) { S.ci = null; return closeSheet(); }
+    if (ds.ci) {
+      var cp = ds.ci.split('|');
+      if (S.ci) {
+        if (cp[0] === 'heavy') S.ci.heavy = cp[1] === '1';
+        else if (cp[0] === 'photo') S.ci.photo = '';
+        else S.ci[cp[0]] = +cp[1];
+      }
+      haptic();
+      return renderSheet();
+    }
+    if (ds.cisave) return saveCheckin();
     if (ds.scene) { S.outScene = ds.scene; S.outMeal = ''; haptic(); return renderSheet(); }
     if (ds.imputar) {
       var om = (($('#out-meal') || {}).value) || S.outMeal;
@@ -1923,8 +2006,11 @@ const runtime = String.raw`
 
   document.addEventListener('input', function (e) {
     if (e.target.id === 'ph-note') S.phNote = e.target.value;
+    if (e.target.id === 'ci-note' && S.ci) S.ci.note = e.target.value;
+    if (e.target.id === 'ci-kg' && S.ci) S.ci.kg = e.target.value;
   });
   document.addEventListener('change', function (e) {
+    if (e.target.id === 'ci-photo') return ciPhoto(e.target.files && e.target.files[0]);
     if (e.target.id === 'out-meal') { S.outMeal = e.target.value; return renderSheet(); }
     if (e.target.id === 'fr-meal') { S.fridge.meal = e.target.value; S.fridge.result = null; return renderSheet(); }
     if (e.target.dataset && e.target.dataset.fr !== undefined) { S.fridge.ing[+e.target.dataset.fr] = e.target.value; S.fridge.result = null; return renderSheet(); }

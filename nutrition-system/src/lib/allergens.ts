@@ -11,12 +11,13 @@ import type { AthletePlan, FoodItem, Meal, MealOption, MealRole, Sex } from './t
  * Cuando el alumno tiene una restricción, el banco elige recetas aptas o sustituye el ingrediente por un equivalente
  * seguro y coherente (mismo rol en el plato: proteína, carbo o grasa), y el plan no se publica si queda alguno.
  */
-export type Allergen = 'gluten' | 'lactose' | 'nuts' | 'legumes' | 'shellfish' | 'egg';
-export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'nuts', 'legumes', 'shellfish', 'egg'];
+export type Allergen = 'gluten' | 'lactose' | 'dairy' | 'nuts' | 'legumes' | 'shellfish' | 'egg';
+export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'dairy', 'nuts', 'legumes', 'shellfish', 'egg'];
 
 export const ALLERGEN_INFO: Record<Allergen, { label: string; seal: string; short: string }> = {
   gluten: { label: 'Gluten (TACC)', seal: 'Sin TACC', short: 'gluten' },
-  lactose: { label: 'Lactosa / lácteos', seal: 'Sin lactosa', short: 'lactosa' },
+  lactose: { label: 'Intolerancia a la lactosa', seal: 'Sin lactosa', short: 'lactosa' },
+  dairy: { label: 'Alergia a lácteos (APLV)', seal: 'Sin lácteos', short: 'lácteos' },
   nuts: { label: 'Frutos secos / maní', seal: 'Sin frutos secos', short: 'frutos secos' },
   legumes: { label: 'Legumbres', seal: 'Sin legumbres', short: 'legumbres' },
   shellfish: { label: 'Pescados / mariscos', seal: 'Sin pescado', short: 'pescado' },
@@ -29,13 +30,13 @@ export const FOOD_ALLERGENS: Record<string, Allergen[]> = {
   atun: ['shellfish'],
   huevo: ['egg'],
   claras: ['egg'],
-  ricota: ['lactose'],
-  yogur: ['lactose'],
-  untable: ['lactose'],
-  leche: ['lactose'],
-  whey: ['lactose'],
-  'yogur-proteico': ['lactose'],
-  'queso-light': ['lactose'],
+  ricota: ['lactose', 'dairy'],
+  yogur: ['lactose', 'dairy'],
+  untable: ['lactose', 'dairy'],
+  leche: ['lactose', 'dairy'],
+  whey: ['lactose', 'dairy'],
+  'yogur-proteico': ['lactose', 'dairy'],
+  'queso-light': ['lactose', 'dairy'],
   avena: ['gluten'],
   'avena-instantanea': ['gluten'],
   pan: ['gluten'],
@@ -47,8 +48,19 @@ export const FOOD_ALLERGENS: Record<string, Allergen[]> = {
   noquis: ['gluten', 'egg'],
   granola: ['gluten', 'nuts'],
   'barrita-cereal': ['gluten'],
-  'alfajor-proteico': ['gluten', 'lactose'],
-  'barra-proteica': ['gluten', 'lactose', 'nuts'],
+  'alfajor-proteico': ['gluten', 'lactose', 'dairy'],
+  'barra-proteica': ['gluten', 'lactose', 'dairy', 'nuts'],
+  // Deslactosados: aptos para la intolerancia, NO para la alergia a la proteína de la leche (APLV).
+  'leche-deslactosada': ['dairy'],
+  'yogur-deslactosado': ['dairy'],
+  'whey-isolate': ['dairy'],
+  'untable-deslactosado': ['dairy'],
+  'queso-deslactosado': ['dairy'],
+  // Alternativas vegetales fortificadas (para APLV): ojo con soja (legumbre) y almendra (fruto seco).
+  'bebida-soja': ['legumes'],
+  'yogur-vegetal': ['legumes'],
+  'proteina-vegetal': ['legumes'],
+  'bebida-almendra': ['nuts'],
   lentejas: ['legumes'],
   garbanzos: ['legumes'],
   porotos: ['legumes'],
@@ -96,19 +108,28 @@ const EGG_SUBS = (c: SubCtx) =>
   c.r === 'x' ? ['queso-light', 'queso-deslactosado'] : c.role && MAIN_ROLES.includes(c.role) ? ['pollo', 'nalga', 'tofu', 'queso-light', 'queso-deslactosado'] : ['jamon', 'queso-light', 'queso-deslactosado', 'yogur', 'yogur-deslactosado'];
 const LEGUME_SUBS = (c: SubCtx) => (c.r === 'p' ? ['huevo', 'queso-light', 'queso-deslactosado', 'pollo'] : ['yamani', 'arroz', 'papa']);
 const SOY_SUBS = () => ['pollo', 'huevo', 'queso-light', 'queso-deslactosado'];
-const PROTEIN_SNACK = () => ['yogur-proteico', 'yogur-deslactosado', 'banana'];
+const PROTEIN_SNACK = () => ['yogur-proteico', 'yogur-deslactosado', 'yogur-vegetal', 'banana'];
+const MILK_SUBS = () => ['leche-deslactosada', 'bebida-soja', 'bebida-almendra'];
+const YOGURT_SUBS = (c: SubCtx) => ['yogur-deslactosado', 'yogur-vegetal', ...(c.r === 'p' ? ['claras', 'huevo'] : ['bebida-soja', 'banana'])];
+const CHEESE_SUBS = (c: SubCtx) => (c.r === 'p' ? ['queso-deslactosado', 'jamon', 'huevo', 'tofu'] : ['queso-deslactosado', 'palta']);
 const SUBS: Record<string, (c: SubCtx) => string[]> = {
   merluza: () => ['pollo', 'nalga', 'tofu', 'huevo', 'queso-light'],
   atun: () => ['pollo', 'jamon', 'huevo', 'queso-light', 'tofu'],
   huevo: EGG_SUBS,
   claras: EGG_SUBS,
-  leche: () => ['leche-deslactosada'],
-  yogur: () => ['yogur-deslactosado'],
-  'yogur-proteico': () => ['yogur-deslactosado'],
-  whey: () => ['whey-isolate'],
+  // Lactosa → deslactosados; APLV → bebidas y yogures vegetales fortificados, proteína vegetal, huevo o carne.
+  leche: MILK_SUBS,
+  'leche-deslactosada': MILK_SUBS,
+  yogur: YOGURT_SUBS,
+  'yogur-proteico': YOGURT_SUBS,
+  'yogur-deslactosado': YOGURT_SUBS,
+  whey: () => ['whey-isolate', 'proteina-vegetal', 'claras'],
+  'whey-isolate': () => ['proteina-vegetal', 'claras'],
   untable: () => ['untable-deslactosado', 'palta'],
-  'queso-light': () => ['queso-deslactosado'],
-  ricota: () => ['untable-deslactosado', 'queso-deslactosado'],
+  'untable-deslactosado': () => ['palta'],
+  'queso-light': CHEESE_SUBS,
+  'queso-deslactosado': CHEESE_SUBS,
+  ricota: () => ['untable-deslactosado', 'queso-deslactosado', 'palta', 'huevo'],
   nueces: () => ['semillas', 'palta', 'oliva'],
   // Pasta de maní untada (galletas, tostadas, pan) → palta; en el resto (postre, licuado) → semillas.
   mani: (c) => (/galletas|tostadas|pan|sándwich/i.test(c.title ?? '') ? ['palta', 'semillas'] : ['semillas', 'palta']),
@@ -156,7 +177,10 @@ export function subGrams(from: string, grams: number, to: string, ctx: { sex?: S
   const fa = FOOD_BY_ID[from][a];
   const ta = FOOD_BY_ID[to][a];
   const kcal = (f: { p: number; c: number; f: number }) => f.p * 4 + f.c * 4 + f.f * 9;
-  const raw = ta >= 1 ? (grams * fa) / ta : (grams * kcal(FOOD_BY_ID[from])) / Math.max(1, kcal(FOOD_BY_ID[to]));
+  // Mismo grupo (leche → bebida de soja): mismo aporte del macro que lo define. Otro grupo (queso untable → palta):
+  // mismas calorías, así un fijo chico no se convierte en 70 g de palta.
+  const sameGroup = FOOD_BY_ID[from].group === FOOD_BY_ID[to].group;
+  const raw = sameGroup && ta >= 1 ? (grams * fa) / ta : (grams * kcal(FOOD_BY_ID[from])) / Math.max(1, kcal(FOOD_BY_ID[to]));
   const cap = portionCap(to, ctx);
   const st = stepOf(to);
   return Math.min(cap.max, Math.max(cap.min, Math.round(raw / st) * st));
@@ -172,7 +196,12 @@ const TERMS: Record<string, RegExp> = {
   yogur: /yogur(?:t)?(?: griego)?(?! deslactosado| bebible)/gi,
   'yogur-proteico': /yogur (?:bebible|proteico)/gi,
   whey: /proteína en polvo|whey(?: protein)?/gi,
-  untable: /queso untable/gi,
+  untable: /queso untable(?! sin lactosa)/gi,
+  'leche-deslactosada': /leche(?: descremada)? deslactosada/gi,
+  'yogur-deslactosado': /yogur(?: descremado)? deslactosado/gi,
+  'whey-isolate': /proteína aislada(?: sin lactosa)?|whey(?: protein)? aislad[oa]/gi,
+  'untable-deslactosado': /queso untable sin lactosa/gi,
+  'queso-deslactosado': /queso(?: cremoso light)? sin lactosa/gi,
   'queso-light': /queso(?: light| cremoso(?: light)?)?(?! untable| sin lactosa)/gi,
   ricota: /ricota/gi,
   nueces: /nueces|frutos secos/gi,
@@ -210,6 +239,11 @@ const DISPLAY: Record<string, string> = {
   'leche-deslactosada': 'leche deslactosada',
   'whey-isolate': 'proteína aislada sin lactosa',
   'untable-deslactosado': 'queso untable sin lactosa',
+  'bebida-soja': 'bebida de soja',
+  'bebida-almendra': 'bebida de almendras',
+  'yogur-vegetal': 'yogur de soja',
+  'proteina-vegetal': 'proteína vegetal',
+  claras: 'claras',
   palta: 'palta',
   semillas: 'semillas de girasol y chía',
   oliva: 'aceite de oliva',
@@ -234,6 +268,7 @@ export function retitle(text: string, from: string, to: string) {
     // Un mismo alimento nombrado dos veces ("huevos y claras") no repite el sustituto.
     if (done && from !== 'pan') return '';
     done = true;
+    if (!name) return '';
     return m[0] === m[0].toUpperCase() ? name[0].toUpperCase() + name.slice(1) : name;
   }).replace(/\s{2,}/g, ' ').replace(/ (y|con|,) (y|con|,) /g, ' $1 ').replace(/ (y|con)\s*$/, '').trim();
 }

@@ -1,16 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Users, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
-import { AnamnesisForm } from '@/components/builder/AnamnesisForm';
+import { Brain, Users, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, Utensils } from 'lucide-react';
+import { AthleteSheet } from '@/components/builder/AthleteSheet';
+import { QuickAssignButton } from '@/components/builder/QuickAssign';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
 import { IntakeTab } from '@/components/builder/IntakeTab';
 import { TemplateBank } from '@/components/builder/TemplateBank';
 // Registra la Food & Brand DB en el motor de alimentos apenas carga el Builder.
 import '@/store/useFoodDbStore';
 import { MealsTab } from '@/components/builder/MealsTab';
-import { PeriodizationTab } from '@/components/builder/PeriodizationTab';
-import { ProfileTab } from '@/components/builder/ProfileTab';
 import { ExportTab } from '@/components/deploy/ExportTab';
 import { PhonePreview } from '@/components/deploy/PhonePreview';
 import { StoryTab } from '@/components/deploy/StoryTab';
@@ -29,10 +28,8 @@ import { cloudConfigured } from '@/lib/cloud/config';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain; block: Block }[] = [
   ...(cloudConfigured ? [{ id: 'athletes' as BuilderTab, label: 'Mis atletas', icon: Users, block: 'publicacion' as Block }] : []),
-  { id: 'anamnesis', label: 'Anamnesis · hábitos y salud', icon: ClipboardList, block: 'perfil' },
+  { id: 'profile', label: 'Alumno · perfil, horarios y macros', icon: Dna, block: 'perfil' },
   { id: 'intake', label: 'Asistente IA', icon: Brain, block: 'perfil' },
-  { id: 'profile', label: 'Perfil físico', icon: Dna, block: 'perfil' },
-  { id: 'periodization', label: 'Macros entreno / descanso', icon: SlidersHorizontal, block: 'macros' },
   { id: 'meals', label: 'Comidas', icon: Utensils, block: 'estructura' },
   { id: 'library', label: '📚 Planes listos', icon: Library, block: 'estructura' },
   { id: 'fooddb', label: 'Alimentos y marcas', icon: Database, block: 'opciones' },
@@ -43,9 +40,9 @@ function BlockLegend() {
   const tab = usePlanStore((s) => s.builderTab);
   const setBuilderTab = usePlanStore((s) => s.setBuilderTab);
   const active = BUILDER_TABS.find((t) => t.id === tab)?.block;
-  const first: Partial<Record<Block, BuilderTab>> = { perfil: 'profile', macros: 'periodization', estructura: 'meals', opciones: 'meals' };
+  const first: Partial<Record<Block, BuilderTab>> = { perfil: 'profile', macros: 'profile', estructura: 'meals', opciones: 'meals' };
   return (
-    <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Bloques del Builder">
+    <div className="flex flex-wrap gap-1.5" aria-label="Bloques del Builder">
       {(Object.keys(BLOCKS) as Block[]).map((k) => {
         const b = BLOCKS[k];
         const on = active === k || (k === 'opciones' && tab === 'meals');
@@ -171,7 +168,10 @@ export default function Home() {
           <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ARMÁ EL PLAN</div>
           <ConflictBanner />
           <StepFlow />
-          <BlockLegend />
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <BlockLegend />
+            <QuickAssignButton />
+          </div>
           <div className="mb-4 flex items-start gap-2">
           <nav className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
             {BUILDER_TABS.map(({ id, label, icon: Icon, block }) => (
@@ -197,10 +197,10 @@ export default function Home() {
           <div key={activeId}>
           {builderTab !== 'meals' && <BlockHeader block={BUILDER_TABS.find((t) => t.id === builderTab)?.block ?? 'perfil'} />}
           {builderTab === 'athletes' && <CoachBoard />}
-          {builderTab === 'anamnesis' && <AnamnesisForm />}
+
           {builderTab === 'intake' && <IntakeTab />}
-          {builderTab === 'profile' && <ProfileTab />}
-          {builderTab === 'periodization' && <PeriodizationTab />}
+          {builderTab === 'profile' && <AthleteSheet />}
+
           {builderTab === 'meals' && <MealsTab />}
           {builderTab === 'fooddb' && <FoodBrandDatabase />}
           {builderTab === 'library' && <TemplateBank />}

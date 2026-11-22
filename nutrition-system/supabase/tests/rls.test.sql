@@ -196,6 +196,42 @@ select test.rejected('juan-pablo', :'tok');                              -- link
 select public.claim_athlete('juan-pablo', :'tok2');
 do $$ begin assert (select version from public.published_plans) = 1, 'link nuevo: ve la versión reactivada'; end $$;
 
+-- ============ 9 · Check-in semanal y plantillas del coach ============
+-- Celular vinculado (d1): guarda y lee su check-in; semana = lunes; valores 1-5.
+insert into public.checkins (athlete_id, week, energy, hunger, heavy, note, kg)
+  values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date, 4, 2, true, 'La cena me cayó pesada', 80.1);
+do $$ begin assert test.count('select * from public.checkins') = 1, 'el atleta guarda su check-in'; end $$;
+select test.fails($$insert into public.checkins (athlete_id, week, energy, hunger) values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date - 5, 3, 3)$$, '22008');
+select test.fails($$insert into public.checkins (athlete_id, week, energy, hunger) values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date - 7, 9, 3)$$, '23514');
+select test.fails($$insert into public.checkins (athlete_id, week, energy, hunger, photo) values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date - 14, 3, 3, 'javascript:alert(1)')$$, '23514');
+do $$ begin assert test.count('select * from public.coach_templates') = 0, 'el atleta no ve plantillas'; end $$;
+select test.fails($$insert into public.coach_templates (id, name, data) values (gen_random_uuid(), 'colada', '{}')$$);
+
+-- Celular revocado (d2): no ve ni escribe check-ins.
+select test.login('00000000-0000-0000-0000-0000000000d2', null, true);
+do $$ begin assert test.count('select * from public.checkins') = 0, 'un celular revocado no ve check-ins'; end $$;
+select test.fails($$insert into public.checkins (athlete_id, week, energy, hunger) values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date - 7, 3, 3)$$, '42501');
+
+-- Coach 1: lee el check-in (no lo escribe) y maneja sus plantillas.
+select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
+do $$ begin assert test.count('select * from public.checkins where heavy') = 1, 'el coach ve el check-in'; end $$;
+select test.fails($$insert into public.checkins (athlete_id, week, energy, hunger) values ('00000000-0000-0000-0000-0000000000a1', date_trunc('week', current_date)::date - 7, 3, 3)$$, '42501');
+insert into public.coach_templates (id, name, data) values ('00000000-0000-0000-0000-0000000000e1', 'Volumen CrossFit', '{"meals": []}');
+update public.coach_templates set name = 'Volumen CrossFit v2' where id = '00000000-0000-0000-0000-0000000000e1';
+do $$ begin assert (select name from public.coach_templates) = 'Volumen CrossFit v2', 'el coach edita su plantilla'; end $$;
+
+-- Coach 2: no ve las plantillas ni los check-ins del coach 1.
+select test.login('00000000-0000-0000-0000-0000000000c2', 'socio@jp.com');
+do $$
+begin
+  assert test.count('select * from public.coach_templates') = 0, 'otro coach no ve plantillas ajenas';
+  assert test.count('select * from public.checkins') = 0, 'ni check-ins de atletas ajenos';
+end $$;
+delete from public.coach_templates where id = '00000000-0000-0000-0000-0000000000e1';
+select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
+do $$ begin assert test.count('select * from public.coach_templates') = 1, 'otro coach no pudo borrarla'; end $$;
+select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
+
 -- ============ 7 · Visitante sin sesión (clave pública sola) ============
 reset role;
 set role anon;
@@ -213,4 +249,4 @@ select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
 do $$ begin assert test.count('select * from public.published_plans') = 0, 'archivado: el atleta deja de ver el plan'; end $$;
 reset role;
 
-\echo '✓ 8 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión y archivados'
+\echo '✓ 9 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión, archivados, check-ins y plantillas'

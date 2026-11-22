@@ -56,6 +56,9 @@ try {
 
   await page.getByText('[ ⚡ COMPLETAR 5 OPCIONES EN TODO EL PLAN ]').click();
   await page.waitForTimeout(300);
+  // Vista compacta: las alternativas están plegadas bajo «+ Ver X opciones más».
+  check((await page.getByRole('button', { name: 'Comparar' }).count()) === 0 && (await page.locator('[data-show-alts]').count()) > 0, 'Comidas: alternativas plegadas bajo «+ Ver X opciones»');
+  await page.locator('[data-show-alts]').first().click();
   const cmp = page.getByRole('button', { name: 'Comparar' }).first();
   check(await cmp.isVisible(), 'Opciones generadas: aparece el selector Tarjetas / Comparar');
   await cmp.click();
@@ -72,12 +75,17 @@ try {
   check((await meals.count()) === n0, 'Ctrl+Z recupera la comida borrada');
   await page.getByRole('button', { name: 'Deshacer' }).click();
   await page.waitForTimeout(150);
-  check((await page.getByRole('button', { name: 'Comparar' }).count()) === 0, 'Botón Deshacer revierte el autollenado de opciones');
+  check((await page.locator('[data-show-alts]').count()) === 0, 'Botón Deshacer revierte el autollenado de opciones');
   await page.getByRole('button', { name: 'Rehacer' }).click();
   await page.waitForTimeout(150);
 
-  // Exportación + indicador de plan desactualizado.
-  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+  // Exportación + indicador de plan desactualizado (con la nube, la descarga manual está en «Opciones avanzadas»).
+  const openPublish = async () => {
+    await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+    const adv = page.locator('[data-export-advanced]');
+    if ((await adv.count()) && !(await adv.evaluate((e) => e.open))) await adv.locator('summary').click();
+  };
+  await openPublish();
   check(await page.getByText('Todavía no exportaste este plan.').isVisible(), 'Indicador: plan nunca exportado');
   const dir = mkdtempSync(join(tmpdir(), 'cjp-smoke-'));
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Descargar index.html/ }).click()]);
@@ -86,7 +94,7 @@ try {
   check(await page.getByText('Plan al día.').isVisible(), 'Indicador: plan al día después de exportar');
   await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
   await page.getByTitle('Eliminar comida').first().click();
-  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+  await openPublish();
   check(await page.getByText('Plan desactualizado.').isVisible(), 'Indicador: plan desactualizado después de editar');
 
   // Planes listos: filtrar, abrir la vista previa completa y aplicarlo al alumno.
@@ -125,7 +133,8 @@ try {
   check((await meals.count()) > 0, 'Plantillas: aplicada al alumno');
 
   // Perfil: deporte + objetivo → precálculo en vivo y plan sugerido.
-  await page.locator('section nav button', { hasText: 'Perfil físico' }).click();
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  check((await page.locator('[data-athlete-sheet] [data-block]').count()) >= 3, 'Vista única: Biometría · Horarios y restricciones · Macros en una pantalla');
   const pre = page.locator('[data-precalc]');
   check(await pre.isVisible(), 'Perfil: precálculo en vivo (metabolismo y gasto)');
   const before = await pre.innerText();
@@ -143,7 +152,7 @@ try {
   await page.locator('[data-allergy="lactose"]').click();
   await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
   check((await page.locator('[data-allergen-flag]').count()) > 0, 'Alergias: los ingredientes con lactosa quedan marcados en Comidas');
-  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+  await openPublish();
   check((await page.locator('[data-quality="blocked"]').count()) === 1, 'Semáforo: publicar frenado por alérgenos');
   check(await page.getByRole('button', { name: /Descargar index.html/ }).isDisabled(), 'Bloqueo duro: no se puede descargar el archivo del alumno');
   check((await page.locator('[data-check]').count()) >= 8, `Semáforo: ${await page.locator('[data-check]').count()} verificaciones en vivo`);
@@ -169,6 +178,35 @@ try {
   await page.locator('[data-plan-preview]').getByRole('button', { name: /Aplicar a este alumno/ }).click();
   await page.waitForTimeout(250);
   check((await page.locator('[data-allergen-flag]').count()) === 0, 'Alergias: el plan del banco aplicado llega sin lactosa');
+  // Comidas: resumen fijo, cambiar base en toda la comida y copiar al día de descanso.
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  check(await page.locator('[data-sticky-summary]').isVisible(), 'Comidas: resumen fijo con macros, semáforo y Publicar');
+  const nBefore = await meals.count();
+  await page.locator('[data-base-swap]').first().click();
+  const toBtn = page.locator('[data-base-to]').first();
+  const toName = (await toBtn.innerText()).trim();
+  await toBtn.click();
+  await page.waitForTimeout(150);
+  check((await page.getByText(toName, { exact: false }).count()) > 0, `Cambiar base: la comida pasa a ${toName} en todas sus opciones`);
+  await page.getByRole('button', { name: /Copiar al día de (descanso|entreno)/ }).first().click();
+  await page.waitForTimeout(150);
+  check((await meals.count()) === nBefore + 1, 'Copiar al día de descanso: la comida se duplica en el otro día');
+
+  // Nuevo plan / Asignar rápido: alumno nuevo en 3 pasos.
+  await page.locator('[data-quick-assign]').click();
+  const qm = page.locator('[data-quick-modal]');
+  await qm.getByRole('button', { name: 'Alumno nuevo' }).click();
+  await qm.locator('[data-qa-name]').fill('Lucía Test');
+  await qm.locator('[data-qa-goal="def"]').click();
+  await qm.getByRole('button', { name: 'Alergia a lácteos / APLV' }).click();
+  await qm.locator('[data-qa-next]').click();
+  check(await qm.getByText(/Definición · (Mujer|Hombre) activ/).isVisible(), 'Asignar rápido: plan maestro sugerido con vista previa');
+  await qm.locator('[data-qa-next]').click();
+  await qm.locator('[data-qa-apply]').click();
+  await page.waitForTimeout(300);
+  check((await page.getByText('Lucía Test').count()) > 0 && (await meals.count()) > 0, 'Asignar rápido: alumno nuevo con su plan aplicado');
+  check((await page.locator('[data-allergen-flag]').count()) === 0, 'APLV: el plan asignado llega sin lácteos');
+
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

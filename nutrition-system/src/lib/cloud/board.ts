@@ -1,6 +1,7 @@
 'use client';
 
-import { addDays, computeAlerts, computeStats, riskScore, type Alert, type AthleteInput, type AthleteStats, type Goal, type LogRow } from '../coachAlerts';
+import { suggestAdjustments, type Adjustment } from '../adjust';
+import { addDays, computeAlerts, computeStats, riskScore, type Alert, type AthleteInput, type AthleteStats, type CheckinRow, type Goal, type LogRow } from '../coachAlerts';
 import { supa } from './client';
 
 export interface BoardRow {
@@ -9,6 +10,9 @@ export interface BoardRow {
   alerts: Alert[];
   hidden: number;
   risk: number;
+  /** Ajustes de macros sugeridos por las alertas y el check-in (con vista previa y «Aplicar y publicar»). */
+  adjustments: Adjustment[];
+  lastCheckin: CheckinRow | null;
 }
 
 export const localToday = () => {
@@ -19,13 +23,14 @@ export const localToday = () => {
 /** Baja de la nube lo necesario para el panel (sólo resúmenes, nunca los planes completos). */
 export async function loadBoard(today = localToday()): Promise<BoardRow[]> {
   const sb = supa();
-  const [ath, logs, ws, pubs, drafts, acks] = await Promise.all([
+  const [ath, logs, ws, pubs, drafts, acks, cis] = await Promise.all([
     sb.from('athletes').select('id, slug, name, goal, phase, training_weekdays, created_at').is('archived_at', null),
     sb.from('daily_logs').select('athlete_id, day, mode, meals_done, meals_total, missed, kcal, kcal_target, p, p_target, water_ml, water_target_ml, social, adherent, updated_at').gte('day', addDays(today, -40)),
     sb.from('weight_logs').select('athlete_id, day, kg').gte('day', addDays(today, -60)),
     sb.from('published_plans').select('athlete_id, version, hash, published_at').eq('is_active', true),
     sb.from('plan_drafts').select('athlete_id, hash, updated_at'),
     sb.from('alert_acks').select('athlete_id, alert_key, until'),
+    sb.from('checkins').select('athlete_id, week, energy, hunger, heavy, note, kg, photo').gte('week', addDays(today, -60)),
   ]);
   for (const r of [ath, logs, ws, pubs, drafts, acks]) if (r.error) throw r.error;
   const group = <T extends { athlete_id: string }>(rows: T[] | null) => {
@@ -34,6 +39,9 @@ export async function loadBoard(today = localToday()): Promise<BoardRow[]> {
     return m;
   };
   const L = group(logs.data), W = group(ws.data), A = group(acks.data);
+  // Check-ins: si la tabla todavía no existe en un proyecto viejo, el panel sigue funcionando sin ellos.
+  const C = group(cis.error ? [] : cis.data);
+
   const P = Object.fromEntries((pubs.data ?? []).map((p) => [p.athlete_id, p]));
   const Dr = Object.fromEntries((drafts.data ?? []).map((d) => [d.athlete_id, d]));
   const now = Date.now();
@@ -51,12 +59,15 @@ export async function loadBoard(today = localToday()): Promise<BoardRow[]> {
         draft: Dr[a.id] ? { hash: Dr[a.id].hash, at: Dr[a.id].updated_at } : null,
         logs: (L[a.id] ?? []).map((l) => ({ ...l, p: Number(l.p), p_target: Number(l.p_target) }) as LogRow),
         weights: (W[a.id] ?? []).map((w) => ({ day: w.day, kg: Number(w.kg) })),
+        checkins: cis.error ? undefined : (C[a.id] ?? []).map((c) => ({ ...c, kg: c.kg === null ? null : Number(c.kg) }) as CheckinRow),
       };
       const stats = computeStats(input, today);
       const all = computeAlerts(input, stats, today, now);
       const acked = new Set((A[a.id] ?? []).filter((k) => Date.parse(k.until) > now).map((k) => k.alert_key));
       const alerts = all.filter((x) => !acked.has(x.key));
-      return { input, stats, alerts, hidden: all.length - alerts.length, risk: riskScore(alerts) };
+      const lastCheckin = [...(input.checkins ?? [])].sort((x, y) => y.week.localeCompare(x.week))[0] ?? null;
+      const adjustments = suggestAdjustments({ goal: input.goal, weightKg: stats.weight.last ?? 0, alerts, stats, checkins: input.checkins });
+      return { input, stats, alerts, hidden: all.length - alerts.length, risk: riskScore(alerts), adjustments, lastCheckin };
     })
     .sort((x, y) => y.risk - x.risk || x.input.name.localeCompare(y.input.name));
 }

@@ -9,6 +9,7 @@ import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { fixedFromAnamnesis } from '@/lib/agenda';
+import { swapBase } from '@/lib/baseSwap';
 import { acceptFor, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
@@ -85,6 +86,10 @@ interface PlanState {
   applyAdapted: (src: PlanSource) => void;
   /** Sustituye en todo el plan los ingredientes con alérgenos declarados. Devuelve cuántas opciones corrigió y cuántos conflictos quedan. */
   fixAllergens: () => { fixed: number; left: number };
+  /** Ajuste del panel: nuevos macros g/kg de entreno y descanso; las comidas se reescalan solas (cierre de macros). */
+  adjustMacros: (gkg: { on: Macros; off: Macros }) => void;
+  /** Cambia la base (proteína o carbo) de una comida en todas sus opciones. */
+  swapMealBase: (mealId: string, fromId: string, toId: string) => void;
   setMacro: (day: DayMode, key: keyof Macros, value: number) => void;
   setPeriodization: (p: Partial<Periodization>) => void;
   setCoachNote: (s: string) => void;
@@ -222,7 +227,8 @@ export const usePlanStore = create<PlanState>()(
         set({ customFoods });
       },
 
-      setBuilderTab: (builderTab) => set({ builderTab }),
+      // Anamnesis y Macros viven ahora dentro de la vista única del alumno.
+      setBuilderTab: (builderTab) => set({ builderTab: builderTab === 'anamnesis' || builderTab === 'periodization' ? 'profile' : builderTab }),
       setDeployTab: (deployTab) => set({ deployTab }),
       setPreviewMode: (previewMode) => set({ previewMode }),
       setIntakeNotes: (intakeNotes) => set((s) => ({ intakeNotes, notesByAthlete: { ...s.notesByAthlete, [s.plan.id]: intakeNotes } })),
@@ -304,6 +310,10 @@ export const usePlanStore = create<PlanState>()(
         if (r.fixed) set({ plan: touch(r.plan) });
         return { fixed: r.fixed, left: allergenConflicts(r.plan).length };
       },
+      adjustMacros: (gkg) =>
+        set((s) => ({ plan: balancePlan(touch({ ...s.plan, periodization: { ...s.plan.periodization, on: { ...gkg.on }, off: { ...gkg.off } } })).plan })),
+      swapMealBase: (mealId, fromId, toId) =>
+        set((s) => ({ plan: mapMeal(s.plan, mealId, (m) => fitAltsToMain(swapBase(m, fromId, toId, s.plan.profile.sex))) })),
       deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((t) => t.id !== id) })),
       // Copia / plantilla: además de reescalar, se sustituyen los alérgenos que el alumno tiene declarados.
       applyAdapted: (src) => set((s) => ({ plan: touch(fixPlanAllergens(adaptPlan(s.plan, src)).plan), builderTab: 'meals' })),
@@ -528,7 +538,7 @@ export const usePlanStore = create<PlanState>()(
         set((s) => {
           const fresh = seedPlan();
           fresh.profile = { ...fresh.profile, name: `Atleta ${listAthletes(s).length + 1}` };
-          return { ...activate(s, fresh, { ...s.roster, [s.plan.id]: s.plan }), builderTab: 'anamnesis' };
+          return { ...activate(s, fresh, { ...s.roster, [s.plan.id]: s.plan }), builderTab: 'profile' };
         }),
 
       selectAthlete: (id) =>
@@ -589,6 +599,7 @@ export const usePlanStore = create<PlanState>()(
         merged.exports = saved.exports && typeof saved.exports === 'object' ? saved.exports : {};
         // El panel de atletas sólo existe con la nube configurada.
         if (merged.builderTab === 'athletes' && !cloudConfigured) merged.builderTab = 'profile';
+        if (merged.builderTab === 'anamnesis' || merged.builderTab === 'periodization') merged.builderTab = 'profile';
         // Migración: las notas globales de versiones anteriores pasan a ser del atleta activo.
         merged.notesByAthlete = { ...(saved.notesByAthlete ?? {}) };
         if (!(merged.plan.id in merged.notesByAthlete) && typeof saved.intakeNotes === 'string') merged.notesByAthlete[merged.plan.id] = saved.intakeNotes;

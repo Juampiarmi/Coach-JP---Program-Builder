@@ -1,6 +1,7 @@
 'use client';
 
 import { allergenConflicts } from '@/lib/allergens';
+import type { PlanTemplate } from '@/lib/planAdapt';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -107,10 +108,45 @@ export const useCloudStore = create<CloudState>()(
         timer = setTimeout(() => void get().saveDraft(), 1500);
       };
 
+      // ---------- Plantillas propias en la nube (notebook ↔ celular) ----------
+      let tplKnown = new Set<string>();
+      const tplRow = (t: PlanTemplate) => ({ id: t.id, name: t.name.slice(0, 120), data: t, created_at: new Date(t.createdAt).toISOString() });
+      const syncTemplates = async () => {
+        const sb = supa();
+        const { data, error } = await sb.from('coach_templates').select('id, data').order('created_at', { ascending: false });
+        if (error) return; // proyecto sin la tabla todavía: las plantillas siguen locales
+        const remote = (data ?? []).map((r) => r.data as PlanTemplate).filter((t) => t && Array.isArray(t.meals));
+        const local = usePlanStore.getState().templates;
+        const ids = new Set(remote.map((t) => t.id));
+        const onlyLocal = local.filter((t) => !ids.has(t.id));
+        if (onlyLocal.length) await sb.from('coach_templates').upsert(onlyLocal.map(tplRow));
+        const merged = [...remote, ...onlyLocal].sort((a, b) => b.createdAt - a.createdAt);
+        tplKnown = new Set(merged.map((t) => t.id));
+        usePlanStore.setState({ templates: merged });
+      };
+      const pushTemplates = async (now: PlanTemplate[], before: PlanTemplate[]) => {
+        if (!get().user) return;
+        const sb = supa();
+        const prevIds = new Set(before.map((t) => t.id));
+        const nowIds = new Set(now.map((t) => t.id));
+        const added = now.filter((t) => !prevIds.has(t.id) && !tplKnown.has(t.id));
+        const removed = before.filter((t) => !nowIds.has(t.id)).map((t) => t.id);
+        if (added.length) {
+          const { error } = await sb.from('coach_templates').upsert(added.map(tplRow));
+          if (error) console.warn('No se pudo subir la plantilla:', error.message);
+        }
+        if (removed.length) {
+          const { error } = await sb.from('coach_templates').delete().in('id', removed);
+          if (error) console.warn('No se pudo borrar la plantilla:', error.message);
+        }
+        tplKnown = nowIds;
+      };
+
       const watch = () => {
         if (subscribed) return;
         subscribed = true;
         usePlanStore.subscribe((s, prev) => {
+          if (s.templates !== prev.templates) void pushTemplates(s.templates, prev.templates).catch(() => {});
           if (s.plan === prev.plan) return;
           if (s.plan.id !== prev.plan.id && timer) {
             // Cambio de atleta con un guardado pendiente: el saliente se sube ya.
@@ -262,6 +298,8 @@ export const useCloudStore = create<CloudState>()(
 
         pull: async () => {
           const sb = supa();
+          // Plantillas propias del coach: se unen las de la nube con las de este dispositivo (las locales nuevas se suben).
+          void syncTemplates();
           set({ busy: 'Trayendo tus atletas…' });
           try {
             const [ath, drafts, pubs, access, devs] = await Promise.all([

@@ -175,7 +175,8 @@ function EaCard({ label, value, status, formula }: { label: string; value: numbe
   );
 }
 
-export function ProfileTab() {
+/** Perfil físico completo. `advanced`: sin deporte/objetivo ni precálculo (ya están en la vista única del alumno). */
+export function ProfileTab({ advanced = false }: { advanced?: boolean }) {
   const plan = usePlanStore((s) => s.plan);
   const setProfile = usePlanStore((s) => s.setProfile);
   const applyPhasePreset = usePlanStore((s) => s.applyPhasePreset);
@@ -209,8 +210,8 @@ export function ProfileTab() {
         <div className="mt-5 border-t border-line pt-5">{pr.precisionMode === 'quick' ? <QuickMode /> : <IsakMode />}</div>
       </Panel>
 
-      <SportGoalPanel />
-      <PrecalcPanel />
+      {!advanced && <SportGoalPanel />}
+      {!advanced && <PrecalcPanel />}
 
       <Panel block="perfil" title="AGENDA DE ENTRENAMIENTO & HIDRATACIÓN">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -298,11 +299,11 @@ export function ProfileTab() {
   );
 }
 
-const toMinutes = (hhmm: string) => {
+export const toMinutes = (hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 };
-const addMinutes = (hhmm: string, min: number) => {
+export const addMinutes = (hhmm: string, min: number) => {
   const t = (((toMinutes(hhmm) + min) % 1440) + 1440) % 1440;
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
@@ -311,7 +312,7 @@ const WEEKDAYS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 /** Cronograma semanal: define qué días la app del atleta arranca sola en DÍA ON (con switch manual igual). */
-function WeekdayPicker() {
+export function WeekdayPicker() {
   const pr = usePlanStore((s) => s.plan.profile);
   const setProfile = usePlanStore((s) => s.setProfile);
   const days = trainingWeekdays(pr);
@@ -399,7 +400,7 @@ function SportGoalPanel() {
 const pct = (x: number) => `${x > 0 ? '+' : ''}${Math.round(x * 100)} %`;
 
 /** Precálculo en vivo: metabolismo, gasto y el plan maestro sugerido con sus calorías y macros de entreno y descanso. */
-function PrecalcPanel() {
+export function PrecalcPanel({ title = 'PRECÁLCULO EN VIVO · CALORÍAS Y MACROS' }: { title?: string }) {
   const plan = usePlanStore((s) => s.plan);
   const applyTemplate = usePlanStore((s) => s.applyTemplate);
   const applyPrecalcMacros = usePlanStore((s) => s.applyPrecalcMacros);
@@ -408,7 +409,7 @@ function PrecalcPanel() {
   const pr = plan.profile;
   const same = (['on', 'off'] as const).every((d) => (['p', 'c', 'f'] as const).every((k) => Math.abs(plan.periodization[d][k] - pc.gkg[d][k]) < 0.01));
   return (
-    <Panel block="macros" title="PRECÁLCULO EN VIVO · CALORÍAS Y MACROS" tone="cyan" right={<Calculator className="h-4 w-4 text-cyan-hud/80" />}>
+    <Panel block="macros" title={title} tone="cyan" right={<Calculator className="h-4 w-4 text-cyan-hud/80" />}>
       <p className="-mt-1 text-[12.5px] text-steel">
         Se recalcula solo con sexo, peso, talla, edad, deporte y objetivo. {pr.sex === 'F' ? 'Mujer' : 'Hombre'} · {fmt1(pr.weightKg)} kg · {fmt0(pr.heightCm)} cm · {fmt0(pr.age)} años
         {sportFor(plan) ? ` · ${sportFor(plan)!.label}` : ''}.
@@ -488,7 +489,7 @@ function PrecalcPanel() {
 }
 
 /** Alergias e intolerancias (las mismas de la anamnesis): el banco, los swaps y la publicación las respetan. */
-function AllergyChips() {
+export function AllergyChips() {
   const an = usePlanStore((s) => s.plan.anamnesis);
   const setAnamnesis = usePlanStore((s) => s.setAnamnesis);
   const list = an?.allergies ?? [];

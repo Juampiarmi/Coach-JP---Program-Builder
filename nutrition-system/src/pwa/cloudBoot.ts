@@ -140,6 +140,7 @@ const cloudBoot = String.raw`
     return Promise.all([
       api('GET', '/rest/v1/daily_logs?select=*&athlete_id=eq.' + aid + '&day=gte.' + since + '&order=day.asc'),
       api('GET', '/rest/v1/weight_logs?select=day,kg&athlete_id=eq.' + aid + '&day=gte.' + since),
+      api('GET', '/rest/v1/checkins?select=week,energy,hunger,heavy,note,kg,photo,client_updated_at&athlete_id=eq.' + aid + '&week=gte.' + since).catch(function () { return []; }),
     ]).then(function (res) {
       var hist = {}, swaps = null, first = null;
       (res[0] || []).forEach(function (r) {
@@ -155,6 +156,10 @@ const cloudBoot = String.raw`
       if (first) put('start', first);
       var w = {};
       (res[1] || []).forEach(function (r) { w[r.day] = Number(r.kg); });
+      // Check-ins semanales (para verlos y editarlos desde otro celular).
+      var ci = {}, cis = {};
+      (res[2] || []).forEach(function (r) { var at = Date.parse(r.client_updated_at) || 0; ci[r.week] = { energy: r.energy, hunger: r.hunger, heavy: !!r.heavy, note: r.note || '', kg: r.kg === null ? null : Number(r.kg), photo: r.photo || '', at: at }; cis[r.week] = at; });
+      if (Object.keys(ci).length) { put('checkins', ci); lsSet('cisynced', cis); }
       if (Object.keys(w).length) { put('weights', w); lsSet('wsynced', w); }
     }).catch(function () {});
   }
@@ -277,20 +282,21 @@ const cloudBoot = String.raw`
 
   // ---------- Cola de envío de registros ----------
   var KEY = '';
-  var out = lsGet('outbox', { days: {}, weights: false });
+  var out = lsGet('outbox', { days: {}, weights: false, checkins: false });
   var state = 'synced', timer = null, flushing = false;
   function setState(s) {
     if (s === state) return;
     state = s;
     if (window.__cjpApi) window.__cjpApi.render();
   }
-  function pending() { return Object.keys(out.days).length > 0 || out.weights; }
+  function pending() { return Object.keys(out.days).length > 0 || out.weights || out.checkins; }
   window.__cjpCloud = {
     dirty: function (k) {
       var m = /^(checks|water|extras|free|opt|rebal|mode):(\d{4}-\d{2}-\d{2})$/.exec(k);
       if (m) out.days[m[2]] = Date.now();
       else if (k === 'swaps' && window.__cjpApi) out.days[window.__cjpApi.today()] = Date.now();
       else if (k === 'weights') out.weights = true;
+      else if (k === 'checkins') out.checkins = true;
       else return;
       lsSet('outbox', out);
       setState(navigator.onLine ? 'pending' : 'offline');
@@ -300,7 +306,7 @@ const cloudBoot = String.raw`
     status: function () {
       if (state === 'offline' || (pending() && !navigator.onLine)) return { state: 'offline', text: '📱 Guardado en tu celular · esperando señal', tip: 'Se envía solo a tu coach cuando vuelva la conexión.' };
       if (pending()) return { state: 'pending', text: 'Enviando tus registros…', tip: 'Tus registros se están enviando a tu coach.' };
-      return { state: 'synced', text: '✓ Todo enviado a tu coach', tip: 'Tu coach ya ve tus comidas, hidratación y peso.' };
+      return { state: 'synced', text: '✓ Todo enviado a tu coach', tip: 'Tu coach ya ve tus comidas, hidratación, peso y check-in.' };
     },
   };
 
@@ -328,11 +334,22 @@ const cloudBoot = String.raw`
         del.forEach(function (d) { jobs.push(api('DELETE', '/rest/v1/weight_logs?athlete_id=eq.' + aid + '&day=eq.' + d, undefined, { Prefer: 'return=minimal' }, keepalive)); });
         jobs.push(Promise.resolve().then(function () { snap.wmap = w; }));
       }
+      if (snap.checkins) {
+        var cs = {}, cisynced = lsGet('cisynced', {});
+        try { cs = JSON.parse(localStorage.getItem(KEY + 'checkins') || '{}') || {}; } catch (e) {}
+        var cup = Object.keys(cs).filter(function (wk) { return cisynced[wk] !== cs[wk].at; }).map(function (wk) {
+          var c = cs[wk];
+          return { athlete_id: aid, week: wk, energy: c.energy, hunger: c.hunger, heavy: !!c.heavy, note: c.note || '', kg: c.kg || null, photo: c.photo || null, client_updated_at: new Date(c.at || Date.now()).toISOString() };
+        });
+        if (cup.length) jobs.push(api('POST', '/rest/v1/checkins?on_conflict=athlete_id,week', cup, { Prefer: 'resolution=merge-duplicates,return=minimal' }, keepalive));
+        jobs.push(Promise.resolve().then(function () { var mp = {}; Object.keys(cs).forEach(function (wk) { mp[wk] = cs[wk].at; }); snap.cimap = mp; }));
+      }
       return Promise.all(jobs);
     }).then(function () {
       // Sólo se limpia lo enviado (si hubo cambios nuevos en el medio, quedan en la cola).
       Object.keys(snap.days).forEach(function (d) { if (out.days[d] === snap.days[d]) delete out.days[d]; });
       if (snap.weights) { out.weights = false; lsSet('wsynced', snap.wmap || {}); }
+      if (snap.checkins) { out.checkins = false; lsSet('cisynced', snap.cimap || {}); }
       lsSet('outbox', out);
       setState(pending() ? 'pending' : 'synced');
     }, function (e) {

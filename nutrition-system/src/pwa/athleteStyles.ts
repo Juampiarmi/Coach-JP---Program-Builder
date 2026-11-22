@@ -361,6 +361,25 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .dish .obadges{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .dish .obadges i{font-style:normal;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:9.5px;font-weight:700;letter-spacing:.03em;color:var(--micro);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
 .dish .obadges i.t{color:#FCD34D;border-color:rgba(252,211,77,.35)}
+.cicard .ci-sum{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12.5px;color:var(--steel,#94A3B8)}
+.cicard .ci-sum b{color:#fff}
+.ci-go{margin-top:10px;width:100%;padding:12px;border-radius:12px;border:0;background:#F97316;color:#fff;font-weight:800;font-size:14px}
+.ci-edit{margin-top:8px;background:none;border:0;color:#38BDF8;font-size:12.5px;font-weight:700;padding:4px 0}
+.ci-q{margin:14px 0 6px;font-size:13px;font-weight:700;color:#fff}
+.ci-scale{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.ci-scale button{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#CBD5E1;border-radius:10px;padding:7px 2px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.ci-scale button b{font-size:16px;color:#fff}
+.ci-scale button span{font-size:9.5px;line-height:1.1;text-align:center}
+.ci-scale button.on,.ci-yn button.on{border-color:#F97316;background:rgba(249,115,22,.15)}
+.ci-yn{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ci-yn button{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#fff;border-radius:10px;padding:10px;font-weight:700}
+#ci-note{width:100%;margin-top:8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#0B0F17;color:#fff;padding:8px;font:inherit;font-size:13px}
+.ci-pick{display:block;text-align:center;border:1px dashed rgba(255,255,255,.2);border-radius:10px;padding:12px;color:#38BDF8;font-weight:700;font-size:13px}
+.ci-photo{display:flex;align-items:center;gap:10px}
+.ci-photo img{width:84px;height:84px;object-fit:cover;border-radius:10px}
+.ci-photo button{border:1px solid rgba(255,255,255,.12);background:none;color:#CBD5E1;border-radius:8px;padding:6px 10px}
+.ci-save{margin-top:16px;width:100%;padding:14px;border-radius:12px;border:0;background:#F97316;color:#fff;font-weight:800;font-size:15px}
+.ci-save[disabled]{background:rgba(255,255,255,.08);color:#94A3B8}
 .seals{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0 0}
 .seals i{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.02em;color:#4ADE80;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);border-radius:999px;padding:2px 8px}
 .xwarn{margin-top:6px;font-size:11px;line-height:1.4;color:#FDE68A;background:rgba(255,214,0,.08);border:1px solid rgba(255,214,0,.3);border-radius:8px;padding:5px 8px}

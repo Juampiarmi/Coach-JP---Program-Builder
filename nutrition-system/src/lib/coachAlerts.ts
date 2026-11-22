@@ -27,6 +27,16 @@ export interface WeightRow {
   day: string;
   kg: number;
 }
+/** Check-in semanal del atleta (week = lunes). */
+export interface CheckinRow {
+  week: string;
+  energy: number;
+  hunger: number;
+  heavy: boolean;
+  note: string;
+  kg: number | null;
+  photo?: string | null;
+}
 export interface AthleteInput {
   id: string;
   name: string;
@@ -37,6 +47,8 @@ export interface AthleteInput {
   draft: { hash: string; at: string } | null;
   logs: LogRow[];
   weights: WeightRow[];
+  /** Check-ins semanales (undefined = la nube todavía no los trae: no se evalúan). */
+  checkins?: CheckinRow[];
 }
 export interface Alert {
   key: string;
@@ -204,6 +216,18 @@ export function computeAlerts(a: AthleteInput, s: AthleteStats, today: string, n
   const before = ws.filter((w) => diffDays(today, w.day) > 10 && diffDays(today, w.day) <= 40).length;
   const recent = ws.filter((w) => diffDays(today, w.day) <= 10).length;
   if (before >= 3 && recent === 0) out.push({ key: 'stopped_weighing', level: 'info', title: 'Dejó de pesarse', detail: 'Venía registrando su peso y lleva más de 10 días sin hacerlo.' });
+
+  // 13-15 · Check-in semanal (energía, hambre, digestión).
+  if (a.checkins) {
+    const last = [...a.checkins].sort((x, y) => y.week.localeCompare(x.week))[0];
+    const fresh = last && diffDays(today, last.week) <= 13;
+    if (fresh && last.hunger >= 4 && last.energy <= 2)
+      out.push({ key: `checkin_hungry:${last.week}`, level: 'orange', title: 'Hambre alta y poca energía', detail: `En su check-in marcó hambre ${last.hunger}/5 y energía ${last.energy}/5. Puede faltarle energía: conviene subir un poco las calorías.` });
+    if (fresh && last.heavy)
+      out.push({ key: `checkin_heavy:${last.week}`, level: 'yellow', title: 'Algo le cayó pesado', detail: last.note ? `«${last.note}». Revisá esa comida (volumen, grasa o fibra antes de entrenar).` : 'Marcó que alguna comida le cayó pesada en la semana. Preguntale cuál.' });
+    if (!fresh && a.published && nowMs - Date.parse(a.published.at) > 7 * 864e5)
+      out.push({ key: 'no_checkin', level: 'info', title: last ? `Sin check-in hace ${diffDays(today, last.week)} días` : 'Todavía no hizo su check-in', detail: 'El check-in semanal (30 segundos) te dice cómo viene de energía, hambre y digestión.' });
+  }
 
   return out.sort((x, y) => LEVEL_RANK[y.level] - LEVEL_RANK[x.level]);
 }

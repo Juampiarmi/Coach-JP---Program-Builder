@@ -145,6 +145,11 @@ export const FOODS: FoodRef[] = [
   { id: 'semillas', name: 'Semillas de girasol y chía', group: 'fat', p: 20, c: 15, f: 48, leucine: 1.3, equiv: ['palta', 'oliva'] },
   { id: 'untable-deslactosado', name: 'Queso untable descremado sin lactosa', group: 'dairy-protein', p: 10, c: 3, f: 1, leucine: 0.98, equiv: ['untable'] },
   { id: 'queso-deslactosado', name: 'Queso cremoso light sin lactosa', group: 'dairy-protein', p: 22, c: 1, f: 14, leucine: 2.0, equiv: ['queso-light'] },
+  // Alergia a la proteína de la leche (APLV): alternativas vegetales fortificadas con calcio.
+  { id: 'bebida-soja', name: 'Bebida de soja fortificada (calcio)', group: 'dairy-protein', unit: { label: 'taza', grams: 250 }, p: 3.3, c: 2.5, f: 1.8, leucine: 0.27, equiv: ['leche'] },
+  { id: 'bebida-almendra', name: 'Bebida de almendras fortificada (calcio)', group: 'dairy-protein', unit: { label: 'taza', grams: 250 }, p: 0.6, c: 1.5, f: 1.2, leucine: 0.04, equiv: ['leche'] },
+  { id: 'yogur-vegetal', name: 'Yogur de soja fortificado', group: 'dairy-protein', p: 4, c: 6, f: 2, leucine: 0.33, equiv: ['yogur'] },
+  { id: 'proteina-vegetal', name: 'Proteína vegetal aislada (arveja)', group: 'whey', unit: { label: 'scoop', grams: 30 }, p: 80, c: 3, f: 6, leucine: 6.6, equiv: ['whey'] },
 ];
 
 export const FOOD_BY_ID: Record<string, FoodRef> = Object.fromEntries(FOODS.map((f) => [f.id, f]));
