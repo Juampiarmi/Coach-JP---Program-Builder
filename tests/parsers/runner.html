@@ -55,6 +55,7 @@
 <script src="cases-vista.js"></script>
 <script src="cases-pulido.js"></script>
 <script src="cases-version.js"></script>
+<script src="cases-tips-bordes.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -551,8 +552,8 @@
       if(c.caso === 'firma'){
         var ft = d.querySelector('.site-footer'); if(!ft) return { sinFooter: true };
         var n = ft.querySelector('.jp-firma-n'), rol = ft.querySelector('.jp-firma-r');
-        return { bordeEscudo: /245, 197, 24/.test(cs(ft).borderTopColor), tarjeta: parseFloat(cs(ft).borderTopLeftRadius) >= 12 && parseFloat(cs(ft).borderTopWidth) > 0.5, nombreBlanco: cs(n).color === 'rgb(238, 243, 255)', rolSinCyanPleno: cs(rol).color !== 'rgb(0, 229, 255)' && cs(rol).color !== 'rgb(34, 211, 238)',
-          acentos: /238, 90, 18/.test(cs(n, '::after').backgroundColor) && /0, 229, 255/.test(cs(rol, '::after').backgroundColor) };
+        return { bordeSutil: /150, 178, 240/.test(cs(ft).borderTopColor), tarjeta: parseFloat(cs(ft).borderTopLeftRadius) >= 12 && parseFloat(cs(ft).borderTopWidth) > 0.5, nombreBlanco: cs(n).color === 'rgb(255, 255, 255)', rolSinCyanPleno: cs(rol).color !== 'rgb(0, 229, 255)' && cs(rol).color !== 'rgb(34, 211, 238)',
+          sinAdornos: cs(n, '::after').display === 'none' && cs(rol, '::after').display === 'none', unSoloAcento: !!ft.querySelector('p b') && cs(ft.querySelector('p b')).color === 'rgb(238, 90, 18)' };
       }
       if(c.caso === 'pantallaCompletaFases'){
         var TM = w.CoachWodTimer, FS = w.CoachTimerFull, DN = w.Date.now, T0 = 1700000000000, reloj = T0, o = {}, cls = d.body.className, sa = d.createElement('style');
@@ -1462,9 +1463,76 @@
         bancoCierreExtendida: por('metcon').length > 0 && por('metcon').every(function(b){ return b.optional === true; }),
         hyroxIntervalosEstandar: hxMain.length > 0 && hxMain.every(function(x){ return !x.optional; }) && hxCore.length > 0 && hxCore.every(function(x){ return x.optional === true; }), bancoPrincipalesEstandar: por('calentamiento').concat(por('fuerza'), por('hipertrofia')).length > 5 && por('calentamiento').concat(por('fuerza'), por('hipertrofia')).every(function(b){ return !b.optional; }) };
     }
+    /* generadores de tips del Builder en el formato del Banco de Rutinas y firma sin nombre repetido (Builder real) */
+    if(c.caso === 'tipsBanco' || c.caso === 'normaliza' || c.caso === 'cambioEj' || c.caso === 'footerUnNombre'){
+      var CA = win.CoachAuto; if(!CA || !CA.tipsBanco) throw new Error('el Builder no expone CoachAuto.tipsBanco');
+      var S0 = getS(), exs = S0.exercises, exPor = function(n){ return exs.filter(function(e){ return e.es === n; })[0]; };
+      if(c.caso === 'tipsBanco'){
+        var ex1 = exPor('Press de banca plano con barra') || exs[0], kb = win.__jpPB.kbDe(ex1.es), L = CA.tipsBanco(ex1, { ath: null }), L2 = CA.tipsBanco(ex1, { ath: null, codigo: 'A2', tempo: '3011' });
+        var palabras = function(t){ return String(t).replace(/^[^:]+:\s*/, '').trim().split(/\s+/).length; };
+        return { tresLineas: L.length === 3, rotulosDelBanco: /^SET-UP: /.test(L[0]) && /^CUE EFICIENTE: /.test(L[1]) && /^CUIDADO \/ ERROR COMÚN: /.test(L[2]), textoDelBanco: L[0].indexOf(kb.s.split(' ').slice(0, 6).join(' ')) > 0 && L[1].indexOf(kb.c.split(' ').slice(0, 6).join(' ')) > 0 && L[2].indexOf(kb.x.split(' ').slice(0, 6).join(' ')) > 0,
+          concisas: L.every(function(l){ return palabras(l) <= 41; }), sinEmojis: !/[⚠⛔⭐]|\uD83D/.test(L.join(' ')),
+          bisetConEstacion: L2.length === 3 && L2.every(function(l){ return /^A2 · /.test(l); }) && /A2 · CUE EFICIENTE: Tempo 3011 — /.test(L2[1]),
+          notaCompletaIgual: CA.notaCompleta(ex1, '2011', null) === L.join('\n'),
+          bibliotecaLocal: win.CoachEx.localTips(ex1).split('\n').length === 3 && /^SET-UP: /.test(win.CoachEx.localTips(ex1)),
+          respetaNotaEnFormatoBanco: CA.tipsBanco({ es: 'Ejercicio X', aviso: 'SET-UP: a\nCUE EFICIENTE: b\nCUIDADO / ERROR COMÚN: c' }, { ath: null }).join('|') === 'SET-UP: a|CUE EFICIENTE: b|CUIDADO / ERROR COMÚN: c' };
+      }
+      if(c.caso === 'normaliza'){
+        var n1 = CA.normalizarTips('SET-UP: postura firme\nCLAVE: tempo 3110 y rango largo\nCUIDADO: no arquees la lumbar\nTRANSICIÓN: pasá al A2 sin pausa'), n2 = CA.normalizarTips('A1 · CLAVE: empujá\nA1 · CUIDADO: sin rebote\nA2 · SET-UP: apoyo firme');
+        var largo = CA.normalizarTips('SET-UP: ' + new Array(60).join('palabra '));
+        return { rotulosEstandar: n1.split('\n').slice(0, 3).map(function(l){ return l.split(':')[0]; }).join('|') === 'SET-UP|CUE EFICIENTE|CUIDADO / ERROR COMÚN', otrasLineasIntactas: /^TRANSICIÓN: pasá al A2/.test(n1.split('\n')[3]),
+          bisetConserva: n2 === 'A1 · CUE EFICIENTE: empujá\nA1 · CUIDADO / ERROR COMÚN: sin rebote\nA2 · SET-UP: apoyo firme', recortaLargos: largo.split(' ').length <= 31 && /…$/.test(largo) };
+      }
+      if(c.caso === 'cambioEj'){
+        var a = exPor('Press de banca plano con barra') || exs[0], b2 = exs.filter(function(e){ return e.id !== a.id && /remo/i.test(e.es); })[0] || exs[1], blk = { tempo: '3010', tips: '' };
+        var cambio = CA.tipsAlCambiarEjercicio;
+        var vacio = cambio(blk, a, b2, null); blk.tips = CA.notaCompleta(a, '3010', null); var auto = cambio(blk, a, b2, null); blk.tips = 'Mi nota propia: no bajes tanto la barra.'; var manual = cambio(blk, a, b2, null);
+        return { vacioSeEscribe: typeof vacio === 'string' && /^SET-UP: /.test(vacio), automaticaSeReescribe: auto === CA.notaCompleta(b2, '3010', null) && auto !== CA.notaCompleta(a, '3010', null), manualSeRespeta: manual === null, mismoFormatoQueElBanco: /CUE EFICIENTE: /.test(auto) && auto.split('\n').length === 3 };
+      }
+      if(c.caso === 'footerUnNombre'){
+        var id = 'ath_test_footer', fake = { id: id, nombre: 'Ana', apellido: 'Pérez', freq: 3, nivel: 'intermedio', genero: 'F', createdAt: Date.now() }, out = {};
+        S0.athletes.push(fake);
+        try{
+          S0.plans[id] = win.newPlan(fake); var p0 = S0.plans[id];
+          var tomar = function(h){ var i = h.indexOf('<footer class="site-footer">'), j = h.indexOf('</footer>', i); return h.slice(i, j); };
+          var conNombre = tomar(win.compile(fake)), nPor = function(h){ return h.split('Ana').length - 1; };
+          p0.meta.footer2 = 'Mesociclo de 4 semanas · Planificación personalizada para Ana Pérez';
+          var guardado = tomar(win.compile(fake));
+          out = { nombreUnaVez: nPor(guardado) === 1 && nPor(conNombre) <= 1, arribaConElNombre: /Programación generada para Ana/.test(guardado), segundaSinNombre: /Planificación personalizada<\/p>/.test(guardado) && !/personalizada para/.test(guardado),
+            conservaFirma: /jp-firma/.test(guardado) && /build /.test(guardado), datoGuardadoIntacto: p0.meta.footer2.indexOf('para Ana Pérez') > 0 };
+        } finally { delete S0.plans[id]; S0.athletes.splice(S0.athletes.indexOf(fake), 1); }
+        return out;
+      }
+    }
     var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
     var d = w.document, st = w.eval('state'), modo0 = st.mode, cs = function(e, p){ return w.getComputedStyle(e, p || null); };
     try{
+      if(c.caso === 'bordes'){
+        var host = d.getElementById('mainContent') || d.body, caja = d.createElement('div');
+        caja.innerHTML = '<div class="wod-board jp-sb-board"><div class="jp-sb-ex"><div class="jp-ex-cajas jp-notas"><div class="jp-notas-chips"><span class="jp-notas-lb">Notas</span><button type="button" class="jp-nota-chip">Coaching</button></div></div></div><details class="jp-block-details" open><summary class="jp-summary-btn"><span>PAUTAS</span></summary><div>texto</div></details></div>' +
+          '<details class="jp-criterio jp-criterio-dia" open><summary><span>CRITERIO DEL DÍA</span></summary><div>x</div></details>';
+        host.appendChild(caja);
+        try{
+          var det = caja.querySelector('details.jp-block-details'), sm = det.querySelector('summary'), cr = caja.querySelector('details.jp-criterio-dia'), crs = cr.querySelector('summary');
+          return { sinFileteRecto: parseFloat(cs(det).borderTopWidth) === 0 && parseFloat(cs(det).borderLeftWidth) === 0 && parseFloat(cs(det).borderBottomWidth) === 0, contornoSoloDelBoton: parseFloat(cs(sm).borderTopWidth) > 0.5 && parseFloat(cs(sm).borderTopLeftRadius) === 12,
+            criterioUnaEsquina: parseFloat(cs(cr).borderTopLeftRadius) === 12 && cs(cr).overflow === 'hidden' && parseFloat(cs(crs).borderTopWidth) === 0, criterioContornoPropio: parseFloat(cs(cr).borderTopWidth) > 0.5 };
+        } finally { caja.parentNode.removeChild(caja); }
+      }
+      if(c.caso === 'notasEtiqueta'){
+        var u2 = d.createElement('div'); u2.className = 'jp-sb-ex';
+        u2.innerHTML = '<div class="jp-qc"><details class="jp-ex-tips"><summary>T</summary><div class="jp-ex-tips-b">x</div></details></div><div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>O</summary><div class="jp-ex-box-b">o</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>T</summary><div class="jp-ex-box-s">2011</div><div class="jp-ex-box-b">t</div></details></div>';
+        (d.getElementById('mainContent') || d.body).appendChild(u2);
+        try{
+          w.jpNotasAgrupar(u2);
+          var fl = u2.querySelector('.jp-notas-chips'), tx = [].slice.call(fl.querySelectorAll('.jp-nota-chip')).map(function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim().toUpperCase(); });
+          return { conRotuloNotas: /^NOTAS$/i.test(String(fl.querySelector('.jp-notas-lb').textContent).trim()), sinBotonTipsSuelto: tx.indexOf('TIPS') < 0 && tx[0] === 'COACHING', botones: tx.join('|') === 'COACHING|OBJETIVO|TEMPO 2011', sinIconos: !fl.querySelector('.jp-nota-ic'), enUnaLinea: fl.getBoundingClientRect().height <= 34, aireAntesDeLasPautas: parseFloat(cs(u2.querySelector('.jp-ex-cajas')).marginTop) >= 8 };
+        } finally { if(u2.parentNode) u2.parentNode.removeChild(u2); }
+      }
+      if(c.caso === 'firmaFooter'){
+        var ft2 = d.querySelector('.site-footer'), ps = [].slice.call(ft2.querySelectorAll('p')), nom = (d.getElementById('hdcName') || {}).textContent || '';
+        var textos = ps.map(function(p){ return String(p.textContent); }).join(' || ');
+        return { nombreUnaSolaVez: !nom || textos.split(nom.trim()).length - 1 <= 1, sinDivisoresDeColor: cs(ft2.querySelector('.jp-firma-n'), '::after').display === 'none' && cs(ft2.querySelector('.jp-firma-r'), '::after').display === 'none', espaciadoParejo: parseFloat(cs(ft2.querySelector('.jp-firma')).paddingTop) >= 16 && parseFloat(cs(ft2.querySelector('.jp-build')).marginTop) >= 12 };
+      }
       if(c.caso === 'selector'){
         st.mode = 'complete'; w.renderMain();
         var ver = d.getElementById('jpVer'); if(!ver) return { sinSelector: true };

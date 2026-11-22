@@ -1095,9 +1095,9 @@
       if(fila) fila.parentNode.removeChild(fila);
       var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
       fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
-      fila.innerHTML = hay.map(function(d){
+      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
         var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
-        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '"><span class="jp-nota-ic" aria-hidden="true">' + d.ic + '</span>' + escSB(jpT(d.lb)) + extra + '</button>';
+        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
       }).join('');
       caj.insertBefore(fila, caj.firstChild);
     });

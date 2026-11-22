@@ -8,7 +8,7 @@ JP_I18N.add('es', {
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
   /* notas del ejercicio agrupadas, versión de la sesión y plan de cargas */
-  'app.notas.tips': 'Tips', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
+  'app.notas.lb': 'Notas', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
   'app.ver.t': 'Versión de la sesión', 'app.ver.std': 'ESTÁNDAR', 'app.ver.ext': 'EXTENDIDA', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
   'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
   'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',

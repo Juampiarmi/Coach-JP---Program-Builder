@@ -6,7 +6,7 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
-  'app.notas.tips': 'Tips', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
+  'app.notas.lb': 'Notes', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
   'app.ver.t': 'Session version', 'app.ver.std': 'STANDARD', 'app.ver.ext': 'EXTENDED', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
   'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
   'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',

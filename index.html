@@ -3522,8 +3522,10 @@ function jpLgFichaEj(ex){
     ? 'Suma capacidad aeróbica y de fuerza-resistencia con ' + ex.es + ': el esfuerzo se regula con el RIR indicado y la técnica no se negocia aunque llegue la fatiga.'
     : 'Estimulás ' + String(ex.grupo || 'el grupo muscular objetivo').toLowerCase() + (ex.patron ? ' (' + String(ex.patron).toLowerCase() + ')' : '') + ' con ' + ex.es + ', técnica controlada y rango completo.');
   const cue = !generico && kb.c ? kb.c : '';
-  const pauta = ex.es.toUpperCase() + ': ' + ([ex.aviso, cue].filter(Boolean).join(' ') || 'Ejecución controlada y rango completo; si una articulación molesta, regresioná el ejercicio.');
-  return { objetivo: objetivo, pauta: pauta };
+  const CAU = window.CoachAuto;
+  const pautaLineas = codigo => (CAU && CAU.tipsBanco) ? CAU.tipsBanco(ex, { ath: null, codigo: codigo || '' }) : [];
+  const pauta = pautaLineas('').join('\n') || (ex.es.toUpperCase() + ': ' + ([ex.aviso, cue].filter(Boolean).join(' ') || 'Ejecución controlada y rango completo; si una articulación molesta, regresioná el ejercicio.'));
+  return { objetivo: objetivo, pauta: pauta, pautaLineas: pautaLineas };
 }
 function jpLgSepararLista(d, b){
   const p = jpLgParsear(b.items), n = p.grupo.length, ks = jpLgEstacionesDe(p);
@@ -3597,7 +3599,13 @@ function jpLgReemplazarLista(b, ath, estricto){
   const claves = [nombreViejo, e.es, e.en].filter(Boolean).map(norm);
   b.tips = String(b.tips || '').split(/\r?\n/).filter(l => { const m = /^\s*([^:]{2,80}):/.exec(l); return !(m && claves.indexOf(norm(m[1])) >= 0); }).join('\n');
   const fichaAlt = jpLgFichaEj(alt);
-  if(fichaAlt.pauta) b.tips = (b.tips ? b.tips + '\n' : '') + fichaAlt.pauta;
+  /* las pautas del ejercicio que se va (con el código de su estación, "A2 · SET-UP: ...") se reemplazan por las del nuevo, en el formato del Banco */
+  const itemViejo = (Array.isArray(b.items) ? b.items : []).map(l => JP_RX_ALINEA.exec(String(l).trim())).filter(m => m && norm(/^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4])[1].trim()) === norm(nuevoNombre))[0];
+  const codigoEst = itemViejo ? itemViejo[1].toUpperCase() + itemViejo[2] : '';
+  if(codigoEst) b.tips = String(b.tips || '').split(/\r?\n/).filter(l => !new RegExp('^\\s*' + codigoEst + '\\s*·', 'i').test(l)).join('\n');
+  else if(p.grupo.length === 1) b.tips = String(b.tips || '').split(/\r?\n/).filter(l => !/^\s*(SET-?UP|CUE EFICIENTE|CUIDADO)/i.test(l)).join('\n');
+  const lineasAlt = fichaAlt.pautaLineas ? fichaAlt.pautaLineas(codigoEst).join('\n') : fichaAlt.pauta;
+  if(lineasAlt) b.tips = (b.tips ? b.tips + '\n' : '') + lineasAlt;
   return { viejo: e.es, nuevo: alt.es, estacion: jpEstacionLb(jpEstacion(alt), alt) };
 }
 /* Plantillas del sistema (y registros guardados que el coach pida reparar): ningún biset / triset puede cruzar el salón. Primero se busca un reemplazo del mismo patrón en la
@@ -9193,12 +9201,12 @@ async function generarTipsSportsCore(bid, btn){
     'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
     'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
     'y "coaching tips" en EXACTAMENTE TRES líneas separadas por salto de línea, cada una con una etiqueta de UNA sola palabra en mayúsculas y de 15 a 20 palabras como máximo: ' +
-    '"SET-UP: clave postural y anclaje inicial", "CLAVE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO: la compensación crítica más frecuente a evitar" ' +
+    '"SET-UP: clave postural y anclaje inicial", "CUE EFICIENTE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO / ERROR COMÚN: la compensación crítica más frecuente a evitar" ' +
     '(sin párrafos de justificación biomecánica, citando el ejercicio real). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las tres líneas).';
   const sistema = esBiset
     ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
       'Escribís en español rioplatense, corto y directo (sin emojis, sin relleno): un "objetivo del bloque" (1 frase fisiológica) y "tips" con UNA línea por estación y por etapa, separadas por salto de línea, ' +
-      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CLAVE: ...", "A1 · CUIDADO: ...", "A2 · SET-UP: ...", "A2 · CLAVE: ...", "A2 · CUIDADO: ..." ' +
+      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ...", "A2 · CUE EFICIENTE: ...", "A2 · CUIDADO / ERROR COMÚN: ..." ' +
       '(15 a 20 palabras como máximo por línea; postura, tempo/intención y compensación crítica puntuales de CADA ejercicio; nunca mezcles los dos ejercicios en la misma línea). Cerrá con una última línea "TRANSICIÓN: ..." con la regla de cambio entre estaciones y el descanso final. Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
     : sistemaStd;
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
@@ -9226,7 +9234,10 @@ async function generarTipsSportsCore(bid, btn){
       let lin = tips
         .replace(/\s*(?=(?:SET-?UP|CLAVE|CUIDADO|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, (m, off, whole) => /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : '\n')
         .replace(/\s*(?=\b[A-F]\d\s*·\s*(?:SET-?UP|CLAVE|CUIDADO|ACCI[OÓ]N|ERROR)[^:\n]{0,40}:)/g, '\n')
-        .replace(/^\n+/, '').replace(/\n{2,}/g, '\n').split('\n').filter(Boolean).map(topar);
+        .replace(/^\n+/, '').replace(/\n{2,}/g, '\n').split('\n').filter(Boolean);
+      /* rótulos y largo del Banco de Rutinas: SET-UP / CUE EFICIENTE / CUIDADO / ERROR COMÚN, una frase corta por punto */
+      if(window.CoachAuto && window.CoachAuto.normalizarTips) lin = window.CoachAuto.normalizarTips(lin.join('\n')).split('\n').filter(Boolean);
+      lin = lin.map(topar);
       if(esBiset){ const cuenta = {}; lin = lin.filter(l => { const L = (l.match(/^([A-F]\d)\b/) || [])[1] || '_'; cuenta[L] = (cuenta[L] || 0) + 1; return cuenta[L] <= 3; }); }
       else lin = lin.slice(0, 3);
       b.tips = lin.join('\n');
@@ -9984,10 +9995,13 @@ function bindBuilder(){
     if(t.dataset.bf === 'exId' || t.dataset.sf === 'exId' || t.dataset.ff === 'exId'){
       const b = findBlock(t.dataset.b); if(!b) return;
       if(t.dataset.bf === 'exId'){
+        const exViejo = b.exId ? getEx(b.exId) : null, CA0 = window.CoachAuto;
+        const tipsNuevos = (CA0 && CA0.tipsAlCambiarEjercicio) ? CA0.tipsAlCambiarEjercicio(b, exViejo, getEx(t.value), active()) : null;
         b.exId = t.value;
         const ex = getEx(t.value);
-        if(ex && (!b.titulo || b.titulo === TIPOS.block.lb)) b.titulo = ex.es;
-        if(ex && !b.tips) b.tips = (window.CoachAuto && window.CoachAuto.notaCompleta) ? window.CoachAuto.notaCompleta(ex, b.tempo, active()) : (ex.aviso || '');
+        if(ex && (!b.titulo || b.titulo === TIPOS.block.lb || (exViejo && b.titulo === exViejo.es))) b.titulo = ex.es;
+        /* al cambiar el ejercicio las pautas se reescriben en el formato del Banco; si el coach las había editado a mano, se respetan */
+        if(ex && tipsNuevos != null) b.tips = tipsNuevos;
       }
       if(t.dataset.sf === 'exId'){
         const previoAuto = autoTituloBiset(b.ejercicios);
@@ -10339,7 +10353,7 @@ JP_I18N.add('es', {
   'app.card.obj.s': 'Qué trabajás y por qué',
   'app.card.tempo.t': 'TEMPO (CADENCIA)',
   /* notas del ejercicio agrupadas, versión de la sesión y plan de cargas */
-  'app.notas.tips': 'Tips', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
+  'app.notas.lb': 'Notas', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Objetivo', 'app.notas.tempo': 'Tempo',
   'app.ver.t': 'Versión de la sesión', 'app.ver.std': 'ESTÁNDAR', 'app.ver.ext': 'EXTENDIDA', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
   'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
   'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
@@ -10380,7 +10394,7 @@ JP_I18N.add('en', {
   'app.card.obj.t': 'PHYSIOLOGICAL GOAL',
   'app.card.obj.s': 'What you train and why',
   'app.card.tempo.t': 'TEMPO (CADENCE)',
-  'app.notas.tips': 'Tips', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
+  'app.notas.lb': 'Notes', 'app.notas.tips': 'Coaching', 'app.notas.obj': 'Goal', 'app.notas.tempo': 'Tempo',
   'app.ver.t': 'Session version', 'app.ver.std': 'STANDARD', 'app.ver.ext': 'EXTENDED', 'app.ver.m60': '60 MIN', 'app.ver.m90': '90 MIN',
   'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
   'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
@@ -18075,9 +18089,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(fila) fila.parentNode.removeChild(fila);
       var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
       fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
-      fila.innerHTML = hay.map(function(d){
+      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
         var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
-        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '"><span class="jp-nota-ic" aria-hidden="true">' + d.ic + '</span>' + escSB(jpT(d.lb)) + extra + '</button>';
+        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
       }).join('');
       caj.insertBefore(fila, caj.firstChild);
     });
@@ -48750,6 +48764,36 @@ html body:not(#_):not(#__) .jp-pl-w.hoy{ background:rgba(255,194,75,.12); border
 html body:not(#_):not(#__) .jp-pl-w.hoy small, html body:not(#_):not(#__) .jp-pl-w.hoy b{ color:#FFC24B; }
 html body:not(#_):not(#__) .jp-pl-w.jp-pl-descarga small{ color:#5CE1FF; }
 html body:not(#_):not(#__) .jp-pl-w.jp-pl-pico small{ color:#FF9466; }
+
+/* ---------- 4 · contornos únicos: sin líneas rectas pegadas a las esquinas redondeadas ----------
+   "Pautas técnicas & tips del bloque": el <details> de afuera dibujaba un filete recto de 1 px arriba (border-top, 084) que chocaba con la esquina redondeada del botón de adentro. El contorno
+   es solo el del botón. Lo mismo en "Criterio del día": la caja de afuera (radio 6) y su botón (radio 12) ahora comparten una sola esquina recortada. */
+html body:not(#_):not(#__) details.jp-block-details{ border:0 !important; border-top:0 !important; border-radius:0 !important; background:none !important; box-shadow:none !important; padding-top:0 !important; }
+html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia{ border-radius:12px !important; overflow:hidden !important; }
+html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia > summary{ border-radius:0 !important; border-width:0 !important; box-shadow:none !important; }
+
+/* ---------- 5 · notas del ejercicio: la fila se lee como parte de la tarjeta y no como un botón suelto ---------- */
+html body:not(#_):not(#__) .jp-notas-lb{ flex:0 0 auto; align-self:center; font:800 .58rem/1 'Chakra Petch',sans-serif; letter-spacing:.16em; text-transform:uppercase; color:#7F93C4; margin-right:2px; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ margin:10px 0 2px; }
+html body:not(#_):not(#__) .jp-sb-ex + .jp-sb-vid-title, html body:not(#_):not(#__) .jp-sb-bracket + .jp-sb-vid-title{ margin-top:12px; }
+
+/* ---------- 6 · firma de la programación: nombre una sola vez, un solo acento y un ritmo vertical parejo ---------- */
+html body:not(#_):not(#__) .site-footer{
+  margin:34px 20px 0 !important; padding:22px 20px 18px !important; border:1px solid rgba(150,178,240,.24) !important; box-shadow:0 18px 40px -26px rgba(0,0,0,.85) !important;
+}
+html body:not(#_):not(#__) .site-footer p{ margin:0 0 4px !important; font-size:.74rem; line-height:1.5; color:#9FB0D8 !important; }
+html body:not(#_):not(#__) .site-footer p:first-child{ font-size:.78rem; margin-bottom:6px !important; }
+html body:not(#_):not(#__) .site-footer p b{ color:#EE5A12 !important; letter-spacing:.14em; }
+html body:not(#_):not(#__) .site-footer .jp-firma{ margin:18px 0 0 !important; padding:18px 0 0 !important; border-top:1px solid rgba(150,178,240,.18) !important; }
+html body:not(#_):not(#__) .site-footer .jp-firma-n{ margin:0 0 6px; }
+html body:not(#_):not(#__) .site-footer .jp-firma-n::after, html body:not(#_):not(#__) .site-footer .jp-firma-r::after{ content:none !important; display:none !important; }
+html body:not(#_):not(#__) .site-footer .jp-firma .jp-firma-n{ color:#FFFFFF !important; }
+html body:not(#_):not(#__) .site-footer .jp-build{ margin:16px 0 0 !important; }
+/* la fila de notas cabe en una línea también a 360 px: botones y rótulo más compactos */
+html body:not(#_):not(#__) .jp-notas-chips{ flex-wrap:nowrap; gap:5px; align-items:center; }
+html body:not(#_):not(#__) .jp-nota-chip{ min-height:28px; padding:0 8px; gap:4px; font-size:.6rem; letter-spacing:.06em; white-space:nowrap; flex:0 1 auto; min-width:0; }
+html body:not(#_):not(#__) .jp-nota-chip b{ letter-spacing:.04em; }
+html body:not(#_):not(#__) .jp-notas-lb{ font-size:.54rem; letter-spacing:.12em; margin-right:0; }
 </style>
 
 </body>
@@ -49625,7 +49669,8 @@ function compile(ath){
     HERO_H1: (M.heroTitle || '') + (M.heroEm ? ' <em>' + M.heroEm + '</em>' : ''),
     HERO_SUB: M.heroSub || '',
     FOOTER_1: '<b>Coach JP</b> — Programación generada para ' + nombre,
-    FOOTER_2: M.footer2 || '',
+    /* el nombre del alumno figura UNA sola vez arriba (FOOTER_1): a los planes guardados con "… personalizada para <nombre>" se les quita el nombre repetido al compilar (el dato guardado no se toca) */
+    FOOTER_2: String(M.footer2 || '').replace(/(personalizada)\s+para\s+.+$/i, '$1'),
     STORAGE_KEY: 'coachjp_' + slug(nombre) + '_progress_v1',
     GUIDE_PROGRESSION_ROWS: guideRows,
     PAIN_RESTRICTIONS: painRestrictionsHtml(ath),
@@ -52477,14 +52522,14 @@ document.addEventListener('DOMContentLoaded', init);
         if(P) b.restSeconds = P.rest;
         if(!b.tips && b.ejercicios.length){
           const pr = S.exercises.find(e => e.id === b.ejercicios[0].exId);
-          b.tips = 'Encadenado sin pausa entre A y B; el descanso va recién al cerrar la ronda. ' + autoNota(pr, b.ejercicios[0].tempo, ath);
+          b.tips = 'Encadenado sin pausa entre A y B; el descanso va recién al cerrar la ronda.\n' + autoNota(pr, b.ejercicios[0].tempo, ath);
         }
       }
       if(spec.tipo === 'finisher'){
         const ex = pick(spec.picks[0], ath, used);
         if(ex){ used.push(ex.id); b.fin.push({ exId: ex.id, repsRange: P ? P.reps : '15-20' }); }
         else notas.push('Sin candidato seguro para el finisher.');
-        if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + autoNota(ex, '1010', ath);
+        if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + autoNota(ex, '1010', ath);
       }
       /* dosificación auditada: si la estructura la trae, manda sobre el preset */
       if(spec.dosis){
@@ -53490,7 +53535,7 @@ document.addEventListener('DOMContentLoaded', init);
         if(b.ejercicios.length < 2) notasOut.push('«' + b.titulo + '» (' + arch.titulo + ') quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
         if(!b.tips && b.ejercicios.length){
           var pr = getEx(b.ejercicios[0].exId);
-          b.tips = (spec.pap ? 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa. ' : 'Encadenado sin pausa entre A y B. ') + autoNotaElite(pr, ath);
+          b.tips = (spec.pap ? 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa.\n' : 'Encadenado sin pausa entre A y B.\n') + autoNotaElite(pr, ath);
         }
       }
       if(spec.tipo === 'finisher'){
@@ -55118,39 +55163,69 @@ body{overflow-x:hidden}
     'Cardio / Metcon':'Respiración rítmica y sostenida; si te quedás sin aire, bajá el ritmo antes que la técnica.'
   };
 
-  /* pauta técnica completa: cues + respiración + tempo + riesgo + reglas del alumno */
-  function notaCompleta(ex, tempo, ath){
-    if(!ex) return '';
-    const partes = [];
-
-    /* a) ejecución, postura y respiración */
-    if(ex.aviso) partes.push(ex.aviso);
-    else if(CUE_PATRON[ex.patron]) partes.push(CUE_PATRON[ex.patron]);
-    const resp = RESP[ex.patron];
-    if(resp) partes.push(resp);
-
-    /* b) lectura del tempo configurado */
-    const t = explicarTempo(tempo);
-    if(t) partes.push(t);
-
-    /* c) advertencia articular por zona comprometida */
-    const zonas = (ex.riesgo || []).filter(z => CUES[z]);
-    if(zonas.length){
-      partes.push('⚠️ Riesgo articular (' + zonas.map(z => (ZONA_LB[z] || z).toLowerCase()).join(', ') + '): ' +
-        zonas.map(z => CUES[z]).join(' '));
+  /* PAUTAS EN EL FORMATO DEL BANCO DE RUTINAS: tres puntos cortos (SET-UP · CUE EFICIENTE · CUIDADO / ERROR COMÚN), un ejercicio por tres líneas ("A1 · SET-UP: ..." dentro de un biset).
+     Los textos salen de la misma base de conocimiento que el Banco (window.__jpPB.kbDe); si el ejercicio no está ahí se arma con su Coach Note, su patrón y sus zonas de riesgo.
+     Las reglas del alumno/a (restricciones, advertencias) se suman al CUIDADO: nunca se pierden. Una sola fuente para: cambiar un ejercicio, generar semana, importar, "Coach Note" de la biblioteca. */
+  const RX_KB_GENERICO = /grupo muscular objetivo con técnica controlada/;
+  function recortarPalabras(t, max){
+    const w = String(t || '').trim().split(/\s+/);
+    return w.length > max ? w.slice(0, max).join(' ').replace(/[,;:]+$/, '') + '…' : String(t || '').trim();
+  }
+  function tipsBanco(ex, o){
+    o = o || {};
+    if(!ex) return [];
+    const pre = o.codigo ? o.codigo + ' · ' : '';
+    /* una Coach Note ya escrita en el formato del Banco se respeta tal cual */
+    const propio = String(ex.aviso || '');
+    if(/(^|\n)\s*SET-?UP\s*:/i.test(propio) && /CUE EFICIENTE\s*:/i.test(propio)){
+      return propio.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => /^[A-F]\d\s*·/.test(l) ? l : pre + l);
     }
-
-    /* d) cruce con las reglas del alumno/a activo */
-    const A = ath || active();
+    const kb = (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null;
+    const generico = !kb || RX_KB_GENERICO.test(kb.o || '');
+    let su, cue, cu;
+    if(!generico){ su = kb.s; cue = kb.c; cu = kb.x; }
+    else {
+      su = propio || CUE_PATRON[ex.patron] || 'Posición estable, columna neutra y rango completo, de punta a punta.';
+      cue = RESP[ex.patron] || 'Movimiento controlado y respiración sostenida: la técnica manda por encima de la carga.';
+      const zonas = (ex.riesgo || []).filter(z => CUES[z]);
+      cu = zonas.length ? zonas.map(z => CUES[z]).join(' ') : 'No compenses con el tronco ni cortes el recorrido; si una articulación molesta, regresioná el ejercicio.';
+    }
+    const tp = String(o.tempo || '').replace(/\D/g, '');
+    if(o.codigo && /^\d{4}$/.test(tp)) cue = 'Tempo ' + tp + ' — ' + cue;      /* en un biset el tempo de cada estación viaja en su CUE (igual que el Banco) */
+    const A = o.ath === undefined ? active() : o.ath;
     if(A){
-      const al = checkExercise(A, ex);
-      al.forEach(a => {
-        if(a.level === 'danger') partes.push('⛔ RESTRINGIDO para ' + fullName(A) + ' — ' + a.msg);
-        else if(a.level === 'warn') partes.push('⚠️ ' + a.msg);
-        else if(a.level === 'good') partes.push('⭐ Ejercicio prioritario para ' + fullName(A) + '.');
+      const msgs = [];
+      checkExercise(A, ex).forEach(a => {
+        if(a.level === 'danger') msgs.push('Restringido para ' + fullName(A) + ': ' + a.msg);
+        else if(a.level === 'warn') msgs.push(a.msg);
       });
+      if(msgs.length) cu += ' ' + msgs.join(' ');
     }
-    return partes.join(' ');
+    return [pre + 'SET-UP: ' + recortarPalabras(su, 26), pre + 'CUE EFICIENTE: ' + recortarPalabras(cue, 30), pre + 'CUIDADO / ERROR COMÚN: ' + recortarPalabras(cu, 40)];
+  }
+  /* cualquier texto de tips (IA, importado, escrito a mano) → rótulos del Banco; las líneas sin rótulo conocido quedan como están */
+  function normalizarTips(texto){
+    return String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const m = /^(?:([A-F]\d)\s*·\s*)?([^:]{2,40}):\s*(.+)$/.exec(l); if(!m) return l;
+      const et = m[2].trim().toUpperCase(), pre = m[1] ? m[1] + ' · ' : '';
+      let rotulo = null;
+      if(/^SET-?\s*UP/.test(et) || /^(POSTURA|POSICI)/.test(et)) rotulo = 'SET-UP';
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO|T[ÉE]CNICA|INTENCI)/.test(et)) rotulo = 'CUE EFICIENTE';
+      else if(/^(CUIDADO|ERROR|PRECAUCI|EVIT|RIESGO|ALERTA)/.test(et)) rotulo = 'CUIDADO / ERROR COMÚN';
+      if(!rotulo) return l;
+      return pre + rotulo + ': ' + recortarPalabras(m[3], 28);
+    }).join('\n');
+  }
+  function notaCompleta(ex, tempo, ath){
+    return tipsBanco(ex, { tempo: tempo, ath: ath }).join('\n');
+  }
+  /* al cambiar el ejercicio de un bloque: devuelve las pautas nuevas (formato del Banco) si las actuales estaban vacías o eran las automáticas del ejercicio anterior;
+     null = el coach las editó a mano y se respetan */
+  function tipsAlCambiarEjercicio(b, exViejo, exNuevo, ath){
+    if(!b || !exNuevo) return null;
+    const actual = String(b.tips || '').trim();
+    const auto = !actual || (exViejo && actual === String(notaCompleta(exViejo, b.tempo, ath)).trim());
+    return auto ? notaCompleta(exNuevo, b.tempo, ath) : null;
   }
   function nota(ex, tempo){ return notaCompleta(ex, tempo, active()); }
 
@@ -55258,7 +55333,7 @@ body{overflow-x:hidden}
         e.repsRange = autoParams(ex, 'finisher').reps;
       });
       const primero = getEx((b.fin[0] || {}).exId);
-      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + notaCompleta(primero, '1010', active());
+      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + notaCompleta(primero, '1010', active());
       resumen.push('rango 15-20 reps · bombeo');
     }
     else { toast('El autocompletado aplica a bloques con ejercicios', 'warn'); return; }
@@ -55326,7 +55401,7 @@ body{overflow-x:hidden}
 
     if(S.ui.view === 'biblioteca') renderLibrary();
     addMagic();
-    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo };
+    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo, tipsBanco: tipsBanco, normalizarTips: normalizarTips, tipsAlCambiarEjercicio: tipsAlCambiarEjercicio };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
@@ -57020,14 +57095,14 @@ body{overflow-x:hidden}
         b.efSets = par.efSets; b.restSeconds = par.rest;
         b.subtitulo = b.ejercicios.length > 2 ? 'Tri-set sin pausa entre ejercicios' : 'Biset sin pausa entre A y B';
         const pr = b.ejercicios.length ? getEx(b.ejercicios[0].exId) : null;
-        b.tips = (b.ejercicios.length > 2 ? 'Tri-set: encadenás A, B y C sin soltar. ' : 'Encadenado sin pausa entre A y B. ') + nota(pr, par.tempo, ath);
+        b.tips = (b.ejercicios.length > 2 ? 'Tri-set: encadenás A, B y C sin soltar.\n' : 'Encadenado sin pausa entre A y B.\n') + nota(pr, par.tempo, ath);
       }
       else if(sl.t === 'finisher'){
         const ex = pick(sl.sp[0], ath, used);
         if(!ex){ avisos.push('Sin finisher seguro'); return; }
         used.push(ex.id);
         b.fin.push({ exId: ex.id, repsRange: P.fin.reps });
-        b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + nota(ex, '1010', ath);
+        b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga.\n' + nota(ex, '1010', ath);
       }
       else if(sl.t === 'list' || sl.t === 'hyrox'){
         /* bloque metabólico / WOD */
@@ -59318,10 +59393,8 @@ body.man-mode .gs-fab{right:318px}
   /* ---------- motor local (sin API) ---------- */
   function localTips(ex){
     const CA = window.CoachAuto;
-    const base = CA && CA.notaCompleta ? CA.notaCompleta(ex, '2011', null) : '';
-    const cue = base.split('.').slice(0, 3).join('.').trim();
-    return (cue || 'Buscá una posición estable, columna neutra y control en todo el recorrido.') +
-           (/\.$/.test(cue) ? '' : '.');
+    const lineas = CA && CA.tipsBanco ? CA.tipsBanco(ex, { ath: null }) : [];
+    return lineas.length ? lineas.join('\n') : 'SET-UP: Buscá una posición estable y columna neutra.\nCUE EFICIENTE: Controlá todo el recorrido.\nCUIDADO / ERROR COMÚN: No compenses con el tronco.';
   }
   const OBJ_PATRON = {
     'Cadera dominante':'Tensión máxima en glúteo mayor e isquiotibiales en el rango de estiramiento; es el patrón que más transfiere a sprint, salto y subida.',
@@ -59357,7 +59430,7 @@ body.man-mode .gs-fab{right:318px}
       '. Grupo: ' + ex.grupo + '. Patrón: ' + ex.patron + '. Equipamiento: ' + ex.equipo +
       (ex.riesgo && ex.riesgo.length ? '. Zonas de riesgo: ' + ex.riesgo.join(', ') : '') +
       '.\nDevolvé SOLO un JSON: {"tips":"...","objetivo":"..."}\n' +
-      '- "tips": 2 o 3 frases directas en español rioplatense, tuteo con "vos" (decí "apretá", "llevá", "exhalá"), sobre postura, alineación y respiración. Sin listas ni markdown.\n' +
+      '- "tips": EXACTAMENTE tres líneas separadas por salto de línea (\\n), en el formato del Banco de Rutinas: "SET-UP: ..." (postura y anclaje inicial), "CUE EFICIENTE: ..." (indicación corta y accionable de la ejecución) y "CUIDADO / ERROR COMÚN: ..." (la compensación típica a evitar). De 10 a 20 palabras por línea, español rioplatense con "vos" (apretá, llevá, exhalá), sin relleno, sin listas ni markdown.\n' +
       '- "objetivo": 1 o 2 frases explicando el beneficio o estímulo muscular/deportivo del ejercicio.';
   }
   async function generar(conIA){
@@ -59394,7 +59467,7 @@ body.man-mode .gs-fab{right:318px}
         if(m) { try{ j = JSON.parse(m[0]); }catch(e2){} }
       }
       if(j && (j.tips || j.objetivo)){
-        setVals(j.tips || localTips(ex), j.objetivo || localObjetivo(ex), 'con IA');
+        setVals(j.tips ? (window.CoachAuto && window.CoachAuto.normalizarTips ? window.CoachAuto.normalizarTips(j.tips) : j.tips) : localTips(ex), j.objetivo || localObjetivo(ex), 'con IA');
         toast('✨ Coach Note y objetivo generados con IA');
       } else {
         setVals(localTips(ex), localObjetivo(ex), 'con el motor local: la IA no devolvió JSON válido');
@@ -60292,7 +60365,7 @@ body.man-mode .gs-fab{right:318px}
       else { b.efSets = 3; b.reps = '10-12'; b.tempo = '3011'; b.restSeconds = 90; }
       b.failCapable = false;
       b.objective = sl.objective || (ex.objetivo || '');
-      b.tips = 'Rango 100% indoloro: si aparece molestia, cortás el recorrido antes. ' + nota(ex, b.tempo, ath);
+      b.tips = 'Rango 100% indoloro: si aparece molestia, cortás el recorrido antes.\n' + nota(ex, b.tempo, ath);
       b.altNote = 'Protocolo activo: ' + prot.resumen;
       bloques.push(b);
     });
@@ -60378,7 +60451,7 @@ body.man-mode .gs-fab{right:318px}
         if(b.tipo === 'superset' && b.ejercicios[s.i]) b.ejercicios[s.i].exId = s.to.id;
         if(b.tipo === 'finisher' && b.fin[s.i]) b.fin[s.i].exId = s.to.id;
         b.altNote = 'Sustituido por protocolo de ' + prot.lb + ' (' + s.from.es + ' → ' + s.to.es + ').';
-        if(!b.tips) b.tips = 'Rango indoloro y control total. ' + nota(s.to, b.tempo || '2011', ath);
+        if(!b.tips) b.tips = 'Rango indoloro y control total.\n' + nota(s.to, b.tempo || '2011', ath);
         n++;
       });
       save(); renderBuilder(); pintarSwaps();
