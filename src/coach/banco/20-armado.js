@@ -82,65 +82,107 @@
     }
     return null;
   }
+  /* ---------- UN SOLO BÁSICO RECTO, TODO LO DEMÁS EN BISETS (2026-11) ----------
+     · el primer ejercicio de fuerza del día (rol F; si no hay, el primer compuesto pesado) queda en series rectas con su descanso completo;
+     · TODOS los demás ejercicios sueltos (otros básicos, hipertrofia y accesorios) se juntan en bisets prácticos: antagonistas o del mismo sector
+       (pecho + espalda, bíceps + tríceps, cuádriceps + isquios, glúteo + gemelo) y, si no, músculo grande + músculo chico (jalón + curl martillo, prensa + gemelo);
+     · nunca dos básicos pesados juntos ni dos compuestos de pierna de hipertrofia (salvo que no quede otra pareja), nunca dos guiados y siempre la regla anti-colisión (estacionOk);
+     · cada estación conserva SUS series ("4/3x8/12"): el volumen semanal por grupo es exactamente el de las filas del día;
+     · descanso de la ronda: el del básico pesado si hay uno (hasta 180 s); si no, el promedio (60-120 s);
+     · el que queda impar entra como tercera estación de un biset compatible (triset); el core y los bisets que ya trae el día no se tocan. */
+  var GRANDE = { 'Pecho': 1, 'Espalda': 1, 'Cuádriceps': 1, 'Isquios': 1, 'Glúteo': 1 };
+  var INF = { 'Glúteo': 1, 'Cuádriceps': 1, 'Isquios': 1 };
+  function afinidadAmplia(g1, g2){
+    var x = afinidad(g1, g2); if(x) return x;
+    if(!g1 || !g2 || g1 === 'Core' || g2 === 'Core') return 0;
+    if(!!GRANDE[g1] !== !!GRANDE[g2]) return 2;      /* músculo grande + músculo chico */
+    return 1;
+  }
+  /* versión portátil (mancuernas / banda / peso corporal) del accesorio, del mismo grupo y compatible con la pareja (JP_PORTATIL, ver logística de sala) */
+  function portatil(c, contra, usados){
+    if(c.pes || c.f.n || typeof jpPortatilDe !== 'function') return null;
+    var ops = jpPortatilDe(c.nuevoNombre || c.n);
+    for(var i = 0; i < ops.length; i++){
+      var nm = ops[i];
+      if(usados[nm] || !PB.exLib(nm) || grupoDe(nm) !== c.g || !estacionOk(contra.nuevoNombre || contra.n, nm)) continue;
+      return { c: c, a: nm };
+    }
+    return null;
+  }
   function agruparHipertrofia(filas, av, genero){
-    var cand = [], usados = {};
+    var cand = [], usados = {}, principal = -1;
     filas.forEach(function(f){ [].concat(f.ej, f.ea || []).forEach(function(n){ if(n) usados[n] = 1; }); });
     filas.forEach(function(f, ix){
-      if((f.rol !== 'H' && f.rol !== 'A') || f.fin || (f.ej == null)) return;
+      if(f.fin || f.ej == null) return;
+      if(f.rol === 'F' && principal < 0){ principal = ix; return; }      /* el básico del día: series rectas */
+      if(f.rol !== 'H' && f.rol !== 'A' && f.rol !== 'F') return;
       var nombres = nombreDe(f, av), dosis = av ? f.a : f.i;
       if(nombres.length !== 1 || !dosis) return;
-      var d = PB.partesDosis(dosis);
-      if(esBasicoPesado(f, d) || /\bpor lado\b/i.test(String(d.reps[0])) && f.rol === 'H' && d.rest >= 120) return;
-      cand.push({ ix: ix, f: f, d: d, n: nombres[0], g: grupoDe(nombres[0]), usado: false });
+      var d = PB.partesDosis(dosis), g = grupoDe(nombres[0]);
+      if(g === 'Core') return;
+      cand.push({ ix: ix, f: f, d: d, n: nombres[0], g: g, pes: f.rol === 'F' || esBasicoPesado(f, d), usado: false });
     });
-    var pares = [];
-    cand.forEach(function(x, k){
-      if(x.usado) return;
-      var mejor = null, mejorPts = 0, mejorCambio = null;
-      for(var j = k + 1; j < cand.length && j <= k + 6; j++){
-        var y = cand[j]; if(y.usado) continue;
-        var pts = afinidad(x.g, y.g); if(!pts || Math.abs(x.d.sets - y.d.sets) > 1) continue;
-        /* dos compuestos pesados de pierna seguidos (rumano + búlgara, prensa + sentadilla) saturan: en pierna al menos una de las dos estaciones es un accesorio (rol A) */
-        var inf = { 'Glúteo': 1, 'Cuádriceps': 1, 'Isquios': 1 };
-        if(inf[x.g] && inf[y.g] && x.f.rol === 'H' && y.f.rol === 'H') continue;
-        var cambio = null;
-        if(!estacionOk(x.n, y.n)){
-          /* estaciones que chocan: se prueba cambiar una de las dos por una variante del mismo grupo que comparta estación con la otra (mancuernas con mancuernas, torre con torre) */
-          var vy = variante(y, x, usados, genero), vx = vy ? null : variante(x, y, usados, genero);
-          if(vy) cambio = { c: y, a: vy }; else if(vx) cambio = { c: x, a: vx }; else continue;
-          pts -= 0.5;
+    /* sin rol F: el primer compuesto pesado hace de básico del día */
+    if(principal < 0){ var p0 = cand.filter(function(c){ return c.pes; })[0]; if(p0) cand.splice(cand.indexOf(p0), 1); }
+    var grupos = [];
+    [0, 1].forEach(function(pasada){
+      cand.forEach(function(x, k){
+        if(x.usado) return;
+        var mejor = null, mejorPts = 0, mejorCambio = null;
+        for(var j = k + 1; j < cand.length; j++){
+          var y = cand[j]; if(y.usado) continue;
+          if(x.pes && y.pes) continue;
+          if(pasada === 0 && INF[x.g] && INF[y.g] && x.f.rol !== 'A' && y.f.rol !== 'A') continue;      /* rumano + búlgara saturan: solo si no queda otra */
+          var pts = afinidadAmplia(x.g, y.g); if(!pts) continue;
+          var cambio = null;
+          if(!estacionOk(x.n, y.n)){
+            cambio = portatil(y, x, usados) || portatil(x, y, usados);
+            if(!cambio){ var vy = variante(y, x, usados, genero), vx = vy ? null : variante(x, y, usados, genero); if(vy) cambio = { c: y, a: vy }; else if(vx) cambio = { c: x, a: vx }; else continue; }
+          }
+          pts = pts * 10 - (j - k) - (cambio ? 4 : 0);
+          if(pts > mejorPts){ mejorPts = pts; mejor = y; mejorCambio = cambio; }
         }
-        /* una serie de diferencia solo si no se infla un grupo que ya está en su techo (pecho y cuádriceps): ahí las dos estaciones deben tener las mismas series.
-           Los pares con una polea o una máquina (regla anti-colisión: máquina fija + material portátil) exigen las mismas series: el volumen semanal del grupo no se mueve */
-        var menor = x.d.sets < y.d.sets ? x : (y.d.sets < x.d.sets ? y : null);
-        if(menor && (menor.g === 'Pecho' || menor.g === 'Cuádriceps')) continue;
-        if(menor && (esFija(x.n) || esFija(y.n))) continue;
-        pts = pts * 10 - Math.abs(x.d.sets - y.d.sets) * 3 - (j - k) - (cambio ? 8 : 0);
-        if(pts > mejorPts){ mejorPts = pts; mejor = y; mejorCambio = cambio; }
-      }
-      if(mejor){
+        if(!mejor) return;
         x.usado = mejor.usado = true;
         if(mejorCambio){ usados[mejorCambio.a] = 1; mejorCambio.c.nuevoNombre = mejorCambio.a; }
-        pares.push([x, mejor]);
-      }
+        grupos.push(mejor.pes && !x.pes ? [mejor, x] : [x, mejor]);      /* el básico pesado va primero (A1) */
+      });
     });
-    if(!pares.length) return filas;
+    /* impares: tercera estación de un biset compatible y sin básico pesado */
+    cand.filter(function(c){ return !c.usado && !c.pes; }).forEach(function(z){
+      var entra = function(gr, nm){ return gr.every(function(c){ return estacionOk(c.nuevoNombre || c.n, nm); }) && gr.filter(function(c){ var t0 = ''; try{ t0 = PB.EST.infoEj(c.nuevoNombre || c.n).t; }catch(e){} return t0 === 'M' || t0 === 'P'; }).length + (function(){ var t1 = ''; try{ t1 = PB.EST.infoEj(nm).t; }catch(e){} return (t1 === 'M' || t1 === 'P') ? 1 : 0; })() < 2; };
+      var alts = (typeof jpPortatilDe === 'function' && !z.f.n) ? jpPortatilDe(z.n).filter(function(nm){ return PB.exLib(nm) && grupoDe(nm) === z.g && !usados[nm]; }) : [];
+      var altPara = function(gr){ for(var i = 0; i < alts.length; i++) if(entra(gr, alts[i])) return alts[i]; return ''; };
+      var ok = grupos.filter(function(gr){ return gr.length === 2 && !gr.some(function(c){ return c.pes; }) && gr.some(function(c){ return afinidadAmplia(c.g, z.g); }) && (entra(gr, z.n) || altPara(gr)); })
+        .sort(function(p, q){ return Math.abs(p[0].ix - z.ix) - Math.abs(q[0].ix - z.ix); })[0];
+      if(ok){ if(!entra(ok, z.n)){ var al = altPara(ok); z.nuevoNombre = al; usados[al] = 1; } ok.push(z); z.usado = true; }
+    });
+    /* un básico pesado que quedó sin pareja liviana encabeza (A1) un biset liviano compatible: triset con el descanso del básico */
+    cand.filter(function(c){ return !c.usado && c.pes; }).forEach(function(z){
+      var ok = grupos.filter(function(gr){ return gr.length === 2 && !gr.some(function(c){ return c.pes; }) && gr.every(function(c){ return estacionOk(c.nuevoNombre || c.n, z.n); }) && gr.some(function(c){ return afinidadAmplia(c.g, z.g); }); })
+        .sort(function(p, q){ return Math.abs(p[0].ix - z.ix) - Math.abs(q[0].ix - z.ix); })[0];
+      if(ok){ ok.unshift(z); z.usado = true; }
+    });
+    if(!grupos.length) return filas;
     var porIx = {}, quitar = {};
-    pares.forEach(function(p){
-      var x = p[0], y = p[1], a1 = x.f, a2 = y.f;
-      var sets = Math.max(x.d.sets, y.d.sets), rest = Math.max(60, Math.min(120, Math.round((x.d.rest + y.d.rest) / 2 / 15) * 15)), tec = y.d.tec || x.d.tec;
-      function dosisPar(lv){
-        var d1 = PB.partesDosis(lv === 'a' ? a1.a : a1.i), d2 = PB.partesDosis(lv === 'a' ? a2.a : a2.i), t = d2.tec || d1.tec;
-        return sets + 'x' + d1.reps[0] + '/' + d2.reps[0] + '|' + d1.rir[0] + '/' + d2.rir[0] + '|' + rest + (t ? '|' + t : '');
+    grupos.forEach(function(gr){
+      var pes = gr.some(function(c){ return c.pes; });
+      function dosisGrupo(lv){
+        var ds = gr.map(function(c){ return PB.partesDosis(lv === 'a' ? (c.f.a || c.f.i) : c.f.i); });
+        var sl = ds.map(function(d){ return d.sets; }), mismas = sl.every(function(s){ return s === sl[0]; });
+        var rs = ds.map(function(d){ return d.rest; }), rest = pes ? Math.min(180, Math.max.apply(null, rs)) : Math.max(60, Math.min(120, Math.round(rs.reduce(function(s, r){ return s + r; }, 0) / rs.length / 15) * 15));
+        var t = ''; ds.forEach(function(d){ if(d.tec) t = d.tec; });
+        return (mismas ? sl[0] : sl.join('/')) + 'x' + ds.map(function(d){ return d.reps[0]; }).join('/') + '|' + ds.map(function(d){ return d.rir[0]; }).join('/') + '|' + rest + (t ? '|' + t : '');
       }
-      var o = { n: [].concat(a1.n || [], a2.n || []) };
+      var o = { n: [].concat.apply([], gr.map(function(c){ return [].concat(c.f.n || []); })) };
       if(!o.n.length) delete o.n;
-      if(a1.tp || a2.tp) o.tp = [(a1.tp && a1.tp[0]) || undefined, (a2.tp && a2.tp[0]) || undefined];
-      var ej = [x.nuevoNombre || [].concat(a1.ej)[0], y.nuevoNombre || [].concat(a2.ej)[0]];
-      if(a1.ea || a2.ea) o.ea = [].concat(a1.ea || a1.ej).concat(a2.ea || a2.ej);
-      var par = PB.R('B', ej, dosisPar('i'), dosisPar('a'), o);
+      if(gr.some(function(c){ return c.f.tp; })) o.tp = gr.map(function(c){ return (c.f.tp && c.f.tp[0]) || undefined; });
+      var ej = gr.map(function(c){ return c.nuevoNombre || [].concat(c.f.ej)[0]; });
+      if(gr.some(function(c){ return c.f.ea; })) o.ea = gr.map(function(c){ return c.nuevoNombre || [].concat(c.f.ea || c.f.ej)[0]; });
+      var par = PB.R(gr.length >= 3 ? 'T' : 'B', ej, dosisGrupo('i'), dosisGrupo('a'), o);
       par.agrupada = true;
-      porIx[x.ix] = par; quitar[y.ix] = true;
+      var primero = Math.min.apply(null, gr.map(function(c){ return c.ix; }));
+      porIx[primero] = par; gr.forEach(function(c){ if(c.ix !== primero) quitar[c.ix] = true; });
     });
     var out = [];
     filas.forEach(function(f, ix){ if(quitar[ix]) return; out.push(porIx[ix] || f); });
@@ -176,7 +218,7 @@
       d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
       return d;
     });
-    try{ if(typeof jpSanearLogisticaDias === 'function') jpSanearLogisticaDias(dias, { id: tpl.id }); }catch(eSn){ console.warn('saneo logística', eSn); }
+    try{ if(typeof jpSanearLogisticaDias === 'function') jpSanearLogisticaDias(dias, { id: tpl.id, sinBisets: true }); }catch(eSn){ console.warn('saneo logística', eSn); }
     return dias;
   }
   function metaDe(tpl){

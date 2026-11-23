@@ -110,6 +110,8 @@
     alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
     alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
     bancoFemenino: { run: function(i){ return bancoFemenino(i); }, valor: function(r){ return r; } },
+    iaMotor:      { run: function(i){ return iaMotor(i); }, valor: function(r){ return r; } },
+    generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -1514,7 +1516,7 @@
       rr.fuerzaRecta = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || '') && x.m; }).every(function(x){ return x.m.ex.length === 1; });
       rr.hayFuerza = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || ''); }).length > 40;
       rr.masBisets = biset.length / (biset.length + recto.length) >= 0.35;
-      rr.mismasSeries = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets === x.m.ex[0].sets; }); });
+      rr.seriesPorEstacion = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets >= 1; }); }) && biset.some(function(x){ return x.m.ex.some(function(e){ return e.sets !== x.m.ex[0].sets; }); });
       rr.noDosGuiados = biset.every(function(x){ var t = x.m.ex.map(function(e){ return EST.infoEj(e.nombre).t; }); return t.filter(function(k){ return k === 'M' || k === 'P'; }).length < 2; });
       rr.mismaEstacion = biset.every(function(x){ if(typeof win.jpEstacion !== 'function') return true; var libs = x.m.ex.map(function(e){ return PB.exLib(e.nombre); }); return libs.every(function(l, i){ return !l || libs.every(function(o, j){ return j >= i || !o || win.jpEstacionCompat(win.jpEstacion(o), win.jpEstacion(l)); }); }); });
       rr.cadaDiaConBiset = jp.every(function(r){ return r.dias.every(function(d){ return (d.bloques || []).some(function(b){ return /Biset|Triset/.test(b.titulo || ''); }); }); });
@@ -1524,8 +1526,16 @@
         R('H', 'Peso muerto rumano', '3x6-8|2|150', '4x6-8|1|180'), R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45'), R('A', 'Patada de tríceps con mancuerna', '3x12-15|1|60', '4x12-15|0|45'),
         R('A', 'Jalón al pecho con agarre ancho', '3x10-12|1|75', '4x10-12|0|60'), R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'), R('C', ['Plancha frontal'], '3x30s|1|45', '3x40s|0|45')];
       var sal = PB.agruparHipertrofia(fil, false, 'm');
-      rr.funcionPura = sal[0].rol === 'F' && sal.filter(function(f){ return f.rol === 'H' && [].concat(f.ej)[0] === 'Peso muerto rumano'; }).length === 1 && sal.filter(function(f){ return f.agrupada; }).length >= 2
-        && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length === 2 && d.sets >= 3 && d.reps.length === 2; })
+      /* volumen intacto: la suma de series por ejercicio antes y después de agrupar es la misma (cada estación conserva las suyas) */
+      var serie = function(lista){ var o = {}; lista.forEach(function(f){ var d = PB.partesDosis(f.i); [].concat(f.ej).forEach(function(n, k){ var gq = ''; try{ gq = EST.infoEj(n).g; }catch(e){} o[gq] = (o[gq] || 0) + (d.setsL && d.setsL[k] != null ? d.setsL[k] : d.sets); }); }); return JSON.stringify(Object.keys(o).sort().map(function(k){ return k + ':' + o[k]; })); };
+      rr.volumenIntacto = serie(fil) === serie(sal);
+      rr.unSoloRecto = sal.filter(function(f){ return f.rol !== 'C' && [].concat(f.ej).length === 1; }).length === 1;
+      /* la función pura: el primer básico (F) queda recto; el segundo básico pesado (rumano) encabeza un biset con un accesorio liviano (nunca con otro pesado);
+         cada grupo tiene sus estaciones con sus propias series; dos poleas nunca van juntas */
+      var conRumano = sal.filter(function(f){ return [].concat(f.ej).indexOf('Peso muerto rumano') >= 0; })[0];
+      rr.funcionPura = sal[0].rol === 'F' && [].concat(sal[0].ej).length === 1 && !!conRumano && conRumano.agrupada && [].concat(conRumano.ej)[0] === 'Peso muerto rumano'
+        && sal.filter(function(f){ return f.agrupada; }).length >= 3
+        && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length >= 2 && d.sets >= 3 && d.reps.length === f.ej.length && d.setsL.length >= 1; })
         && !sal.some(function(f){ return f.agrupada && [].concat(f.ej).indexOf('Jalón al pecho con agarre ancho') >= 0 && [].concat(f.ej).indexOf('Cruce de cables en polea alta') >= 0; });
       return rr;
     }
@@ -1550,6 +1560,23 @@
       var sal = PB.agruparHipertrofia(fil, false, 'm'), pares = sal.filter(function(f2){ return f2.agrupada; });
       res.armadoSinDosPoleas = pares.every(function(f2){ var ks = [].concat(f2.ej).map(E); return !(ks.length > 1 && win.jpEsPolea(ks[0]) && win.jpEsPolea(ks[1])); });
       return res;
+    }
+    if(c.caso === 'unRecto'){
+      /* todas las plantillas del sistema: cuántas sesiones dejan un solo ejercicio de trabajo en serie recta (cardio, core y olímpicos aparte) */
+      var sisU = banco.filter(function(r){ return (r.dias || []).length && (r.std || r.sbSys || r.fbSys || r.elbSys || r.depSys || r.proVer != null || r.depDeporte || /^(bkstd_|bkdep_|bk_)/.test(r.id || '')); });
+      var excl = function(e){ return !e.g || (e.lib && e.lib.equipo === 'Cardio') || /clean|snatch|jerk|arranque|envi[oó]n|cargada/i.test(e.nombre + ' ' + ((e.lib && e.lib.en) || '')); };
+      var tot = 0, ok = 0, jp = 0, jpOk = 0, dosPesados = 0, fuera = {};
+      sisU.forEach(function(r){ r.dias.forEach(function(d){
+        var rect = 0;
+        (d.bloques || []).forEach(function(b){
+          if(b.category === 'warmup' || /^(calentamiento|core|metcon)$/.test(b.modalidad || '')) return;
+          var m = EST.parsearBloque(b); if(!m || m.rol === 'C' || m.ex.some(function(e){ return e.g === 'Core'; }) || m.ex.some(excl)) return;
+          if(m.ex.length === 1) rect++;
+        });
+        tot++; if(rect <= 1) ok++; else fuera[(r.id || '').replace(/\d+/g, '#')] = 1;
+        if(/^bkstd_jp26_/.test(r.id)){ jp++; if(rect <= 1) jpOk++; }
+      }); });
+      return { cobertura: ok / tot >= 0.88, coberturaJP: jpOk / jp >= 0.95, sesiones: tot > 200, detalle: Math.round(ok / tot * 100) + '% (' + ok + '/' + tot + ') · fuera: ' + Object.keys(fuera).join(', ') };
     }
     if(c.caso === 'colision'){
       /* regla anti-colisión sobre TODAS las plantillas del sistema: ningún biset/triset junta dos poleas ni dos estaciones distantes */
@@ -2033,6 +2060,92 @@
   }
 
   /* ---------- generadores de IA (CrossFit): prevalidación y objetivo de la semana ---------- */
+  /* ---------- motor de IA: se corre una vez antes de la suite (es asíncrono) y los casos leen el resultado ---------- */
+  var IA_RES = null;
+  function prepararIA(listo){
+    var AIx = win.CoachAI, out = {};
+    if(!AIx || !AIx.cfg){ IA_RES = { error: 'sin CoachAI' }; listo(); return; }
+    var AI = AIx.cfg(), guard = JSON.stringify({ keys: AI.keys, provider: AI.provider, fallback: AI.fallback, econ: AI.econ, models: AI.models, cooldown: AI.cooldown });
+    var fetch0 = win.fetch, toast0 = win.toast, cuerpos = [];
+    win.toast = function(){};
+    var colgado = function(url, o){ return new Promise(function(res, rej){ if(o && o.signal) o.signal.addEventListener('abort', function(){ var e = new Error('aborted'); e.name = 'AbortError'; rej(e); }); }); };
+    var responde = function(url, o){ cuerpos.push(JSON.parse(o.body)); return Promise.resolve(new win.Response(JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn' }), { status: 200 })); };
+    function restaurar(){ var g = JSON.parse(guard); Object.keys(g).forEach(function(k){ AI[k] = g[k]; }); win.fetch = fetch0; win.toast = toast0; }
+    (async function(){
+      try{
+        AI.keys = Object.assign({}, AI.keys, { anthropic: 'sk-test-0123456789abcdef', google: '', openai: '' }); AI.provider = 'anthropic'; AI.fallback = false; AI.econ = true; AI.cooldown = {};
+        AI.models = Object.assign({}, AI.models, { anthropic: 'claude-sonnet-5-5' });
+        /* 1) cancelación real: la petición colgada se corta en el acto */
+        win.fetch = colgado;
+        var ctrl = new win.AbortController(), t0 = Date.now(), e1 = null;
+        var p = AIx.generarTexto('hola', 'sistema', { maxTokens: 100, signal: ctrl.signal });
+        setTimeout(function(){ ctrl.abort(); }, 40);
+        try{ await p; }catch(e){ e1 = e; }
+        out.cancelado = !!(e1 && e1.cancelado); out.cancelaRapido = (Date.now() - t0) < 1500;
+        /* 2) tiempo máximo: una petición colgada no deja la app esperando */
+        var e2 = null, t1 = Date.now();
+        try{ await AIx.generarTexto('hola', 'sistema', { maxTokens: 100, timeoutMs: 120 }); }catch(e){ e2 = e; }
+        out.timeout = !!(e2 && e2.timeout); out.timeoutMsg = !!(e2 && /tardó más de/.test(e2.message)); out.timeoutRapido = (Date.now() - t1) < 2000;
+        /* 3) modelo rápido para pedidos cortos (modo económico) y el configurado para el resto */
+        win.fetch = responde;
+        await AIx.generarTexto('hola', 'sistema', { maxTokens: 200, rapido: true });
+        await AIx.generarTexto('hola', 'sistema', { maxTokens: 200 });
+        out.rapidoHaiku = cuerpos[0] && cuerpos[0].model === 'claude-haiku-5-5';
+        out.normalSonnet = cuerpos[1] && cuerpos[1].model === 'claude-sonnet-5-5';
+        AI.econ = false; await AIx.generarTexto('hola', 'sistema', { maxTokens: 200, rapido: true });
+        out.sinEconNoCambia = cuerpos[2] && cuerpos[2].model === 'claude-sonnet-5-5';
+        /* 4) caché de prompts: el system largo se marca, el corto va como texto */
+        await AIx.generarTexto('hola', new Array(600).join('reglas largas '), { maxTokens: 200 });
+        var s4 = cuerpos[3] && cuerpos[3].system;
+        out.cacheLargo = Array.isArray(s4) && s4[0] && s4[0].cache_control && s4[0].cache_control.type === 'ephemeral';
+        out.cortoTexto = typeof cuerpos[1].system === 'string';
+        /* 5) el botón: segundo toque = detener; vuelve al instante a su estado y avisa */
+        var hay0 = AIx.hayClave, esp0 = AIx.esperaCooldown, avisos = [];
+        AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 0; };
+        win.toast = function(m){ avisos.push(String(m)); };
+        var btn = { dataset: {}, isConnected: true, innerHTML: 'ORIGINAL', disabled: false }, recibioSenal = false;
+        var corre = win.jpIAEjecutar(btn, 'test', 'probar', function(senal){ recibioSenal = !!senal; btn.innerHTML = 'GENERANDO'; return new Promise(function(res, rej){ senal.addEventListener('abort', function(){ var e = new Error('c'); e.cancelado = true; rej(e); }); }); });
+        var ocupadoAntes = btn.dataset.iaBusy === '1';
+        win.jpIAEjecutar(btn, 'test', 'probar', function(){ return Promise.resolve(); });      /* segundo toque */
+        out.botonSenal = recibioSenal; out.botonOcupado = ocupadoAntes;
+        out.botonLibreAlInstante = btn.dataset.iaBusy === undefined && btn.innerHTML === 'ORIGINAL';
+        await corre;
+        out.botonAviso = avisos.some(function(a){ return /detenida/.test(a); });
+        out.botonSinError = !avisos.some(function(a){ return /No se pudo generar/.test(a); });
+        AIx.hayClave = hay0; AIx.esperaCooldown = esp0;
+      }catch(e){ out.error = String(e && e.message || e); }
+      finally{ restaurar(); IA_RES = out; listo(); }
+    })();
+  }
+  function iaMotor(c){ if(!IA_RES) throw new Error('la pasada de IA no corrió'); return IA_RES; }
+  /* ---------- género del alumno/a en los prompts y títulos de bisets según sus ejercicios ---------- */
+  function generoTitulos(c){
+    if(c.caso === 'genero'){
+      var g = win.jpGeneroDe;
+      return { normaliza: [g('F'), g('Femenino'), g('mujer'), g('M'), g('Masculino'), g('Varón'), g('hombre'), g(''), g('x')].join(','),
+        mujer: /ALUMNA MUJER/.test(win.jpGeneroIA('F')) && /glúteo/.test(win.jpGeneroIA('F')) && /femenino/.test(win.jpGeneroIA('F')),
+        varon: /ALUMNO VARÓN/.test(win.jpGeneroIA('M')) && /masculino/.test(win.jpGeneroIA('M')),
+        vacio: win.jpGeneroIA('') === '',
+        enFicha: /ALUMNA MUJER/.test(win.jpFichaIA({ nombre: 'Ana', genero: 'F' })) && /ALUMNO VARÓN/.test(win.jpFichaIA({ nombre: 'Juan', genero: 'M' })) };
+    }
+    if(c.caso === 'tituloPizarra'){
+      var T = win.jpTituloAutoPizarra, items = ['A1. Jalón al pecho con agarre ancho', '3x10-12 | RIR 1', 'A2. Curl martillo', '3x12 | RIR 1', 'Rest 75s'];
+      var b1 = { tipo: 'list', sportsPizarra: true, titulo: 'Biset Jalón al pecho con agarre ancho + Curl martillo', items: ['A1. Jalón al pecho con agarre ancho', '3x10-12 | RIR 1', 'A2. Curl martillo', '3x12 | RIR 1', 'Rest 75s'] };
+      var prev1 = b1.items.slice(); b1.items[2] = 'A2. Extensión tríceps polea alta con cuerda';
+      var cambio1 = win.jpSyncTituloPizarra(b1, prev1);
+      var b2 = { tipo: 'list', sportsPizarra: true, titulo: 'Hipertrofia – Biset Jalón al pecho con agarre ancho + Curl martillo (12 MIN)', items: items.slice() };
+      var prev2 = b2.items.slice(); b2.items[0] = 'A1. Remo unilateral a una mano'; win.jpSyncTituloPizarra(b2, prev2);
+      var b3 = { tipo: 'list', sportsPizarra: true, titulo: 'Mi bloque de espalda', items: items.slice() };
+      var prev3 = b3.items.slice(); b3.items[2] = 'A2. Curl de bíceps con barra Z'; var cambio3 = win.jpSyncTituloPizarra(b3, prev3);
+      var b4 = { tipo: 'list', sportsPizarra: true, titulo: '', items: items.slice() };
+      var prev4 = []; win.jpSyncTituloPizarra(b4, prev4);
+      return { auto: T(items), triset: T(['A1. Curl martillo', '3x12', 'A2. Elevaciones laterales con mancuernas', '3x15', 'A3. Plancha lateral', '3x30s']), uno: T(['A1. Curl martillo', '3x12']),
+        sigueAEjercicios: cambio1 && b1.titulo === 'Biset Jalón al pecho con agarre ancho + Extensión tríceps polea alta con cuerda',
+        conservaPrefijoYMinutos: b2.titulo === 'Hipertrofia – Biset Remo unilateral a una mano + Curl martillo (12 MIN)',
+        respetaTituloPropio: cambio3 === false && b3.titulo === 'Mi bloque de espalda', vacioSeCompleta: b4.titulo === 'Biset Jalón al pecho con agarre ancho + Curl martillo' };
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   function iaCaso(c){
     var AIx = win.CoachAI, S = getS(), toasts = [], llamadas = 0;
     var orig = { hay: AIx.hayClave, esp: AIx.esperaCooldown, cfg: AIx.config, gen: AIx.generarTexto, toast: win.toast, active: S.activeId };
@@ -2180,7 +2293,7 @@
   function esperarBanco(n){
     var ok = false;
     try{ var b = getS().banco || []; ok = b.some(function(r){ return r && r.depDeporte === 'hyx' && (r.dias || []).length; }) && b.some(function(r){ return r && r.std && (r.dias || []).length; }); }catch(e){}
-    if(ok || n > 60) setTimeout(function(){ prepararAlumno(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
+    if(ok || n > 60) setTimeout(function(){ prepararAlumno(function(){ prepararIA(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
   }
   function listo(){
     try{ win = frame.contentWindow; return !!(win && win.jpAutoFormat && typeof win.jpDosisCanon === 'function' && typeof win.parsearImportacion === 'function' && typeof win.detectarFormatoCF === 'function' && typeof win.impCampoCoachDeTag === 'function'); }catch(e){ return false; }
