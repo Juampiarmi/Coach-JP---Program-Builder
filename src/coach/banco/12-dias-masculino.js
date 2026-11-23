@@ -48,7 +48,7 @@
       R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60', { tp: ['2211'], n: 'Pausa de 1 a 2 segundos abajo, en el estiramiento: ahí está el estímulo del gemelo.' }),
       R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '4x15|0|45|drop', { n: 'Segunda exposición semanal del deltoide lateral: es el músculo que más ensancha el hombro y responde mejor a la frecuencia que al volumen concentrado en un solo día.' }),
       R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60', { n: 'Cierre de pierna y gemelo: la zancada inversa descarga el cuádriceps y el glúteo y el talón a una pierna trabaja el gemelo sin pausa. Pausa de un segundo abajo, en el estiramiento: ahí está el estímulo.' }),
-      R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
+      R('C', ['Crunch en polea alta', 'Dead bug'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 
@@ -74,7 +74,7 @@
       R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
       R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60'),
       R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x10 por lado/12|1|60', '4x10 por lado/12|0|60'),
-      R('C', ['Crunch en polea alta', 'Pallof press'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
+      R('C', ['Crunch en polea alta', 'Dead bug'], '3x12/10 por lado|1|45', '3x15/12 por lado|0|45'),
       R('M', null, null, null, { fin: FIN.pierna })
     ] };
 

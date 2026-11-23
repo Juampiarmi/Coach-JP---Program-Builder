@@ -64,6 +64,12 @@
     var p = String(l).split('|').map(function(x){ return x.trim(); }), m = /^(\d+)\s*x\s*(.+)$/i.exec(p[0] || '');
     if(!m) return null;
     var o = { sets: parseInt(m[1], 10), reps: m[2].trim(), tempo: '', rir: '', tec: '', extra: [] };
+    /* pirámide de un básico ("1x10 (Aclimatación) + 1x8 (Carga alta) + 2x8 (Top Set) + 1x12 (Back-off)"): las series efectivas son todas menos las de aclimatación / aproximación;
+       "sets" queda como estaba (el editor reescribe la línea con él) y el volumen semanal usa "efectivas" */
+    var segs = p[0].split(/\s*\+\s*/);
+    if(segs.length > 1 && segs.every(function(sg){ return /^\d+\s*x/i.test(sg); })){
+      o.efectivas = segs.reduce(function(acc, sg){ return /aclimataci|calentamiento|aproximaci|warm/i.test(sg) ? acc : acc + parseInt(/^(\d+)/.exec(sg)[1], 10); }, 0);
+    }
     p.slice(1).forEach(function(x){
       var t = /^Tempo\s*([0-9Xx]{4})$/i.exec(x), r = /^RIR\s*(.+)$/i.exec(x), k = null;
       if(t) o.tempo = t[1];
@@ -93,7 +99,7 @@
     var m = { b: b, rol: rolDe(b), multi: multi, complejo: complejo, rest: rest == null ? (parseInt(b.restSeconds, 10) || 60) : rest, ex: [] };
     ex.forEach(function(e){
       var r = resolver(e.etiqueta), i = infoDe(r.nombre, r.lib);
-      m.ex.push({ etiqueta: e.etiqueta, nombre: r.nombre, lib: r.lib, t: i.t, g: i.g, ax: i.ax, sets: e.dosis.sets, reps: e.dosis.reps, tempo: e.dosis.tempo, rir: e.dosis.rir, tec: e.dosis.tec, extra: e.dosis.extra });
+      m.ex.push({ etiqueta: e.etiqueta, nombre: r.nombre, lib: r.lib, t: i.t, g: i.g, ax: i.ax, sets: e.dosis.sets, efectivas: e.dosis.efectivas, reps: e.dosis.reps, tempo: e.dosis.tempo, rir: e.dosis.rir, tec: e.dosis.tec, extra: e.dosis.extra });
     });
     return m;
   }
@@ -215,10 +221,16 @@
         var r = rirMin(e.rir);
         if(elite && r != null && r >= 2 && m.rol !== 'C') out.push({ k: 'rir', bi: bi, msg: 'RIR ' + e.rir + ' en «' + e.nombre + '»: en el nivel élite toda serie efectiva va a RIR 0-1.' });
       });
+      /* regla anti-colisión: nunca dos poleas en un mismo biset o triset (se pisan en la torre); la polea va con mancuernas o peso corporal */
+      if(typeof jpEsPolea === 'function'){
+        var pol = m.ex.filter(function(e){ return jpEsPolea(estacionDe(e)); });
+        if(m.ex.length > 1 && pol.length > 1) out.push({ k: 'poleas', bi: bi, msg: 'Dos poleas en el mismo biset: «' + pol[0].nombre + '» + «' + pol[1].nombre + '». Combiná la polea con un ejercicio de mancuernas o peso corporal, o pasalos a series rectas.' });
+      }
       for(var k = 0; k < m.ex.length - 1; k++){
         var a = m.ex[k], c = m.ex[k + 1];
-        if(a.t !== 'L' && c.t !== 'L') out.push({ k: 'guiados', bi: bi, msg: 'Dos ejercicios guiados seguidos en el mismo bloque: «' + a.nombre + '» + «' + c.nombre + '». Cambiá uno por un ejercicio libre.' });
         var ea = estacionDe(a), ec = estacionDe(c);
+        if(typeof jpEsPolea === 'function' && jpEsPolea(ea) && jpEsPolea(ec)) continue; /* ya avisado arriba como «poleas» */
+        if(a.t !== 'L' && c.t !== 'L') out.push({ k: 'guiados', bi: bi, msg: 'Dos ejercicios guiados seguidos en el mismo bloque: «' + a.nombre + '» + «' + c.nombre + '». Cambiá uno por un ejercicio libre.' });
         if(ea && ec && typeof jpEstacionCompat === 'function' && !jpEstacionCompat(ea, ec)) out.push({ k: 'estacion', bi: bi, msg: '«' + a.nombre + '» y «' + c.nombre + '» se hacen en estaciones distintas (' + jpEstacionLb(ea, a.lib) + ' y ' + jpEstacionLb(ec, c.lib) + '): el biset obliga a cruzar el gimnasio.' });
       }
     });
@@ -241,7 +253,7 @@
     var tot = {}, k = String(genero || '').toLowerCase() === 'f' ? 'F' : 'M', R = RANGOS[k], esc = esAvanzado(niv) ? 1 : 0.7;
     var r3 = ((dias || []).length <= 3 && EL.RANGOS3) ? EL.RANGOS3[k] : null;      /* plan de 3 días: pisos ajustados en los grupos secundarios */
     if(r3){ R = Object.assign({}, R, r3); }
-    (dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ var m = parsearBloque(b); if(m) m.ex.forEach(function(e){ if(e.g) tot[e.g] = (tot[e.g] || 0) + (e.sets || 0); }); }); });
+    (dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ var m = parsearBloque(b); if(m) m.ex.forEach(function(e){ if(e.g) tot[e.g] = (tot[e.g] || 0) + (e.efectivas != null ? e.efectivas : (e.sets || 0)); }); }); });
     return Object.keys(R).map(function(g){
       var lo = Math.round(R[g][0] * esc), hi = Math.round(R[g][1] * esc), v = tot[g] || 0;
       return { g: g, v: v, lo: lo, hi: hi, est: v < lo ? 'lo' : (v > hi ? 'hi' : 'ok') };
