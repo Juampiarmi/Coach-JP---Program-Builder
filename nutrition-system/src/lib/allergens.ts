@@ -1,5 +1,5 @@
 import { allergenHits, sanitizeAnamnesis } from './anamnesisPro';
-import { FOOD_BY_ID } from './foods';
+import { FOOD_BY_ID, unitStep } from './foods';
 import { portionCap } from './portionCaps';
 import { itemFromFood } from './seed';
 import type { AthletePlan, FoodItem, Meal, MealOption, MealRole, Sex } from './types';
@@ -90,6 +90,15 @@ export const conflictOf = (it: { foodId?: string; food?: string }, allergies: Al
 export const foodIsSafe = (foodId: string, allergies: Allergen[]) => conflictOf({ foodId, food: FOOD_BY_ID[foodId]?.name }, allergies).length === 0;
 /** Filtro para alternativas y swaps: sólo alimentos aptos para el alumno (undefined = sin restricciones). */
 export const acceptFor = (allergies: Allergen[]) => (allergies.length ? (foodId: string) => foodIsSafe(foodId, allergies) : undefined);
+/** Leche como bebida: en los planes de mujer las alternativas no la proponen (yogur griego, café apenas cortado). */
+export const FLUID_MILK = new Set(['leche', 'leche-deslactosada', 'bebida-soja', 'bebida-almendra']);
+/** Filtro de alternativas del alumno: alergias + mujer sin leche fluida. */
+export function acceptForPlan(plan: { profile: { sex: 'F' | 'M' } } & Parameters<typeof allergiesOf>[0]) {
+  const allergies = allergiesOf(plan);
+  const noMilk = plan.profile.sex === 'F';
+  if (!allergies.length && !noMilk) return undefined;
+  return (foodId: string) => !(noMilk && FLUID_MILK.has(foodId)) && foodIsSafe(foodId, allergies);
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Sustitutos equivalentes y coherentes
@@ -160,8 +169,7 @@ export function pickSub(foodId: string, c: SubCtx, allergies: Allergen[], taken:
 }
 
 const stepOf = (id: string) => {
-  if (id === 'huevo') return 50;
-  if (id === 'claras') return 33;
+  if (id === 'huevo' || id === 'claras') return unitStep(id);
   const u = FOOD_BY_ID[id]?.unit;
   return u && u.grams <= 60 ? u.grams : 5;
 };

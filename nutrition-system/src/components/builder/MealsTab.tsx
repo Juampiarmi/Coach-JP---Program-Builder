@@ -37,8 +37,8 @@ const GROUPS = Object.keys(GROUP_LABEL) as SwapGroup[];
 
 const smallSelect = 'rounded-md border border-line bg-carbon px-2 py-1 text-xs text-steel outline-none focus:border-cyan-hud/50';
 
-// Leucina aportada por 1 huevo (50 g) y por gramo de whey (base de alimentos).
-const LEU_PER_EGG = (FOOD_BY_ID.huevo.leucine * 50) / 100;
+// Leucina aportada por 1 huevo (60 g) y por gramo de whey (base de alimentos).
+const LEU_PER_EGG = (FOOD_BY_ID.huevo.leucine * 60) / 100;
 const LEU_PER_G_WHEY = FOOD_BY_ID.whey.leucine / 100;
 
 function FoodPicker({ onPick, role }: { onPick: (id: string) => void; role: MealRole }) {

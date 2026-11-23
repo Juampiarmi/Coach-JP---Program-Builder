@@ -74,6 +74,7 @@ const runtime = String.raw`
     dsClosed: store.get('dsClosed', {}),
     rebal: store.get('rebal:' + today, {}),
     outDrinks: [],
+    outFoods: [],
     outRebal: true,
     batchMode: store.get('batchMode', 'on'),
     batchDone: store.get('batch:' + weekKey, {}),
@@ -134,7 +135,10 @@ const runtime = String.raw`
 
   function eqGrams(src, grams, to) {
     var a = src.anchor;
-    return to[a] > 0 ? Math.max(5, Math.round((src[a] * grams) / to[a] / 5) * 5) : grams;
+    if (!(to[a] > 0)) return grams;
+    // Huevos, claras y barras en unidades enteras; el resto de a 5 g.
+    var st = (D.units && to.id && D.units[to.id]) || 5;
+    return Math.max(st, Math.round((src[a] * grams) / to[a] / st) * st);
   }
 
   // Equivalencias calculadas: mismo aporte del macro ancla, ordenadas por densidad calórica más parecida.
@@ -170,20 +174,54 @@ const runtime = String.raw`
   // Comida libre controlada (Comer fuera): bloque promedio balanceado que reemplaza la comida en la telemetría.
   var FREE_MEAL = { p: 45, c: 70, f: 32 };
   // Bebidas sociales: el alcohol / azúcar se computa como carbos equivalentes (7 kcal/g de alcohol ≈ 1,75 g de carbo).
+  // Valores aproximados por unidad típica en Argentina (copa 150 ml, pinta 500 ml, vaso de trago 350 ml).
   var OUT_DRINKS = [
     { id: 'vino', icon: '🍷', label: 'Copa de vino', c: 31 },
-    { id: 'cerveza', icon: '🍺', label: 'Pinta de cerveza', c: 50 },
-    { id: 'fernet', icon: '🥃', label: 'Fernet con cola zero', c: 30 },
+    { id: 'cerveza', icon: '🍺', label: 'Pinta de cerveza', c: 54 },
+    { id: 'fernet-comun', icon: '🥃', label: 'Fernet con coca común', c: 52 },
+    { id: 'fernet', icon: '🥃', label: 'Fernet con coca zero', c: 32 },
+    { id: 'gin', icon: '🍸', label: 'Gin tonic', c: 44 },
+    { id: 'gin-light', icon: '🍸', label: 'Gin tonic con tónica light', c: 28 },
   ];
+  // Catálogo argentino para salir a comer: kcal y macros aproximados por porción real.
+  var OUT_FOODS = [
+    { cat: 'Empanadas', id: 'emp-carne-h', label: 'Empanada de carne al horno', unit: '1 u', p: 11, c: 27, f: 13 },
+    { cat: 'Empanadas', id: 'emp-carne-f', label: 'Empanada de carne frita', unit: '1 u', p: 11, c: 27, f: 21 },
+    { cat: 'Empanadas', id: 'emp-pollo-h', label: 'Empanada de pollo al horno', unit: '1 u', p: 12, c: 26, f: 9 },
+    { cat: 'Empanadas', id: 'emp-pollo-f', label: 'Empanada de pollo frita', unit: '1 u', p: 12, c: 26, f: 16 },
+    { cat: 'Parrilla', id: 'asado-tira', label: 'Asado de tira', unit: '200 g cocido', p: 48, c: 0, f: 44 },
+    { cat: 'Parrilla', id: 'vacio', label: 'Vacío', unit: '200 g cocido', p: 50, c: 0, f: 34 },
+    { cat: 'Parrilla', id: 'chorizo', label: 'Chorizo', unit: '1 u (100 g)', p: 14, c: 2, f: 27 },
+    { cat: 'Parrilla', id: 'provoleta', label: 'Provoleta', unit: '1 porción (100 g)', p: 25, c: 2, f: 27 },
+    { cat: 'Sánguches', id: 'milanga', label: 'Sánguche de milanesa completo', unit: '1 u', p: 45, c: 85, f: 48 },
+    { cat: 'Sánguches', id: 'lomito', label: 'Lomito completo', unit: '1 u', p: 55, c: 75, f: 52 },
+    { cat: 'Pizza', id: 'pizza-muzza', label: 'Pizza de muzzarella', unit: '1 porción (1/8)', p: 12, c: 30, f: 11 },
+    { cat: 'Pizza', id: 'pizza-fuga', label: 'Fugazzeta', unit: '1 porción (1/8)', p: 13, c: 30, f: 14 },
+    { cat: 'Postres y helado', id: 'helado-bocha', label: 'Helado de crema', unit: '1 bocha', p: 2.5, c: 18, f: 6.5 },
+    { cat: 'Postres y helado', id: 'helado-agua', label: 'Helado al agua / frutal', unit: '1 bocha', p: 0.5, c: 22, f: 0.5 },
+    { cat: 'Postres y helado', id: 'helado-cuarto', label: 'Helado de crema', unit: '¼ kg', p: 9, c: 63, f: 23 },
+    { cat: 'Postres y helado', id: 'flan-ddl', label: 'Flan con dulce de leche', unit: '1 porción', p: 7, c: 50, f: 11 },
+    { cat: 'Postres y helado', id: 'flan', label: 'Flan solo', unit: '1 porción', p: 5, c: 30, f: 5.5 },
+    { cat: 'Postres y helado', id: 'panqueque-ddl', label: 'Panqueque con dulce de leche', unit: '1 u', p: 7, c: 52, f: 12 },
+  ];
+  function outFood(id) { return OUT_FOODS.filter(function (x) { return x.id === id; })[0]; }
+  function outDrink(id) { return OUT_DRINKS.filter(function (x) { return x.id === id; })[0]; }
+  function kcalOf(x) { return x.p * 4 + x.c * 4 + x.f * 9; }
+  // Cuenta repeticiones (["vino","vino"] → { vino: 2 }).
+  function countOf(list) { var o = {}; (list || []).forEach(function (id) { o[id] = (o[id] || 0) + 1; }); return o; }
   function sceneOf(id) { return OUT_SCENES.filter(function (o) { return o.id === id; })[0]; }
   // Comida libre: con los macros EXACTOS de la comida que reemplaza (planes viejos: bloque fijo de 748 kcal).
   function freeItems(m, fr) {
     var sc = typeof fr === 'object' ? fr.scene : fr, o = sceneOf(sc), lbl = (o || {}).label || 'Salida';
     var mac = typeof fr === 'object' && fr.p !== undefined ? fr : FREE_MEAL;
-    var out = [{ id: 'free-' + m.id, food: 'Comida libre controlada · ' + lbl, grams: 0, p: mac.p, c: mac.c, f: mac.f, leucine: mac.p * 0.08, free: true }];
-    ((typeof fr === 'object' && fr.drinks) || []).forEach(function (d) {
-      var dr = OUT_DRINKS.filter(function (x) { return x.id === d; })[0];
-      if (dr) out.push({ id: 'drink-' + d, food: dr.icon + ' ' + dr.label, grams: 0, p: 0, c: dr.c, f: 0, leucine: 0, free: true, drink: true });
+    var foods = typeof fr === 'object' && fr.foods ? countOf(fr.foods) : null;
+    var out = foods && Object.keys(foods).length
+      ? Object.keys(foods).map(function (id) { var x = outFood(id) || { label: id, unit: '', p: 0, c: 0, f: 0 }, n = foods[id]; return { id: 'out-' + id, food: n + ' × ' + x.label + (x.unit ? ' (' + x.unit + ')' : '') + ' · ' + lbl, grams: 0, p: x.p * n, c: x.c * n, f: x.f * n, leucine: x.p * n * 0.08, free: true }; })
+      : [{ id: 'free-' + m.id, food: 'Comida libre controlada · ' + lbl, grams: 0, p: mac.p, c: mac.c, f: mac.f, leucine: mac.p * 0.08, free: true }];
+    var dc = countOf((typeof fr === 'object' && fr.drinks) || []);
+    Object.keys(dc).forEach(function (d) {
+      var dr = outDrink(d);
+      if (dr) out.push({ id: 'drink-' + d, food: dr.icon + ' ' + (dc[d] > 1 ? dc[d] + ' × ' : '') + dr.label, grams: 0, p: 0, c: dr.c * dc[d], f: 0, leucine: 0, free: true, drink: true });
     });
     return out;
   }
@@ -357,7 +395,7 @@ const runtime = String.raw`
   function mshort(p, c, f) { return n0(p) + ' g prot. · ' + n0(c) + ' g carbos · ' + n0(f) + ' g grasas'; }
 
   function leuTip(need) {
-    var egg = D.foods.huevo ? D.foods.huevo.leucine * 0.5 : 0.55;
+    var egg = D.foods.huevo ? D.foods.huevo.leucine * 0.6 : 0.65;
     var whey = D.foods.whey ? D.foods.whey.leucine / 100 : 0.085;
     var eggs = Math.max(1, Math.ceil(need / egg));
     var g = Math.max(5, Math.ceil(need / whey / 5) * 5);
@@ -412,7 +450,8 @@ const runtime = String.raw`
     var h = '<section class="card fold"><button class="fold-hd" data-hy="1" aria-expanded="' + (S.hyOpen ? 'true' : 'false') + '"><span class="tag">[ HIDRATACIÓN ]</span><span class="fold-peek">' + L(S.water) + ' / ' + L(goal) + ' L' + (S.water >= goal ? ' · ✓' : '') + '</span><span class="chev' + (S.hyOpen ? ' up' : '') + '"></span></button>';
     h += '<div class="fold-bar"><i style="width:' + pct + '%"></i></div>';
     if (!S.hyOpen) return h + '</section>';
-    h += '<div class="fold-body"><p class="fold-sub">Meta del día ' + (mode === 'on' ? 'de entreno' : 'de descanso') + ': ' + L(goal) + ' L · cada vaso son 250 ml</p><div class="cups">';
+    h += '<div class="fold-body"><p class="fold-sub">Meta del día ' + (mode === 'on' ? 'de entreno' : 'de descanso') + ': ' + L(goal) + ' L · cada vaso son 250 ml</p>';
+    h += '<p class="hy-note">💧 Sumá sólo agua, soda o la isotónica del entreno. <b>El mate, café, té y las gaseosas no suman</b> en este contador.</p><div class="cups">';
     for (var i = 0; i < cups; i++) h += '<button class="cup' + (i < full ? ' on' : '') + '" data-cup="' + i + '" aria-label="Vaso ' + (i + 1) + '"><i></i></button>';
     h += '</div><div class="wbtns"><button data-water="250">+250 ml</button><button data-water="500">+500 ml</button><button data-water="0" class="ghost">Reiniciar</button></div>';
     if (S.water >= goal) h += '<div class="ok-line">✓ Meta de hidratación cumplida</div>';
@@ -505,6 +544,8 @@ const runtime = String.raw`
     if (!S.ci) {
       var prev = S.checkins[weekKey], pts = weightSeries(today, 28), lastW = pts.length ? pts[pts.length - 1].v : null;
       S.ci = prev ? JSON.parse(JSON.stringify(prev)) : { energy: 0, hunger: 0, heavy: null, note: '', kg: S.weights[today] || lastW || '', photo: '' };
+      // La nota guardada junta digestión y observaciones ("la cena · Obs.: dormí poco"): se separan para editar.
+      if (!S.ci.obs && /Obs\.: /.test(S.ci.note || '')) { var np = S.ci.note.split(/(?: · )?Obs\.: /); S.ci.note = np[0]; S.ci.obs = np[1] || ''; }
     }
     var c = S.ci;
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ CHECK-IN SEMANAL · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>¿Cómo venís esta semana?</h3>';
@@ -512,6 +553,7 @@ const runtime = String.raw`
     h += '<div class="ci-q">🍽 Hambre y saciedad</div>' + ciScale('hunger', c.hunger, CI_HUNGER);
     h += '<div class="ci-q">🫃 ¿Alguna comida te cayó pesada?</div><div class="ci-yn"><button data-ci="heavy|1" class="' + (c.heavy === true ? 'on' : '') + '">Sí</button><button data-ci="heavy|0" class="' + (c.heavy === false ? 'on' : '') + '">No</button></div>';
     if (c.heavy) h += '<textarea id="ci-note" maxlength="280" rows="2" placeholder="¿Cuál? (opcional) Ej: la cena del martes, el licuado antes de entrenar">' + esc(c.note || '') + '</textarea>';
+    h += '<div class="ci-q">📝 Observaciones <span class="muted">(opcional)</span></div><textarea id="ci-obs" maxlength="200" rows="2" placeholder="Ej: semana con viajes, dormí poco, me costó la merienda">' + esc(c.obs || '') + '</textarea>';
     h += '<div class="ci-q">⚖ Tu peso de esta semana</div><div class="w-in"><input id="ci-kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" value="' + (c.kg || '') + '" aria-label="Peso en kg"><span>kg</span></div>';
     h += '<div class="ci-q">📷 Foto de progreso <span class="muted">(opcional, sólo la ve tu coach)</span></div>';
     h += c.photo ? '<div class="ci-photo"><img src="' + c.photo + '" alt="Foto de progreso"><button data-ci="photo|0" class="ghost">Quitar foto</button></div>' : '<label class="ci-pick">Elegir o sacar una foto<input id="ci-photo" type="file" accept="image/*" capture="environment" hidden></label>';
@@ -523,12 +565,35 @@ const runtime = String.raw`
     var c = S.ci;
     if (!c || !c.energy || !c.hunger || c.heavy === null) return;
     var kg = parseFloat(String(c.kg).replace(',', '.'));
-    var row = { energy: c.energy, hunger: c.hunger, heavy: !!c.heavy, note: c.heavy ? String(c.note || '').slice(0, 280) : '', kg: kg >= 30 && kg <= 250 ? Math.round(kg * 10) / 10 : null, photo: c.photo || '', at: Date.now() };
+    var obs = String(c.obs || '').trim().slice(0, 200);
+    var row = { energy: c.energy, hunger: c.hunger, heavy: !!c.heavy, note: [c.heavy ? String(c.note || '').trim() : '', obs ? 'Obs.: ' + obs : ''].filter(Boolean).join(' · ').slice(0, 280), obs: obs, kg: kg >= 30 && kg <= 250 ? Math.round(kg * 10) / 10 : null, photo: c.photo || '', at: Date.now() };
     S.checkins[weekKey] = row;
     store.set('checkins', S.checkins);
     if (row.kg && S.weights[today] !== row.kg) { S.weights[today] = row.kg; store.set('weights', S.weights); }
+    // Además de la nube: WhatsApp con el resumen ya redactado, dirigido al número del coach (listo para Enviar).
+    // Se abre en el mismo toque (si se demora, iOS / Android bloquean la ventana).
+    var url = 'https://wa.me/' + (D.coachPhone || '') + '?text=' + encodeURIComponent(checkinText(row));
+    try { window.open(url, '_blank'); } catch (e) { /* sin ventanas emergentes: queda guardado igual */ }
     S.ci = null; S.panel = null; haptic(); render();
-    toast('¡Check-in enviado a tu coach! Gracias 🙌');
+    toast('¡Check-in guardado! Abrimos WhatsApp para mandárselo a tu coach 🙌');
+  }
+  // Resumen del check-in en texto plano para WhatsApp: peso, adherencia de la semana, energía, hambre y digestión.
+  function checkinText(c) {
+    var days = [], adh = 0, logged = 0;
+    for (var i = 1; i <= 7; i++) days.push(addDays(today, -i));
+    days.forEach(function (d) { var h = H[d]; if (h && h.done) { logged++; if (h.adherent) adh++; } });
+    var prevW = null, ws = Object.keys(S.weights).filter(function (d) { return d < weekKey; }).sort();
+    if (ws.length) prevW = S.weights[ws[ws.length - 1]];
+    var t = '📋 *Check-in semanal* · ' + D.athlete.name + '\nSemana del ' + weekKey.split('-').reverse().join('/') + '\n\n';
+    if (c.kg) t += '⚖ Peso: ' + n1(c.kg) + ' kg' + (prevW ? ' (' + (c.kg - prevW > 0 ? '+' : c.kg - prevW < 0 ? '−' : '±') + n1(Math.abs(c.kg - prevW)) + ' kg vs. antes)' : '') + '\n';
+    t += '✅ Adherencia: ' + adh + ' de 7 días cumplidos' + (logged ? ' (' + logged + ' con registro)' : '') + '\n';
+    t += '⚡ Energía y descanso: ' + c.energy + '/5 (' + CI_ENERGY[c.energy - 1] + ')\n';
+    t += '🍽 Hambre: ' + c.hunger + '/5 (' + CI_HUNGER[c.hunger - 1] + ')\n';
+    var heavyNote = String(c.note || '').split(/(?: · )?Obs\.: /)[0];
+    t += '🫃 Digestión: ' + (c.heavy ? 'algo me cayó pesado' + (heavyNote ? ' — ' + heavyNote : '') : 'bien') + '\n';
+    if (c.obs) t += '📝 Observaciones: ' + c.obs + '\n';
+    if (c.photo) t += '📷 Foto de progreso cargada en la app\n';
+    return t + '\n' + D.handle;
   }
   // Foto chica (lado mayor 480 px, JPEG): entra en el check-in sin gastar datos.
   function ciPhoto(file) {
@@ -623,6 +688,31 @@ const runtime = String.raw`
   }
 
   // ---------- 4 · Lista de compras semanal ----------
+  // Reparto semanal de la verdura del plan (crudo) y peso de cada unidad en la verdulería.
+  var VERDU = [
+    { id: 'tomate', name: 'Tomate', share: 0.24, u: 150, one: 'tomate', many: 'tomates' },
+    { id: 'lechuga', name: 'Lechuga (o rúcula / espinaca)', share: 0.12, u: 250, one: 'planta', many: 'plantas' },
+    { id: 'zanahoria', name: 'Zanahoria', share: 0.14, u: 100, one: 'zanahoria', many: 'zanahorias' },
+    { id: 'zucchini', name: 'Zapallito o zucchini', share: 0.14, u: 200, one: 'unidad', many: 'unidades' },
+    { id: 'cebolla', name: 'Cebolla (común o morada)', share: 0.1, u: 150, one: 'cebolla', many: 'cebollas' },
+    { id: 'morron', name: 'Morrón (rojo o verde)', share: 0.1, u: 180, one: 'morrón', many: 'morrones' },
+    { id: 'brocoli', name: 'Brócoli', share: 0.16, u: 400, one: 'planta', many: 'plantas' },
+  ];
+  // Ensaladas y salteados rápidos con el aliño medido (1 cdita de aceite = 5 ml ≈ 45 kcal).
+  var SALADS = [
+    { t: 'Criolla', d: 'Tomate + cebolla morada + morrón en cubitos.', a: '1 cdita de aceite de oliva + 1 cda de vinagre, sal y orégano.' },
+    { t: 'Mixta clásica', d: 'Lechuga + tomate + zanahoria rallada.', a: '1 cdita de aceite de oliva + jugo de ½ limón y sal.' },
+    { t: 'Zanahoria y repollo', d: 'Zanahoria y repollo rallados finitos (aguanta 3 días en la heladera).', a: '1 cdita de aceite + 1 cda de vinagre de manzana + 1 cdita de semillas.' },
+    { t: 'Salteado de zucchini', d: 'Zapallito o zucchini + cebolla + morrón en tiras, 5-6 min en sartén antiadherente.', a: '1 cdita de aceite de oliva, ajo, sal y pimienta.' },
+    { t: 'Brócoli al vapor', d: 'Ramitos de brócoli 5 min al vapor o 3 min en el microondas con un chorrito de agua.', a: '1 cdita de aceite de oliva + limón y una pizca de sal.' },
+    { t: 'Tomates asados con rúcula', d: 'Tomates en mitades 20 min a 200 °C sobre una cama de rúcula o espinaca.', a: '1 cdita de aceite de oliva + 1 cda de aceto balsámico.' },
+  ];
+  function saladsBlock() {
+    var h = '<details class="salads"><summary>🥗 6 ensaladas y salteados rápidos para tu verdura</summary>';
+    SALADS.forEach(function (x) { h += '<div class="salad"><b>' + esc(x.t) + ':</b> ' + esc(x.d) + '<i>Aliño: ' + esc(x.a) + '</i></div>'; });
+    return h + '<p class="sl-note">Si tu comida ya trae aceite en el plan, ese es el aliño: no sumes otra cucharadita. Limón, vinagre, mostaza, hierbas y especias son libres.</p></details>';
+  }
+
   function shoppingList() {
     var onDays = Math.max(0, Math.min(7, D.trainingDays)), mult = { on: onDays, off: 7 - onDays, both: 7 };
     var rules = D.shopRules || {};
@@ -636,9 +726,24 @@ const runtime = String.raw`
         acc[key].grams += it.grams * mult[m.day];
       });
     });
+    // Verdulería concreta: la «verdura» del plan se reparte en verduras reales con unidades de verdulería.
+    var vk = Object.keys(acc).filter(function (k) { return acc[k].foodId === 'vegetales'; })[0];
+    if (vk) {
+      var vg = acc[vk].grams;
+      delete acc[vk];
+      VERDU.forEach(function (v) { acc['veg:' + v.id] = { foodId: null, name: v.name, rule: { section: 'Verdulería' }, grams: vg * v.share, verdu: v }; });
+      acc['veg:limon'] = { foodId: null, name: 'Limón (para aliñar)', rule: { section: 'Verdulería' }, grams: 0, verdu: { fixed: '4 u' } };
+    }
     var groups = {};
     Object.keys(acc).forEach(function (k) {
       var it = acc[k], ref = it.foodId && D.foods[it.foodId], r = it.rule;
+      if (it.verdu) {
+        var vv = it.verdu, vrow = { key: k, foodId: null, name: it.name, grams: Math.max(vv.u || 0, Math.ceil(it.grams / 50) * 50), hint: '', note: '' };
+        if (vv.fixed) { vrow.label = vv.fixed; vrow.grams = 0; }
+        else { var nu = Math.max(1, Math.round(vrow.grams / vv.u)); vrow.note = '≈ ' + nu + ' ' + (nu > 1 ? vv.many : vv.one); }
+        (groups['Verdulería'] = groups['Verdulería'] || []).push(vrow);
+        return;
+      }
       var cat = r.section || (ref ? D.categories[ref.group] : '') || D.shopFallback || 'Otros';
       var row = { key: k, foodId: it.foodId, name: it.name, grams: it.grams, cooked: it.grams, hint: '', note: '' };
       if (r.factor) {
@@ -653,6 +758,7 @@ const runtime = String.raw`
       if (r.byUnit) { var u = Math.ceil(it.grams / r.byUnit); row.label = u + ' ' + (u > 1 ? r.unitLabel : r.unitLabel.replace(/s$/, '')); row.hint = ''; }
       row.pack = packText(it.foodId, row.grams);
       row.brands = it.foodId && D.brands ? D.brands[it.foodId] : null;
+      row.seal = !!(it.foodId && D.glutenSeal && D.glutenSeal.indexOf(it.foodId) >= 0);
       (groups[cat] = groups[cat] || []).push(row);
     });
     if (D.supplements.length) groups['Suplementos'] = (groups['Suplementos'] || []).concat(D.supplements.map(function (s) { return { key: 'sup:' + s.id, name: s.name, dose: s.dose }; }));
@@ -702,7 +808,8 @@ const runtime = String.raw`
       t += '\n*' + g.cat.toUpperCase() + '*\n';
       g.items.forEach(function (i) {
         t += '▢ ' + i.name + ': *' + shopQty(i) + '*' + (i.pack ? ' ' + i.pack : '') + (i.note ? ' (' + i.note + ')' : !i.pack && i.hint ? ' (' + i.hint.replace('≈ ', '≈') + ')' : '') + '\n';
-        if (i.brands) t += '   ↳ N1 ' + i.brands[0] + ' · N2 ' + i.brands[1] + ' · N3 ' + i.brands[2] + '\n';
+        if (i.brands) t += '   ↳ Marca sugerida: ' + i.brands[D.brandTier || 0] + (i.seal ? ' (con logo Sin TACC)' : '') + '\n';
+        else if (i.seal) t += '   ↳ Marca a elección, con logo Sin TACC\n';
       });
     });
     return t + '\n' + D.handle;
@@ -724,7 +831,7 @@ const runtime = String.raw`
     if (S.panel === 'checkin') return open(bg, sh, checkinPanel());
     if (S.panel === 'shop') {
       var list = shoppingList();
-      var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco.</p>';
+      var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco. Pan, galletas, carnes, leche, arroz, fideos, avena, frutas y verduras: <b>marca a elección</b>' + (D.glutenSeal && D.glutenSeal.length ? ' (siempre con el logo oficial Sin TACC en los envasados)' : '') + '.</p>';
       h2 += '<button class="wa-btn" data-washop="1">[ 📲 Mandar lista por WhatsApp ]</button>';
       h2 += '<button class="batch-btn" data-panel="batch">[ 🍳 GUÍA DE BATCH COOKING DEL FIN DE SEMANA ]</button>';
       list.forEach(function (g) {
@@ -732,9 +839,10 @@ const runtime = String.raw`
         g.items.forEach(function (i) {
           var on = !!S.shop[i.key];
           var tier = D.brandTier || 0;
-          h2 += '<button class="shop-item' + (on ? ' done' : '') + '" data-shopcheck="' + esc(i.key) + '"><span class="chk">' + CHECK + '</span><span class="sn">' + esc(i.name) + (i.brands ? '<em class="br">Marca sugerida: ' + esc(i.brands[tier]) + '</em>' : '') + '</span><span class="sq">' + esc(shopQty(i)) + (i.pack ? '<em>' + esc(i.pack) + '</em>' : '') + (i.note ? '<em>' + esc(i.note) + '</em>' : !i.pack && i.hint ? '<em>' + i.hint + '</em>' : '') + '</span></button>';
+          h2 += '<button class="shop-item' + (on ? ' done' : '') + '" data-shopcheck="' + esc(i.key) + '"><span class="chk">' + CHECK + '</span><span class="sn">' + esc(i.name) + (i.brands ? '<em class="br">Marca sugerida: ' + esc(i.brands[tier]) + (i.seal ? ' · con logo Sin TACC' : '') + '</em>' : i.foodId ? '<em class="br">Marca a elección' + (i.seal ? ' · con logo Sin TACC' : '') + '</em>' : '') + '</span><span class="sq">' + esc(shopQty(i)) + (i.pack ? '<em>' + esc(i.pack) + '</em>' : '') + (i.note ? '<em>' + esc(i.note) + '</em>' : !i.pack && i.hint ? '<em>' + i.hint + '</em>' : '') + '</span></button>';
         });
       });
+      if (list.some(function (g) { return g.items.some(function (i) { return /^veg:/.test(i.key); }); })) h2 += saladsBlock();
       h2 += '<div class="wbtns" style="margin-top:14px"><button data-copyshop="1">Copiar lista</button><button data-shopreset="1" class="ghost">Desmarcar todo</button></div>';
       return open(bg, sh, h2);
     }
@@ -761,11 +869,29 @@ const runtime = String.raw`
         S.outMeal = def;
         var tsel = targets.filter(function (x) { return x.m.id === def; })[0];
         h3 += '<label class="lbl">¿Qué comida reemplaza?</label><select id="out-meal" class="inp">' + targets.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (x.m.id === def ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + mealName(x.m, mode) + ' · ' + n0(x.kcal) + ' kcal') + '</option>'; }).join('') + '</select>';
-        h3 += '<label class="lbl">Bebida social (opcional)</label><div class="scenes drinks">' + OUT_DRINKS.map(function (d) { return '<button data-drink="' + d.id + '" class="' + (S.outDrinks.indexOf(d.id) >= 0 ? 'on' : '') + '">' + d.icon + ' ' + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal</i></button>'; }).join('') + '</div>';
-        var dk = S.outDrinks.reduce(function (a, id) { var d = OUT_DRINKS.filter(function (x) { return x.id === id; })[0]; return a + (d ? d.c * 4 : 0); }, 0);
+        // Catálogo argentino: si elegís lo que vas a comer, se registra con esos números (si no, con los de tu comida).
+        var oc = countOf(S.outFoods), cats = [];
+        OUT_FOODS.forEach(function (x) { if (cats.indexOf(x.cat) < 0) cats.push(x.cat); });
+        h3 += '<details class="out-cat"' + (S.outFoods.length ? ' open' : '') + '><summary>🇦🇷 ¿Qué vas a comer? Calorías y macros de lo típico (opcional)</summary>';
+        cats.forEach(function (c) {
+          h3 += '<div class="oc-h">' + esc(c) + '</div>';
+          OUT_FOODS.filter(function (x) { return x.cat === c; }).forEach(function (x) {
+            var nn = oc[x.id] || 0;
+            h3 += '<div class="oc-row' + (nn ? ' on' : '') + '"><span class="oc-n">' + esc(x.label) + '<i>' + esc(x.unit) + ' · P ' + n0(x.p) + ' · C ' + n0(x.c) + ' · G ' + n0(x.f) + '</i></span><b>' + n0(kcalOf(x)) + ' kcal</b>' + (nn ? '<button data-outfoodrm="' + x.id + '" aria-label="Quitar uno">−</button><em>' + nn + '</em>' : '') + '<button data-outfood="' + x.id + '" aria-label="Sumar uno">+</button></div>';
+          });
+        });
+        h3 += '</details>';
+        var dcnt = countOf(S.outDrinks);
+        h3 += '<label class="lbl">Bebida social (opcional · tocá varias veces para sumar)</label><div class="scenes drinks">' + OUT_DRINKS.map(function (d) { var q = dcnt[d.id] || 0; return '<button data-drink="' + d.id + '" class="' + (q ? 'on' : '') + '">' + d.icon + ' ' + (q > 1 ? q + ' × ' : '') + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal c/u</i></button>'; }).join('') + (S.outDrinks.length ? '<button data-drink="__none" class="ghost">✕ sin bebida</button>' : '') + '</div>';
+        var dk = S.outDrinks.reduce(function (a, id) { var d = outDrink(id); return a + (d ? d.c * 4 : 0); }, 0);
+        // Trueques de alcohol: lo que "cuesta" la bebida en comida real.
+        var EMP = outFood('emp-carne-h'), BOCHA = outFood('helado-bocha');
+        h3 += '<div class="out-swap"><b>🔁 Trueques</b>' + (dk ? '<p>Lo que elegiste para tomar (' + n0(dk) + ' kcal) ≈ <b>' + n1(dk / kcalOf(EMP)) + ' empanadas de carne al horno</b> o <b>' + n1(dk / kcalOf(BOCHA)) + ' bochas de helado</b>.</p>' : '') + '<p>2 copas de vino o 1 pinta de cerveza ≈ 1 empanada de carne al horno o 2 bochas de helado.</p><p>Fernet con coca zero en vez de común: −' + n0((outDrink('fernet-comun').c - outDrink('fernet').c) * 4) + ' kcal por vaso. Gin tonic con tónica light: −' + n0((outDrink('gin').c - outDrink('gin-light').c) * 4) + ' kcal. Intercalá un vaso de agua o soda entre trago y trago.</p></div>';
         var after = targets.filter(function (x) { return toMin(x.m.time) > toMin(tsel.m.time) && !S.checks[x.m.id]; })[0];
         h3 += '<button class="rebal' + (S.outRebal ? ' on' : '') + '" data-outrebal="1"><span class="bk-chk">' + (S.outRebal ? '✓' : '') + '</span><span><b>🛡 Compensar en la próxima comida</b>' + (after ? 'Baja un ' + Math.round((1 - REBAL) * 100) + ' % los carbos y grasas de ' + esc(mealName(after.m, mode)) + ' (' + esc(after.m.time) + ') para amortiguar la salida.' : 'No queda otra comida pendiente después de esta.') + '</span></button>';
-        h3 += '<div class="out-sum">Se registra como <b>' + n0(tsel.kcal + dk) + ' kcal</b> · ' + mtxt(tsel.t.p, tsel.t.c + dk / 4, tsel.t.f) + (dk ? ' (incluye ' + n0(dk) + ' kcal de bebida)' : '') + '</div>';
+        var fm = S.outFoods.reduce(function (a, id) { var x = outFood(id); return x ? { p: a.p + x.p, c: a.c + x.c, f: a.f + x.f } : a; }, { p: 0, c: 0, f: 0 });
+        var base = S.outFoods.length ? fm : tsel.t, bk = kcalOf(base);
+        h3 += '<div class="out-sum">Se registra como <b>' + n0(bk + dk) + ' kcal</b> · ' + mtxt(base.p, base.c + dk / 4, base.f) + (dk ? ' (incluye ' + n0(dk) + ' kcal de bebida)' : '') + (S.outFoods.length ? '<br>Tu comida del plan era de ' + n0(tsel.kcal) + ' kcal: ' + (bk + dk > tsel.kcal ? '<b>+' + n0(bk + dk - tsel.kcal) + ' kcal</b> (activá «Compensar» si querés amortiguarlo).' : 'quedás dentro de lo planeado.') : '') + '</div>';
         h3 += '<button class="add-meal" data-imputar="1">✓ Registrar esta comida afuera</button>';
         h3 += '<p class="muted" style="font-size:11.5px;margin-top:6px">Cuenta como la comida de tu plan (mismas calorías y nutrientes), así tu día sigue cuadrando. Para deshacerlo, tocá la ✕ en esa comida.</p>';
       }
@@ -936,7 +1062,7 @@ const runtime = String.raw`
   function portionsPanel() {
     var list = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ CALCULADORA DE PORCIONES VISUALES · SIN BALANZA ]</div><h3>Tu mano es la medida</h3>';
-    h += '<div class="hands"><div><b>✋ 1 palma de la mano</b><span>≈ 110 g de carne, pollo o pescado cocido (el grosor y el tamaño de tu palma, sin los dedos)</span></div><div><b>✊ 1 puño</b><span>≈ 150 g de arroz, fideos o papa cocidos · 1 fruta mediana</span></div><div><b>🤲 1 mano ahuecada</b><span>≈ 30 g de avena, tutucas o cereal</span></div><div><b>👍 1 pulgar</b><span>≈ 15 g de frutos secos o pasta de maní</span></div><div><b>🥄 1 cda</b><span>≈ 13 g de aceite · 20 g de miel · 15 g de queso untable</span></div><div><b>🥛 1 pote / 1 taza</b><span>≈ 200 g de yogur · 250 ml de leche</span></div></div>';
+    h += '<div class="hands"><div><b>✋ 1 palma de la mano</b><span>≈ 120 g de carne, pollo o pescado cocido (el grosor y el tamaño de tu palma, sin los dedos)</span></div><div><b>✊ 1 puño</b><span>≈ 150 g de arroz, fideos o papa cocidos · 1 fruta mediana</span></div><div><b>🤲 1 mano ahuecada</b><span>≈ 30 g de avena, tutucas o cereal</span></div><div><b>👍 1 pulgar</b><span>≈ 15 g de frutos secos o pasta de maní</span></div><div><b>🥄 1 cda</b><span>≈ 13 g de aceite · 20 g de miel · 15 g de queso untable</span></div><div><b>🥛 1 pote</b><span>≈ 190-200 g de yogur griego o proteico</span></div></div>';
     h += '<p class="muted" style="font-size:12px;margin-top:10px">Equivalencias de lo que elegiste hoy (día ' + S.mode.toUpperCase() + '). Si cambiás de opción en una comida, esta lista se actualiza:</p>';
     list.forEach(function (x) {
       var otl = x.alt ? x.alt.title : x.m.title;
@@ -979,15 +1105,15 @@ const runtime = String.raw`
       if (x && x.some(function (q, j) { return !(q >= 0) && idx[j] < must; })) {
         // Lo que eligió el atleta nunca queda afuera: se fija en una porción mínima y el resto cubre lo que falta.
         var pin = idx.filter(function (ii) { return ii < must; }), free = idx.filter(function (ii) { return ii >= must; });
-        pin.forEach(function (ii) { g[ii] = Math.min(fridgeCap(foods[ii]), 30); });
+        pin.forEach(function (ii) { g[ii] = frSnap(foods[ii], 0, true); });
         var fixed = macrosOf(foods, g), rest = [Math.max(0, t.p - fixed.p), Math.max(0, t.c - fixed.c), Math.max(0, t.f - fixed.f)];
         var x2 = ls(free, rest);
         if (!x2 || x2.some(function (q) { return !(q >= 0); })) continue;
-        free.forEach(function (ii, j) { g[ii] = Math.min(fridgeCap(foods[ii]), Math.round(x2[j] / 5) * 5); });
+        free.forEach(function (ii, j) { g[ii] = frSnap(foods[ii], x2[j]); });
       } else {
         if (!x || x.some(function (q) { return !(q >= 0); })) continue;
         // Porciones reales: un solo alimento nunca "cubre" el bloque entero (nada de 130 g de avena sola).
-        idx.forEach(function (ii, j) { g[ii] = Math.min(fridgeCap(foods[ii]), Math.round(x[j] / 5) * 5); });
+        idx.forEach(function (ii, j) { g[ii] = frSnap(foods[ii], x[j]); });
       }
       var tot = macrosOf(foods, g);
       var err = w[0] * w[0] * Math.pow(tot.p - t.p, 2) + w[1] * w[1] * Math.pow(tot.c - t.c, 2) + w[2] * w[2] * Math.pow(tot.f - t.f, 2);
@@ -1014,9 +1140,23 @@ const runtime = String.raw`
     return foods.reduce(function (a, f, i) { var k = g[i] / 100; return { p: a.p + f.p * k, c: a.c + f.c * k, f: a.f + f.f * k, l: a.l + f.leucine * k }; }, { p: 0, c: 0, f: 0, l: 0 });
   }
 
-  // Tope de porción por tipo de alimento (cocido), igual que el generador de opciones.
+  // Tope y porción mínima por toma (Tabla Única del plan, según el sexo y el momento del día) y unidades enteras.
   var FR_CAP = { 'lean-protein': 250, starch: 300, cereal: 100, fat: 20, fruit: 250, 'dairy-protein': 400, whey: 50, eggs: 200, 'sport-carb': 40, 'protein-snack': 100, plato: 450, veg: 250 };
-  function fridgeCap(f) { return f.id === 'palta' ? 50 : FR_CAP[f.group] || 300; }
+  function frSlot() { return S.fridge.slot || 'main'; }
+  function fridgeRange(f) {
+    var cs = D.fridgeCaps && D.fridgeCaps[frSlot()], c = cs && f && cs[f.id];
+    if (c) return { min: c[0], max: c[1] };
+    return { min: 0, max: f.id === 'palta' ? 50 : FR_CAP[f.group] || 300 };
+  }
+  function fridgeCap(f) { return fridgeRange(f).max; }
+  // Gramos reales: huevos, claras y barras en unidades enteras; el resto de a 5 g; dentro de la porción mínima y el tope.
+  function frSnap(f, x, pinned) {
+    var rg = fridgeRange(f), st = (D.units && D.units[f.id]) || 5;
+    var v = Math.min(rg.max, Math.round(Math.max(0, x) / st) * st);
+    if (v > 0 && v < rg.min) v = x >= rg.min / 2 ? rg.min : 0;
+    if (pinned && v === 0) v = Math.max(st, rg.min);
+    return v;
+  }
   // Tipo de un alimento por su aporte energético dominante.
   function macroKind(f) {
     var k = kcal100(f) || 1;
@@ -1030,12 +1170,13 @@ const runtime = String.raw`
     peri: { p: ['yogur', 'whey', 'yogur-proteico'], f: ['banana', 'nueces'] },
     main: { p: ['pollo', 'claras', 'atun'], f: ['oliva', 'palta'] },
   };
+  function frAvoid(id) { return !!(D.avoid && D.avoid.indexOf(id) >= 0); }
   function fridgeFill(picked, role, t) {
-    var slot = SLOT[role] || 'main', fill = FR_FILL[slot], have = picked.map(macroKind), add = [];
-    var ok = function (id) { var f = D.foods[id]; return f && picked.indexOf(f) < 0 && (!f.slots || f.slots.indexOf(slot) >= 0); };
+    var slot = S.fridge.slot || SLOT[role] || 'main', fill = FR_FILL[slot], have = picked.map(macroKind), add = [];
+    var ok = function (id) { var f = D.foods[id]; return f && !frAvoid(id) && picked.indexOf(f) < 0 && (!f.slots || f.slots.indexOf(slot) >= 0); };
     var pick = function (list) { return list.filter(ok)[0]; };
-    if (have.indexOf('p') < 0 && t.p >= 10 && picked.length + add.length < 3) { var pid = pick(fill.p); if (pid) add.push({ id: pid, why: 'proteína' }); }
-    if (have.indexOf('f') < 0 && have.indexOf('fruit') < 0 && t.f + t.c >= 15 && picked.length + add.length < 3) { var fid = pick(fill.f); if (fid) add.push({ id: fid, why: D.foods[fid].group === 'fruit' ? 'fruta' : 'grasa' }); }
+    if (have.indexOf('p') < 0 && t.p >= 10 && picked.length + add.length < 4) { var pid = pick(fill.p); if (pid) add.push({ id: pid, why: 'proteína' }); }
+    if (have.indexOf('f') < 0 && have.indexOf('fruit') < 0 && t.f + t.c >= 15 && picked.length + add.length < 4) { var fid = pick(fill.f); if (fid) add.push({ id: fid, why: D.foods[fid].group === 'fruit' ? 'fruta' : 'grasa' }); }
     return add;
   }
 
@@ -1044,25 +1185,91 @@ const runtime = String.raw`
     return t;
   }
 
+  // Lo que falta hoy: objetivo del día menos las comidas ya marcadas; y las comidas que quedan sin marcar.
+  function pendingToday() {
+    var tgt = D.targets[S.mode] || { p: 0, c: 0, f: 0 }, eaten = { p: 0, c: 0, f: 0 }, left = [];
+    mealsFor(S.mode).forEach(function (x) {
+      if (S.checks[x.m.id]) { eaten.p += x.t.p; eaten.c += x.t.c; eaten.f += x.t.f; }
+      else if (x.m.id !== '__out' && x.m.items.length) left.push(x);
+    });
+    return { p: Math.max(0, tgt.p - eaten.p), c: Math.max(0, tgt.c - eaten.c), f: Math.max(0, tgt.f - eaten.f), left: left };
+  }
+
+  // Sólo ingredientes crudos o básicos: nada de platos armados (milanesas, guisos, empanadas, cortes a la parrilla).
+  var FR_DISH = /milanesa|guiso|empanada|parrilla|asado|chinchul|arroz con|tarta|pizza|s[aá]ndwich|s[aá]nguche|tostado|hamburguesa|lomito|locro|estofado|canel|ravio|sorrentin|lasa[gñ]|pastel|tortilla|wok|salteado|ensalada|pur[eé]|al horno|plato|completo|choripan|helado|alfajor de|medialuna|factura/i;
+  var FR_GROUPS = [['Carnes, pescados y huevos', ['lean-protein', 'eggs']], ['Lácteos y proteína', ['dairy-protein', 'whey', 'protein-snack']], ['Panes, cereales y almidones', ['starch', 'cereal']], ['Frutas', ['fruit']], ['Verduras', ['veg']], ['Grasas y frutos secos', ['fat']], ['Para el entreno', ['sport-carb']]];
+  function fridgeOk(id) {
+    var f = D.foods[id];
+    return !!f && f.group !== 'plato' && !f.custom && !FR_DISH.test(f.name) && kcal100(f) > 0 && !frAvoid(id);
+  }
+
+  // Lo que falta para cerrar, con una sugerencia concreta en gramos o unidades y un botón para sumarla.
+  function frMissing(t, tot, slot) {
+    var out = [], mp = t.p - tot.p, mc = t.c - tot.c, mf = t.f - tot.f;
+    var okf = function (id) { return D.foods[id] && fridgeOk(id) && S.fridge.ing.indexOf(id) < 0 && (!D.foods[id].slots || D.foods[id].slots.indexOf(slot) >= 0); };
+    var food = function (id) { var f = D.foods[id]; if (!f.id) f.id = id; return f; };
+    var grams = function (id, need, k) { var f = food(id); return frSnap(f, need / (f[k] / 100)); };
+    var nm = function (id) { return D.foods[id].name.split(' (')[0].toLowerCase(); };
+    if (mp >= 6 && t.p >= 10) {
+      var alts = [];
+      var pid = (slot === 'main' ? ['pollo', 'cuadril', 'merluza', 'atun', 'tofu'] : ['yogur', 'whey', 'queso-light', 'ricota']).filter(okf)[0];
+      if (pid) alts.push({ txt: n0(grams(pid, mp, 'p')) + ' g de ' + nm(pid), add: pid });
+      if (okf('huevo') && okf('claras')) {
+        var eP = D.foods.huevo.p * 0.6, cP = D.foods.claras.p * 0.33;
+        var ne = Math.max(1, Math.min(3, Math.round((mp * 0.6) / eP))), nc = Math.max(0, Math.min(6, Math.ceil((mp - ne * eP) / cP)));
+        if (nc === 1) nc = 2;
+        alts.push({ txt: ne + ' huevo' + (ne > 1 ? 's' : '') + (nc ? ' + ' + nc + ' claras' : ''), add: nc ? 'huevo,claras' : 'huevo' });
+      } else if (okf('huevo')) {
+        var n1e = Math.max(1, Math.min(4, Math.round(mp / (D.foods.huevo.p * 0.6))));
+        alts.push({ txt: n1e + ' huevo' + (n1e > 1 ? 's' : ''), add: 'huevo' });
+      }
+      if (alts.length) out.push({ txt: 'Te faltan ~' + n0(mp) + ' g de proteína', alts: alts });
+    }
+    if (mc >= 12) {
+      var cl = (slot === 'main' ? ['arroz', 'papa', 'fideos', 'batata', 'pan'] : slot === 'peri' ? ['banana', 'galletas-arroz', 'miel'] : ['pan', 'banana', 'avena', 'galletas-arroz']).filter(okf).slice(0, 2);
+      if (cl.length) out.push({ txt: 'Te faltan ~' + n0(mc) + ' g de carbohidratos', alts: cl.map(function (id) { return { txt: n0(grams(id, mc, 'c')) + ' g de ' + nm(id) + (unitHintFor(id, grams(id, mc, 'c')) ? ' (' + unitHintFor(id, grams(id, mc, 'c')).replace('≈ ', '≈') + ')' : ''), add: id }; }) });
+    }
+    if (mf >= 5) {
+      var fl = (slot === 'main' ? ['oliva', 'palta'] : ['nueces', 'mani', 'semillas']).filter(okf).slice(0, 2);
+      if (fl.length) out.push({ txt: 'Te faltan ~' + n0(mf) + ' g de grasas', alts: fl.map(function (id) { return { txt: n0(grams(id, mf, 'f')) + ' g de ' + nm(id), add: id }; }) });
+    }
+    return out;
+  }
+
   function fridgePanel() {
+    var pend = pendingToday(), left = pend.left;
     var meals = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out' && x.m.items.length; });
-    if (!S.fridge.meal || !meals.some(function (x) { return x.m.id === S.fridge.meal; })) {
+    var rest = S.fridge.meal === '__rest' && left.length >= 2;
+    if (!rest && (!S.fridge.meal || !meals.some(function (x) { return x.m.id === S.fridge.meal; }))) {
       var nowMin = now.getHours() * 60 + now.getMinutes();
-      var nx = meals.filter(function (x) { return !S.checks[x.m.id] && timeToMinutes(x.m.time) >= nowMin - 30; })[0] || meals[0];
+      var nx = meals.filter(function (x) { return !S.checks[x.m.id] && timeToMinutes(x.m.time) >= nowMin - 30; })[0] || left[0] || meals[0];
       S.fridge.meal = nx ? nx.m.id : '';
     }
-    var meal = D.meals.filter(function (m) { return m.id === S.fridge.meal; })[0];
-    var t = meal ? fridgeTarget(meal) : { p: 0, c: 0, f: 0 };
-    var opts = Object.keys(D.foods).filter(function (id) { return D.foods[id].group !== 'veg' && kcal100(D.foods[id]) > 0 && !(D.avoid && D.avoid.indexOf(id) >= 0); })
-      .sort(function (a, b) { return D.foods[a].name.localeCompare(D.foods[b].name); });
+    var meal = rest ? null : D.meals.filter(function (m) { return m.id === S.fridge.meal; })[0];
+    var lastOne = !rest && meal && left.length === 1 && left[0].m.id === meal.id;
+    var n = rest ? left.length : 1;
+    // Objetivo: la comida del plan; si es la última del día o «todo lo que queda», lo que falta hoy (repartido por comida).
+    var t = rest || lastOne ? { p: pend.p / n, c: pend.c / n, f: pend.f / n } : meal ? fridgeTarget(meal) : { p: 0, c: 0, f: 0 };
+    S.fridge.slot = rest ? (left.some(function (x) { return SLOT[x.m.role] === 'main'; }) ? 'main' : 'am') : (SLOT[meal ? meal.role : 'lunch'] || 'main');
+    var slot = S.fridge.slot;
+    var opts = Object.keys(D.foods).filter(fridgeOk);
     var sel = function (k) {
-      return '<select class="inp" id="fr-' + k + '" data-fr="' + k + '"><option value="">— ingrediente ' + (k + 1) + ' —</option>' + opts.map(function (id) { return '<option value="' + esc(id) + '"' + (S.fridge.ing[k] === id ? ' selected' : '') + '>' + esc(D.foods[id].name) + '</option>'; }).join('') + '</select>';
+      var h0 = '<select class="inp" id="fr-' + k + '" data-fr="' + k + '"><option value="">— ingrediente ' + (k + 1) + ' —</option>';
+      FR_GROUPS.forEach(function (g) {
+        var ids = opts.filter(function (id) { return g[1].indexOf(D.foods[id].group) >= 0; }).sort(function (a, b) { return D.foods[a].name.localeCompare(D.foods[b].name); });
+        if (ids.length) h0 += '<optgroup label="' + esc(g[0]) + '">' + ids.map(function (id) { return '<option value="' + esc(id) + '"' + (S.fridge.ing[k] === id ? ' selected' : '') + '>' + esc(D.foods[id].name) + '</option>'; }).join('') + '</optgroup>';
+      });
+      return h0 + '</select>';
     };
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ MI HELADERA ]</div><h3>¿Qué tenés en casa?</h3>';
-    h += '<p class="muted" style="font-size:12.5px">Elegí 2-3 ingredientes y la app calcula los gramos para que esa comida aporte lo mismo que en tu plan.</p>';
-    h += '<label class="lbl">Comida a cubrir</label><select class="inp" id="fr-meal">' + meals.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (x.m.id === S.fridge.meal ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + mealName(x.m, S.mode)) + '</option>'; }).join('') + '</select>';
-    h += '<div class="fr-target">Tiene que aportar: <b>' + mtxt(t.p, t.c, t.f) + '</b> · ' + n0(t.p * 4 + t.c * 4 + t.f * 9) + ' kcal</div>';
-    h += '<label class="lbl">Ingredientes disponibles</label><div class="fr-ings">' + sel(0) + sel(1) + sel(2) + '</div>';
+    h += '<div class="fr-pend"><span>Hoy te falta</span><b>' + n0(pend.p * 4 + pend.c * 4 + pend.f * 9) + ' kcal</b><em>P ' + n0(pend.p) + ' g · C ' + n0(pend.c) + ' g · G ' + n0(pend.f) + ' g</em><i>' + (left.length ? left.length + ' comida' + (left.length > 1 ? 's' : '') + ' sin marcar' : 'ya marcaste todas tus comidas') + '</i></div>';
+    h += '<p class="muted" style="font-size:12.5px">Elegí 2-4 ingredientes crudos o básicos que tengas: la app calcula los gramos exactos y la medida casera, con porciones reales (huevos enteros, nunca menos de lo que se ve en el plato).</p>';
+    h += '<label class="lbl">¿Qué querés cubrir?</label><select class="inp" id="fr-meal">' + meals.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (!rest && x.m.id === S.fridge.meal ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + mealName(x.m, S.mode)) + (S.checks[x.m.id] ? ' ✓' : '') + '</option>'; }).join('') + (left.length >= 2 ? '<option value="__rest"' + (rest ? ' selected' : '') + '>Todo lo que me queda hoy (' + left.length + ' comidas)</option>' : '') + '</select>';
+    h += '<div class="fr-target">' + (rest ? 'En cada una de tus ' + n + ' comidas: ' : lastOne ? 'Es tu última comida, cerramos el día: ' : 'Tiene que aportar: ') + '<b>' + mtxt(t.p, t.c, t.f) + '</b> · ' + n0(t.p * 4 + t.c * 4 + t.f * 9) + ' kcal</div>';
+    var nSel = Math.min(5, Math.max(3, S.fridge.ing.filter(Boolean).length + 1));
+    var sels = '';
+    for (var k = 0; k < nSel; k++) sels += sel(k);
+    h += '<label class="lbl">Ingredientes disponibles</label><div class="fr-ings">' + sels + '</div>';
     var picked = S.fridge.ing.filter(Boolean).map(function (id) { var f = D.foods[id]; if (f && !f.id) f.id = id; return f; }).filter(Boolean);
     var auto = picked.length && !S.fridge.noAuto ? fridgeFill(picked, meal ? meal.role : 'lunch', t) : [];
     var foods = picked.concat(auto.map(function (a) { var f = D.foods[a.id]; if (!f.id) f.id = a.id; return f; }));
@@ -1071,11 +1278,12 @@ const runtime = String.raw`
     var used = auto.filter(function (a, i) { return r && r.grams[picked.length + i] > 0; });
     if (used.length) h += '<div class="fr-auto">➕ Sumado para equilibrar la comida: ' + used.map(function (a) { return '<b>' + esc(D.foods[a.id].name) + '</b> (' + a.why + ')'; }).join(' · ') + '<button data-frauto="off">quitar sugerencias</button></div>';
     else if (S.fridge.noAuto && picked.length) h += '<div class="fr-auto">Sugerencias desactivadas<button data-frauto="on">volver a sugerir</button></div>';
+    S.fridge.result = null;
     if (foods.length) {
       if (!r) h += '<div class="scan-err">Con esos ingredientes no llegamos a lo que pide la comida. Probá sumar una proteína o un carbohidrato.</div>';
       else {
-        S.fridge.result = { foods: foods, grams: r.grams };
-        h += '<div class="scan"><div class="tag">[ CANTIDADES CALCULADAS ]</div>';
+        S.fridge.result = { foods: foods, grams: r.grams, rest: rest ? left.map(function (x) { return x.m.id; }) : null };
+        h += '<div class="scan"><div class="tag">[ ' + (rest ? 'CANTIDADES POR COMIDA · ×' + n : 'CANTIDADES CALCULADAS') + ' ]</div>';
         foods.forEach(function (f, i) {
           if (!r.grams[i]) return;
           var fid = f.id || Object.keys(D.foods).filter(function (id) { return D.foods[id] === f; })[0];
@@ -1085,15 +1293,17 @@ const runtime = String.raw`
         var dv = function (a, b2) { return b2 ? Math.round((a / b2 - 1) * 100) : 0; };
         h += '<div class="scan-tot"><b>' + n0(r.tot.p * 4 + r.tot.c * 4 + r.tot.f * 9) + ' kcal</b><span>P ' + n0(r.tot.p) + ' (' + dv(r.tot.p, t.p) + '%)</span><span>C ' + n0(r.tot.c) + ' (' + dv(r.tot.c, t.c) + '%)</span><span>G ' + n0(r.tot.f) + ' (' + dv(r.tot.f, t.f) + '%)</span></div>';
         if (picked.some(function (f, i) { return !r.grams[i]; })) h += '<p class="muted" style="font-size:11.5px;margin-top:6px">Algún ingrediente quedó en 0 g: no hace falta para esta comida.</p>';
-        if (t.p >= 10 && r.tot.p < t.p * 0.8) h += '<div class="fr-warn">[ ⚠️ Falta fuente proteica: sumá ' + ((SLOT[meal ? meal.role : 'lunch'] || 'main') === 'main' ? '1 palma de pollo o 3 claras' : '1 pote de yogur o 3 claras') + ' ]</div>';
-        if (r.tot.p * 4 + r.tot.c * 4 + r.tot.f * 9 < (t.p * 4 + t.c * 4 + t.f * 9) * 0.85) h += '<p class="muted" style="font-size:11.5px;margin-top:6px">Con estas porciones reales la comida queda corta en kcal: sumá otro ingrediente en el lugar libre.</p>';
-        h += '<button class="add-meal" data-fridgeuse="1">[ ✓ USAR EN ESTA COMIDA ]</button></div>';
+        frMissing(t, r.tot, slot).forEach(function (ms) {
+          h += '<div class="fr-warn">⚠️ ' + esc(ms.txt) + ': agregá ' + ms.alts.map(function (a) { return '<button class="fr-add" data-fradd="' + esc(a.add) + '">+ ' + esc(a.txt) + '</button>'; }).join(' <span>o</span> ') + '</div>';
+        });
+        if (rest) h += '<button class="add-meal" data-fridgeuse="1">[ ✓ USAR EN MIS ' + n + ' COMIDAS QUE QUEDAN ]</button></div>';
+        else h += '<button class="add-meal" data-fridgeuse="done">[ ✓ REGISTRAR: ' + esc(mealLabel(S.fridge.meal).toUpperCase()) + ' HECHA ]</button><button class="add-meal ghost" data-fridgeuse="1">Guardar para más tarde (sin marcar)</button></div>';
       }
     }
     return h;
   }
 
-  function useFridge() {
+  function useFridge(done) {
     var r = S.fridge.result;
     if (!r || !S.fridge.meal) return;
     var ids = Object.keys(D.foods);
@@ -1101,10 +1311,15 @@ const runtime = String.raw`
       var g = r.grams[i], k = g / 100, id = ids.filter(function (x) { return D.foods[x] === f; })[0];
       return { id: 'salva-' + i, foodId: id, food: f.name, grams: g, p: f.p * k, c: f.c * k, f: f.f * k, leucine: f.leucine * k, free: true, salva: true };
     }).filter(function (x) { return x.grams > 0; });
-    S.free[S.fridge.meal] = { items: items };
+    var targets = r.rest || [S.fridge.meal];
+    targets.forEach(function (id) {
+      S.free[id] = { items: items.map(function (x) { return Object.assign({}, x); }) };
+      if (done && !r.rest) S.checks[id] = true;
+    });
     store.set('free:' + S.date, S.free);
+    if (done) store.set('checks:' + S.date, S.checks);
     S.panel = null; haptic(); render();
-    toast('Listo: comida armada con tu heladera · ' + mealLabel(S.fridge.meal));
+    toast(r.rest ? 'Listo: armamos tus ' + targets.length + ' comidas que quedan con tu heladera' : done ? 'Registrada: ' + mealLabel(S.fridge.meal) + ' hecha con tu heladera' : 'Listo: comida armada con tu heladera · ' + mealLabel(S.fridge.meal));
   }
 
   // ---------- Guía de batch cooking ----------
@@ -1168,7 +1383,7 @@ const runtime = String.raw`
         var a = acc[id];
         if (!a) return;
         mins = Math.max(mins, BLOCK_MIN[id] || 0);
-        if (id === 'huevo') { steps.push({ id: id, t: 'Huevos duros', d: 'Hervir ' + Math.ceil(a.grams / 50) + ' huevos 9-10 min y cortá la cocción con agua fría. Se conservan 5 días en la heladera con cáscara.' }); return; }
+        if (id === 'huevo') { steps.push({ id: id, t: 'Huevos duros', d: 'Hervir ' + Math.ceil(a.grams / 60) + ' huevos 9-10 min y cortá la cocción con agua fría. Se conservan 5 días en la heladera con cáscara.' }); return; }
         var r = rules[id] || {}, f = D.foods[id], each = Math.round(a.grams / Math.max(1, a.times) / 5) * 5;
         var buy = r.factor ? a.grams * r.factor : a.grams;
         var what = r.state === 'raw' ? 'Comprá ' + qty(buy) + ' en crudo (rinde ~' + qty(a.grams) + ' cocido)' : r.state === 'dry' ? qty(buy) + ' en seco (rinde ~' + qty(a.grams) + ' cocido)' : qty(a.grams);
@@ -1839,7 +2054,7 @@ const runtime = String.raw`
   // ---------- Eventos ----------
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'w-in') { e.preventDefault(); saveWeight(); } });
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-ci],[data-cisave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outfood],[data-outfoodrm],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-fradd],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-ci],[data-cisave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) { S.ci = null; return closeSheet(); }
@@ -1859,16 +2074,20 @@ const runtime = String.raw`
       var om = (($('#out-meal') || {}).value) || S.outMeal;
       var lst = mealsFor(S.mode), xo = lst.filter(function (q) { return q.m.id === om; })[0];
       if (!om || !xo) return;
-      S.free[om] = { scene: S.outScene || 'salida', p: Math.round(xo.t.p), c: Math.round(xo.t.c), f: Math.round(xo.t.f), drinks: S.outDrinks.slice() };
+      var fm2 = S.outFoods.reduce(function (a, id) { var x = outFood(id); return x ? { p: a.p + x.p, c: a.c + x.c, f: a.f + x.f } : a; }, { p: 0, c: 0, f: 0 });
+      var b2 = S.outFoods.length ? fm2 : xo.t;
+      S.free[om] = { scene: S.outScene || 'salida', p: Math.round(b2.p), c: Math.round(b2.c), f: Math.round(b2.f), drinks: S.outDrinks.slice(), foods: S.outFoods.slice() };
       S.checks[om] = true;
       var nxt = S.outRebal ? lst.filter(function (q) { return q.m.id !== '__out' && toMin(q.m.time) > toMin(xo.m.time) && !S.checks[q.m.id] && !S.free[q.m.id]; })[0] : null;
       if (nxt) { S.rebal[nxt.m.id] = om; store.set('rebal:' + S.date, S.rebal); }
       store.set('free:' + S.date, S.free);
       store.set('checks:' + S.date, S.checks);
-      S.outDrinks = []; S.panel = null; haptic(); render();
+      S.outDrinks = []; S.outFoods = []; S.panel = null; haptic(); render();
       return toast('Comida afuera registrada' + (nxt ? ' · ajustamos ' + mealName(nxt.m, S.mode) : ''));
     }
-    if (ds.drink) { var di = S.outDrinks.indexOf(ds.drink); if (di >= 0) S.outDrinks.splice(di, 1); else S.outDrinks.push(ds.drink); haptic(); return renderSheet(); }
+    if (ds.drink) { if (ds.drink === '__none') S.outDrinks = []; else if (S.outDrinks.filter(function (x) { return x === ds.drink; }).length < 6) S.outDrinks.push(ds.drink); haptic(); return renderSheet(); }
+    if (ds.outfood) { if (S.outFoods.length < 20) S.outFoods.push(ds.outfood); haptic(); return renderSheet(); }
+    if (ds.outfoodrm) { var fi = S.outFoods.indexOf(ds.outfoodrm); if (fi >= 0) S.outFoods.splice(fi, 1); haptic(); return renderSheet(); }
     if (ds.outrebal) { S.outRebal = !S.outRebal; return renderSheet(); }
     if (ds.unfree) {
       delete S.free[ds.unfree];
@@ -1886,7 +2105,17 @@ const runtime = String.raw`
       haptic();
       return render();
     }
-    if (ds.fridgeuse) return useFridge();
+    if (ds.fridgeuse) return useFridge(ds.fridgeuse === 'done');
+    if (ds.fradd) {
+      ds.fradd.split(',').forEach(function (id) {
+        if (S.fridge.ing.indexOf(id) >= 0) return;
+        var slotI = S.fridge.ing.indexOf('');
+        if (slotI < 0) slotI = S.fridge.ing.length;
+        if (slotI < 5) S.fridge.ing[slotI] = id;
+      });
+      S.fridge.result = null; haptic();
+      return renderSheet();
+    }
     if (ds.guidego === 'swap') {
       // Abre el SWAP del primer alimento intercambiable de la próxima comida.
       var btn = document.querySelector('#app [data-swap]');
@@ -2007,6 +2236,7 @@ const runtime = String.raw`
   document.addEventListener('input', function (e) {
     if (e.target.id === 'ph-note') S.phNote = e.target.value;
     if (e.target.id === 'ci-note' && S.ci) S.ci.note = e.target.value;
+    if (e.target.id === 'ci-obs' && S.ci) S.ci.obs = e.target.value;
     if (e.target.id === 'ci-kg' && S.ci) S.ci.kg = e.target.value;
   });
   document.addEventListener('change', function (e) {

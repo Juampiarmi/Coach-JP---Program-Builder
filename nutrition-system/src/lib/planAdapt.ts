@@ -1,5 +1,5 @@
 import { balancePlan } from './balance';
-import { FOOD_BY_ID, macrosFor } from './foods';
+import { FOOD_BY_ID, macrosFor, unitStep } from './foods';
 import { portionCap } from './portionCaps';
 import { retimeMeals } from './schedule';
 import { uid } from './seed';
@@ -51,8 +51,7 @@ export const sourceOf = (p: AthletePlan | PlanTemplate): PlanSource =>
   'profile' in p ? { meals: p.meals, periodization: p.periodization, phase: p.profile.phase, weightKg: p.profile.weightKg } : p;
 
 const stepOf = (id?: string) => {
-  if (id === 'huevo') return 50;
-  if (id === 'claras') return 33;
+  if (id === 'huevo' || id === 'claras') return unitStep(id);
   const u = id ? FOOD_BY_ID[id]?.unit : undefined;
   return u && u.grams <= 60 ? u.grams : 5;
 };

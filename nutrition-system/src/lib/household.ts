@@ -57,7 +57,7 @@ export const HOUSE: Record<string, Measure[]> = {
   cerdo: [M(180, 'bife de bondiola', 'bifes de bondiola')],
   atun: [M(120, 'lata escurrida', 'latas escurridas', true)],
   tofu: [M(100, 'bloque chico', 'bloques chicos')],
-  huevo: [M(50, 'huevo', 'huevos')],
+  huevo: [M(60, 'huevo', 'huevos')],
   claras: [M(33, 'clara', 'claras', true)],
   banana: [M(120, 'banana mediana', 'bananas medianas', true)],
   manzana: [M(180, 'manzana mediana', 'manzanas medianas', true)],
@@ -74,7 +74,7 @@ export const HOUSE: Record<string, Measure[]> = {
 
 /** Mano, puño, palma y pulgar: porciones sin balanza por grupo de alimento. */
 export const HAND: Record<string, Measure> = {
-  'lean-protein': M(110, 'palma', 'palmas', true, ' de la mano'),
+  'lean-protein': M(120, 'palma', 'palmas', true, ' de la mano'),
   starch: M(150, 'puño', 'puños'),
   fruit: M(150, 'puño', 'puños'),
   veg: M(100, 'puño', 'puños'),
@@ -158,9 +158,9 @@ export const SHOP_PACKS: Record<string, [number, string][]> = {
     [6 * CLARA_G, 'media docena'],
   ],
   huevo: [
-    [30 * 50, 'maple de 30 huevos'],
-    [12 * 50, 'docena'],
-    [6 * 50, 'media docena'],
+    [30 * 60, 'maple de 30 huevos'],
+    [12 * 60, 'docena'],
+    [6 * 60, 'media docena'],
   ],
   leche: [[1000, 'sachet / caja de 1 L']],
   'leche-deslactosada': [[1000, 'caja de 1 L']],

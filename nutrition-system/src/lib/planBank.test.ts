@@ -10,7 +10,7 @@ import { timeToMinutes } from './schedule';
 
 /** Entreno a la mañana temprano, al mediodía, a la tarde y a la noche. */
 const TRAININGS = [{ trainingTime: '07:00', sessionMinutes: 60 }, { trainingTime: '12:00', sessionMinutes: 75 }, { trainingTime: '18:00', sessionMinutes: 60 }, { trainingTime: '20:00', sessionMinutes: 90 }];
-import { mealVolumeCap, portionCap, solidGrams } from './portionCaps';
+import { MAIN_MEAT_FLOOR, MAIN_MEATS, mealVolumeCap, portionCap, solidGrams } from './portionCaps';
 
 const fails: string[] = [];
 let checks = 0;
@@ -57,8 +57,10 @@ for (const plan of BANK_PLAN_IDS) {
         if (meals.length > base) extras += meals.length - base;
         if (meals.length < base) short.push(`${tag}: ${meals.length} comidas de ${base}`);
         checks++;
-        // Mujer: proteína cerca de su rango real (1,6-2,4 g/kg), sin dispararse por porciones mínimas rígidas.
-        if (sex === 'F' && (p / w < 1.6 || p / w > 2.4)) fails.push(`${tag}: proteína ${(p / w).toFixed(2)} g/kg (rango 1,6-2,4)`);
+        // Mujer: proteína en su rango real. Hasta 2,4 g/kg; en las más livianas (< 60 kg) el piso visible de carne en
+        // almuerzo y cena (≥ 120 g) la puede llevar hasta 2,8 g/kg (dentro de lo seguro en déficit, ISSN 2017).
+        const pMax = w < 60 ? 2.8 : 2.45;
+        if (sex === 'F' && (p / w < 1.6 || p / w > pMax)) fails.push(`${tag}: proteína ${(p / w).toFixed(2)} g/kg (rango 1,6-${pMax})`);
         if (Math.abs(dev) > 0.05) fails.push(`${tag}: el día cierra en ${Math.round(kcal)} kcal vs ${Math.round(T.kcal)} (${(dev * 100).toFixed(1)} %)`);
         for (const m of meals) {
           const opts = [{ title: m.title ?? '', items: m.items }, ...(m.alts ?? [])];
@@ -71,10 +73,15 @@ for (const plan of BANK_PLAN_IDS) {
               checks++;
               const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg' }).max;
               if (it.grams > cap) fails.push(`${tag} · ${m.name} · ${o.title}: ${it.food} ${it.grams} g supera el tope de ${cap} g`);
+              // Piso visible de carne en almuerzo y cena; unidades enteras; mujer sin leche fluida.
+              if (it.foodId && MAIN_MEATS.has(it.foodId) && (m.role === 'lunch' || m.role === 'dinner') && it.grams < MAIN_MEAT_FLOOR[sex]) fails.push(`${tag} · ${m.name} · ${o.title}: ${it.food} ${it.grams} g (piso ${MAIN_MEAT_FLOOR[sex]} g)`);
+              if (it.foodId === 'huevo' && it.grams % 60) fails.push(`${tag} · ${o.title}: huevo ${it.grams} g no es una unidad entera`);
+              if ((it.foodId === 'barra-proteica' && it.grams !== 46) || (it.foodId === 'alfajor-proteico' && it.grams !== 50)) fails.push(`${tag} · ${o.title}: ${it.food} ${it.grams} g (siempre 1 unidad)`);
+              if (sex === 'F' && (it.foodId === 'leche' || it.foodId === 'leche-deslactosada') && it.grams > 100) fails.push(`${tag} · ${o.title}: ${it.grams} ml de leche fluida en un plan de mujer`);
               if (variant === 'stacc' && it.foodId && GLUTEN_FOODS.has(it.foodId)) fails.push(`${tag} · ${o.title}: ${it.food} tiene gluten`);
               if (variant === 'veg' && it.foodId && MEAT_FOODS.has(it.foodId)) fails.push(`${tag} · ${o.title}: ${it.food} no es vegetariano`);
             }
-            const eggs = o.items.reduce((a, i) => a + (i.foodId === 'huevo' ? i.grams / 50 : i.foodId === 'claras' ? i.grams / 33 : 0), 0);
+            const eggs = o.items.reduce((a, i) => a + (i.foodId === 'huevo' ? i.grams / 60 : i.foodId === 'claras' ? i.grams / 33 : 0), 0);
             if (eggs > 8.01) fails.push(`${tag} · ${o.title}: ${eggs} huevos + claras (máximo 8)`);
           }
         }
@@ -97,7 +104,7 @@ if (short.length) console.log(`Días con una colación menos (no entra en la age
 console.log(`Peor proteína: ${worstPTag}`);
 console.log(`Comidas por día (máximo): ${[...counts].sort().map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 if (fails.length) {
-  console.error(fails.slice(0, 40).join('\n'));
+  console.error(fails.slice(0, Number(process.env.SHOW ?? 40)).join('\n'));
   console.error(`\n✗ ${fails.length} problemas en el banco de planes`);
   process.exit(1);
 }

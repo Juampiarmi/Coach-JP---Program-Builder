@@ -64,11 +64,29 @@ export const BRAND_TIERS: Record<string, BrandTier> = {
   mani: ['Pasta de maní de dietética', 'King', 'Entrenuts / Le Fit'],
   oliva: ['Marolio / Día', 'Cocinero', 'Lira / Zuccardi extra virgen'],
   nueces: ['Nueces sueltas de dietética', 'Bolsita Día / Marolio', 'Nueces mariposa premium de dietética'],
-  'alfajor-proteico': ['Alfajor proteico de dietética', 'Integra', 'ENA / Star Nutrition'],
-  'barra-proteica': ['Barrita proteica de dietética', 'Integra', 'ENA / Star Nutrition'],
+  // Snacks proteicos: sólo marcas nacionales (1 unidad entera de 45-60 g, 15-20 g de proteína).
+  'alfajor-proteico': ['Alfajor proteico nacional de dietética', 'Wild Protein / Gentech', 'ENA / Star Nutrition'],
+  'barra-proteica': ['Barra proteica nacional de dietética', 'Wild Protein / Gentech', 'ENA / Star Nutrition'],
+  'queso-deslactosado': ['Queso sin lactosa Día / Coto', 'La Serenísima Zero Lactosa', 'Ilolay / Milkaut sin lactosa'],
+  'untable-deslactosado': ['Untable sin lactosa Día / Coto', 'La Serenísima Zero Lactosa', 'Finlandia sin lactosa'],
   'barrita-cereal': ['Barritas Día / Coto', 'Cereal Mix (Arcor)', 'Barritas sin azúcar agregada de dietética'],
 };
 
 export const TIER_OF_BUDGET: Record<Budget, 0 | 1 | 2> = { low: 0, mid: 1, high: 2 };
+
+/**
+ * MARCA SUGERIDA SÓLO EN PROCESADOS CLAVE, donde la marca cambia de verdad la tabla nutricional: quesos magros
+ * (Port Salut light, untables magros, ricota), yogures (griego / proteico), proteína en polvo y snacks proteicos.
+ * Todo lo demás (panificados, galletas de arroz, cortes de carne, leche, arroz, fideos, avena, frutas y verduras)
+ * es «marca a elección»: al celíaco sólo se le recuerda buscar el logo oficial Sin TACC.
+ */
+export const SUGGESTED_BRAND = new Set([
+  'queso-light', 'queso-deslactosado', 'untable', 'untable-deslactosado', 'ricota',
+  'yogur', 'yogur-proteico', 'yogur-deslactosado', 'whey', 'whey-isolate', 'barra-proteica', 'alfajor-proteico',
+]);
+/** Envasados que un celíaco sólo puede comprar con el logo Sin TACC (las frutas, verduras, carnes frescas y huevos no lo necesitan). */
+const NO_SEAL_GROUPS = new Set(['veg', 'fruit']);
+const NO_SEAL = new Set(['pollo', 'cuadril', 'lomo', 'nalga', 'cerdo', 'merluza', 'picada', 'huevo', 'claras', 'papa', 'batata', 'calabaza', 'palta', 'oliva']);
+export const needsGlutenSeal = (foodId: string, group?: string) => !NO_SEAL.has(foodId) && !NO_SEAL_GROUPS.has(group ?? '');
 
 export const brandsFor = (foodId?: string) => (foodId ? BRAND_TIERS[foodId] : undefined);

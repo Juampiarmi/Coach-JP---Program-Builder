@@ -4,7 +4,7 @@ import type { MealRole, Sex } from './types';
 /**
  * TABLA ÚNICA DE TOPES POR TOMA (en cocido). Es la única fuente de porciones máximas de todo el sistema:
  * banco de planes, cierre del día (balance), opciones alternativas y swaps. Ningún escalado puede superar `max`.
- *  · Carnes, pollo y pescado según sexo: mujer 120-180 g, hombre 150-240 g (merluza un poco más).
+ *  · Carnes, pollo y pescado según sexo: en almuerzo y cena mujer 120-160 g, hombre 150-220 g (merluza un poco más).
  *  · Yogur (natural, griego o proteico): 1 pote estándar, 200 g. Nunca queda un cuarto de pote abierto.
  *  · Si un atleta necesita más energía, el plan suma densidad (aceite, palta, frutos secos, pan / arroz) o una
  *    colación extra: nunca agranda un lácteo o una verdura hasta volverla incomible.
@@ -43,12 +43,12 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   cerdo: MEAT,
   merluza: bySex([100, 200], [150, 250]),
   atun: bySex([60, 120], [60, 240]),
-  picada: bySex([80, 130], [130, 180]),
+  picada: bySex([80, 150], [130, 190]),
   tofu: bySex([80, 160], [100, 200]),
   'soja-texturizada': bySex([80, 160], [100, 200]),
   jamon: both(20, 60),
   // Huevos (huevos + claras ≤ 8 unidades por toma)
-  huevo: bySex([50, 150], [50, 200]),
+  huevo: bySex([60, 180], [60, 240]),
   claras: bySex([66, 132], [66, 198]),
   // Lácteos
   yogur: YOGURT,
@@ -122,7 +122,7 @@ export const PORTION_CAPS: Record<string, SexRange> = {
 const GROUP_CAPS: Record<string, [number, number]> = {
   'lean-protein': [100, 240],
   'dairy-protein': [30, 200],
-  eggs: [50, 200],
+  eggs: [60, 240],
   whey: [20, 40],
   'protein-snack': [30, 100],
   starch: [120, 350],
@@ -133,6 +133,13 @@ const GROUP_CAPS: Record<string, [number, number]> = {
   veg: [100, 300],
   plato: [150, 450],
 };
+
+/**
+ * Piso de carne, pollo y pescado en almuerzo y cena: una porción que se ve en el plato (≥ 120 g mujer, ≥ 150 g
+ * hombre, en cocido). Si sobran calorías, se ajustan la guarnición, las grasas o las colaciones, no la carne.
+ */
+export const MAIN_MEATS = new Set(['pollo', 'cuadril', 'lomo', 'nalga', 'cerdo', 'merluza', 'picada']);
+export const MAIN_MEAT_FLOOR: Record<Sex, number> = { F: 120, M: 150 };
 
 /** Verduras en desayuno / merienda: acompañan (tomate en la tostada), no son un plato. */
 const SIDE_ROLES: MealRole[] = ['breakfast', 'snack', 'peri', 'post'];
@@ -162,6 +169,7 @@ export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range 
     [lo, hi] = (g && GROUP_CAPS[g]) || [5, 450];
   }
   if (ctx.veg && ['lentejas', 'garbanzos', 'porotos'].includes(foodId)) hi = ctx.sex === 'F' ? 250 : 300;
+  if (MAIN_MEATS.has(foodId) && (ctx.role === 'lunch' || ctx.role === 'dinner')) lo = Math.max(lo, ctx.sex ? MAIN_MEAT_FLOOR[ctx.sex] : MAIN_MEAT_FLOOR.F);
   if (foodId === 'vegetales' && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, ctx.sex === 'F' ? 120 : 150];
   return { min: lo, max: hi };
 }

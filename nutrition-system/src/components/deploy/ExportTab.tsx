@@ -11,6 +11,7 @@ import { ExportFreshness } from './ExportFreshness';
 import { PublishPanel } from '../cloud/PublishPanel';
 import { QualityLights } from './QualityLights';
 import { publishBlocked } from '@/lib/quality';
+import { normalizePhone } from '@/lib/coachContact';
 import { CloudConnect } from '../cloud/CloudConnect';
 import { athleteLink, cloudConfigured } from '@/lib/cloud/config';
 import { useCloudStore } from '@/store/useCloudStore';
@@ -137,6 +138,7 @@ export function ExportTab() {
     <div className="space-y-4">
       <QualityLights />
       {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
+      <CoachPhoneCard />
       <Advanced on={cloudConfigured}>
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
@@ -227,5 +229,21 @@ function Advanced({ on, children }: { on: boolean; children: React.ReactNode }) 
       </summary>
       <div className="space-y-4 border-t border-line p-3">{children}</div>
     </details>
+  );
+}
+
+/** WhatsApp del coach: el check-in semanal del alumno abre WhatsApp con el resumen ya redactado para este número. */
+function CoachPhoneCard() {
+  const phone = usePlanStore((s) => s.coachPhone);
+  const setPhone = usePlanStore((s) => s.setCoachPhone);
+  const norm = normalizePhone(phone);
+  return (
+    <div className="rounded-xl border border-line bg-panel px-4 py-3">
+      <label className="block">
+        <span className="text-[12.5px] font-semibold text-steel">Tu WhatsApp de coach · el check-in semanal de tus alumnos te llega directo acá</span>
+        <input data-coach-phone value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej. 11 2233-4455" inputMode="tel" className="mt-1 w-full rounded-lg border border-line bg-carbon px-3 py-2 text-[14px] text-ink outline-none focus:border-cyan-hud/60" />
+      </label>
+      <p className="mt-1 text-[11.5px] text-mute">{norm ? `Se usa como wa.me/${norm} · publicá de nuevo para que les llegue a tus alumnos.` : 'Sin número: WhatsApp se abre y el alumno elige a quién mandárselo.'}</p>
+    </div>
   );
 }

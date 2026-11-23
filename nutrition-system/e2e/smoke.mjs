@@ -239,6 +239,58 @@ try {
   await pwa.locator('.toolgrid [data-panel="shop"]').click();
   await pwa.waitForTimeout(200);
   check((await pwa.locator('.shop-item').count()) > 0, 'PWA: lista de compras');
+  const shopTxt = await pwa.locator('.sheet').innerText();
+  check(/Tomate/.test(shopTxt) && /≈ \d+ tomates?/.test(shopTxt), 'PWA: verdulería detallada (tomates con unidades)');
+  check(/marca a elección/i.test(shopTxt), 'PWA: «marca a elección» en genéricos');
+  if (await pwa.locator('.salads').count()) {
+    await pwa.locator('.salads summary').click();
+    check((await pwa.locator('.salad').count()) >= 5, 'PWA: ensaladas y salteados con aliño medido');
+  }
+  await pwa.locator('.sheet .xclose').click();
+  await pwa.waitForTimeout(150);
+  check(/El mate, café, té y las gaseosas no suman/.test(await pwa.locator('.hy-note').innerText()), 'PWA: hidratación sólo agua (aviso visible)');
+  check(readFileSync(html, 'utf8').includes('boot-skel'), 'PWA: esqueleto de carga embebido (sin pantalla en blanco)');
+  // Mi heladera: lo que falta hoy, sólo ingredientes, faltantes con botón y registro en el día.
+  await pwa.locator('.toolgrid [data-panel="fridge"]').click();
+  await pwa.waitForTimeout(150);
+  check(await pwa.locator('.fr-pend').isVisible(), 'Heladera: muestra lo que falta hoy');
+  const frOpts = await pwa.locator('#fr-0 option').allInnerTexts();
+  check(frOpts.length > 20 && !frOpts.some((o) => /milanesa|chinchul|empanada|guiso|arroz con pollo|parrilla/i.test(o)), 'Heladera: sólo ingredientes crudos o básicos');
+  const cena = await pwa.locator('#fr-meal option', { hasText: 'Cena' }).first().getAttribute('value');
+  await pwa.selectOption('#fr-meal', cena);
+  await pwa.waitForTimeout(100);
+  await pwa.selectOption('#fr-0', 'arroz');
+  await pwa.waitForTimeout(150);
+  if (await pwa.locator('[data-frauto="off"]').count()) await pwa.locator('[data-frauto="off"]').click();
+  await pwa.waitForTimeout(150);
+  const warn = pwa.locator('.fr-warn .fr-add').first();
+  check(await warn.isVisible(), 'Heladera: aviso de faltante con sugerencia en gramos o unidades');
+  if (process.env.SHOTS) await pwa.locator('.sheet').screenshot({ path: process.env.SHOTS + '/fridge.png' });
+  await warn.click();
+  await pwa.waitForTimeout(150);
+  check((await pwa.locator('.fr-ings select').count()) >= 3 && (await pwa.locator('.scan-it').count()) >= 2, 'Heladera: la sugerencia se suma y recalcula');
+  const eggG = await pwa.locator('.scan-it .g').allInnerTexts();
+  check(eggG.every((g) => parseInt(g) % 5 === 0), 'Heladera: gramos redondeados a porciones reales');
+  await pwa.locator('[data-fridgeuse="done"]').click();
+  await pwa.waitForTimeout(150);
+  check((await pwa.locator('.sheet.open').count()) === 0, 'Heladera: comida registrada en el día');
+  // Comer afuera: catálogo argentino y trueques de alcohol.
+  await pwa.locator('.toolgrid [data-panel="out"]').click();
+  await pwa.waitForTimeout(150);
+  await pwa.locator('[data-scene]').first().click();
+  await pwa.waitForTimeout(100);
+  await pwa.locator('.out-cat summary').click();
+  await pwa.locator('[data-outfood="emp-carne-h"]').click();
+  await pwa.locator('[data-outfood="emp-carne-h"]').click();
+  await pwa.locator('[data-drink="vino"]').click();
+  await pwa.locator('[data-drink="vino"]').click();
+  check((await pwa.locator('.oc-row.on em').innerText()) === '2', 'Comer afuera: catálogo argentino con cantidades');
+  check(/empanadas de carne al horno/.test(await pwa.locator('.out-swap').innerText()), 'Comer afuera: trueques de alcohol en comida real');
+  check(/Se registra como 786 kcal/.test(await pwa.locator('.out-sum').innerText()), 'Comer afuera: suma 2 empanadas + 2 copas (786 kcal)');
+  if (process.env.SHOTS) await pwa.locator('.sheet').screenshot({ path: process.env.SHOTS + '/out.png' });
+  await pwa.locator('[data-imputar]').click();
+  await pwa.waitForTimeout(150);
+  check((await pwa.locator('.sheet.open').count()) === 0, 'Comer afuera: registrada en el día');
   check(perrs.length === 0, `PWA sin errores de JS ${perrs.length ? JSON.stringify(perrs) : ''}`);
   await pctx.close();
 } catch (e) {

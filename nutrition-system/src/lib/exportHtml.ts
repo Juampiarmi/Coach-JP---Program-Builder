@@ -1,17 +1,19 @@
 import runtime from '@/pwa/athleteRuntime';
 import cloudBoot from '@/pwa/cloudBoot';
 import styles from '@/pwa/athleteStyles';
+import { coachPhone } from './coachContact';
 import { allergiesOf, CELIAC_PLATE_WARNING, foodIsSafe, planIsMeatFree, sealsFor } from './allergens';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
-import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
+import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, unitStep, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
 import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from './menuOptions';
 import { fitsSlot, foodSlots } from './mealSlots';
 import { friendlyMealName, modernizeName } from './foodBrandDb';
-import { BRAND_TIERS, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
+import { portionCap } from './portionCaps';
+import { BRAND_TIERS, needsGlutenSeal, SUGGESTED_BRAND, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
 import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
 import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
@@ -159,19 +161,32 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
           .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items), seals: sealsFor(a.items, allergies, veg) })),
       };
     }),
-    // Marca sugerida por ingrediente según el presupuesto del atleta (Nivel 1 / 2 / 3).
+    // Marca sugerida (Nivel 1 / 2 / 3 según presupuesto) sólo en procesados clave; el resto, «marca a elección».
     brands: Object.fromEntries(
-      [...new Set(plan.meals.flatMap((m) => [...m.items, ...(m.alts ?? []).flatMap((a) => a.items)]).map((i) => i.foodId).filter((id): id is string => !!id && !!BRAND_TIERS[id]))].map((id) => [id, BRAND_TIERS[id]]),
+      [...new Set(plan.meals.flatMap((m) => [...m.items, ...(m.alts ?? []).flatMap((a) => a.items)]).map((i) => i.foodId).filter((id): id is string => !!id && SUGGESTED_BRAND.has(id) && !!BRAND_TIERS[id]))].map((id) => [id, BRAND_TIERS[id]]),
     ),
+    // Celíaco: envasados que se compran sólo con el logo oficial Sin TACC.
+    glutenSeal: allergies.includes('gluten') ? FOODS.filter((f) => needsGlutenSeal(f.id, f.group)).map((f) => f.id) : [],
     brandTier: TIER_OF_BUDGET[sanitizeAnamnesis(plan.anamnesis).budget],
     // Medidas caseras y porciones sin balanza (lenguaje cotidiano).
     house: HOUSE,
     hand: HAND,
     // Cada alimento viaja con sus franjas del día (filtro estricto de los swaps en la PWA).
     foods: Object.fromEntries(FOODS.map((f) => [f.id, { ...f, slots: foodSlots(f) }])),
+    // Mi heladera: porción mínima y tope por toma para el sexo del alumno (almuerzo/cena, desayuno/colación, entreno)
+    // y unidades enteras (huevo 60 g, clara 33 g, barra o alfajor proteico 1 u).
+    fridgeCaps: Object.fromEntries(
+      (['main', 'am', 'peri'] as const).map((slot) => {
+        const role = slot === 'main' ? 'lunch' : slot === 'am' ? 'breakfast' : 'peri';
+        return [slot, Object.fromEntries(FOODS.map((f) => { const c = portionCap(f.id, { sex: plan.profile.sex, role, veg }); return [f.id, [c.min, c.max]]; }))];
+      }),
+    ),
+    units: Object.fromEntries(FOODS.filter((f) => unitStep(f.id) !== 5).map((f) => [f.id, unitStep(f.id)])),
     anchors: GROUP_ANCHOR,
     avoid: FOODS.filter((f) => !foodIsSafe(f.id, allergies)).map((f) => f.id),
     celiacWarning: allergies.includes('gluten') ? CELIAC_PLATE_WARNING : '',
+    // WhatsApp del coach (check-in semanal con un toque).
+    coachPhone: coachPhone(),
     groupLabels: GROUP_LABEL,
     swapGroups: usedGroups,
     supplements: plan.supplements.filter((s) => s.enabled),
@@ -262,8 +277,10 @@ export function buildAthleteHtml(plan: AthletePlan, opts: { preview?: boolean; m
 ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.icons.icon192}">\n<link rel="apple-touch-icon" sizes="180x180" href="${opts.icons.apple180}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="${FONTS}">
-<style>${styles}</style>
+<link rel="preload" as="style" href="${FONTS}" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="${FONTS}"></noscript>
+<style>${styles}
+${SKELETON_CSS}</style>
 <script>
 /* Guardián de arranque: cualquier error de script se muestra como tarjeta visible (nunca pantalla negra). */
 (function () {
@@ -289,7 +306,7 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
 </script>
 </head>
 <body>
-<main id="app"></main>
+<main id="app">${SKELETON}</main>
 <div class="dock"><button class="btn fire" id="install">[ Instalar app ]</button></div>
 <div id="sheet-bg" class="sheet-bg"></div>
 <div id="sheet" class="sheet"></div>
@@ -318,14 +335,30 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
-    // Network-first: el atleta siempre ve la última directiva; sin señal, la caché.
-    e.respondWith(fetch(req).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; }).catch(() => caches.match(req).then((r) => r || caches.match('./index.html'))));
+    // En este modo el plan viaja dentro del archivo: se intenta la red (última versión) pero como mucho 1,5 s;
+    // con señal lenta o sin señal abre al instante con la guardada y la nueva queda lista para la próxima apertura.
+    const net = fetch(req).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; });
+    e.waitUntil(net.catch(() => {}));
+    e.respondWith(caches.match(req).then((cached) => {
+      if (!cached) return net.catch(() => caches.match('./index.html'));
+      return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 1500))]);
+    }));
   } else if (/fonts\\.(googleapis|gstatic)\\.com$/.test(url.hostname)) {
     e.respondWith(caches.match(req).then((r) => r || fetch(req).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; })));
   }
 });
 `;
 }
+
+/**
+ * Esqueleto de carga estático: se pinta al instante (antes de cualquier JavaScript o fuente), así abrir la app
+ * desde el ícono o volver a ella nunca muestra una pantalla en blanco. El runtime lo reemplaza al dibujar el plan.
+ */
+const SKELETON = '<div class="boot-skel" aria-label="Cargando tu plan"><div class="sk sk-h"></div><div class="sk sk-s"></div><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div>';
+const SKELETON_CSS = `.boot-skel{max-width:520px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 18px) 16px 0}
+.sk{border-radius:14px;background:linear-gradient(90deg,#131B2A 0%,#1B2536 50%,#131B2A 100%);background-size:200% 100%;animation:skp 1.2s ease-in-out infinite;margin-bottom:12px}
+.sk-h{height:44px;width:62%}.sk-s{height:18px;width:40%}.sk-card{height:150px}.sk-row{height:64px}
+@keyframes skp{0%{background-position:100% 0}100%{background-position:-100% 0}}`;
 
 const BOOT_CSS = `.boot-card{margin:12vh auto 0;max-width:420px;padding:24px 20px;border-radius:18px;border:1px solid rgba(255,255,255,.1);background:#131B2A;text-align:center}
 .boot-k{font-size:12px;font-weight:600;color:#FDBA74}.boot-card h2{margin-top:6px;font-size:22px;color:#fff}.boot-card p{margin-top:8px;font-size:14.5px;line-height:1.5;color:#94A3B8}
@@ -361,8 +394,10 @@ export function buildPlanShell(opts: { supabaseUrl: string; anonKey: string; bas
 <link rel="apple-touch-icon" sizes="180x180" href="${icons}apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="${FONTS}">
+<link rel="preload" as="style" href="${FONTS}" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="${FONTS}"></noscript>
 <style>${styles}
+${SKELETON_CSS}
 ${BOOT_CSS}</style>
 <script>
 window.__cjpFail = function (err) {
@@ -374,7 +409,7 @@ window.addEventListener('error', function (e) { window.__cjpFail(e.error || e.me
 </script>
 </head>
 <body>
-<main id="app"></main>
+<main id="app">${SKELETON}</main>
 <div class="dock"><button class="btn fire" id="install">[ Instalar app ]</button></div>
 <div id="sheet-bg" class="sheet-bg"></div>
 <div id="sheet" class="sheet"></div>
@@ -406,11 +441,16 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (req.mode === 'navigate' && url.href.startsWith(SCOPE)) {
-    // Network-first; sin señal (o un /plan/<slug> que el hosting no conoce) → la página única guardada.
-    e.respondWith(fetch(req).then((res) => {
+    // Caché primero (abre al instante, sin pantalla en blanco aunque la señal sea mala) y se actualiza en segundo
+    // plano para la próxima apertura. El plan en sí siempre llega fresco desde la nube (cloudBoot).
+    const net = fetch(req).then((res) => {
       if (res.ok && url.href.split('?')[0] === SCOPE) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(SCOPE, copy)); }
       return res;
-    }).catch(() => caches.match(SCOPE)));
+    });
+    e.respondWith(caches.match(SCOPE).then((cached) => {
+      if (cached) { e.waitUntil(net.catch(() => {})); return cached; }
+      return net.catch(() => caches.match(SCOPE));
+    }));
   } else if (url.origin === location.origin && url.pathname.includes('/icons/')) {
     e.respondWith(caches.match(req).then((r) => r || fetch(req).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; })));
   } else if (/fonts\\.(googleapis|gstatic)\\.com$/.test(url.hostname)) {

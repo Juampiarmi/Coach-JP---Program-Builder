@@ -1,5 +1,5 @@
 import { portionCap } from './portionCaps';
-import { FOOD_BY_ID, FOODS, macrosFor, round1, round2, type FoodRef } from './foods';
+import { FOOD_BY_ID, FOODS, macrosFor, round1, round2, snapUnit, type FoodRef } from './foods';
 import { uid } from './seed';
 import { dishTitleCase } from './foodBrandDb';
 import { fitsSlot } from './mealSlots';
@@ -103,7 +103,7 @@ const n1s = (n: number) => String(Math.round(n * 2) / 2).replace('.', ',');
 export function qtyLabel(foodId: string | undefined, grams: number) {
   const g = Math.round(grams);
   if (foodId === 'huevo') {
-    const n = Math.max(1, Math.round(g / 50));
+    const n = Math.max(1, Math.round(g / 60));
     return `${n} huevo${n > 1 ? 's' : ''}`;
   }
   if (foodId === 'claras') {
@@ -291,7 +291,7 @@ export interface ComboPart {
   g?: number;
   max?: number;
   min?: number;
-  /** Redondeo en gramos (huevo = 50 → unidades enteras). */
+  /** Redondeo en gramos (huevo = 60 → unidades enteras). */
   step?: number;
 }
 export interface Combo {
@@ -317,7 +317,7 @@ const COMBOS: Combo[] = [
   {
     title: 'Tostadas integrales con huevos revueltos y queso untable',
     roles: [...AM, 'post'],
-    parts: [{ id: 'huevo', r: 'p', step: 50, min: 50, max: 200 }, { id: 'pan', r: 'c', step: 15, max: 150 }, { id: 'untable', r: 'x', g: 30 }],
+    parts: [{ id: 'huevo', r: 'p', step: 60, min: 60, max: 240 }, { id: 'pan', r: 'c', step: 15, max: 150 }, { id: 'untable', r: 'x', g: 30 }],
     steps: ['Batí {huevo} con una pizca de sal y pimienta.', 'Cocinalos en sartén antiadherente a fuego bajo, revolviendo 2-3 min hasta que cuajen.', 'Tostá {pan} de pan integral.', 'Untá el pan con {untable} de queso untable y serví los huevos arriba.'],
   },
   {
@@ -461,8 +461,8 @@ const COMBOS: Combo[] = [
   {
     title: 'Barra Proteica con Banana',
     roles: ['post', 'peri', 'snack'],
-    parts: [{ id: 'barra-proteica', r: 'p', step: 23, max: 92, min: 23 }, { id: 'banana', r: 'c', max: 360, min: 60 }],
-    steps: ['Comé {barra-proteica} de barra proteica (revisá que diga "sin lactosa" si sos intolerante).', 'Acompañá con {banana} de banana y un vaso grande de agua.'],
+    parts: [{ id: 'barra-proteica', r: 'x', g: 46 }, { id: 'banana', r: 'c', max: 360, min: 60 }],
+    steps: ['Comé 1 barra proteica entera ({barra-proteica}, 15-20 g de proteína). Elegí una nacional y revisá el rótulo: suele tener gluten, lácteos y maní o frutos secos.', 'Acompañá con {banana} de banana y un vaso grande de agua.'],
   },
   {
     title: 'Shake de whey con banana y avena',
@@ -553,7 +553,7 @@ const COMBOS: Combo[] = [
   {
     title: 'Tortilla de claras y papa con ensalada',
     roles: MAIN,
-    parts: [{ id: 'claras', r: 'p', step: 33, max: 330, min: 99 }, { id: 'papa', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'huevo', r: 'x', g: 50 }, { id: 'vegetales', r: 'x', g: 150 }],
+    parts: [{ id: 'claras', r: 'p', step: 33, max: 330, min: 99 }, { id: 'papa', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'huevo', r: 'x', g: 60 }, { id: 'vegetales', r: 'x', g: 150 }],
     steps: ['Hervir {papa} de papa en cubos 10 min y escurrila.', 'Batí {claras} con {huevo}, sal y pimienta, y mezclalo con la papa.', 'Cociná en sartén antiadherente tapada a fuego bajo 5 min por lado (o mandala al horno a 200 °C por 20 min).', 'Acompañá con {vegetales} de ensalada[ y {oliva} de aceite de oliva].'],
   },
   {
@@ -628,8 +628,7 @@ function portionRange(it: FoodItem, role: MealRole): [number, number] {
   return [Math.min(lo, max), max];
 }
 const snapG = (i: FoodItem, g: number) => {
-  const st = i.foodId === 'huevo' ? 50 : i.foodId === 'claras' ? 33 : 5;
-  return Math.max(st, Math.round(g / st) * st);
+  return snapUnit(i.foodId, g);
 };
 /** Lleva una opción a las kcal objetivo (escala pareja) y respeta las porciones reales de cada ingrediente. */
 function fitAndCap(items: FoodItem[], targetKcal: number, role: MealRole): FoodItem[] {

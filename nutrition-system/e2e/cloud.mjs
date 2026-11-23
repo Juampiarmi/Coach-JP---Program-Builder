@@ -219,7 +219,13 @@ try {
   await ath.locator('[data-ci="hunger|5"]').click();
   await ath.locator('[data-ci="heavy|1"]').click();
   await ath.locator('#ci-note').fill('La cena del martes');
-  await ath.locator('[data-cisave]').click();
+  await ath.locator('#ci-obs').fill('Semana con viajes');
+  await ath.context().route('https://wa.me/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }));
+  const [waPage] = await Promise.all([ath.context().waitForEvent('page', { timeout: 10000 }).catch(() => null), ath.locator('[data-cisave]').click()]);
+  const waUrl = waPage ? decodeURIComponent(waPage.url()) : '';
+  check(/wa\.me\/.*Check-in|wa\.me\/.*CHECK-IN/i.test(waUrl) && /Energ/i.test(waUrl) && /Hambre/i.test(waUrl) && /Digesti/i.test(waUrl) && /Semana con viajes/.test(waUrl), 'Atleta: el check-in abre WhatsApp con el resumen para el coach');
+  if (waPage) await waPage.close().catch(() => {});
+  await ath.bringToFront();
   check(await until(() => ath.locator('#checkin-card').innerText().then((t) => /Enviado/.test(t))), 'Atleta: check-in semanal enviado (30 segundos)');
   check(await until(async () => (await sb.sql('select energy, hunger, heavy, note from checkins'))[0]?.hunger === 5, 10000), 'Base: el check-in llegó a Supabase (energía 2 · hambre 5 · digestión)');
 

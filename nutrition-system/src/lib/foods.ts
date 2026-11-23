@@ -62,7 +62,7 @@ export const FOODS: FoodRef[] = [
   { id: 'merluza', name: 'Merluza (cocida)', group: 'lean-protein', p: 23, c: 0, f: 1.5, leucine: 1.9 },
   { id: 'atun', name: 'Atún al natural (escurrido)', group: 'lean-protein', p: 26, c: 0, f: 1, leucine: 2.1 },
   { id: 'cerdo', name: 'Bondiola / carré magro de cerdo (cocido)', group: 'lean-protein', p: 27, c: 0, f: 9, leucine: 2.15 },
-  { id: 'huevo', name: 'Huevo entero', group: 'eggs', unit: { label: 'u', grams: 50 }, p: 12.6, c: 0.7, f: 9.5, leucine: 1.09 },
+  { id: 'huevo', name: 'Huevo entero', group: 'eggs', unit: { label: 'u', grams: 60 }, p: 12.6, c: 0.7, f: 9.5, leucine: 1.09 },
   { id: 'claras', name: 'Claras de huevo', group: 'eggs', unit: { label: 'clara', grams: 33 }, p: 10.9, c: 0.7, f: 0.2, leucine: 0.95 },
   { id: 'ricota', name: 'Ricota magra', group: 'dairy-protein', p: 11, c: 3.5, f: 4, leucine: 1.15 },
   { id: 'yogur', name: 'Yogur griego descremado', group: 'dairy-protein', p: 10, c: 4, f: 0.4, leucine: 1.0 },
@@ -281,13 +281,31 @@ export function macrosFor(foodId: string, grams: number) {
 }
 
 /** Gramos de `toId` que aportan lo mismo del macro ancla del grupo que `grams` de `fromId` (redondeo a 5 g). */
+/**
+ * Paso real de cada alimento que se come por unidad: huevo entero (~60 g), claras (de a una, mínimo 2), barras y
+ * alfajores proteicos (siempre 1 unidad entera). El resto, de a 5 g.
+ */
+export function unitStep(id: string | undefined) {
+  if (!id) return 5;
+  if (id === 'huevo') return 60;
+  if (id === 'claras') return 33;
+  const f = FOOD_BY_ID[id];
+  if (f?.group === 'protein-snack' && f.unit) return f.unit.grams;
+  return 5;
+}
+/** Redondea a unidades enteras (huevos, claras, barras) o a 5 g; nunca menos de una unidad. */
+export function snapUnit(id: string | undefined, grams: number) {
+  const st = unitStep(id);
+  return Math.max(st, Math.round(grams / st) * st);
+}
+
 export function equivalentGrams(fromId: string, grams: number, toId: string) {
   const from = FOOD_BY_ID[fromId];
   const to = FOOD_BY_ID[toId];
   if (!from || !to || fromId === toId) return grams;
   const anchor = GROUP_ANCHOR[from.group];
   if (!(to[anchor] > 0)) return grams;
-  return Math.max(5, Math.round((from[anchor] * grams) / to[anchor] / 5) * 5);
+  return snapUnit(toId, (from[anchor] * grams) / to[anchor]);
 }
 
 /** Medida casera legible ("≈ 3 u", "≈ 1 scoop"). Vacío si no aplica. */

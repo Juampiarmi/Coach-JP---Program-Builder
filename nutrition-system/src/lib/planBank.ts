@@ -1,7 +1,7 @@
 import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
 import { allergiesOf, FOOD_ALLERGENS, safeRecipes, type Allergen } from './allergens';
 import { CITES } from './evidence';
-import { FOOD_BY_ID } from './foods';
+import { FOOD_BY_ID, unitStep } from './foods';
 import { comboSteps, type Combo, type ComboPart } from './menuOptions';
 import { isLiquid, mealVolumeCap, portionCap, solidGrams, type CapCtx } from './portionCaps';
 import { itemFromFood, uid } from './seed';
@@ -137,7 +137,7 @@ const SELLO = 'Elegí fiambres, quesos, yogures, dulces y suplementos con el sel
 const STD: Record<SlotKind, R[]> = {
   breakfast: [
     { title: 'Café con leche, tostadas integrales con queso untable y huevos revueltos', parts: [P('huevo'), C('pan'), X('leche', 200), X('untable', 15)], steps: ['Prepará el café con {leche} de leche descremada.', 'Batí {huevo} y cocinalos revueltos en sartén antiadherente 2-3 min.', 'Tostá {pan} de pan integral y untalo con {untable} de queso untable.'] },
-    { title: 'Panqueques de avena con frutillas y yogur', parts: [P('claras', { min: 66 }), C('avena'), X('huevo', 50), X('frutillas', 150), X('yogur', 150)], steps: ['Mezclá {avena} de avena con {huevo} y {claras}.', 'Cociná los panqueques en sartén antiadherente 1-2 min por lado.', 'Serví con {yogur} de yogur y {frutillas} de frutillas. Con mate o café.'] },
+    { title: 'Panqueques de avena con frutillas y yogur', parts: [P('claras', { min: 66 }), C('avena'), X('huevo', 60), X('frutillas', 150), X('yogur', 150)], steps: ['Mezclá {avena} de avena con {huevo} y {claras}.', 'Cociná los panqueques en sartén antiadherente 1-2 min por lado.', 'Serví con {yogur} de yogur y {frutillas} de frutillas. Con mate o café.'] },
     { title: 'Yogur con granola y banana[ con proteína|whey][ y nueces|nueces]', parts: [X('yogur', 200), P('whey', { min: 0 }), C('granola'), F('nueces'), X('banana', 100)], steps: ['Poné {yogur} de yogur en un bowl[ y mezclá {whey} de proteína en polvo].', 'Sumá {granola} de granola y {banana} de banana en rodajas.', '[Terminá con {nueces} de nueces picadas.] Con mate o café.'] },
     { title: 'Tostado de jamón y queso con café con leche y una mandarina', parts: [P('jamon'), C('pan'), X('queso-light', 30), X('leche', 200), X('naranja', 150)], steps: ['Armá el tostado con {pan} de pan integral, {jamon} de jamón cocido natural y {queso-light} de queso light.', 'Tostalo en sandwichera o sartén hasta que se derrita el queso.', 'Acompañá con café con {leche} de leche y {naranja} de mandarina.'] },
     { title: 'Mate con tostadas, ricota y miel + huevos duros', parts: [P('huevo'), C('pan'), X('ricota', 60), X('miel', 10)], steps: ['Herví {huevo} 9-10 min.', 'Tostá {pan} de pan integral y untalo con {ricota} de ricota y {miel} de miel.', 'Con mate amargo o café.'] },
@@ -148,21 +148,21 @@ const STD: Record<SlotKind, R[]> = {
     { title: 'Mate con galletas de arroz, pasta de maní y banana', parts: [C('galletas-arroz'), F('mani'), X('banana', 120)], steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Acompañá con {banana} de banana. Con mate.'] },
     { title: 'Frutos secos, fruta y un vaso de leche', parts: [P('leche', { min: 200 }), F('nueces'), X('manzana', 180)], steps: ['Serví {nueces} de nueces y {manzana} de manzana.', 'Tomá {leche} de leche descremada.'] },
     { title: 'Yogur bebible y una banana', parts: [P('yogur-proteico', { min: 150 }), C('banana')], steps: ['Llevá {yogur-proteico} de yogur bebible y {banana} de banana: se toma en cualquier lado.'] },
-    { title: 'Barra proteica y una manzana', parts: [X('barra-proteica', 46), C('manzana')], steps: ['Llevá {barra-proteica} de barra proteica y {manzana} de manzana en la mochila.'] },
+    { title: 'Barra proteica y una manzana', parts: [X('barra-proteica', 46), C('manzana')], steps: ['Llevá 1 barra proteica entera ({barra-proteica}, 15-20 g de proteína) y {manzana} de manzana en la mochila.', 'Elegí una barra nacional y revisá el rótulo: suele tener gluten, lácteos y maní o frutos secos.'] },
   ],
   lunch: [
     { title: 'Pechuga grillada con arroz yamaní y ensalada mixta', parts: [P('pollo'), C('yamani'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {pollo} de pechuga 5-6 min por lado.', 'Serví con {yamani} de arroz yamaní cocido.', 'Ensalada mixta con {vegetales} de verduras y {oliva} de aceite de oliva.'] },
     { title: 'Peceto al horno con papas al natural y ensalada', parts: [P('nalga'), C('papa'), F('oliva'), X('vegetales', 200)], steps: ['Cociná {nalga} de peceto al horno a 200 °C, 25-30 min.', 'Herví {papa} de papa con cáscara.', 'Ensalada de {vegetales} de tomate y lechuga con {oliva} de aceite de oliva.'] },
     { title: 'Fideos con bolognesa magra', parts: [P('picada'), C('fideos'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Dorá {picada} de carne picada especial con cebolla[ y {oliva} de aceite].', 'Sumá {vegetales} de salsa de tomate natural y cociná 10 min.', 'Mezclá con {fideos} de fideos cocidos al dente.'] },
     { title: 'Merluza a la plancha con puré de calabaza y papa', parts: [P('merluza'), C('papa'), F('oliva'), X('calabaza', 150)], steps: ['Cociná {merluza} de merluza a la plancha 3-4 min por lado.', 'Pisá {papa} de papa y {calabaza} de calabaza hervidas con {oliva} de aceite de oliva.'] },
-    { title: 'Ensalada completa de pollo, huevo y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('huevo', 50), X('vegetales', 200)], steps: ['Cortá {pollo} de pollo grillado en tiras y {huevo} de huevo duro.', 'Mezclá con {arroz} de arroz frío y {vegetales} de verduras.', 'Condimentá con {oliva} de aceite de oliva y limón.'] },
+    { title: 'Ensalada completa de pollo, huevo y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('huevo', 60), X('vegetales', 200)], steps: ['Cortá {pollo} de pollo grillado en tiras y {huevo} de huevo duro.', 'Mezclá con {arroz} de arroz frío y {vegetales} de verduras.', 'Condimentá con {oliva} de aceite de oliva y limón.'] },
   ],
   pre: [
     { title: 'Yogur con banana y galletas de arroz', parts: [P('yogur', { min: 150 }), C('banana'), X('galletas-arroz', 18)], steps: ['Serví {yogur} de yogur con {banana} de banana en rodajas.', 'Acompañá con {galletas-arroz} de galletas de arroz. Con mate.'] },
     { title: 'Licuado de leche, banana y avena[ con proteína|whey]', parts: [P('whey', { min: 0 }), C('banana'), X('leche', 250), X('avena', 20)], steps: ['Licuá {leche} de leche con {banana} de banana, {avena} de avena[ y {whey} de proteína en polvo].'] },
     { title: 'Sándwich de pan lactal con jamón y miel', parts: [P('jamon'), C('pan-lactal'), X('miel', 10)], steps: ['Armá el sándwich con {pan-lactal} de pan lactal y {jamon} de jamón cocido.', 'Sumá {miel} de miel en una de las tapas.'] },
     { title: 'Galletas de arroz con dulce de membrillo y un vaso de leche', parts: [P('leche', { min: 200 }), C('galletas-arroz'), X('dulce-membrillo', 20)], steps: ['Untá {galletas-arroz} de galletas de arroz con {dulce-membrillo} de dulce de membrillo.', 'Tomá {leche} de leche.'] },
-    { title: 'Alfajor proteico con fruta', parts: [X('alfajor-proteico', 50), C('banana')], steps: ['Comé {alfajor-proteico} de alfajor proteico y {banana} de banana 60-90 min antes de entrenar.'] },
+    { title: 'Alfajor proteico con fruta', parts: [X('alfajor-proteico', 50), C('banana')], steps: ['Comé 1 alfajor proteico entero ({alfajor-proteico}) y {banana} de banana 60-90 min antes de entrenar.', 'Revisá el rótulo: suele tener gluten y lácteos.'] },
     { title: 'Banana con galletas de arroz y miel', parts: [C('banana'), X('galletas-arroz', 18), X('miel', 10)], steps: ['Comé {banana} de banana con {galletas-arroz} de galletas de arroz y {miel} de miel 60-90 min antes de entrenar.'] },
   ],
   merienda: [
@@ -174,7 +174,7 @@ const STD: Record<SlotKind, R[]> = {
   dinner: [
     { title: 'Wok de pollo con verduras y arroz', parts: [P('pollo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {pollo} de pollo en tiras con {oliva} de aceite.', 'Sumá {vegetales} de verduras (morrón, zanahoria, zucchini) 3-4 min.', 'Serví con {arroz} de arroz cocido.'] },
     { title: 'Hamburguesas caseras de carne magra con batata al horno y ensalada', parts: [P('picada'), C('batata'), F('oliva'), X('vegetales', 150)], steps: ['Formá las hamburguesas con {picada} de carne picada especial y cocinalas a la plancha.', 'Asá {batata} de batata en gajos a 200 °C, 30 min.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite.'] },
-    { title: 'Omelette de huevos y claras con queso y verduras + pan integral', parts: [P('claras', { min: 66 }), C('pan'), X('huevo', 100), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras salteadas y {queso-light} de queso light.', 'Acompañá con {pan} de pan integral.'] },
+    { title: 'Omelette de huevos y claras con queso y verduras + pan integral', parts: [P('claras', { min: 66 }), C('pan'), X('huevo', 120), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras salteadas y {queso-light} de queso light.', 'Acompañá con {pan} de pan integral.'] },
     { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
     { title: 'Wok de lomo con arroz y verduras', parts: [P('lomo'), C('arroz'), F('oliva'), X('vegetales', 200)], steps: ['Saltá {lomo} de lomo en tiras con {oliva} de aceite a fuego fuerte.', 'Sumá {vegetales} de verduras y salsa de soja.', 'Serví con {arroz} de arroz.'] },
   ],
@@ -212,7 +212,7 @@ const STACC: Record<SlotKind, R[]> = {
     { title: 'Peceto al horno con papas y batatas al natural', parts: [P('nalga'), C('papa'), F('oliva'), X('batata', 100), X('vegetales', 150)], steps: ['Cociná {nalga} de peceto al horno a 200 °C, 25-30 min.', 'Herví {papa} de papa y {batata} de batata.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite de oliva.'] },
     { title: 'Merluza a la plancha con polenta cremosa y ensalada', parts: [P('merluza'), C('polenta'), F('oliva'), X('vegetales', 150)], steps: ['Cociná {merluza} de merluza a la plancha 3-4 min por lado.', 'Prepará {polenta} de polenta cremosa con agua y sal.', 'Ensalada de {vegetales} de verduras con {oliva} de aceite de oliva.'] },
     { title: 'Fideos de arroz sin TACC con bolognesa magra', parts: [P('picada'), C('fideos-sin-tacc'), F('oliva', { max: 10 }), X('vegetales', 100)], steps: ['Dorá {picada} de carne picada con cebolla[ y {oliva} de aceite].', 'Sumá {vegetales} de salsa de tomate (con sello Sin TACC) y cociná 10 min.', 'Mezclá con {fideos-sin-tacc} de fideos sin TACC, cocidos en una olla y colador propios.'] },
-    { title: 'Milanesas de peceto rebozadas en harina de arroz, al horno, con puré de calabaza', parts: [P('nalga'), C('papa'), X('harina-arroz', 20), X('huevo', 50), X('calabaza', 150)], steps: ['Pasá {nalga} de peceto en finas láminas por {huevo} batido y {harina-arroz} de harina de arroz.', 'Hornealas a 200 °C, 10 min por lado.', 'Pisá {papa} de papa y {calabaza} de calabaza hervidas.'] },
+    { title: 'Milanesas de peceto rebozadas en harina de arroz, al horno, con puré de calabaza', parts: [P('nalga'), C('papa'), X('harina-arroz', 20), X('huevo', 60), X('calabaza', 150)], steps: ['Pasá {nalga} de peceto en finas láminas por {huevo} batido y {harina-arroz} de harina de arroz.', 'Hornealas a 200 °C, 10 min por lado.', 'Pisá {papa} de papa y {calabaza} de calabaza hervidas.'] },
   ],
   pre: [
     { title: 'Banana con galletas de arroz y miel', parts: [C('banana'), X('galletas-arroz', 18), X('miel', 10)], steps: ['Comé {banana} de banana con {galletas-arroz} de galletas de arroz y {miel} de miel 60-90 min antes de entrenar.'] },
@@ -231,7 +231,7 @@ const STACC: Record<SlotKind, R[]> = {
     { title: 'Hamburguesas caseras de carne pura con batata al horno', parts: [P('picada'), C('batata'), F('oliva'), X('vegetales', 150)], steps: ['Formá las hamburguesas con {picada} de carne picada pura (sin pan rallado) y cocinalas a la plancha.', 'Asá {batata} de batata en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
     { title: 'Pizza de polenta con pollo, queso y tomate', parts: [P('pollo'), C('polenta'), X('queso-light', 30), X('vegetales', 100)], steps: ['Extendé {polenta} de polenta firme en una placa y dorala 15 min a 200 °C.', 'Cubrí con {vegetales} de tomate, {pollo} de pollo desmenuzado y {queso-light} de queso light.', 'Gratiná 5 min.', SELLO] },
     { title: 'Merluza al horno con papas rústicas', parts: [P('merluza'), C('papa'), F('oliva'), X('vegetales', 150)], steps: ['Hacé {merluza} de merluza al horno con limón, 15 min.', 'Asá {papa} de papa en gajos con {oliva} de aceite de oliva.', 'Sumá {vegetales} de ensalada.'] },
-    { title: 'Omelette con queso y verduras + pan sin TACC', parts: [P('claras', { min: 66 }), C('pan-sin-tacc'), X('huevo', 100), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras y {queso-light} de queso light.', 'Acompañá con {pan-sin-tacc} de pan sin TACC.', SELLO] },
+    { title: 'Omelette con queso y verduras + pan sin TACC', parts: [P('claras', { min: 66 }), C('pan-sin-tacc'), X('huevo', 120), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras}.', 'Cociná el omelette con {vegetales} de verduras y {queso-light} de queso light.', 'Acompañá con {pan-sin-tacc} de pan sin TACC.', SELLO] },
   ],
   dessert: [
     { title: 'Yogur con frutillas y banana', parts: [P('yogur', { min: 150 }), C('banana'), X('frutillas', 100)], steps: ['De postre: {yogur} de yogur con {frutillas} de frutillas y {banana} de banana.', SELLO] },
@@ -264,9 +264,9 @@ const VEG: Record<SlotKind, R[]> = {
   lunch: [
     { title: 'Guiso de lentejas con arroz y huevo duro + yogur de postre', parts: [P('huevo'), C('lentejas'), F('oliva', { max: 10 }), X('arroz', 80), X('vegetales', 150), X('yogur', 150)], steps: ['Cociná {lentejas} de lentejas con {vegetales} de cebolla, morrón y zanahoria[ y {oliva} de aceite].', 'Serví con {arroz} de arroz y {huevo} de huevo duro.', 'De postre, {yogur} de yogur (suma la proteína que le falta a la legumbre).'] },
     { title: 'Tofu grillado con arroz yamaní y verduras salteadas', parts: [P('tofu'), C('yamani'), F('oliva'), X('vegetales', 200)], steps: ['Grillá {tofu} de tofu firme en cubos con salsa de soja.', 'Saltá {vegetales} de verduras con {oliva} de aceite.', 'Serví con {yamani} de arroz yamaní.'] },
-    { title: 'Milanesas de soja al horno con puré de papa', parts: [P('soja-texturizada'), C('papa'), F('oliva'), X('huevo', 50), X('pan-rallado', 20)], steps: ['Mezclá {soja-texturizada} de soja texturizada hidratada con {huevo} y formá las milanesas.', 'Pasalas por {pan-rallado} de pan rallado y hornealas 10 min por lado.', 'Serví con puré de {papa} de papa y {oliva} de aceite de oliva.'] },
+    { title: 'Milanesas de soja al horno con puré de papa', parts: [P('soja-texturizada'), C('papa'), F('oliva'), X('huevo', 60), X('pan-rallado', 20)], steps: ['Mezclá {soja-texturizada} de soja texturizada hidratada con {huevo} y formá las milanesas.', 'Pasalas por {pan-rallado} de pan rallado y hornealas 10 min por lado.', 'Serví con puré de {papa} de papa y {oliva} de aceite de oliva.'] },
     { title: 'Ensalada completa de garbanzos, huevo, queso y arroz', parts: [P('huevo'), C('garbanzos'), F('oliva'), X('queso-light', 30), X('vegetales', 200)], steps: ['Mezclá {garbanzos} de garbanzos cocidos con {vegetales} de verduras.', 'Sumá {huevo} de huevo duro y {queso-light} de queso light en cubos.', 'Condimentá con {oliva} de aceite de oliva.'] },
-    { title: 'Omelette de claras con queso, papas al horno y ensalada', parts: [P('claras', { min: 66 }), C('papa'), F('oliva'), X('huevo', 50), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras} y cociná el omelette con {queso-light} de queso light.', 'Asá {papa} de papa en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
+    { title: 'Omelette de claras con queso, papas al horno y ensalada', parts: [P('claras', { min: 66 }), C('papa'), F('oliva'), X('huevo', 60), X('queso-light', 30), X('vegetales', 150)], steps: ['Batí {huevo} con {claras} y cociná el omelette con {queso-light} de queso light.', 'Asá {papa} de papa en gajos con {oliva} de aceite.', 'Sumá {vegetales} de ensalada.'] },
     { title: 'Polenta cremosa con salsa de tomate, huevo poché y queso', parts: [P('huevo'), C('polenta'), X('queso-light', 30), X('vegetales', 100)], steps: ['Prepará {polenta} de polenta cremosa con agua y sal.', 'Cociná {huevo} poché en la salsa de {vegetales} de tomate.', 'Serví con {queso-light} de queso por encima.'] },
     { title: 'Papas al horno con huevo, queso y ensalada', parts: [P('huevo'), C('papa'), F('oliva'), X('queso-light', 30), X('vegetales', 150)], steps: ['Asá {papa} de papa en gajos con {oliva} de aceite, 30 min a 200 °C.', 'Sumá {huevo} a la plancha y {queso-light} de queso.', 'Acompañá con {vegetales} de ensalada.'] },
   ],
@@ -407,8 +407,7 @@ export function dayTargets(goal: GoalDef, sex: Sex, weightKg: number) {
 
 const stepOf = (id: string) => {
   const u = FOOD_BY_ID[id]?.unit;
-  if (id === 'huevo') return 50;
-  if (id === 'claras') return 33;
+  if (id === 'huevo' || id === 'claras' || FOOD_BY_ID[id]?.group === 'protein-snack') return unitStep(id);
   if (u && u.grams <= 60 && FOOD_BY_ID[id].group !== 'dairy-protein') return u.grams;
   return 5;
 };
@@ -733,12 +732,61 @@ function ordered(goal: BankGoal, kind: SlotKind, recs: R[]): R[] {
   return [...recs].sort((a, b) => (carbFirst ? lean(a) - lean(b) : lean(b) - lean(a)));
 }
 
+/**
+ * MUJER SIN LECHE FLUIDA: la leche como bebida (vaso de leche, café con leche, licuados, leche con cacao) cuesta
+ * volumen y saciedad. En la mujer el café con leche pasa a café apenas cortado (un chorrito de 30 ml), el vaso de
+ * leche y el licuado de leche a yogur griego chico, y el licuado con proteína se hace con agua.
+ */
+const MILK = new Set(['leche', 'leche-deslactosada']);
+function femaleNoMilk(rec: R): R {
+  const milk = rec.parts.find((p) => MILK.has(p.id));
+  if (!milk) return rec;
+  const steps = rec.steps ?? [];
+  // Café con leche → café apenas cortado.
+  if (milk.r === 'x' && /caf[eé] con leche/i.test(rec.title)) {
+    return {
+      ...rec,
+      title: rec.title.replace(/(C|c)af[eé] con leche/g, (_, c: string) => (c === 'C' ? 'Café' : 'café') + ' apenas cortado'),
+      parts: rec.parts.map((p) => (p === milk ? { ...p, g: 30 } : p)),
+      steps: steps.map((t) => t.replace(/caf[eé] con \{(leche[a-z-]*)\} de leche( descremada)?/g, 'café apenas cortado (un chorrito: {$1} de leche$2)')),
+    };
+  }
+  // Licuado con proteína: con agua fría (la proteína deja de ser opcional).
+  if (milk.r === 'x' && rec.parts.some((p) => p.id === 'whey')) {
+    return {
+      ...rec,
+      title: rec.title.replace(/Licuado de leche, banana y avena\[ con proteína\|whey\]/, 'Licuado con agua, banana, avena y proteína').replace(/Licuado de leche y banana\[ con proteína\|whey\]/, 'Licuado con agua, banana y proteína'),
+      parts: rec.parts.filter((p) => p !== milk).map((p) => (p.id === 'whey' ? { ...p, min: 20 } : p)),
+      steps: steps.map((t) => t.replace(/Licuá \{leche[a-z-]*\} de leche con/, 'Licuá 250 ml de agua fría con').replace(/\[ y (\{whey\}[^\]]*)\]/, ' y $1')),
+    };
+  }
+  // Vaso de leche / licuado de leche / leche con cacao → yogur griego chico.
+  if (milk.r === 'p') {
+    return {
+      ...rec,
+      title: rec.title
+        .replace(/un vaso de leche/, 'un yogur griego chico')
+        .replace(/^Licuado de leche, banana y avena/, 'Yogur griego con banana y avena')
+        .replace(/^Licuado de leche y banana/, 'Yogur griego con banana')
+        .replace(/^Leche con cacao amargo/, 'Yogur griego con cacao amargo'),
+      parts: rec.parts.map((p) => (p === milk ? { id: 'yogur', r: 'p' as const, min: 120 } : p)),
+      steps: steps.map((t) =>
+        t
+          .replace(/Tomá \{leche[a-z-]*\} de leche con cacao amargo\./, 'Mezclá {yogur} de yogur griego con 1 cdita de cacao amargo.')
+          .replace(/Tomá \{leche[a-z-]*\} de leche( descremada)?\./, 'Sumá {yogur} de yogur griego.')
+          .replace(/Licuá \{leche[a-z-]*\} de leche con/, 'Mezclá {yogur} de yogur griego con'),
+      ),
+    };
+  }
+  return rec;
+}
+
 function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot, tr: BankTraining, fixed: BankMainTimes, allergies: Allergen[]): Meal[] {
   const sex = sexOf(sel.plan);
   const veg = sel.variant === 'veg';
   const ctx: Ctx = { sex, veg, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
   const goalId = goalOf(sel.plan).id;
-  const base = RECIPES[sel.variant];
+  const base = sex === 'F' ? (Object.fromEntries(Object.entries(RECIPES[sel.variant]).map(([k, list]) => [k, list.map(femaleNoMilk)])) as Record<SlotKind, R[]>) : RECIPES[sel.variant];
   // Alergias: recetas aptas primero; si no alcanzan, las otras con el ingrediente sustituido por un equivalente seguro.
   const recipes = Object.fromEntries(
     // Como mucho 5 opciones por comida (la sugerida + 4 alternativas), igual que en el Builder.
@@ -762,8 +810,8 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
   const mkExtra = (): Work | null => {
     const placed = ws.map((w) => (w.slot as Placed).at).filter((x) => x !== undefined);
     const lunchAt = slots.find((x) => x.kind === 'lunch')!.at;
-    const t = [16 * 60, 15 * 60 + 30, 11 * 60, 11 * 60 + 30, 18 * 60 + 30, r15(tr.end + 30)].find(
-      (x) => x >= 9 * 60 && x <= dinnerAt - 120 && !busy(x) && placed.every((y) => Math.abs(y - x) >= 120),
+    const t = [16 * 60, 15 * 60 + 30, 15 * 60, 11 * 60, 11 * 60 + 30, 18 * 60 + 30, 19 * 60, r15(tr.end + 30)].find(
+      (x) => ws.length < 6 && x >= 9 * 60 && x <= dinnerAt - 120 && !busy(x) && placed.every((y) => Math.abs(y - x) >= 120),
     );
     if (t !== undefined) {
       const name = t < lunchAt ? 'Colación de media mañana' : 'Colación de tarde';

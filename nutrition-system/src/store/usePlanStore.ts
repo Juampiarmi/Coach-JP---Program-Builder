@@ -10,7 +10,8 @@ import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSt
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { fixedFromAnamnesis } from '@/lib/agenda';
 import { swapBase } from '@/lib/baseSwap';
-import { acceptFor, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
+import { setCoachPhone as setCoachContact } from '@/lib/coachContact';
+import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
 import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
@@ -46,6 +47,9 @@ interface PlanState {
   roster: Record<string, AthletePlan>;
   /** Plantillas propias del coach (planes guardados desde Comidas para reutilizar con otros atletas). */
   templates: PlanTemplate[];
+  /** WhatsApp del coach (los check-ins de los alumnos llegan acá). */
+  coachPhone: string;
+  setCoachPhone: (p: string) => void;
   ai: AiSettings;
   builderTab: BuilderTab;
   deployTab: DeployTab;
@@ -203,6 +207,11 @@ export const usePlanStore = create<PlanState>()(
       plan: seedPlan(),
       roster: {},
       templates: [],
+      coachPhone: '',
+      setCoachPhone: (p) => {
+        setCoachContact(p);
+        set({ coachPhone: p });
+      },
       ai: { provider: 'claude', model: 'claude-opus-5', apiKey: '' },
       builderTab: 'profile',
       deployTab: 'preview',
@@ -405,7 +414,7 @@ export const usePlanStore = create<PlanState>()(
         const basket = s.plan.anamnesis?.basket;
         const others = (meal.alts ?? []).filter((_, k) => k !== slot);
         // Nunca repite la base (plato / proteína) de la Opción 1 ni de las otras alternativas de la misma comida.
-        const opts = suggestAlternatives(meal, basket ? new Set(basket) : null, 12, others.map((a) => baseKey(a.items)), acceptFor(allergiesOf(s.plan))).filter(
+        const opts = suggestAlternatives(meal, basket ? new Set(basket) : null, 12, others.map((a) => baseKey(a.items)), acceptForPlan(s.plan)).filter(
           (o) => !others.some((a) => a.title === o.title || baseKey(a.items) === baseKey(o.items)),
         );
         if (!opts.length) return 0;
@@ -426,7 +435,7 @@ export const usePlanStore = create<PlanState>()(
             return { ...m, alts: alts.length ? alts : undefined };
           }),
         })),
-      generateAllAlts: (overwrite = false) => set((s) => ({ plan: touch(withAlternatives(s.plan, overwrite, undefined, acceptFor(allergiesOf(s.plan)))) })),
+      generateAllAlts: (overwrite = false) => set((s) => ({ plan: touch(withAlternatives(s.plan, overwrite, undefined, acceptForPlan(s.plan))) })),
       setAltItemGrams: (mealId, slot, itemId, grams) =>
         set((s) => ({
           plan: mapMeal(s.plan, mealId, (m) => ({
@@ -593,6 +602,8 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
+        merged.coachPhone = typeof saved.coachPhone === 'string' ? saved.coachPhone : '';
+        setCoachContact(merged.coachPhone);
         merged.templates = Array.isArray(saved.templates)
           ? saved.templates.filter((t) => t && typeof t.id === 'string' && Array.isArray(t.meals) && t.periodization?.on && t.periodization?.off && t.weightKg > 0)
           : [];
@@ -612,6 +623,7 @@ export const usePlanStore = create<PlanState>()(
         plan: s.plan,
         roster: s.roster,
         templates: s.templates,
+        coachPhone: s.coachPhone,
         ai: s.ai,
         builderTab: s.builderTab,
         deployTab: s.deployTab,
