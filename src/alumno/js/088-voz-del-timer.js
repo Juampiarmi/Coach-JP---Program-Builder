@@ -7,14 +7,16 @@
      como respaldo (si algún día la app se publica con la carpeta al lado) y como fuente del paquete.
    · Al activarse (o al arrancar con la voz activa) los clips se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una frase es un
      start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
-   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NO suena (la voz reemplaza al pitido; si el
-     clip todavía se está cargando, ese aviso queda en silencio). Solo si el paquete no se pudo cargar (estado "fallo") devuelve false y suena el tono de siempre para que el timer
-     no quede mudo. Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NUNCA suena (la voz reemplaza al pitido).
+     Si el clip todavía se está cargando, o el paquete falló (se reintenta cada 20 s), ese aviso queda en silencio: antes el fallo caía al pitido viejo y se escuchaban los dos
+     sistemas mezclados (pitido antes o junto a la voz). Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · callar(): corta la frase en curso y lo que quedó agendado ("Mitad" diferido, pista de transición). El timer lo llama al reiniciarse o cerrarse, así ninguna frase del
+     timer anterior suena encima del nuevo.
    · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
-  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000;
+  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000, diferida = null;
   /* pista del timer -> frase: lo que el timer anuncia antes de la transición ('done' = fin de todo) */
   var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
@@ -104,9 +106,11 @@ var jpVoz = (function(){
     if(!e){ cargar(lang); return false; }
     /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
     if(id === 'halfway' && actual && Date.now() - hablaT < 900){
-      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      clearTimeout(diferida);
+      diferida = setTimeout(function(){ diferida = null; if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
       return true;
     }
+    if(id !== 'halfway' && diferida){ clearTimeout(diferida); diferida = null; }      /* una frase nueva descarta el "Mitad" que había quedado esperando */
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
@@ -130,8 +134,8 @@ var jpVoz = (function(){
     if(!activa() || silenciada()) return false;
     var lang = idioma(), st = ESTADO[lang];
     if(st === 'fallo'){
-      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, tonos */
-      return false;
+      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, silencio (nunca el pitido viejo encima de la voz) */
+      return true;
     }
     if(!st) cargar(lang);
     var id = null;
@@ -146,8 +150,15 @@ var jpVoz = (function(){
     return true;
   }
 
+  /* corta la voz del timer anterior: la frase que suena, el "Mitad" diferido y la pista pendiente */
+  function callar(){
+    if(diferida){ clearTimeout(diferida); diferida = null; }
+    pistaTxt = null;
+    if(actual){ try{ actual.stop(); }catch(e){} actual = null; }
+  }
   function probar(){
     try{ gestoAudio(); }catch(e){}
+    callar();
     cargar().then(function(ok){
       if(!ok){
         var pr = document.getElementById('hdpVozProbar');
@@ -201,7 +212,8 @@ var jpVoz = (function(){
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 
   return {
-    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar,
+    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar, callar: callar,
+    hablando: function(){ return !!actual; }, pendiente: function(){ return !!diferida; },
     /* clips ya decodificados por idioma (QA / tests) */
     listos: function(lang){ var b = BUF[lang || idioma()] || {}; return Object.keys(b).filter(function(k){ return k !== '__listo'; }); },
     /* tests: sin red ni sonido real */
@@ -210,7 +222,7 @@ var jpVoz = (function(){
     __bytes: bytesDe,
     __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; ESTADO[lang] = 'ok'; },
     __fallo: function(lang){ ESTADO[lang] = 'fallo'; falloT[lang] = Date.now(); },
-    __vaciar: function(){ BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
+    __vaciar: function(){ callar(); BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
   };
 })();
 window.jpVoz = jpVoz;

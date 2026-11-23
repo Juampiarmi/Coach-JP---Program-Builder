@@ -8926,6 +8926,7 @@ function jpIALibre(btn, originalHtml){
   if(!btn) return;
   if(btn.dataset) delete btn.dataset.iaBusy;
   if(btn.isConnected){ btn.disabled = false; if(originalHtml != null) btn.innerHTML = originalHtml; }
+  if(btn._jpTitle !== undefined){ btn.title = btn._jpTitle; delete btn._jpTitle; }
 }
 /* Ejecuta un generador de IA de forma segura: prevalida entorno / clave / pausa / conexión ANTES de armar nada, deja pasar un clic a la vez, atrapa cualquier error
    (también los datos nulos al armar el contexto) y muestra el motivo real una sola vez. El botón siempre vuelve a quedar libre. */
@@ -8940,6 +8941,21 @@ function jpIACancelar(btn){
   toast('Generación con IA detenida: el bloque quedó como estaba', 'info');
   return true;
 }
+/* generadores con su propio flujo (tips de CrossFit, objetivo de la semana): mismo contrato que jpIAEjecutar — segundo toque = detener, el botón se libera solo
+   si sigue siendo de ESTA generación (una generación vieja que termina tarde nunca libera el botón de una nueva). */
+function jpIATomar(btn){
+  if(btn && btn.dataset && btn.dataset.iaBusy === '1'){ jpIACancelar(btn); return null; }
+  if(jpIAOcupado(btn)) return null;
+  const ctrl = (typeof AbortController === 'function') ? new AbortController() : { signal: undefined, abort: function(){} };
+  if(btn){ btn._jpAbort = ctrl; btn._jpHtml = btn.innerHTML; btn._jpTitle = btn.title || ''; }
+  return ctrl;
+}
+function jpIASoltar(btn, ctrl, html){
+  if(!btn) return;
+  if(btn._jpAbort === ctrl){ delete btn._jpAbort; delete btn._jpHtml; jpIALibre(btn, html); }
+  else if(!btn._jpAbort && btn.dataset && btn.dataset.iaBusy === '1') jpIALibre(btn, html);
+}
+function jpIAEsCancelado(e){ return !!(e && (e.cancelado || e.name === 'AbortError')); }
 async function jpIAEjecutar(btn, etiqueta, quehace, fn){
   if(btn && btn.dataset && btn.dataset.iaBusy === '1'){ jpIACancelar(btn); return; }
   if(jpIAOcupado(btn)) return;
@@ -9225,8 +9241,8 @@ async function generarFocoDiaConIACore(btn){
    1) prevalida entorno, clave, pausa de proveedores y conexión ANTES de armar nada (jpIAListo); 2) todo el armado va dentro del try; 3) un clic a la vez;
    4) el aviso de error es el motivo real, una sola vez. */
 async function generarTipsPacingIA(bid, btn){
-  if(jpIAOcupado(btn)) return;
-  const originalHtml = btn ? btn.innerHTML : null;
+  const ctrl = jpIATomar(btn); if(!ctrl) return;
+  const originalHtml = btn ? btn._jpHtml : null;
   try{
     const b = findBlock(bid);
     if(!b){ toast('No se encontró el bloque: actualizá la pantalla y probá de nuevo', 'warn'); return; }
@@ -9236,16 +9252,17 @@ async function generarTipsPacingIA(bid, btn){
     const ctxPrev = contextoBloqueIA(b);
     if(!ctxPrev.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
     if(!jpIAListo('generar tips automáticamente')) return;
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
-    await generarTipsPacingIACore(b, btn);
+    if(btn){ btn.disabled = false; btn.innerHTML = '<span class="spin"></span> ⏹'; btn.title = 'Detener la generación con IA'; }
+    await generarTipsPacingIACore(b, btn, ctrl.signal);
   }catch(e){
+    if(jpIAEsCancelado(e)) return;      /* detenido por el coach: el bloque quedó como estaba */
     console.warn('generarTipsPacingIA', e);
     if(!(e && e.__toast)) toast('No se pudieron generar los tips: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    jpIALibre(btn, originalHtml);
+    jpIASoltar(btn, ctrl, originalHtml);
   }
 }
-async function generarTipsPacingIACore(b, btn){
+async function generarTipsPacingIACore(b, btn, senal){
   const ctx = contextoBloqueIA(b);
   const ad = contextoAtletaDiaIA();
   const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
@@ -9275,7 +9292,8 @@ async function generarTipsPacingIACore(b, btn){
   /* el armado del contexto ya pasó: de acá en más solo hay red. Los errores de red/API los avisa callAI() (con el motivo real) y suben al botón. */
   {
     /* 1500 tokens: foco + pacing + nota con SET-UP / CUE / ERROR de 2 movimientos no entra en 900 (Gemini corta el JSON y daba "respuesta cortada") */
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500, signal: senal, onProgreso: jpIAAvance(btn, senal, ' ⏹') });
+    if(senal && senal.aborted){ const eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -9343,8 +9361,8 @@ function resumenSemanaCFParaIA(p, wi){
   return { texto: L.join('\n\n').slice(0, 7500), bloques: bloquesTotal, dias: L.length };
 }
 async function generarObjetivoSemanaCF(btn){
-  if(jpIAOcupado(btn)) return;
-  const originalHtml = btn ? btn.innerHTML : null;
+  const ctrl = jpIATomar(btn); if(!ctrl) return;
+  const originalHtml = btn ? btn._jpHtml : null;
   try{
     const p = plan(S.activeId);
     if(!p){ toast('Seleccioná un alumno/a', 'warn'); return; }
@@ -9359,7 +9377,7 @@ async function generarObjetivoSemanaCF(btn){
     if(!res.bloques){ toast(esCF ? 'Cargá al menos un WOD, levantamiento o bloque en esta semana antes de generar el objetivo con IA' : 'Cargá al menos un bloque de ejercicios en los días antes de generar el objetivo de la semana con IA', 'warn'); return; }
     if(!jpIAListo('generar el objetivo de la semana')) return;
     if(previo.length > 24 && typeof confirm === 'function' && !confirm('Esta semana ya tiene un objetivo escrito. ¿Lo reemplazo por uno nuevo generado con IA?')) return;
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    if(btn){ btn.disabled = false; btn.innerHTML = '<span class="spin"></span> ⏹'; btn.title = 'Detener la generación con IA'; }
     const ad = contextoAtletaDiaIA();
     const semLb = (w.short || ('S' + (wi + 1))) + (w.name ? ' · ' + w.name : '');
     const contexto = [
@@ -9390,7 +9408,8 @@ async function generarObjetivoSemanaCF(btn){
     const sistema = esCF ? sistemaCF : sistemaSB;
     const user = contexto + '\n\nRedactá el objetivo de la semana en JSON.';
     /* 1400 tokens: el texto es de ~150 palabras, el resto es margen para que el JSON no se corte */
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400, signal: ctrl.signal, onProgreso: jpIAAvance(btn, ctrl.signal, ' ⏹') });
+    if(ctrl.signal && ctrl.signal.aborted) return;      /* detenido: el objetivo anterior queda intacto */
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -9406,10 +9425,11 @@ async function generarObjetivoSemanaCF(btn){
     save(); renderBuilder();
     toast('Objetivo de ' + (w.short || ('S' + (wi + 1))) + ' generado con IA ⚡ — revisalo y editalo si hace falta');
   }catch(e){
+    if(jpIAEsCancelado(e)) return;
     console.warn('generarObjetivoSemanaCF', e);
     if(!(e && e.__toast)) toast('No se pudo generar el objetivo de la semana: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    jpIALibre(btn, originalHtml);
+    jpIASoltar(btn, ctrl, originalHtml);
   }
 }
 /* Equivalente de generarTipsPacingIA() de arriba pero para bloques de
@@ -9419,8 +9439,17 @@ async function generarObjetivoSemanaCF(btn){
    genéricos b.tips/b.objective (los que ya lee y guarda el acordeón
    "📋 Pautas & Estrategia del Coach" de renderDay()) en vez de
    b.cfCierre.*, que es exclusivo de CrossFit. */
+/* avance en vivo en el botón mientras la IA escribe (streaming): el coach ve que la respuesta está llegando, nunca un spinner mudo */
+function jpIAAvance(btn, senal, sufijo){
+  return function(n){
+    if(!btn || !btn.isConnected || (senal && senal.aborted)) return;
+    const k = n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + ' k' : String(n);
+    btn.innerHTML = '<span class="spin"></span> ✍️ ' + k + (sufijo || '');
+  };
+}
 async function generarTipsSportsCore(bid, btn, senal){
-  const b = findBlock(bid); if(!b) return;
+  const b = findBlock(bid);
+  if(!b){ toast('No se encontró el bloque (la pantalla quedó desactualizada): actualizá y probá de nuevo', 'warn'); return; }
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
     toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
     if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
@@ -9479,7 +9508,7 @@ async function generarTipsSportsCore(bid, btn, senal){
     return { objetivo: (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g, '').trim(), tips: partes.slice(1).join('\n').trim() };
   };
   try{
-    const pedir = async (tokens, extra) => { const out = await window.CoachAI.generarTexto(user + (extra || ''), sistema, { maxTokens: tokens, signal: senal }); cortado(); return extraer(String(out || '').trim()); };
+    const pedir = async (tokens, extra) => { const out = await window.CoachAI.generarTexto(user + (extra || ''), sistema, { maxTokens: tokens, signal: senal, onProgreso: jpIAAvance(btn, senal, senal ? ' ⏹' : '') }); cortado(); return extraer(String(out || '').trim()); };
     let r = await pedir(esBiset ? 3400 : 2200, '');
     if(!r.objetivo && !r.tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
     const ath = (typeof active === 'function') ? active() : null;
@@ -10649,6 +10678,7 @@ JP_I18N.add('es', {
   'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
   'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
   'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.ver.est': 'Los tiempos son estimados: según tu energía, tu recuperación, tu nivel y tu ritmo del día, la sesión puede llevarte un poco más o un poco menos.',
   'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
@@ -10690,6 +10720,7 @@ JP_I18N.add('en', {
   'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
   'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
   'app.ver.h.igual': 'This session has no complementary blocks: both versions are the same.',
+  'app.ver.est': 'Times are estimates: depending on your energy, recovery, level and pace on the day, the session may take you a little more or a little less.',
   'app.plan.t': 'LOAD PLAN · based on your history', 'app.plan.hecho': '✓ done', 'app.plan.desc': 'DELOAD', 'app.plan.pico': 'PEAK',
   'app.notif.work': '💪 Go! · Round {r}/{n}',
   'app.notif.work.simple': '💪 Go!',
@@ -14950,6 +14981,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
   }
   function reset(){
     running = false; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* la voz de este descanso no sigue sonando después de reiniciarlo */
     round = 0; remaining = restSeconds; lastBeepSec = null; endTs = 0;
     playBtn.disabled = false; playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
@@ -15307,7 +15339,9 @@ function jpVersionHtml(day){
   };
   return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
     btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
-    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+    '</div><p class="jp-ver-h">' + hint + '</p>' +
+    /* las duraciones son una referencia: dependen del estado del alumno/a ese día (una línea discreta, debajo de la explicación de la versión) */
+    '<p class="jp-ver-est">⏱ ' + jpT('app.ver.est') + '</p></div>';
 }
 function jpSetVersion(modo){
   if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
@@ -16800,14 +16834,16 @@ window.JP_VOZ_PACK = {"es":{"n3":"SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYzLjEuMTAyAA
      como respaldo (si algún día la app se publica con la carpeta al lado) y como fuente del paquete.
    · Al activarse (o al arrancar con la voz activa) los clips se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una frase es un
      start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
-   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NO suena (la voz reemplaza al pitido; si el
-     clip todavía se está cargando, ese aviso queda en silencio). Solo si el paquete no se pudo cargar (estado "fallo") devuelve false y suena el tono de siempre para que el timer
-     no quede mudo. Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NUNCA suena (la voz reemplaza al pitido).
+     Si el clip todavía se está cargando, o el paquete falló (se reintenta cada 20 s), ese aviso queda en silencio: antes el fallo caía al pitido viejo y se escuchaban los dos
+     sistemas mezclados (pitido antes o junto a la voz). Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · callar(): corta la frase en curso y lo que quedó agendado ("Mitad" diferido, pista de transición). El timer lo llama al reiniciarse o cerrarse, así ninguna frase del
+     timer anterior suena encima del nuevo.
    · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
-  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000;
+  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000, diferida = null;
   /* pista del timer -> frase: lo que el timer anuncia antes de la transición ('done' = fin de todo) */
   var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
@@ -16897,9 +16933,11 @@ var jpVoz = (function(){
     if(!e){ cargar(lang); return false; }
     /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
     if(id === 'halfway' && actual && Date.now() - hablaT < 900){
-      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      clearTimeout(diferida);
+      diferida = setTimeout(function(){ diferida = null; if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
       return true;
     }
+    if(id !== 'halfway' && diferida){ clearTimeout(diferida); diferida = null; }      /* una frase nueva descarta el "Mitad" que había quedado esperando */
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
@@ -16923,8 +16961,8 @@ var jpVoz = (function(){
     if(!activa() || silenciada()) return false;
     var lang = idioma(), st = ESTADO[lang];
     if(st === 'fallo'){
-      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, tonos */
-      return false;
+      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, silencio (nunca el pitido viejo encima de la voz) */
+      return true;
     }
     if(!st) cargar(lang);
     var id = null;
@@ -16939,8 +16977,15 @@ var jpVoz = (function(){
     return true;
   }
 
+  /* corta la voz del timer anterior: la frase que suena, el "Mitad" diferido y la pista pendiente */
+  function callar(){
+    if(diferida){ clearTimeout(diferida); diferida = null; }
+    pistaTxt = null;
+    if(actual){ try{ actual.stop(); }catch(e){} actual = null; }
+  }
   function probar(){
     try{ gestoAudio(); }catch(e){}
+    callar();
     cargar().then(function(ok){
       if(!ok){
         var pr = document.getElementById('hdpVozProbar');
@@ -16994,7 +17039,8 @@ var jpVoz = (function(){
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 
   return {
-    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar,
+    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar, callar: callar,
+    hablando: function(){ return !!actual; }, pendiente: function(){ return !!diferida; },
     /* clips ya decodificados por idioma (QA / tests) */
     listos: function(lang){ var b = BUF[lang || idioma()] || {}; return Object.keys(b).filter(function(k){ return k !== '__listo'; }); },
     /* tests: sin red ni sonido real */
@@ -17003,7 +17049,7 @@ var jpVoz = (function(){
     __bytes: bytesDe,
     __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; ESTADO[lang] = 'ok'; },
     __fallo: function(lang){ ESTADO[lang] = 'fallo'; falloT[lang] = Date.now(); },
-    __vaciar: function(){ BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
+    __vaciar: function(){ callar(); BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
   };
 })();
 window.jpVoz = jpVoz;
@@ -26883,6 +26929,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   function sincronizarWodActivo(){ if(corriendo) paso(); }
   function reset(){
     corriendo = false; if(tick){ tick.stop(); } tick = null;
+    cueTrans = null; try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* ninguna frase del timer anterior suena sobre el nuevo */
     despierto(false);
     try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
@@ -26971,6 +27018,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function cerrarTimer(){
     var w = document.getElementById('cwtWrap');
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}
     if(w){ w.classList.remove('on'); w.classList.remove('cwt-minimized'); }
     if(corriendo) pausar();
     ocultarMini();
@@ -49063,6 +49111,8 @@ html body:not(#_):not(#__) .jp-ver-b i{ font-style:normal; opacity:.6; }
 html body:not(#_):not(#__) .jp-ver-b span{ font-weight:700; letter-spacing:.06em; }
 html body:not(#_):not(#__) .jp-ver-b.on{ color:#FFFFFF; background:linear-gradient(180deg,#F26A1B,#E24F0D); border-color:#FF9B5E; box-shadow:0 8px 16px -10px rgba(238,90,18,.85); }
 html body:not(#_):not(#__) .jp-ver-h{ margin:8px 4px 0; font-size:.74rem; line-height:1.45; color:#9FB0D8; }
+/* aclaración de duración estimada: misma voz que la explicación, un punto más tenue y en itálica para que se lea como nota */
+html body:not(#_):not(#__) .jp-ver-est{ margin:4px 4px 0; font-size:.7rem; line-height:1.45; color:#7F8FB8; font-style:italic; }
 
 /* ---------- 3 · plan de cargas por semana (dentro de "Registrar carga") ---------- */
 html body:not(#_):not(#__) .jp-qc-plan{ margin:2px 0 10px; padding:9px 10px 10px; border-radius:12px; background:rgba(8,14,34,.5); border:1px solid rgba(150,178,240,.2); }
@@ -50654,7 +50704,67 @@ document.addEventListener('DOMContentLoaded', init);
   /* TIEMPO MÁXIMO por llamada: sin esto una petición colgada dejaba el botón girando minutos. Corto para respuestas chicas, más largo para planes. */
   function timeoutDe(maxTok, opts){
     if(opts && opts.timeoutMs) return opts.timeoutMs;
+    /* con streaming el texto llega a medida que se escribe: el tope total puede ser holgado, porque una conexión trabada se detecta antes por silencio */
+    if(streamActivo(opts)) return maxTok <= 1600 ? 60000 : (maxTok <= 6000 ? 180000 : 300000);
     return maxTok <= 1600 ? 45000 : (maxTok <= 6000 ? 90000 : 150000);
+  }
+  /* CAUSA RAÍZ DE LOS "CUELGUES" (uso real, 2026-11): sin streaming la respuesta llegaba entera recién al final. Un objetivo + coaching tips largo (2000-5000 tokens)
+     tardaba 40-120 s sin ninguna señal de vida, y una conexión que quedó muerta tras horas de inactividad (suspensión, cambio de red, socket viejo reusado)
+     era indistinguible de una respuesta lenta: solo el tope total la cortaba, y después se empezaba de cero con otro proveedor.
+     Ahora: (1) STREAMING en los tres proveedores (SSE): el texto llega en vivo y el botón muestra el avance; (2) PRIMER BYTE: si el servidor no empieza a
+     responder en 25 s la conexión se da por trabada y se reintenta UNA vez en el acto (pedido nuevo); (3) SILENCIO: si a mitad de la respuesta no llega nada
+     durante 30 s, se corta; (4) una respuesta que se corta sin su cierre se reintenta una vez en vez de entregar texto a medias. */
+  const T_PRIMER_BYTE = 25000, T_SILENCIO = 30000;
+  function streamActivo(opts){
+    return AI.stream !== false && !(opts && opts.sinStream) && typeof TextDecoder === 'function';
+  }
+  /* lee el SSE del proveedor y lo convierte en la MISMA respuesta JSON que daría la llamada sin streaming (así el resto del flujo no cambia) */
+  async function leerSSE(r, prov, latido, onProgreso, senal){
+    const lector = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', texto = '', fin = '', error = null, hubo = false;
+    const linea = l => {
+      if(l.slice(0, 5) !== 'data:') return;
+      const d = l.slice(5).trim(); if(!d || d === '[DONE]') return;
+      let j; try{ j = JSON.parse(d); }catch(e){ return; }
+      hubo = true;
+      if(j && j.error){ error = j.error; return; }
+      if(prov === 'anthropic'){
+        if(j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') texto += j.delta.text || '';
+        else if(j.type === 'message_delta' && j.delta && j.delta.stop_reason) fin = j.delta.stop_reason;
+      } else if(prov === 'google'){
+        const c = (j.candidates || [])[0];
+        if(c){ texto += ((c.content && c.content.parts) || []).filter(pt => !pt.thought).map(pt => pt.text || '').join(''); if(c.finishReason) fin = c.finishReason; }
+        else if(j.promptFeedback && j.promptFeedback.blockReason) fin = 'BLOCKED';
+      } else {
+        const c = (j.choices || [])[0];
+        if(c){ if(c.delta && c.delta.content) texto += c.delta.content; if(c.finish_reason) fin = c.finish_reason; }
+      }
+    };
+    try{
+      for(;;){
+        const { value, done } = await lector.read();
+        if(done) break;
+        latido();
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while((i = buf.indexOf('\n')) >= 0){ linea(buf.slice(0, i).replace(/\r$/, '')); buf = buf.slice(i + 1); }
+        if(onProgreso && texto && !(senal && senal.aborted)){ try{ onProgreso(texto.length); }catch(e){} }
+      }
+    }finally{ try{ lector.releaseLock(); }catch(e){} }
+    buf += dec.decode();
+    if(buf.trim()) linea(buf.trim());
+    if(error){
+      const tipo = String(error.type || error.status || error.code || '');
+      const status = /overloaded/i.test(tipo) ? 529 : (/rate|RESOURCE_EXHAUSTED|429/i.test(tipo) ? 429 : (/unavailable|503/i.test(tipo) ? 503 : 500));
+      return { status: status, raw: JSON.stringify({ error: error }) };
+    }
+    /* sin señal de cierre: la conexión se cayó a mitad de la respuesta (el texto que llegó está incompleto) */
+    if(!fin){ const eC = new Error('La conexión se cortó a mitad de la respuesta'); eC.cortadaRed = true; eC.parcial = texto.length; throw eC; }
+    let raw;
+    if(prov === 'anthropic') raw = { content: [{ type: 'text', text: texto }], stop_reason: fin };
+    else if(prov === 'google') raw = fin === 'BLOCKED' && !texto ? { candidates: [] } : { candidates: [{ content: { parts: [{ text: texto }] }, finishReason: fin }] };
+    else raw = { choices: [{ message: { content: texto }, finish_reason: fin }] };
+    return { status: 200, raw: JSON.stringify(raw), vacio: !hubo };
   }
   function errCancelado(){ const e = new Error('Generación cancelada'); e.cancelado = true; e.name = 'AbortError'; e.__toast = true; return e; }
   /* espera que se corta si el coach cancela */
@@ -50929,8 +51039,14 @@ document.addEventListener('DOMContentLoaded', init);
   /* pregunta a Google que modelos con generateContent tiene disponibles esta clave (endpoint oficial ListModels): evita depender de nombres escritos a mano */
   async function descubrirModelosGoogle(){
     const k = keyOf('google'); if(!k) throw new Error('Cargá primero la API Key de Google.');
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': k } });
-    const raw = await r.text();
+    /* con tiempo máximo: esta consulta corre en medio de una generación (modelo 404) y antes podía quedar esperando para siempre */
+    const ctrlL = (typeof AbortController === 'function') ? new AbortController() : null, relojL = ctrlL ? setTimeout(() => ctrlL.abort(), 15000) : null;
+    let r, raw;
+    try{
+      r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': k }, signal: ctrlL ? ctrlL.signal : undefined, cache: 'no-store' });
+      raw = await r.text();
+    }catch(eL){ throw new Error('Google no respondió la lista de modelos a tiempo (' + String((eL && eL.message) || eL).slice(0, 80) + ').'); }
+    finally{ if(relojL) clearTimeout(relojL); }
     if(!r.ok){ let msg = raw; try{ msg = JSON.parse(raw).error.message; }catch(e){} const e = new Error('HTTP ' + r.status + ' — ' + String(msg).slice(0, 200)); e.status = r.status; throw e; }
     const list = (JSON.parse(raw).models || []).filter(m => (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0)
       .map(m => String(m.name || '').replace(/^models\//, ''))
@@ -51019,21 +51135,43 @@ document.addEventListener('DOMContentLoaded', init);
       if(body.response_format) delete body.response_format;
     }
 
-    async function enviar(bodyEnviado){
+    /* un envío con sus tres relojes (total, primer byte y silencio entre fragmentos); con streaming arma la misma respuesta que la llamada clásica */
+    async function enviarUnaVez(bodyEnviado){
       let r;
+      const conStream = streamActivo(opts);
+      let urlEnv = url, bodyEnv = bodyEnviado;
+      if(conStream){
+        if(prov === 'google') urlEnv = url.replace(/:generateContent$/, ':streamGenerateContent?alt=sse');
+        else bodyEnv = Object.assign({}, bodyEnviado, { stream: true });
+      }
       const ctrl = (typeof AbortController === 'function') ? new AbortController() : null, ms = timeoutDe(maxTok, opts);
-      let porTiempo = false;
-      const reloj = ctrl ? setTimeout(() => { porTiempo = true; ctrl.abort(); }, ms) : null;
+      const msPrimer = conStream ? Math.min(ms, (opts && opts.primerByteMs) || T_PRIMER_BYTE) : ms;
+      const msSilencio = Math.min(ms, (opts && opts.silencioMs) || T_SILENCIO);
+      let motivo = '';
+      const reloj = ctrl ? setTimeout(() => { motivo = motivo || 'total'; ctrl.abort(); }, ms) : null;
+      let relojVida = (ctrl && msPrimer < ms) ? setTimeout(() => { motivo = motivo || 'primer'; ctrl.abort(); }, msPrimer) : null;
+      const latido = () => { if(!ctrl) return; clearTimeout(relojVida); relojVida = setTimeout(() => { motivo = motivo || 'silencio'; ctrl.abort(); }, msSilencio); };
       const reenviar = () => { if(ctrl) ctrl.abort(); };
       if(senalExt && ctrl) senalExt.addEventListener('abort', reenviar, { once: true });
       try{
-        r = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(bodyEnviado), signal: ctrl ? ctrl.signal : undefined });
+        r = await fetch(urlEnv, { method:'POST', headers: headers, body: JSON.stringify(bodyEnv), signal: ctrl ? ctrl.signal : undefined, cache: 'no-store' });
+        const tipo = (r.headers && typeof r.headers.get === 'function' && r.headers.get('content-type')) || '';
+        if(conStream && r.ok && /event-stream/i.test(tipo) && r.body && typeof r.body.getReader === 'function'){
+          latido();
+          const s = await leerSSE(r, prov, latido, opts && opts.onProgreso, senalExt);
+          return { res: { ok: s.status === 200, status: s.status, headers: r.headers }, raw: s.raw };
+        }
+        if(conStream) latido();
         return { res: r, raw: await r.text() };
       }catch(errRed){
         if(senalExt && senalExt.aborted) throw errCancelado();
-        if(porTiempo){
-          const eT = new Error(PROV[prov].lb + ' (' + modeloAct + ') tardó más de ' + Math.round(ms / 1000) + ' s en responder: se cortó la espera para no dejar la app colgada. Probá de nuevo, o activá el modo económico / un modelo más rápido en ⚙️ Configuración de IA.');
-          eT.timeout = true; eT.prov = prov; throw eT;
+        if(errRed && errRed.cortadaRed){ errRed.prov = prov; throw errRed; }
+        if(motivo){
+          const seg = Math.round((motivo === 'primer' ? msPrimer : (motivo === 'silencio' ? msSilencio : ms)) / 1000);
+          const eT = new Error(motivo === 'total'
+            ? PROV[prov].lb + ' (' + modeloAct + ') tardó más de ' + seg + ' s en responder: se cortó la espera para no dejar la app colgada. Probá de nuevo, o activá el modo económico / un modelo más rápido en ⚙️ Configuración de IA.'
+            : PROV[prov].lb + ' (' + modeloAct + ') ' + (motivo === 'primer' ? 'no empezó a responder en ' + seg + ' s' : 'dejó de enviar texto durante ' + seg + ' s') + ': la conexión quedó trabada (suele pasar tras un rato sin uso o un cambio de red). Probá de nuevo.');
+          eT.timeout = true; eT.motivo = motivo; eT.prov = prov; throw eT;
         }
         /* directiva crítica (2026-09) -- diagnóstico de "todos los motores
            fallaron": fetch() rechaza con el mismo TypeError genérico
@@ -51052,7 +51190,25 @@ document.addEventListener('DOMContentLoaded', init);
         throw new Error('No se pudo conectar con ' + PROV[prov].lb + ' (' + (errRed && errRed.message || 'error de red') + '). Puede ser la conexión a internet, un bloqueo del navegador (extensión, CORS) o el servicio caído: usá "🔌 Probar conexión" en ⚙️ Configuración de IA para ver el detalle.');
       }finally{
         if(reloj) clearTimeout(reloj);
+        if(relojVida) clearTimeout(relojVida);
         if(senalExt && ctrl) senalExt.removeEventListener('abort', reenviar);
+      }
+    }
+    /* conexión trabada antes del primer byte o respuesta cortada a mitad de camino: un reintento inmediato con un pedido nuevo (nunca más de uno) */
+    async function enviar(bodyEnviado){
+      try{ return await enviarUnaVez(bodyEnviado); }
+      catch(e){
+        if(senalExt && senalExt.aborted) throw errCancelado();
+        if((e && e.timeout && e.motivo === 'primer') || (e && e.cortadaRed)){
+          try{ console.info('[CoachAI] ' + PROV[prov].lb + ': ' + (e.cortadaRed ? 'respuesta cortada' : 'conexión trabada') + ' — reintento inmediato'); }catch(e1){}
+          try{ if(opts && opts.onReintento) opts.onReintento(e); }catch(e2){}
+          try{ return await enviarUnaVez(bodyEnviado); }
+          catch(e3){
+            if(e3 && e3.cortadaRed){ const eF = new Error('La conexión con ' + PROV[prov].lb + ' se cortó dos veces a mitad de la respuesta: no se escribió nada a medias. Revisá la conexión y probá de nuevo.'); eF.timeout = true; eF.prov = prov; throw eF; }
+            throw e3;
+          }
+        }
+        throw e;
       }
     }
 
@@ -67351,9 +67507,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       else top.appendChild(chip);
     }
     const d = e.detalle;
-    chip.innerHTML = '⏱️ Duración estimada de sesión: <b>' + e.min + ' min</b>' +
+    chip.innerHTML = '⏱️ Duración estimada de sesión: <b>≈ ' + e.min + ' min</b>' +
       '<span class="det">calentamiento ' + Math.round(d.calentamiento) + ' · fuerza ' + Math.round(d.fuerza) +
-      ' · WOD ' + Math.round(d.wod) + ' · descansos ' + Math.round(d.descansos) + '</span>';
+      ' · WOD ' + Math.round(d.wod) + ' · descansos ' + Math.round(d.descansos) + ' · varía según el estado del alumno/a</span>';
+    chip.title = 'Es una estimación: el tiempo real depende de la energía, la recuperación, el nivel y el ritmo de ejecución del alumno/a ese día.';
   }
   window.jpPintarDuracion = pintarDuracion;
   /* en vivo: cada cambio en un campo del dia recalcula la duracion */
@@ -67940,7 +68097,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     '"refs" son 1 o 2 referencias científicas reales y verificables en formato «Autor et al., año — título simplificado». ' +
     'No inventes estudios: usá literatura clásica y ampliamente citada de entrenamiento de fuerza.';
 
+  /* una nota a la vez: un segundo toque mientras redacta la detiene (antes podía quedar esperando hasta 150 s sin forma de cortarla) */
+  let notaCtrl = null;
   async function estructurar(){
+    if(notaCtrl){ try{ notaCtrl.abort(); }catch(e){} notaCtrl = null; const ld = document.getElementById('ctxLoad'); if(ld) ld.style.display = 'none'; try{ toast('Redacción con IA detenida: la nota anterior quedó como estaba', 'info'); }catch(e){} return null; }
     const a = (typeof active === 'function') ? active() : null;
     if(!a){ try{ toast('Elegí un alumno primero', 'warn'); }catch(e){} return null; }
     const ta = document.getElementById('ctxTxt');
@@ -67953,14 +68113,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     let nota = null;
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
+    const miCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
     if(conIA){
+      notaCtrl = miCtrl;
       try{
         const user = jpFichaPrefijo(a) + 'Alumno: ' + ((a.nombre || '') + ' ' + (a.apellido || '')).trim() +
           '. Frecuencia: ' + (a.freq || 4) + ' días. ' +
           (a.tags && a.tags.length ? 'Antecedentes: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Notas rápidas del coach: ' + borrador;
-        const txt = await window.CoachAI.generarTexto(user, SISTEMA);
+        /* la nota es un JSON corto (foco + adaptación + 2 referencias): tope de tokens acotado y modelo rápido -- sin tope usaba el máximo global (8000) y el tiempo máximo largo */
+        const txt = await window.CoachAI.generarTexto(user, SISTEMA, { maxTokens: 1400, rapido: true, signal: miCtrl ? miCtrl.signal : undefined });
+        if(miCtrl && miCtrl.signal.aborted) return null;
         /* directiva crítica (2026-09) -- auditoría total de generadores:
            mismo bug de parseo frágil (regex crudo + JSON.parse directo, sin
            tolerar fences de markdown ni saltos de línea sin escapar dentro
@@ -67976,7 +68140,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                    motor: 'ia' };
         }
       }catch(e){
+        if(miCtrl && miCtrl.signal.aborted) return null;      /* detenida por el coach */
         try{ toast('La IA no respondió: se redactó con el motor local', 'warn'); }catch(x){}
+      }finally{
+        if(notaCtrl === miCtrl) notaCtrl = null;
       }
     }
     if(!nota){
@@ -86173,7 +86340,11 @@ JP_I18N.add('en', {
   }
   function hayIA(){ return !!(window.CoachAI && window.CoachAI.generarTexto); }
   /* cancelación real de la petición en curso (Banco: un bloque o la plantilla entera) */
-  var iaCtrl = null;
+  var iaCtrl = null, avanceBanco = null;
+  /* avance en vivo (streaming) en el botón que está generando */
+  function avanceEn(btn, prefijo, sufijo){
+    return function(n){ if(!btn || !btn.isConnected || !iaBusy) return; btn.innerHTML = prefijo + ' ✍️ ' + (n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + ' k' : n) + sufijo; };
+  }
   function esCancelado(err){ return !!(err && (err.cancelado || err.name === 'AbortError')); }
   function pedirTips(r, b){
     return pedirTipsUna(r, b, false).then(function(o){ return o && o.cortada ? pedirTipsUna(r, b, true) : o; });
@@ -86186,7 +86357,7 @@ JP_I18N.add('en', {
     var TI = window.CoachAuto && window.CoachAuto.tipsIA, est = TI ? TI.estacionesDe(b.items || [], b.titulo) : [], dem = TI ? TI.demanda({ tipo: 'list', items: b.items || [], titulo: b.titulo }) : '';
     if(dem) user = user.replace(/\n\nEscribí ahora/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + dem + '\n\nEscribí ahora');
     if(reintento && TI) user += '\n\n' + TI.CORRECCION;
-    return window.CoachAI.generarTexto(user, SIS_TIPS + (TI ? '\n' + TI.REGLAS : ''), { maxTokens: reintento ? 5200 : 3400, plain: true, sinEspera: true, signal: iaCtrl ? iaCtrl.signal : undefined }).then(function(out){
+    return window.CoachAI.generarTexto(user, SIS_TIPS + (TI ? '\n' + TI.REGLAS : ''), { maxTokens: reintento ? 5200 : 3400, plain: true, sinEspera: true, signal: iaCtrl ? iaCtrl.signal : undefined, onProgreso: avanceBanco }).then(function(out){
       if(iaCtrl && iaCtrl.signal.aborted){ var eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
       var t = String(out || '').replace(/\x60{3}[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
       var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
@@ -86212,6 +86383,8 @@ JP_I18N.add('en', {
     if(iaBusy){
       /* segundo toque = detener: se corta la petición y el botón vuelve en el acto; los campos no se tocan */
       if(iaCtrl && btn.dataset.iaUno === '1'){ iaCtrl.abort(); iaCtrl = null; iaBusy = false; delete btn.dataset.iaUno; btn.disabled = false; if(btn._orig != null) btn.innerHTML = btn._orig; toast('Generación con IA detenida: los tips quedaron como estaban', 'info'); }
+      /* antes el toque en OTRO bloque no hacía nada (parecía tildado): ahora se avisa qué está corriendo y cómo frenarlo */
+      else toast('Ya hay tips generándose con IA en otro bloque: esperá a que termine o tocá ⏹ en ese botón para detenerlo', 'warn');
       return;
     }
     var box = btn.closest('.pv-ed'); if(!box) return;
@@ -86220,6 +86393,7 @@ JP_I18N.add('en', {
     b.titulo = v('titulo'); b.items = v('items').split(/\n/).filter(function(x){ return x.trim(); }); b.tips = v('tips');
     iaBusy = true; var orig = btn.innerHTML; btn._orig = orig; btn.dataset.iaUno = '1'; btn.disabled = false; btn.innerHTML = '⏳ Regenerando… · ⏹ Detener';
     var miCtrl = iaCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    avanceBanco = avanceEn(btn, '⏳ Regenerando…', ' · ⏹ Detener');
     pedirTips(r, b).then(function(o){
       if(miCtrl && miCtrl.signal.aborted) return;
       var ob = box.querySelector('[data-pvf="objective"]'), tp = box.querySelector('[data-pvf="tips"]');
@@ -86227,7 +86401,7 @@ JP_I18N.add('en', {
       toast('✨ Tips regenerados: revisalos y tocá «Guardar cambios»');
     }).catch(function(err){ if(!esCancelado(err)) errIA(err); }).then(function(){
       if(miCtrl && miCtrl.signal.aborted) return;      /* ya se limpió al detener */
-      iaBusy = false; iaCtrl = null; delete btn.dataset.iaUno; btn.disabled = false; btn.innerHTML = orig;
+      iaBusy = false; iaCtrl = null; avanceBanco = null; delete btn.dataset.iaUno; btn.disabled = false; btn.innerHTML = orig;
     });
   }
   /* toda la plantilla: bloque por bloque, con progreso y cancelación; guarda a medida que avanza */
@@ -86247,13 +86421,14 @@ JP_I18N.add('en', {
       var b = r.dias[lista[i][0]].bloques[lista[i][1]];
       try{
         iaCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
+        avanceBanco = avanceEn(btn, '⏹ Detener · ' + (i + 1) + '/' + lista.length, '');
         var o = await pedirTips(r, b);
         if(iaStop) break;
         if(o.objective) b.objective = o.objective; if(o.tips) b.tips = o.tips;
         hechos++; try{ save(); }catch(e){}
       }catch(err){ if(esCancelado(err) || iaStop) break; errIA(err); falla = true; break; }
     }
-    iaBusy = false; iaStop = false; iaCtrl = null; btn.innerHTML = orig;
+    iaBusy = false; iaStop = false; iaCtrl = null; avanceBanco = null; btn.innerHTML = orig;
     try{ if(window.CoachAuditoria && window.CoachAuditoria.tempoANotas) window.CoachAuditoria.tempoANotas(r); save(); }catch(e){}
     abrir(r.id);
     toast('✨ ' + hechos + ' de ' + lista.length + ' bloques con tips nuevos' + (falla ? ' (se detuvo por un error)' : ''));
@@ -87681,30 +87856,41 @@ JP_I18N.add('en', {
       'Ejercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\n' +
       'Biserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ..." (regla de cambio entre estaciones y descanso).';
   }
-  async function llamarSimple(user, sistemaTxt, btn, maxTokens){
+  /* senal: cancelación real (también corta la espera de un reintento por límite de la API); el botón muestra cuánto texto va llegando */
+  async function llamarSimple(user, sistemaTxt, btn, maxTokens, senal, sufijo){
+    var avance = (typeof jpIAAvance === 'function' && btn) ? jpIAAvance(btn, senal, sufijo || '') : null;
     for(var i = 1; ; i++){
-      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: maxTokens || 1600, plain: true, sinEspera: true }); }
+      if(senal && senal.aborted){ var eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
+      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: maxTokens || 1600, plain: true, sinEspera: true, signal: senal, onProgreso: avance }); }
       catch(err){
-        if(!esCuota(err) || i >= REINTENTOS) throw err;
-        for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){ if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…'; await new Promise(function(r){ setTimeout(r, 1000); }); }
+        if((err && (err.cancelado || err.name === 'AbortError')) || !esCuota(err) || i >= REINTENTOS) throw err;
+        for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){
+          if(senal && senal.aborted){ var eC2 = new Error('Generación cancelada'); eC2.cancelado = true; throw eC2; }
+          if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…' + (sufijo || ''); await new Promise(function(r){ setTimeout(r, 1000); });
+        }
       }
     }
   }
   async function recalcularTips(bid, btn){
-    var b = findBlock(bid), ta = textareaItems(bid); if(!b) return false;
+    /* segundo toque mientras recalcula = detener en el acto: el objetivo y los tips anteriores quedan intactos */
+    if(btn && btn._gsCtrl){ var cPrev = btn._gsCtrl; btn._gsCtrl = null; try{ cPrev.abort(); }catch(eA){} btn.disabled = false; if(btn._gsOrig != null) btn.innerHTML = btn._gsOrig; toast('Generación con IA detenida: el bloque quedó como estaba', 'info'); return false; }
+    var b = findBlock(bid), ta = textareaItems(bid);
+    if(!b){ toast('No se encontró el bloque (la pantalla quedó desactualizada): actualizá y probá de nuevo', 'warn'); return false; }
     if(!hayClaveIA()){ toast('Configurá una clave de IA para recalcular los tips', 'err'); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return false; }
     var ath = active(), items = ta ? ta.value : (b.items || []).join('\n'), tempos = String(b.tips || '').split(/\n+/).filter(function(l){ return /tempo/i.test(l); });
     var user = 'ALUMNO/A Y FICHA TÁCTICA:\n' + window.CoachAI.athLine(ath) + '\n\nBLOQUE: ' + (b.titulo || '') + ' (' + categoriaBloque(b.titulo) + ')\nEJERCICIOS Y DOSIS ACTUALES:\n' + items +
       (tempos.length ? '\n\nTEMPOS ACTUALES (mantenelos, siguiendo la regla de tempo):\n' + tempos.join('\n') : '') + '\n\nEscribí ahora el objetivo fisiológico y los coaching tips de este bloque para estos ejercicios.';
-    var original = btn ? btn.innerHTML : '';
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="gs-spin"></span> Recalculando…'; }
+    var original = btn ? btn.innerHTML : '', ctrl = (typeof AbortController === 'function') ? new AbortController() : null, senal = ctrl ? ctrl.signal : undefined;
+    if(btn){ btn._gsCtrl = ctrl; btn._gsOrig = original; btn.disabled = !ctrl; btn.innerHTML = '<span class="gs-spin"></span> Recalculando…' + (ctrl ? ' · ⏹' : ''); }
+    var cancelado = function(){ return !!(senal && senal.aborted); };
     try{
       var TI = window.CoachAuto && window.CoachAuto.tipsIA, itemsArr = items.split(/\r?\n/), est = TI ? TI.estacionesDe(itemsArr, b.titulo) : [];
       var demanda = TI ? TI.demanda({ tipo: 'list', items: itemsArr, titulo: b.titulo }) : '';
       if(demanda) user = user.replace(/\n\nEscribí ahora el objetivo/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + demanda + '\n\nEscribí ahora el objetivo');
       var obj = '', tips = [], proc = null;
       for(var intento = 1; intento <= 2; intento++){
-        var out = await llamarSimple(user + (intento > 1 && TI ? '\n\n' + TI.CORRECCION : ''), sistemaTips(ath), btn, intento > 1 ? 5200 : 3400);
+        var out = await llamarSimple(user + (intento > 1 && TI ? '\n\n' + TI.CORRECCION : ''), sistemaTips(ath), btn, intento > 1 ? 5200 : 3400, senal, ctrl ? ' · ⏹' : '');
+        if(cancelado()) return false;
         var t = String(out || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
         var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
         obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : ''; tips = limpiarBloque({ items: [], cierre: { tips: mt ? mt[1].trim() : '' } }).tips;
@@ -87720,6 +87906,7 @@ JP_I18N.add('en', {
         var hay = tips.some(function(x){ return /tempo/i.test(x) && (k ? new RegExp('^' + k + '\\s*[·.]').test(x) : /^tempo\s*:/i.test(x)); });
         if(!hay) tips.push(l);
       });
+      if(cancelado()) return false;
       var tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + bid + '"]'), tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + bid + '"]');
       if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Recalcular tips con IA');
       if(obj){ b.objective = obj; if(tObj){ tObj.value = obj; tObj.dispatchEvent(new Event('input', { bubbles: true })); } }
@@ -87729,11 +87916,13 @@ JP_I18N.add('en', {
       toast('✨ Objetivo y tips recalculados para los ejercicios actuales');
       return true;
     }catch(err){
+      if(cancelado() || (err && (err.cancelado || err.name === 'AbortError'))) return false;      /* detenido: ya se avisó y se limpió el botón */
       if(esCuota(err)) toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key', 'warn');
-      else toast('No se pudieron recalcular los tips: ' + String((err && err.message) || err).slice(0, 80), 'err');
+      else if(!(err && err.__toast)) toast('No se pudieron recalcular los tips: ' + String((err && err.message) || err).slice(0, 160), 'err');
       return false;
     }finally{
-      if(btn){ btn.disabled = false; btn.innerHTML = original; }
+      /* solo esta generación libera el botón (si se detuvo y se volvió a tocar, el botón ya es de la nueva) */
+      if(btn && (btn._gsCtrl === ctrl || !btn._gsCtrl)){ if(btn._gsCtrl === ctrl) btn._gsCtrl = null; if(!cancelado()){ btn.disabled = false; btn.innerHTML = original; } }
       if(ta) marcarObsoleto(ta);
     }
   }

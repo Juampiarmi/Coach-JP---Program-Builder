@@ -11,6 +11,7 @@ JP_I18N.add('en', {
   'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
   'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
   'app.ver.h.igual': 'This session has no complementary blocks: both versions are the same.',
+  'app.ver.est': 'Times are estimates: depending on your energy, recovery, level and pace on the day, the session may take you a little more or a little less.',
   'app.plan.t': 'LOAD PLAN · based on your history', 'app.plan.hecho': '✓ done', 'app.plan.desc': 'DELOAD', 'app.plan.pico': 'PEAK',
   'app.notif.work': '💪 Go! · Round {r}/{n}',
   'app.notif.work.simple': '💪 Go!',

@@ -1978,6 +1978,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
   }
   function reset(){
     running = false; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* la voz de este descanso no sigue sonando después de reiniciarlo */
     round = 0; remaining = restSeconds; lastBeepSec = null; endTs = 0;
     playBtn.disabled = false; playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
@@ -2335,7 +2336,9 @@ function jpVersionHtml(day){
   };
   return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
     btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
-    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+    '</div><p class="jp-ver-h">' + hint + '</p>' +
+    /* las duraciones son una referencia: dependen del estado del alumno/a ese día (una línea discreta, debajo de la explicación de la versión) */
+    '<p class="jp-ver-est">⏱ ' + jpT('app.ver.est') + '</p></div>';
 }
 function jpSetVersion(modo){
   if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
