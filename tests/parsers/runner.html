@@ -57,6 +57,7 @@
 <script src="cases-version.js"></script>
 <script src="cases-tips-bordes.js"></script>
 <script src="cases-femenino.js"></script>
+<script src="cases-ficha.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -112,6 +113,7 @@
     bancoFemenino: { run: function(i){ return bancoFemenino(i); }, valor: function(r){ return r; } },
     iaMotor:      { run: function(i){ return iaMotor(i); }, valor: function(r){ return r; } },
     audioSuite:   { run: function(i){ return audioSuite(i); }, valor: function(r){ return r; } },
+    fichaPlan:    { run: function(i){ return fichaPlan(i); }, valor: function(r){ return r; } },
     generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
@@ -908,8 +910,9 @@
     try{
       ls('jp_audio_muted', '0'); ls('jp_voz_lang', null); w.JP_I18N.setLang('es');
       if(c.caso === 'apagada'){
-        ls('jp_voz', null); montar();
-        var out = { defectoOff: V.activa() === false, noHabla: V.hablar('tick', 3) === false && plays.length === 0 };
+        ls('jp_voz', null); var out = { defectoOn: V.activa() === true };      /* sin preferencia guardada: voz encendida */
+        ls('jp_voz', '0'); montar();
+        out.apagadaPorElAlumno = V.activa() === false; out.noHabla = V.hablar('tick', 3) === false && plays.length === 0;
         w.jpBox.cuenta(3); out.tonoSuena = (creados.createOscillator || 0) > 0 && plays.length === 0;
         return out;
       }
@@ -2235,11 +2238,160 @@
         var c11b = win.jpIATomar(b11); win.jpIASoltar(b11, c11, 'IA'); out.viejaNoLiberaNueva = b11.dataset.iaBusy === '1'; win.jpIASoltar(b11, c11b, 'IA'); out.nuevaLibera = b11.dataset.iaBusy === undefined;
         out.generadoresConDetener = /jpIATomar/.test(String(win.generarTipsPacingIA)) && /jpIATomar/.test(String(win.generarObjetivoSemanaCF)) && /signal: senal/.test(String(win.generarTipsPacingIACore));
         out.notasAcotadas = /maxTokens: 1400/.test(String(win.jpEstructurarNota)) && /notaCtrl/.test(String(win.jpEstructurarNota));
+        /* 12) ficha rápida → «Regenerar este día con IA»: solo los bloques sin texto propio, uno por uno, sin toasts por bloque */
+        var FR = win.CoachFichaRapida, gen0 = AIx.generarTexto, hay1 = AIx.hayClave, esp1 = AIx.esperaCooldown, pedidosIA = 0, avisos12 = [];
+        AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 0; }; win.toast = function(m){ avisos12.push(String(m)); };
+        AIx.generarTexto = function(){ pedidosIA++; return Promise.resolve(JSON.stringify({ objetivo: 'OBJETIVO IA CON LA FICHA nueva del alumno.', tips: 'SET-UP: Posición estable con los pies firmes y la columna neutra antes de empezar la serie.\nCUE EFICIENTE: Bajá en tres segundos y subí empujando el piso con todo el pie apoyado.\nCUIDADO / ERROR COMÚN: Si la cadera se adelanta o la rodilla colapsa, cortá la serie y bajá la carga.' })); };
+        await (async function(){
+          var Sx = getS(), PB = win.__jpPB, id12 = 'ath_test_fr_ia', guardar = win.save, render = win.renderBuilder, act0 = Sx.activeId, dia0 = Sx.ui.day, a12 = { id: id12, nombre: 'Prueba', apellido: 'IA', freq: 3, nivel: 'Intermedio', genero: 'F', tags: [], prohibidos: [], preferidos: [], ficha: { objetivo: ['Hipertrofia'] } };
+          win.save = function(){}; win.renderBuilder = function(){}; Sx.athletes.push(a12);
+          try{
+            var p12 = win.newPlan(a12); p12.dias = PB.construirDias(PB.LISTA.filter(function(x){ return x.id === 'jp26_f3_i'; })[0]); Sx.plans[id12] = p12; Sx.activeId = id12; Sx.ui.day = 0;
+            var d12 = p12.dias[0], trab = d12.bloques.filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && b.modalidad !== 'calentamiento'; });
+            trab[0].jpMano = { o: true }; var objManual = trab[0].objective;
+            await FR.regenerarIA(false);
+            out.fichaIAsoloAutomaticos = pedidosIA >= trab.length - 1 && trab[0].objective === objManual && trab.slice(1).every(function(b){ return b.objective === 'OBJETIVO IA CON LA FICHA nueva del alumno.'; });
+            out.fichaIAunAviso = avisos12.filter(function(m){ return /bloques del día con objetivo y tips según la ficha/.test(m); }).length === 1 && !avisos12.some(function(m){ return /Tips y objetivo generados con IA/.test(m); });
+            /* detener a mitad de camino */
+            pedidosIA = 0; avisos12.length = 0;
+            AIx.generarTexto = function(u, s, o){ pedidosIA++; if(pedidosIA === 1) setTimeout(function(){ FR.detenerIA(); }, 0); return new Promise(function(res, rej){ var t1 = setTimeout(function(){ res('{"objetivo":"OTRA","tips":"SET-UP: x"}'); }, 40); if(o && o.signal) o.signal.addEventListener('abort', function(){ clearTimeout(t1); var e = new Error('c'); e.cancelado = true; rej(e); }); }); };
+            await FR.regenerarIA(true);
+            out.fichaIAdetiene = pedidosIA === 1 && avisos12.some(function(m){ return /Regeneración detenida: 0 de/.test(m); }) && trab.slice(1).every(function(b){ return b.objective !== 'OTRA'; });
+          } finally { delete Sx.plans[id12]; var ix = Sx.athletes.indexOf(a12); if(ix >= 0) Sx.athletes.splice(ix, 1); Sx.activeId = act0; Sx.ui.day = dia0; win.save = guardar; win.renderBuilder = render; }
+        })();
+        AIx.generarTexto = gen0; AIx.hayClave = hay1; AIx.esperaCooldown = esp1;
       }catch(e){ out.error = String(e && e.message || e); }
       finally{ restaurar(); IA_RES = out; listo(); }
     })();
   }
   function iaMotor(c){ if(!IA_RES) throw new Error('la pasada de IA no corrió'); return IA_RES; }
+  /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
+  function conAlumnoPrueba(datos, tplId, fn){
+    var S = getS(), PB = win.__jpPB, id = 'ath_test_ficha', guardar = win.save, render = win.renderBuilder, act0 = S.activeId, dia0 = S.ui.day;
+    var ath = Object.assign({ id: id, nombre: 'Prueba', apellido: 'Ficha', freq: 3, nivel: 'Intermedio', genero: 'F', tags: [], prohibidos: [], preferidos: [], ficha: { objetivo: ['Hipertrofia'] }, createdAt: Date.now() }, datos || {});
+    win.save = function(){}; win.renderBuilder = function(){};
+    S.athletes.push(ath);
+    try{
+      var p = win.newPlan(ath), tpl = PB.LISTA.filter(function(x){ return x.id === tplId; })[0];
+      if(!tpl) throw new Error('no está la plantilla ' + tplId);
+      p.dias = PB.construirDias(tpl); S.plans[id] = p; S.activeId = id; S.ui.day = 0;
+      return fn(ath, p);
+    } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); S.activeId = act0; S.ui.day = dia0; win.save = guardar; win.renderBuilder = render; }
+  }
+  function fichaPlan(c){
+    var BM = win.CoachMantenimiento, LD = win.CoachLecturaDia, FR = win.CoachFichaRapida;
+    if(!BM || !LD || !FR) throw new Error('el Builder no expone CoachMantenimiento / CoachLecturaDia / CoachFichaRapida');
+    if(c.caso === 'banco'){
+      var R = BM.rutinas, sec = R.map(function(r){ return r.id; }), titulos = R.map(function(r){ return r.titulo; }).join(' | ');
+      return { cantidad: R.length >= 10, sectoresPedidos: ['cadera', 'hombros', 'escapulas', 'tobillos', 'posterior', 'lower', 'upper'].every(function(k){ return sec.indexOf(k) >= 0; }),
+        extras: ['toracica', 'frontrack', 'press', 'descarga'].every(function(k){ return sec.indexOf(k) >= 0; }),
+        entre5y10: R.every(function(r){ var m = BM.minutos(r); return m >= 5 && m <= 10; }), conDosis: R.every(function(r){ return r.items.length >= 4 && BM.lineas(r, 1).slice(1).every(function(l){ return / — \S/.test(l); }); }),
+        conObjetivo: R.every(function(r){ return String(r.objetivo).split(/\s+/).length >= 12; }), nombres: /Movilidad de cadera/.test(titulos) && /Dorsiflexión de tobillos/.test(titulos) && /Amplitud escapular/.test(titulos) };
+    }
+    if(c.caso === 'insertar'){
+      var bl = [{ id: 'x1', titulo: 'Fuerza principal – Sentadilla', items: ['Sentadilla', '4x6 | RIR 2'] }], d = { bloques: bl, cooldown: ['Respiración nasal — 2 min'] }, bloquesAntes = JSON.stringify(bl), o = {};
+      BM.insertar(d, 'cadera', 'sumar');
+      o.noTocaBloques = d.bloques === bl && JSON.stringify(d.bloques) === bloquesAntes;
+      o.encabezado = d.cooldown[0] === '1. Vuelta a la calma' && d.cooldown[1] === 'Respiración nasal — 2 min' && /^2\. Body Maintenance · Movilidad de cadera · \d+ min \(opcional\)$/.test(d.cooldown[2]);
+      o.nota = /^Movilidad de cadera: /.test(d.cooldownNota) && d.mantenimiento.join() === 'cadera';
+      var largo = d.cooldown.length; BM.insertar(d, 'cadera', 'sumar'); o.sinDuplicar = d.cooldown.length === largo;
+      BM.insertar(d, 'tobillos', 'sumar'); o.dosRutinas = d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); }).length === 2 && d.mantenimiento.join() === 'cadera,tobillos';
+      BM.quitar(d, 'cadera'); o.quitaUna = d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); }).length === 1 && /^2\. Body Maintenance · Dorsiflexión/.test(d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); })[0]) && !/Movilidad de cadera:/.test(d.cooldownNota);
+      BM.quitar(d, 'tobillos'); o.vuelveAlOriginal = d.cooldown.join('|') === 'Respiración nasal — 2 min' && !d.cooldownNota;
+      BM.insertar(d, 'upper', 'reemplazar'); o.reemplaza = /^1\. Body Maintenance · Upper body completo/.test(d.cooldown[0]) && d.cooldown.indexOf('Respiración nasal — 2 min') < 0;
+      return o;
+    }
+    if(c.caso === 'sugerir'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        var s0 = BM.sugerir(p, 0), s1 = BM.sugerir(p, 1), p2 = { dias: [{ bloques: [{ tipo: 'list', sportsPizarra: true, titulo: 'Fuerza principal – Front squat', items: ['Front squat', '5x3 | RIR 2'] }] }] };
+        return { piernaCadera: s0.length === 3 && s0.some(function(id){ return /cadera|lower|tobillos|posterior/.test(id); }) && !s0.some(function(id){ return /hombros|escapulas|upper|press/.test(id); }),
+          torsoHombros: s1.some(function(id){ return /hombros|upper|escapulas|toracica|press/.test(id); }) && !s1.some(function(id){ return /tobillos|cadera/.test(id); }),
+          olimpicoFrontRack: BM.sugerir(p2, 0)[0] === 'frontrack', detalle: s0.join(',') + ' / ' + s1.join(',') };
+      });
+    }
+    if(c.caso === 'lecturaMujer'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        var o = {}, r = LD.analizar(ath, p, 0), d = p.dias[0], prin = LD.principal(d), principalAntes = JSON.stringify(prin.items);
+        o.prioridadAlta = r.prioridad.nivel === 'alta'; o.esInferior = r.esInferior === true;
+        var est = r.sugerencias.filter(function(s){ return s.accion && s.accion.tipo === 'estacion'; })[0];
+        o.sugiereEstacion = !!est && /glúteo medio|glúteo mayor|Abducción|Hip thrust|Puente|Patada/i.test(est.txt);
+        o.nuncaElPrincipal = r.sugerencias.every(function(s){ return !s.accion || s.accion.bid !== prin.id; });
+        if(est){
+          var b = d.bloques.filter(function(x){ return x.id === est.accion.bid; })[0], antes = LD.estaciones(b).length;
+          o.aplica = LD.aplicar(est.accion, ath) === true;
+          var es = LD.estaciones(b), ks = es.map(function(e){ return win.jpEstacion(e.ex); });
+          o.sumaUnaEstacion = es.length === antes + 1 && es.length <= 3 && /^A\d/.test(es[es.length - 1].codigo);
+          o.sinCrucesDeEstacion = ks.every(function(k1, i){ return ks.every(function(k2, j){ return i === j || win.jpEstacionCompat(k1, k2); }); });
+          o.sinDosPoleas = ks.filter(function(k){ return win.jpEsPolea(k); }).length <= 1;
+          o.tituloSigue = new RegExp('^(Hipertrofia|Accesorios)? ?–? ?(Biset|Triset) ').test(b.titulo.replace(/^(?:Hipertrofia|Accesorios)\s*–\s*/, '')) || /(Biset|Triset) /.test(b.titulo);
+          o.pautasDeLaEstacion = new RegExp(es[es.length - 1].codigo + ' · SET-UP: ').test(b.tips) && !/pila de pesas/.test(b.tips.split('\n').filter(function(l){ return l.indexOf(es[es.length - 1].codigo + ' ·') === 0; }).join(' '));
+          var r2 = LD.analizar(ath, p, 0); o.semanaDentroDelMaximo = r2.gluteoSemana <= r2.meta[1];
+        }
+        o.principalIntacto = JSON.stringify(prin.items) === principalAntes;
+        return o;
+      });
+    }
+    if(c.caso === 'lecturaVaron'){
+      return conAlumnoPrueba({ genero: 'M', ficha: { objetivo: ['Fuerza'] }, nombre: 'Juan' }, 'jp26_m3_i', function(ath, p){
+        var r0 = LD.analizar(ath, p, 0), todos = [0, 1, 2].map(function(i){ return LD.analizar(ath, p, i); });
+        return { prioridadBase: r0.prioridad.nivel === 'base', sinAgregarGluteo: todos.every(function(r){ return !r.sugerencias.some(function(s){ return s.accion && s.accion.tipo === 'estacion'; }); }), conLectura: todos.every(function(r){ return r.sugerencias.length > 0; }) };
+      });
+    }
+    if(c.caso === 'lecturaExceso'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        /* se infla el glúteo de toda la semana: la lectura pide bajar una serie (nunca en el básico) y la acción la baja */
+        p.dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b.tipo === 'list') LD.estaciones(b).forEach(function(e){ if(e.ex && e.ex.grupo === 'Piernas/Glúteos' && e.iDosis >= 0) b.items[e.iDosis] = String(b.items[e.iDosis]).replace(/^\d+/, '6'); }); }); });
+        var r = LD.analizar(ath, p, 0), s = r.sugerencias.filter(function(x){ return x.accion && x.accion.tipo === 'serie' && x.accion.delta === -1; })[0], o = { pasaElMaximo: r.gluteoSemana > r.meta[1], pideBajar: !!s, sinSumarMas: !r.sugerencias.some(function(x){ return x.accion && (x.accion.tipo === 'estacion' || x.accion.delta === 1); }) };
+        if(s){ var b = p.dias[0].bloques.filter(function(x){ return x.id === s.accion.bid; })[0]; o.noEsElBasico = b !== LD.principal(p.dias[0]); LD.aplicar(s.accion, ath); o.bajaUna = /^5x/.test(b.items[s.accion.iDosis]); }
+        return o;
+      });
+    }
+    if(c.caso === 'fichaCambio'){
+      var a = { id: 'x', genero: 'F', nivel: 'Intermedio', tags: ['Valgo rodilla izquierda'], ficha: { objetivo: ['Hipertrofia'] } }, o2 = {};
+      FR.aplicarCambio(a, 'genero', 'M'); o2.genero = a.genero === 'M';
+      FR.aplicarCambio(a, 'objetivo', 'Recomposición corporal'); o2.objetivoMulti = a.ficha.objetivo.join() === 'Hipertrofia,Recomposición corporal';
+      FR.aplicarCambio(a, 'objetivo', 'Hipertrofia'); o2.objetivoQuita = a.ficha.objetivo.join() === 'Recomposición corporal';
+      FR.aplicarCambio(a, 'restriccion', 'Lumbar'); o2.restriccionEtiqueta = a.tags.indexOf('Molestia en lumbar') >= 0 && a.ficha.restricciones.join() === 'Rodilla,Lumbar';
+      FR.aplicarCambio(a, 'restriccion', 'Lumbar'); o2.restriccionSeQuita = a.tags.join() === 'Valgo rodilla izquierda';
+      FR.aplicarCambio(a, 'nivel', 'Avanzado'); o2.nivel = a.nivel === 'Avanzado';
+      o2.pideAlinear = FR.pendiente('x') === true;
+      return o2;
+    }
+    if(c.caso === 'alinear'){
+      return conAlumnoPrueba({ tags: ['Molestia en rodilla'], ficha: { objetivo: ['Hipertrofia', 'Readaptación'] } }, 'jp26_f3_i', function(ath, p){
+        var o = {}, d = p.dias[0], trab = d.bloques.filter(function(b){ return b.category !== 'warmup' && b.modalidad !== 'calentamiento'; });
+        var manual = trab[2]; manual.tips = 'Mi nota propia del bloque.'; manual.jpMano = { t: true };
+        var tipsOrig = trab[1].tips, objOrig = trab[1].objective, calent = d.bloques.filter(function(b){ return b.modalidad === 'calentamiento'; })[0], calAntes = calent ? calent.tips : '';
+        var r = FR.alinearLocal(ath, p, { sinDeshacer: true });
+        o.alineaBloques = r.bloques >= 10 && r.tips > 0 && r.objetivos > 0;
+        o.objetivoReadaptacion = /readaptación, el rango sin dolor manda/.test(trab[1].objective) && trab[1].objective.indexOf(objOrig) === 0;
+        o.lineaFicha = trab[1].tips.split('\n').filter(function(l){ return /^TU FICHA: /.test(l); }).length === 1 && trab[1].tips.indexOf(tipsOrig) === 0;
+        var conRodilla = trab.filter(function(b){ return /cuidá rodilla en /.test(b.tips || ''); });
+        o.cuidaRodilla = conRodilla.length > 0;
+        o.respetaManual = manual.tips === 'Mi nota propia del bloque.' && r.respetados >= 1;
+        o.calentamientoIntacto = !calent || calent.tips === calAntes;
+        FR.aplicarCambio(ath, 'objetivo', 'Readaptación'); FR.aplicarCambio(ath, 'restriccion', 'Rodilla');
+        FR.alinearLocal(ath, p, { sinDeshacer: true });
+        o.reemplazaSinDuplicar = trab[1].tips.split('\n').filter(function(l){ return /^TU FICHA: /.test(l); }).length === 1 && !/readaptación/.test(trab[1].objective) && /hipertrofia/.test(trab[1].objective);
+        o.sinRodillaYa = !trab.some(function(b){ return /cuidá rodilla en /.test(b.tips || ''); });
+        FR.alinearLocal(ath, p, { sinDeshacer: true, forzar: true });
+        o.forzarIncluyeManual = /^Mi nota propia del bloque\.\nTU FICHA: /.test(manual.tips) && !manual.jpMano;
+        return o;
+      });
+    }
+    if(c.caso === 'cooldownApp'){
+      var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+      var D = w.eval('DAYS'), st = w.eval('state'), day = D.filter(function(x){ return x.id === st.currentDay; })[0] || D[0], prev = day.cooldown, prevN = day.cooldownNota;
+      var dd = { cooldown: [] }; BM.insertar(dd, 'cadera', 'reemplazar');
+      try{
+        day.cooldown = dd.cooldown; day.cooldownNota = dd.cooldownNota; w.renderMain();
+        var card = w.document.querySelector('.cooldown-card');
+        return { tarjeta: !!card, encabezadoComoFase: !!card && !!card.querySelector('.cd-fase') && /Body Maintenance · Movilidad de cadera/.test(card.querySelector('.cd-fase').textContent),
+          items: !!card && card.querySelectorAll('li').length === dd.cooldown.length, nota: !!card && /Movilidad de cadera: Recuperás/.test((card.querySelector('.cd-nota') || {}).textContent || '') };
+      } finally { day.cooldown = prev; day.cooldownNota = prevN; w.renderMain(); }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   /* ---------- género del alumno/a en los prompts y títulos de bisets según sus ejercicios ---------- */
   function generoTitulos(c){
     if(c.caso === 'genero'){

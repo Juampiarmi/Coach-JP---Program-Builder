@@ -12,7 +12,7 @@
      sistemas mezclados (pitido antes o junto a la voz). Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
    · callar(): corta la frase en curso y lo que quedó agendado ("Mitad" diferido, pista de transición). El timer lo llama al reiniciarse o cerrarse, así ninguna frase del
      timer anterior suena encima del nuevo.
-   · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
+   · Preferencias: jp_voz (ACTIVA por defecto desde 2026-11; '0' = el alumno la apagó en Ajustes o en el chip del timer y vuelven los tonos) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
@@ -21,7 +21,8 @@ var jpVoz = (function(){
   var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
   function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
-  function activa(){ return lsGet(KEY) === '1'; }
+  /* la voz viene encendida: solo un '0' guardado (el alumno la apagó a propósito) la desactiva */
+  function activa(){ return lsGet(KEY) !== '0'; }
   function silenciada(){ try{ return typeof isAudioMuted === 'function' && isAudioMuted(); }catch(e){ return false; } }
   /* idioma de la voz: por defecto INGLÉS (más firme y de app profesional), sin importar el idioma de la app; Ajustes permite ES, EN o AUTO (sigue el idioma de la app) */
   var IDIOMA_DEFECTO = 'en';

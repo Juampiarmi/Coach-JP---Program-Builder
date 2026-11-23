@@ -6,8 +6,8 @@
 window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
 
   { id: 'voz.01', area: 'Voz del timer · apagada', fn: 'alumnoVoz', input: { caso: 'apagada' },
-    expect: { defectoOff: true, noHabla: true, tonoSuena: true }, modo: 'subset',
-    nota: 'Por defecto la voz está apagada: con clips cargados no se reproduce ninguna frase y el 3-2-1 suena con los tonos de siempre' },
+    expect: { defectoOn: true, apagadaPorElAlumno: true, noHabla: true, tonoSuena: true }, modo: 'subset',
+    nota: 'La voz del timer viene ACTIVA por defecto; si el alumno la apaga (Ajustes o chip del timer) queda guardado, no se reproduce ninguna frase y el 3-2-1 vuelve a sonar con los tonos' },
   { id: 'voz.02', area: 'Voz del timer · frases', fn: 'alumnoVoz', input: { caso: 'frases' },
     expect: { cuenta: 'n3,n2,n1', ya: 'go', mitad: 'halfway', finSinFraseEsSilencio: true, sinTonos: true }, modo: 'subset',
     nota: 'Con la voz activa, 3-2-1 dice «tres, dos, uno», el arranque «¡Ya!» y la mitad «Mitad», sin ningún pitido; un fin de timer sin frase asignada queda en silencio (la voz reemplaza al pitido, no se suman)' },

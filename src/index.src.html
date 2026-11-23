@@ -9447,7 +9447,8 @@ function jpIAAvance(btn, senal, sufijo){
     btn.innerHTML = '<span class="spin"></span> ✍️ ' + k + (sufijo || '');
   };
 }
-async function generarTipsSportsCore(bid, btn, senal){
+async function generarTipsSportsCore(bid, btn, senal, opt){
+  opt = opt || {};
   const b = findBlock(bid);
   if(!b){ toast('No se encontró el bloque (la pantalla quedó desactualizada): actualizá y probá de nuevo', 'warn'); return; }
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -9524,10 +9525,13 @@ async function generarTipsSportsCore(bid, btn, senal){
     if(proc.texto){
       b.tips = proc.texto;
     }
+    /* texto nuevo generado: deja de contar como edición a mano y no arrastra la línea de la alineación anterior */
+    delete b.jpMano; delete b.jpFicha;
     save(); renderBuilder();
-    toast(proc.cortada ? 'Tips generados: se completó con la base del Banco lo que la IA dejó a medias ⚡' : 'Tips y objetivo generados con IA ⚡');
+    if(!opt.silencioso) toast(proc.cortada ? 'Tips generados: se completó con la base del Banco lo que la IA dejó a medias ⚡' : 'Tips y objetivo generados con IA ⚡');
   }catch(e){
-    if(e && (e.cancelado || e.name === 'AbortError')) return;      /* cancelado: los tips previos quedan intactos y el botón ya se limpió */
+    if(e && (e.cancelado || e.name === 'AbortError')){ if(opt.silencioso) throw e; return; }      /* cancelado: los tips previos quedan intactos y el botón ya se limpió */
+    if(opt.silencioso) throw e;      /* el llamador (alinear con la ficha) informa el error una sola vez */
     console.warn('generarTipsSports', e);
     if(!(e && e.__toast)) toast('Error en API: ' + String((e && e.message) || e).slice(0, 220), 'err');
   }finally{
@@ -10239,6 +10243,8 @@ function bindBuilder(){
          b.items acá ya escribe en el bloque propio de ESA semana, sin
          ningún desvío especial por campo/disciplina como antes. */
       setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
+      /* el coach escribió a mano el objetivo o los tips (tecla real, no un volcado de un generador): queda marcado y "Alinear con la ficha" lo respeta */
+      if(e.isTrusted && (t.dataset.bf === 'objective' || t.dataset.bf === 'tips')){ b.jpMano = b.jpMano || {}; b.jpMano[t.dataset.bf === 'objective' ? 'o' : 't'] = true; }
       /* FIX (bug introducido en la directiva de independencia de semanas):
          esta rama dependía de una variable esPlanCF que ese refactor había
          retirado sin darse cuenta de este segundo uso -- cualquier tecla
@@ -17143,7 +17149,9 @@ body{overflow-x:hidden}
       return propio.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => /^[A-F]\d\s*·/.test(l) ? l : pre + l);
     }
     const kb = (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null;
-    const generico = !kb || RX_KB_GENERICO.test(kb.o || '');
+    /* la base del Banco se busca por palabra clave: una abducción CON BANDA caía en las pautas de la máquina ("pila de pesas"). Si el texto habla de máquina o polea y el ejercicio no lo es, se usan las pautas por patrón */
+    const deOtroEquipo = !!kb && /m[áa]quina|pila de pesas|polea|cable/i.test([kb.s, kb.c, kb.x].join(' ')) && !/M[áa]quina|Polea|Multipower/.test(String(ex.equipo || ''));
+    const generico = !kb || RX_KB_GENERICO.test(kb.o || '') || deOtroEquipo;
     let su, cue, cu;
     if(!generico){ su = kb.s; cue = kb.c; cu = kb.x; }
     else {
@@ -46777,6 +46785,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(cancelado()) return false;
       var tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + bid + '"]'), tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + bid + '"]');
       if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Recalcular tips con IA');
+      delete b.jpMano; delete b.jpFicha;
       if(obj){ b.objective = obj; if(tObj){ tObj.value = obj; tObj.dispatchEvent(new Event('input', { bubbles: true })); } }
       if(tips.length){ b.tips = tips.join('\n'); if(tTips){ tTips.value = b.tips; tTips.dispatchEvent(new Event('input', { bubbles: true })); } }
       try{ save(); }catch(er){}
@@ -52152,3 +52161,13 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 })();
 </script>
 <!--/BUILDER-PICKER-->
+<!-- Body Maintenance (cierres de movilidad), lectura del día (sugerencias de volumen / glúteo) y ficha rápida (alinear objetivos y tips) -->
+<script>
+@@include coach/mantenimiento.js@@
+</script>
+<script>
+@@include coach/lectura-dia.js@@
+</script>
+<script>
+@@include coach/ficha-rapida.js@@
+</script>
