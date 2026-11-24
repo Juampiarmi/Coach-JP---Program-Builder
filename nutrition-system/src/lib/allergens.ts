@@ -47,6 +47,8 @@ export const FOOD_ALLERGENS: Record<string, Allergen[]> = {
   'yogur-proteico': ['lactose', 'dairy'],
   'queso-light': ['lactose', 'dairy'],
   avena: ['gluten'],
+  'harina-avena': ['gluten'],
+  arvejas: ['legumes'],
   'avena-instantanea': ['gluten'],
   pan: ['gluten'],
   'pan-lactal': ['gluten'],

@@ -130,7 +130,7 @@ const GROUP_CAPS: Record<string, [number, number]> = {
   fruit: [60, 300],
   'sport-carb': [5, 40],
   fat: [5, 30],
-  veg: [100, 300],
+  veg: [30, 250],
   plato: [150, 450],
 };
 
@@ -170,7 +170,7 @@ export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range 
   }
   if (ctx.veg && ['lentejas', 'garbanzos', 'porotos'].includes(foodId)) hi = ctx.sex === 'F' ? 250 : 300;
   if (MAIN_MEATS.has(foodId) && (ctx.role === 'lunch' || ctx.role === 'dinner')) lo = Math.max(lo, ctx.sex ? MAIN_MEAT_FLOOR[ctx.sex] : MAIN_MEAT_FLOOR.F);
-  if (foodId === 'vegetales' && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, ctx.sex === 'F' ? 120 : 150];
+  if ((foodId === 'vegetales' || FOOD_BY_ID[foodId]?.group === 'veg') && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, ctx.sex === 'F' ? 120 : 150];
   return { min: lo, max: hi };
 }
 

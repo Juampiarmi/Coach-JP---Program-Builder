@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChefHat, Database, Download, Pencil, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { fmt0 } from '@/lib/bioenergetics';
-import { BRAND_CATEGORIES, BRAND_CATEGORY_LABEL, DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
+import { BRAND_CATEGORIES as BRAND_CATEGORY_KEYS, BRAND_CATEGORY_LABEL, categoryLabel, DISH_CATEGORIES, emptyDishBase, FOOD_CATEGORIES, NEW_DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
 import { FOOD_BY_ID, FOODS, macrosFor } from '@/lib/foods';
+import { ALLERGEN_INFO, itemAllergens, type Allergen } from '@/lib/allergens';
+import { auditDish } from '@/lib/dishAudit';
+import { quickDish, quickToBrandFood, type QuickDish } from '@/lib/dishQuick';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
+import { usePlanStore } from '@/store/usePlanStore';
 import { cx, HudButton, inputCls, Label, NumInput, Panel, Toggle } from '../hud/primitives';
 
 const empty = (): BrandFood => ({
@@ -33,15 +37,7 @@ function Num({ label, unit, value, onChange }: { label: string; unit: string; va
 
 /** Modal de alta / edición con la tabla nutricional por porción base. */
 /** Plato / preparación nuevo del coach (receta con ingredientes). */
-export const emptyDish = (): BrandFood => ({
-  ...empty(),
-  id: `db-receta-${Date.now().toString(36)}`,
-  categoria: 'minuta',
-  es_marca_local: false,
-  porcion_base: { cantidad: 1, unidad: 'porción', gramos: 0 },
-  ingredientes: [],
-  prep_min: 20,
-});
+export const emptyDish = (): BrandFood => emptyDishBase();
 
 type Ingr = NonNullable<BrandFood['ingredientes']>[number];
 
@@ -106,6 +102,157 @@ function RecipeEditor({ list, onChange }: { list: Ingr[]; onChange: (l: Ingr[]) 
   );
 }
 
+/** Categorías: las de platos (o de alimentos) + las propias del coach + «+ Nueva categoría» escrita a mano. */
+function CategoryPicker({ d, setD, dish }: { d: BrandFood; setD: (b: BrandFood) => void; dish: boolean }) {
+  const customCats = useFoodDbStore((s) => s.customCats);
+  const addCategory = useFoodDbStore((s) => s.addCategory);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const chip = (on: boolean) => cx('rounded-md border px-2.5 py-1.5 font-mono text-[10.5px] transition', on ? 'border-fire bg-fire/15 text-fire' : 'border-line text-steel hover:text-ink');
+  const save = () => {
+    const label = addCategory(name);
+    if (label) setD({ ...d, categoria: 'custom', catLabel: label });
+    setName('');
+    setAdding(false);
+  };
+  return (
+    <div className="mt-3" data-category-picker>
+      <Label>Categoría</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {(dish ? NEW_DISH_CATEGORIES : FOOD_CATEGORIES).map((c) => (
+          <button key={c} type="button" data-cat={c} onClick={() => setD({ ...d, categoria: c, catLabel: undefined })} className={chip(d.categoria === c)}>
+            {BRAND_CATEGORY_LABEL[c]}
+          </button>
+        ))}
+        {dish &&
+          customCats.map((c) => (
+            <button key={c} type="button" data-cat-custom={c} onClick={() => setD({ ...d, categoria: 'custom', catLabel: c })} className={chip(d.categoria === 'custom' && d.catLabel === c)}>
+              ★ {c}
+            </button>
+          ))}
+        {dish && d.categoria === 'custom' && d.catLabel && !customCats.includes(d.catLabel) && <span className={chip(true)}>★ {d.catLabel}</span>}
+        {dish &&
+          (adding ? (
+            <span className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    save();
+                  }
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setAdding(false);
+                  }
+                }}
+                placeholder="Ej. Tortillas de verduras"
+                className={cx(inputCls, 'w-48 py-1 text-xs')}
+                data-new-cat-input
+              />
+              <button type="button" onClick={save} disabled={name.trim().length < 2} className="rounded-md border border-cyan-hud/50 px-2 py-1 font-mono text-[10px] text-cyan-hud disabled:opacity-40" data-new-cat-save>
+                Guardar
+              </button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => setAdding(true)} className="rounded-md border border-dashed border-cyan-hud/50 px-2.5 py-1.5 font-mono text-[10.5px] text-cyan-hud hover:bg-cyan-hud/10" data-new-cat>
+              + Nueva categoría
+            </button>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CARGA RÁPIDA CON IA: nombre + ingredientes aproximados + tip → receta mapeada a la base, macros, pasos, alérgenos y
+ * categoría sugerida. Con API key usa la IA para ordenar y redactar; sin key, el motor local. Los números salen siempre
+ * de la base de alimentos.
+ */
+function QuickLoad({ base, onUse }: { base: BrandFood; onUse: (b: BrandFood) => void }) {
+  const ai = usePlanStore((s) => s.ai);
+  const [name, setName] = useState(base.nombre);
+  const [ingr, setIngr] = useState('');
+  const [tip, setTip] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<(QuickDish & { aiError?: string }) | null>(null);
+  const hasKey = !!ai.apiKey?.trim();
+  const run = async () => {
+    setBusy(true);
+    setRes(await quickDish({ name, ingredients: ingr, tip }, hasKey ? ai : undefined));
+    setBusy(false);
+  };
+  return (
+    <div className="mb-3 rounded-xl border border-fire/30 bg-fire/[0.04] p-3" data-quick-load>
+      <div className="font-mono text-[10px] font-bold tracking-[0.14em] text-fire">[ ⚡ CARGA RÁPIDA CON IA ]</div>
+      <p className="mt-1 text-[12px] text-steel">Escribilo como te sale: el sistema arma la receta con gramos, medidas caseras, macros, pasos, alérgenos y categoría.</p>
+      <div className="mt-2 grid gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del plato · ej. Tortilla de berenjena y zucchini" className={inputCls} data-ql-name />
+        <textarea rows={2} value={ingr} onChange={(e) => setIngr(e.target.value)} placeholder="Ingredientes aproximados · ej. 3 huevos, 1 zucchini, media berenjena, 1 cda aceite de oliva, condimentos" className={inputCls} data-ql-ingredients />
+        <input value={tip} onChange={(e) => setTip(e.target.value)} placeholder="Tip o nota (opcional) · ej. vuelta y vuelta en sartén antiadherente tapada" className={inputCls} data-ql-tip />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <HudButton onClick={run} disabled={busy || name.trim().length < 2 || ingr.trim().length < 3}>
+          <ChefHat className="h-4 w-4" /> {busy ? 'Calculando…' : 'Ordenar y calcular con IA'}
+        </HudButton>
+        <span className="text-[11px] text-mute">{hasKey ? `IA: ${ai.provider} · ${ai.model}` : 'Sin API key de IA: lo resuelve el motor propio con la base de alimentos'}</span>
+      </div>
+      {res && (
+        <div className="mt-3 rounded-lg border border-line bg-panel p-3" data-ql-result>
+          {res.aiError && <p className="mb-2 text-[11.5px] text-gold">La IA no respondió ({res.aiError}): lo resolvimos con el motor propio.</p>}
+          <div className="flex flex-wrap items-baseline gap-2">
+            <b className="text-[14px] text-ink">{res.name}</b>
+            <span className="rounded border border-cyan-hud/40 px-1.5 font-mono text-[10px] text-cyan-hud">{BRAND_CATEGORY_LABEL[res.category]}</span>
+            <span className="font-mono text-[10px] text-mute">{res.source === 'ia' ? 'ordenado con IA' : 'motor local'}</span>
+          </div>
+          <table className="tnum mt-2 w-full text-[12px]">
+            <tbody>
+              {res.items.map((i) => (
+                <tr key={i.foodId} className="border-t border-line/60">
+                  <td className="py-1 font-semibold text-ink">{i.grams} g</td>
+                  <td className="py-1 text-steel">{i.food}</td>
+                  <td className="py-1 text-mute">{i.household}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {res.seasonings.length > 0 && <p className="mt-1 text-[11.5px] text-mute">Condimentos y básicos: {res.seasonings.join(', ')}</p>}
+          {res.unknown.length > 0 && <p className="mt-1 text-[11.5px] text-gold">No reconocí: {res.unknown.join(', ')} · cargalos a mano o como marca propia.</p>}
+          <div className="tnum mt-2 font-mono text-[12px] text-ink" data-ql-macros>
+            {res.totals.kcal} kcal · P {res.totals.p} g · C {res.totals.c} g · G {res.totals.f} g · porción {res.totals.g} g
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5" data-ql-allergens>
+            {res.allergens.length ? (
+              res.allergens.map((a) => (
+                <span key={a} className="rounded border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#FCA5A5]">
+                  {ALLERGEN_INFO[a].label}
+                </span>
+              ))
+            ) : (
+              <span className="text-[11.5px] text-[#34D399]">Sin alérgenos declarados</span>
+            )}
+          </div>
+          <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-[12.5px] text-steel" data-ql-steps>
+            {res.steps.map((x, k) => (
+              <li key={k}>{x}</li>
+            ))}
+          </ol>
+          <button
+            type="button"
+            onClick={() => onUse(quickToBrandFood(res, base))}
+            className="mt-3 flex items-center gap-1.5 rounded-lg border border-cyan-hud/60 bg-cyan-hud/10 px-3 py-2 text-[12.5px] font-semibold text-cyan-hud hover:bg-cyan-hud/20"
+            data-ql-use
+          >
+            <Save className="h-4 w-4" /> Usar este plato (revisar y guardar)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => void }) {
   const upsert = useFoodDbStore((s) => s.upsert);
   const [d, setD] = useState<BrandFood>(initial);
@@ -113,7 +260,9 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
   const atwater = m.p * 4 + m.c * 4 + m.f * 9;
   const setM = (patch: Partial<BrandFood['macros_por_porcion']>) => setD((x) => ({ ...x, macros_por_porcion: { ...x.macros_por_porcion, ...patch } }));
   const setP = (patch: Partial<BrandFood['porcion_base']>) => setD((x) => ({ ...x, porcion_base: { ...x.porcion_base, ...patch } }));
-  const isDish = DISH_CATEGORIES.includes(d.categoria);
+  const [dishMode] = useState(DISH_CATEGORIES.includes(initial.categoria));
+  const isDish = dishMode || DISH_CATEGORIES.includes(d.categoria);
+  const liveAllergens = [...new Set((d.ingredientes ?? []).filter((x) => x.foodId).flatMap((x) => itemAllergens({ foodId: x.foodId, food: x.nombre })))].filter((a) => a !== 'veg') as Allergen[];
   const ingr = d.ingredientes ?? [];
   const hasRecipe = isDish && ingr.some((x) => x.foodId && x.gramos > 0);
   const valid = d.nombre.trim().length >= 2 && (hasRecipe || d.porcion_base.gramos > 0);
@@ -149,24 +298,8 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
             <input value={d.marca} onChange={(e) => setD({ ...d, marca: e.target.value })} placeholder="La Serenísima / Milkaut / Ilolay" className={inputCls} />
           </label>
         </div>
-        <div className="mt-3">
-          <Label>Categoría</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {BRAND_CATEGORIES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setD({ ...d, categoria: c })}
-                className={cx(
-                  'rounded-md border px-2.5 py-1.5 font-mono text-[10.5px] transition',
-                  d.categoria === c ? 'border-fire bg-fire/15 text-fire' : 'border-line text-steel hover:text-ink',
-                )}
-              >
-                {BRAND_CATEGORY_LABEL[c]}
-              </button>
-            ))}
-          </div>
-        </div>
+        {dishMode && !d.ingredientes?.length && <QuickLoad base={d} onUse={(x) => setD(x)} />}
+        <CategoryPicker d={d} setD={setD} dish={dishMode} />
         <div className="mt-3 grid grid-cols-3 gap-3">
           <Num label="Cantidad" unit="" value={d.porcion_base.cantidad} onChange={(cantidad) => setP({ cantidad })} />
           <label className="block">
@@ -178,6 +311,20 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
         {isDish && (
           <>
             <RecipeEditor list={ingr} onChange={(ingredientes) => setD({ ...d, ingredientes })} />
+            {liveAllergens.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5" data-dish-allergens>
+                <span className="font-mono text-[10px] text-mute">ALÉRGENOS:</span>
+                {liveAllergens.map((a) => (
+                  <span key={a} className="rounded border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#FCA5A5]">
+                    {ALLERGEN_INFO[a].label}
+                  </span>
+                ))}
+              </div>
+            )}
+            <label className="mt-3 block">
+              <Label>Preparación paso a paso (un paso por línea)</Label>
+              <textarea rows={4} value={(d.pasos ?? []).join('\n')} onChange={(e) => setD({ ...d, pasos: e.target.value.split('\n') })} placeholder={'Cortá las verduras.\nSalteá…'} className={inputCls} data-dish-steps />
+            </label>
             <label className="mt-3 block">
               <Label>Técnica de cocción rápida y condimentos</Label>
               <textarea rows={2} value={d.tecnica ?? ''} onChange={(e) => setD({ ...d, tecnica: e.target.value || undefined })} placeholder="Ej. al horno 200 °C 25 min con spray de oliva, orégano y limón" className={inputCls} />
@@ -223,6 +370,8 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
               const rec = hasRecipe ? recipeTotals(ingr.filter((x) => x.foodId && x.gramos > 0)) : null;
               upsert({
                 ...d,
+                pasos: (d.pasos ?? []).map((x) => x.trim()).filter(Boolean).length ? (d.pasos ?? []).map((x) => x.trim()).filter(Boolean) : undefined,
+                ...(hasRecipe ? { alergenos: liveAllergens, lactosa: liveAllergens.includes('lactose') } : {}),
                 nombre: d.nombre.trim(),
                 marca: d.marca.trim(),
                 ingredientes: hasRecipe ? ingr.filter((x) => x.foodId && x.gramos > 0) : d.ingredientes?.length ? d.ingredientes : undefined,
@@ -272,7 +421,9 @@ export function FoodBrandDatabase() {
   const importJson = useFoodDbStore((s) => s.importJson);
   const resetSeed = useFoodDbStore((s) => s.resetSeed);
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState<BrandCategory | 'all'>('all');
+  // Filtro: 'all', una categoría o «custom:<nombre>» para las categorías propias del coach.
+  const [cat, setCat] = useState<string>('all');
+  const [review, setReview] = useState(false);
   const [editing, setEditing] = useState<BrandFood | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
@@ -282,9 +433,17 @@ export function FoodBrandDatabase() {
       .normalize('NFD')
       .replace(/[̀-ͯ]/g, '');
   const list = useMemo(
-    () => items.filter((b) => (cat === 'all' || b.categoria === cat) && (!q.trim() || norm(`${b.nombre} ${b.marca}`).includes(norm(q.trim())))),
-    [items, q, cat],
+    () =>
+      items.filter(
+        (b) =>
+          (cat === 'all' || (cat.startsWith('custom:') ? b.categoria === 'custom' && b.catLabel === cat.slice(7) : b.categoria === cat)) &&
+          (!review || auditDish(b).length > 0) &&
+          (!q.trim() || norm(`${b.nombre} ${b.marca}`).includes(norm(q.trim()))),
+      ),
+    [items, q, cat, review],
   );
+  const toReview = items.filter((b) => auditDish(b).length > 0).length;
+  const usedCats = [...BRAND_CATEGORY_KEYS.filter((c) => c !== 'custom' && items.some((b) => b.categoria === c)), ...[...new Set(items.filter((b) => b.categoria === 'custom' && b.catLabel).map((b) => b.catLabel!))].map((c) => `custom:${c}`)];
   const active = items.filter((b) => b.disponible_para_ia).length;
 
   function exportJson() {
@@ -343,7 +502,7 @@ export function FoodBrandDatabase() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre o marca…" className={cx(inputCls, 'pl-9')} />
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {(['all', ...BRAND_CATEGORIES] as const).map((c) => (
+          {['all', ...usedCats].map((c) => (
             <button
               key={c}
               type="button"
@@ -353,10 +512,19 @@ export function FoodBrandDatabase() {
                 cat === c ? 'border-cyan-hud bg-cyan-hud/10 text-cyan-hud' : 'border-line text-steel hover:text-ink',
               )}
             >
-              {c === 'all' ? `Todas (${items.length})` : `${BRAND_CATEGORY_LABEL[c]} (${items.filter((b) => b.categoria === c).length})`}
+              {c === 'all'
+                ? `Todas (${items.length})`
+                : c.startsWith('custom:')
+                  ? `★ ${c.slice(7)} (${items.filter((b) => b.categoria === 'custom' && b.catLabel === c.slice(7)).length})`
+                  : `${BRAND_CATEGORY_LABEL[c as BrandCategory]} (${items.filter((b) => b.categoria === c).length})`}
             </button>
           ))}
         </div>
+        {toReview > 0 && (
+          <button type="button" onClick={() => setReview(!review)} className={cx('mt-2 rounded-md border px-2.5 py-1 text-[11.5px] font-semibold', review ? 'border-gold bg-gold/15 text-[#FDE68A]' : 'border-gold/40 text-gold')} data-review-filter>
+            ⚠ {toReview} plato{toReview > 1 ? 's' : ''} para revisar (nombre, ingredientes, macros o pasos)
+          </button>
+        )}
 
         <div className="mt-3 divide-y divide-line">
           {list.map((b) => {
@@ -371,12 +539,17 @@ export function FoodBrandDatabase() {
                     {b.flex && <span className="rounded border border-gold/40 bg-gold/10 px-1 font-mono text-[8.5px] font-bold text-gold">FLEX</span>}
                   </div>
                   <div className="tnum font-mono text-[10.5px] text-mute">
-                    {BRAND_CATEGORY_LABEL[b.categoria]} · {portionLabel(b)} · {fmt0(m.kcal)} kcal · P {m.p} · C {m.c} · G {m.f}
+                    {categoryLabel(b)} · {portionLabel(b)} · {fmt0(m.kcal)} kcal · P {m.p} · C {m.c} · G {m.f}
                     {m.leucina ? ` · Leu ${m.leucina}` : ''}
                     {b.prep_min ? ` · ${b.prep_min} min` : ''}
                     {b.lactosa ? ' · lactosa' : ''}
                   </div>
                   {b.detalle && <div className="text-[11px] text-steel/80">{b.detalle}</div>}
+                  {auditDish(b).map((i, k) => (
+                    <div key={k} className="text-[11px] text-gold" data-dish-issue>
+                      ⚠ {i.msg}
+                    </div>
+                  ))}
                 </div>
                 <button
                   type="button"

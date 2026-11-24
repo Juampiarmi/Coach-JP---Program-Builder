@@ -121,6 +121,21 @@ export const FOODS: FoodRef[] = [
   { id: 'pan-lactal', name: 'Pan lactal integral', group: 'cereal', unit: { label: 'rebanada', grams: 25 }, p: 10, c: 43, f: 4, leucine: 0.7, equiv: ['pan', 'tostadas-arroz'] },
   { id: 'barrita-cereal', name: 'Barrita de cereal', group: 'sport-carb', unit: { label: 'u', grams: 23 }, p: 6, c: 70, f: 9, leucine: 0.4, equiv: ['banana', 'dulce-membrillo'] },
   { id: 'vegetales', name: 'Vegetales mixtos / ensalada', group: 'veg', p: 1.5, c: 4, f: 0.2, leucine: 0.08 },
+  // Verduras de todos los días (crudas, por 100 g · ARGENFOODS / USDA): para recetas propias y la carga rápida.
+  { id: 'tomate', name: 'Tomate', group: 'veg', unit: { label: 'u', grams: 150 }, p: 0.9, c: 3.9, f: 0.2, leucine: 0.03 },
+  { id: 'lechuga', name: 'Lechuga', group: 'veg', unit: { label: 'taza', grams: 40 }, p: 1.4, c: 2.9, f: 0.2, leucine: 0.08 },
+  { id: 'zanahoria', name: 'Zanahoria', group: 'veg', unit: { label: 'u', grams: 100 }, p: 0.9, c: 9.6, f: 0.2, leucine: 0.1 },
+  { id: 'zucchini', name: 'Zucchini / zapallito largo', group: 'veg', unit: { label: 'u', grams: 200 }, p: 1.2, c: 3.1, f: 0.3, leucine: 0.07 },
+  { id: 'zapallito', name: 'Zapallito redondo', group: 'veg', unit: { label: 'u', grams: 150 }, p: 1.1, c: 3.4, f: 0.2, leucine: 0.06 },
+  { id: 'berenjena', name: 'Berenjena', group: 'veg', unit: { label: 'u', grams: 250 }, p: 1, c: 5.9, f: 0.2, leucine: 0.06 },
+  { id: 'espinaca', name: 'Espinaca', group: 'veg', unit: { label: 'taza', grams: 30 }, p: 2.9, c: 3.6, f: 0.4, leucine: 0.22 },
+  { id: 'brocoli', name: 'Brócoli', group: 'veg', unit: { label: 'taza', grams: 90 }, p: 2.8, c: 6.6, f: 0.4, leucine: 0.13 },
+  { id: 'morron', name: 'Morrón', group: 'veg', unit: { label: 'u', grams: 180 }, p: 1, c: 6, f: 0.3, leucine: 0.04 },
+  { id: 'cebolla', name: 'Cebolla', group: 'veg', unit: { label: 'u', grams: 150 }, p: 1.1, c: 9.3, f: 0.1, leucine: 0.03 },
+  { id: 'champinones', name: 'Champiñones', group: 'veg', unit: { label: 'taza', grams: 70 }, p: 3.1, c: 3.3, f: 0.3, leucine: 0.12 },
+  { id: 'choclo', name: 'Choclo (granos cocidos)', group: 'starch', unit: { label: 'taza', grams: 150 }, p: 3.3, c: 19, f: 1.4, leucine: 0.35, equiv: ['papa', 'arroz'] },
+  { id: 'arvejas', name: 'Arvejas (cocidas)', group: 'starch', unit: { label: 'taza', grams: 150 }, p: 5.4, c: 14, f: 0.4, leucine: 0.32, equiv: ['lentejas'] },
+  { id: 'harina-avena', name: 'Harina de avena', group: 'cereal', p: 13, c: 60, f: 7, leucine: 1.0, equiv: ['avena'] },
   // Biblioteca de planes: variantes sin lactosa y plant-based.
   { id: 'leche-deslactosada', name: 'Leche descremada deslactosada', group: 'dairy-protein', unit: { label: 'taza', grams: 250 }, p: 3.3, c: 5, f: 0.1, leucine: 0.33, equiv: ['leche'] },
   { id: 'yogur-deslactosado', name: 'Yogur descremado deslactosado', group: 'dairy-protein', p: 6, c: 6, f: 0.5, leucine: 0.6, equiv: ['yogur'] },
@@ -320,8 +335,9 @@ export function householdHint(foodId: string | undefined, grams: number) {
 }
 
 /** Busca un alimento de la base por nombre aproximado (para mapear la respuesta de la IA). */
-export function matchFood(name: string): FoodRef | undefined {
+export function matchFood(name: string, opts: { baseOnly?: boolean } = {}): FoodRef | undefined {
   const n = normalize(name);
+  if (opts.baseOnly) return matchAlias(n);
   // Primero las marcas / alimentos personalizados del coach (coincidencia por nombre).
   // Nombre completo con marca primero ("yogur proteico descremado · milkaut pro"), después el nombre base.
   const exact = FOODS.find((f) => f.custom && f.ai !== false && n.length >= 4 && n.includes(normalize(f.name)));
@@ -332,6 +348,10 @@ export function matchFood(name: string): FoodRef | undefined {
     return n.includes(base) || base.includes(n);
   });
   if (custom) return custom;
+  return matchAlias(n);
+}
+
+function matchAlias(n: string): FoodRef | undefined {
   const aliases: [RegExp, string][] = [
     // Productos comerciales primero (más específicos que «yogur», «pan», «galleta»).
     [/alfajor.*prote|prote.*alfajor/, 'alfajor-proteico'],
@@ -359,6 +379,7 @@ export function matchFood(name: string): FoodRef | undefined {
     [/pan/, 'pan'],
     [/tutuca|pochoclo|maiz inflado/, 'tutucas'],
     [/copos? de maiz|corn ?flakes|cereal de maiz/, 'copos-maiz'],
+    [/harina de avena/, 'harina-avena'],
     [/avena (instantanea|rapida|quick)/, 'avena-instantanea'],
     [/tostada.*arroz/, 'tostadas-arroz'],
     [/avena/, 'avena'],
@@ -368,7 +389,13 @@ export function matchFood(name: string): FoodRef | undefined {
     [/fideo|pasta seca|spaghetti|tallarin/, 'fideos'],
     [/batata|camote/, 'batata'],
     [/papa/, 'papa'],
-    [/lenteja|legumbre|garbanzo/, 'lentejas'],
+    [/garbanzo/, 'garbanzos'],
+    [/poroto/, 'porotos'],
+    [/lenteja|legumbre/, 'lentejas'],
+    [/tofu/, 'tofu'],
+    [/choclo|maiz dulce/, 'choclo'],
+    [/arveja/, 'arvejas'],
+    [/calabaza|zapallo(?!s? ?(redondo|ito))|anco/, 'calabaza'],
     [/banana/, 'banana'],
     [/manzana/, 'manzana'],
     [/frutilla|frutos rojos/, 'frutillas'],
@@ -379,7 +406,20 @@ export function matchFood(name: string): FoodRef | undefined {
     [/palta|aguacate/, 'palta'],
     [/oliva|aceite/, 'oliva'],
     [/nuez|nueces|almendra|frutos secos/, 'nueces'],
-    [/vegetal|ensalada|verdura|brocoli|zapallito/, 'vegetales'],
+    [/berenjena/, 'berenjena'],
+    [/zucchini|zuchini|zapallito largo|calabacin/, 'zucchini'],
+    [/zapallito/, 'zapallito'],
+    [/espinaca|acelga/, 'espinaca'],
+    [/brocoli|brocol/, 'brocoli'],
+    [/morron|pimiento/, 'morron'],
+    [/cebolla|cebolleta|puerro|verdeo/, 'cebolla'],
+    [/tomate/, 'tomate'],
+    [/zanahoria/, 'zanahoria'],
+    [/lechuga|rucula|hojas verdes/, 'lechuga'],
+    [/champi|hongo/, 'champinones'],
+    [/semilla|chia|lino|girasol/, 'semillas'],
+    [/queso/, 'queso-light'],
+    [/vegetal|ensalada|verdura/, 'vegetales'],
   ];
   for (const [re, id] of aliases) if (re.test(n)) return FOOD_BY_ID[id];
   return undefined;

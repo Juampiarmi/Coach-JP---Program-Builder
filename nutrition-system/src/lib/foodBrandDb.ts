@@ -14,7 +14,15 @@ export type BrandCategory =
   | 'tarta'
   | 'minuta'
   | 'parrilla'
-  | 'dulce';
+  | 'dulce'
+  | 'principal'
+  | 'guarnicion'
+  | 'tortilla'
+  | 'ensalada'
+  | 'colacion'
+  | 'postre'
+  | 'licuado'
+  | 'custom';
 
 export const BRAND_CATEGORY_LABEL: Record<BrandCategory, string> = {
   protein: 'Proteína Magra',
@@ -24,15 +32,29 @@ export const BRAND_CATEGORY_LABEL: Record<BrandCategory, string> = {
   snack: 'Cereales y Snacks',
   fruitveg: 'Fruta / Vegetal',
   supplement: 'Suplemento',
-  desayuno: 'Desayunos, Meriendas y Toast Bar',
+  desayuno: 'Desayuno / Merienda',
   tarta: 'Tartas, Empanadas y Sfijas',
   minuta: 'Minutas y Platos Rioplatenses',
   parrilla: 'Parrilla y Flex-Meals (Rescate Social)',
   dulce: 'Clásicos Dulces y Quiosco Deportivo',
+  principal: 'Plato Principal',
+  guarnicion: 'Guarnición / Vegetales',
+  tortilla: 'Tortillas / Tartas / Revueltos',
+  ensalada: 'Ensaladas',
+  colacion: 'Colaciones / Snacks',
+  postre: 'Postres Saludables',
+  licuado: 'Licuados / Batidos',
+  custom: 'Categoría propia',
 };
 /** Categorías de platos preparados (porción casera estándar). */
-export const DISH_CATEGORIES: BrandCategory[] = ['desayuno', 'tarta', 'minuta', 'parrilla', 'dulce'];
+export const DISH_CATEGORIES: BrandCategory[] = ['desayuno', 'principal', 'guarnicion', 'tortilla', 'ensalada', 'colacion', 'postre', 'licuado', 'tarta', 'minuta', 'parrilla', 'dulce', 'custom'];
 export const BRAND_CATEGORIES = Object.keys(BRAND_CATEGORY_LABEL) as BrandCategory[];
+/** Categorías de alimentos / marcas (no platos). */
+export const FOOD_CATEGORIES = BRAND_CATEGORIES.filter((c) => !DISH_CATEGORIES.includes(c));
+/** Categorías de platos que se ofrecen al cargar uno nuevo (las históricas siguen valiendo para lo ya guardado). */
+export const NEW_DISH_CATEGORIES: BrandCategory[] = ['desayuno', 'principal', 'guarnicion', 'tortilla', 'ensalada', 'colacion', 'postre', 'licuado', 'minuta', 'tarta', 'parrilla', 'dulce'];
+/** Nombre visible de la categoría de un ítem (las propias del coach muestran su nombre). */
+export const categoryLabel = (b: Pick<BrandFood, 'categoria' | 'catLabel'>) => (b.categoria === 'custom' && b.catLabel ? b.catLabel : BRAND_CATEGORY_LABEL[b.categoria]);
 
 /** Grupo de intercambio equivalente en el motor del Builder (los suplementos no entran al selector de comidas). */
 const GROUP_OF: Record<BrandCategory, SwapGroup | null> = {
@@ -48,6 +70,14 @@ const GROUP_OF: Record<BrandCategory, SwapGroup | null> = {
   minuta: 'plato',
   parrilla: 'plato',
   dulce: 'plato',
+  principal: 'plato',
+  guarnicion: 'plato',
+  tortilla: 'plato',
+  ensalada: 'plato',
+  colacion: 'plato',
+  postre: 'plato',
+  licuado: 'plato',
+  custom: 'plato',
 };
 
 /** Alimento / marca de la Food & Brand DB. Macros por porción base (como figura en la etiqueta). */
@@ -56,6 +86,10 @@ export interface BrandFood {
   nombre: string;
   marca: string;
   categoria: BrandCategory;
+  /** Categoría propia del coach (categoria = 'custom'): su nombre, ej. «Tortillas de verduras». */
+  catLabel?: string;
+  /** Alérgenos detectados al cargar el plato (gluten, lactosa, huevo…). */
+  alergenos?: string[];
   porcion_base: { cantidad: number; unidad: string; gramos: number };
   macros_por_porcion: { kcal: number; p: number; c: number; f: number; leucina: number };
   es_marca_local: boolean;
@@ -119,6 +153,7 @@ const DISH_ROWS: Dish[] = [
   ['Avocado Toast en galletas de arroz', 'desayuno', 'porción', 127, 9, 23, 12.5, 0.7, 6, false, false, 'Galletas de arroz + 50 g de palta + huevo poché o revuelto', undefined, 'Pisá la palta con limón, armá sobre las galletas y coroná con el huevo'],
   ['Tostadas Proteicas de Masa Madre', 'desayuno', 'porción', 180, 25, 28, 13, 2.1, 8, true, false, 'Pan de masa madre o integral + queso untable magro + jamón cocido + huevo duro', undefined, 'Tostá el pan y armá en frío; huevo duro hervido 9 min'],
   ['Galletas de Arroz con Queso Gratinado y Huevo', 'desayuno', 'porción', 88, 12, 15, 9, 1, 5, true, false, '2 galletas de arroz + 20 g de queso por salut + 1 huevo', undefined, 'Gratiná el queso 1 min en sartén tapada y sumá el huevo a la plancha'],
+  ['Panqueques de avena y yogur', 'desayuno', '3 unidades', 216, 25, 27, 8.8, 2.1, 12, true, false, '40 g de avena arrollada o harina de avena + 1 huevo + 2 claras + 50 g de yogur griego + 1 cdita de polvo de hornear + esencia de vainilla', undefined, 'Mixeá, reposá 5 min y cociná vuelta y vuelta en sartén antiadherente a fuego medio-bajo'],
   ['Pancake de avena, coco y huevo', 'desayuno', 'porción', 160, 18, 33, 17, 1.4, 10, false, false, '40 g de avena + 10 g de coco + 2 huevos + 1 cda de miel · saborizantes libres: vainilla, ralladura de limón, canela, cacao amargo o café instantáneo', undefined, 'Mixeá todo y cociná en sartén antiadherente 2-3 min por lado'],
   ['Bowl de yogur proteico con granola y frutas', 'desayuno', 'bowl', 290, 18, 45, 5, 1.7, 3, true, false, '160 g de yogur proteico + 30 g de granola crujiente + 100 g de banana o frutos rojos', undefined, 'Armalo en bowl, en frío'],
   ['Café con leche descremada', 'desayuno', 'taza', 250, 8, 12, 0.3, 0.8, 3, true, false, '250 ml · leche descremada o proteica · sin azúcar o con edulcorante', undefined, ''],
@@ -156,14 +191,14 @@ const DISH_ROWS: Dish[] = [
   ['Choripán en Pan Francés Liviano (1/2 Unidad)', 'parrilla', 'unidad', 110, 11, 17, 16, 0.9, 20, false, true, '1/2 chorizo + 1/2 pan'],
   ['Pizza de Muzzarella (2 Porciones)', 'parrilla', '2 porciones', 250, 26, 70, 26, 2.2, 0, true, true, 'Muzzarella'],
   ['Hamburguesa casera completa', 'parrilla', 'unidad', 300, 40, 35, 28, 3.2, 20, true, true, 'Pan + 150 g de carne + queso + lechuga y tomate'],
-  ['Parrillada Completa (Porción Individual)', 'parrilla', 'porción', 400, 70, 0, 60, 5.6, 90, false, true, 'Cortes + achuras + chorizo'],
+  ['Parrillada Completa (Porción Individual)', 'parrilla', 'porción', 400, 70, 0, 60, 5.6, 90, false, true, 'Cortes + achuras + chorizo', undefined, 'Parrilla a fuego medio: chorizo 20-25 min, achuras 20 min y cortes según el grosor; elegí 1-2 cortes magros (vacío desgrasado, entraña) y sumá ensalada'],
   ['Helado artesanal (1/4 kg)', 'parrilla', '1/4 kg', 250, 10, 70, 28, 0.9, 0, true, true, ''],
   ['Cerveza (pinta)', 'parrilla', 'pinta 473 ml', 473, 2, 50, 0, 0, 0, false, true, 'Alcohol computado como carbos (~200 kcal)'],
   ['Fernet con cola', 'parrilla', 'vaso', 300, 0, 55, 0, 0, 0, false, true, 'Alcohol + azúcar computados como carbos (~220 kcal)'],
   ['Vino tinto (copa)', 'parrilla', 'copa 150 ml', 150, 0, 31, 0, 0, 0, false, true, 'Alcohol computado como carbos (~125 kcal)'],
   // 1.5 · Clásicos dulces y quiosco deportivo
   ['Postre Vigilante', 'dulce', 'porción', 100, 10, 27, 12, 0.9, 2, true, false, '60 g de queso fresco + 40 g de dulce de batata o membrillo'],
-  ['Dulce de Leche (1 Cucharada)', 'dulce', '1 cda', 15, 1, 8, 1.2, 0.1, 0, true, false, '1 cda = 15 g'],
+  ['Dulce de Leche (1 Cucharada)', 'dulce', '1 cda', 15, 1, 8, 1.2, 0.1, 0, true, false, '1 cda = 15 g de dulce de leche'],
   ['Chipá', 'dulce', 'unidad', 25, 2.5, 9, 4, 0.2, 0, true, false, ''],
   ['Pan de queso', 'dulce', 'unidad', 30, 3, 10, 4.5, 0.25, 0, true, false, ''],
   ['Alfajor proteico', 'dulce', 'unidad', 50, 15, 21, 7, 1.3, 0, true, false, '', 'ENA / Integra / marcas locales'],
@@ -182,7 +217,7 @@ const DISH_ROWS: Dish[] = [
   ['Pollo al horno con papas y batatas', 'minuta', 'plato', 450, 45, 50, 12, 3.6, 45, false, false, '200 g de pollo + 200 g de papa y batata en cubos', undefined, 'Mandá al horno a 200 °C 35-40 min con spray de oliva y romero'],
   ['Wok de pollo y vegetales con arroz', 'minuta', 'plato', 420, 40, 55, 10, 3.2, 20, false, false, '160 g de pollo + vegetales salteados + 150 g de arroz + salsa de soja', undefined, 'Salteado a fuego fuerte 8-10 min'],
   ['Fideos integrales con boloñesa magra', 'minuta', 'plato', 420, 36, 70, 12, 2.9, 25, false, false, '80 g de fideos secos + 120 g de carne picada magra + salsa de tomate', undefined, 'Salsa 15 min; fideos al dente'],
-  ['Ñoquis de papa con tuco y carne magra', 'minuta', 'plato', 400, 28, 78, 10, 2.3, 30, false, false, '250 g de ñoquis + tuco con carne magra', undefined, 'Hervilos hasta que floten; tuco 15 min'],
+  ['Ñoquis de papa con tuco y carne magra', 'minuta', 'plato', 400, 28, 78, 10, 2.3, 30, false, false, '250 g de ñoquis de papa + tuco con carne magra', undefined, 'Hervilos hasta que floten; tuco 15 min'],
   ['Tortilla de papa al horno', 'minuta', 'porción (1/4)', 250, 16, 34, 12, 1.4, 40, false, false, 'Papa, cebolla y 2 huevos por porción', undefined, 'Mandá al horno a 200 °C 25 min en molde con spray de oliva'],
   ['Merluza al horno con puré mixto', 'minuta', 'plato', 400, 34, 38, 8, 2.8, 30, true, false, '200 g de merluza + puré de papa y calabaza', undefined, 'Mandá al horno a 180 °C 15-18 min con limón'],
   ['Arroz con pollo', 'minuta', 'plato', 400, 36, 58, 10, 2.9, 40, false, false, 'Pollo, arroz, morrón, arvejas y caldo casero', undefined, 'En olla 25-30 min'],
@@ -309,7 +344,21 @@ export function friendlyMealName(name: string) {
 }
 
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */
-export const SEED_VERSION = 5;
+export const SEED_VERSION = 6;
+
+/** Plato nuevo vacío (carga manual o rápida). */
+export const emptyDishBase = (): BrandFood => ({
+  id: `db-receta-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+  nombre: '',
+  marca: '',
+  categoria: 'principal',
+  porcion_base: { cantidad: 1, unidad: 'porción', gramos: 0 },
+  macros_por_porcion: { kcal: 0, p: 0, c: 0, f: 0, leucina: 0 },
+  es_marca_local: false,
+  disponible_para_ia: true,
+  ingredientes: [],
+  prep_min: 20,
+});
 
 const LACTOSE_RE = /yogur|untable|queso|leche|ricota|whey/i;
 
@@ -388,6 +437,8 @@ export function sanitizeBrandFood(raw: unknown): BrandFood | null {
     tecnica: typeof r.tecnica === 'string' && r.tecnica.trim() ? r.tecnica.trim() : undefined,
     pasos: Array.isArray(r.pasos) ? r.pasos.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : undefined,
     momentos: Array.isArray(r.momentos) ? r.momentos.filter((x): x is FoodSlot => x === 'am' || x === 'main' || x === 'peri') : undefined,
+    catLabel: cat === 'custom' && typeof r.catLabel === 'string' && r.catLabel.trim() ? r.catLabel.trim().slice(0, 40) : undefined,
+    alergenos: Array.isArray(r.alergenos) ? r.alergenos.filter((x) => typeof x === 'string') : undefined,
   };
 }
 

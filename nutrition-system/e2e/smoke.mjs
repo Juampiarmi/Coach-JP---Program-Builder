@@ -243,6 +243,36 @@ try {
   await page.locator('[data-couple-shop]').click();
   check((await page.locator('[data-couple-shoplist] tr').count()) > 3, 'Modo Parejas: lista de compras combinada (A + B)');
 
+  // Nuevos platos: carga rápida (nombre + ingredientes + tip), categoría propia y guardado.
+  await page.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();
+  await page.getByRole('button', { name: /AGREGAR NUEVO PLATO/ }).first().click();
+  const ql = page.locator('[data-quick-load]');
+  check(await ql.isVisible(), 'Nuevo plato: bloque de carga rápida con IA');
+  await ql.locator('[data-ql-name]').fill('Tortilla de berenjena y zucchini');
+  await ql.locator('[data-ql-ingredients]').fill('3 huevos, 1 zucchini, media berenjena, 1 cda aceite de oliva, condimentos');
+  await ql.locator('[data-ql-tip]').fill('Hacerla vuelta y vuelta en sartén antiadherente tapada para que quede jugosa');
+  await ql.getByRole('button', { name: /Ordenar y calcular/ }).click();
+  const qr = page.locator('[data-ql-result]');
+  await qr.waitFor({ timeout: 5000 });
+  const qrText = await qr.innerText();
+  check((await qr.locator('tr').count()) === 4 && /180 g/.test(qrText) && /3 huevos/.test(qrText), `Carga rápida: ingredientes mapeados con gramos y medida casera${process.env.DBG ? qrText : ''}`);
+  check(/\d+ kcal · P [\d.]+ g · C [\d.]+ g · G [\d.]+ g/.test(await qr.locator('[data-ql-macros]').innerText()), 'Carga rápida: calorías, proteínas, carbos y grasas');
+  check(/Huevo/.test(await qr.locator('[data-ql-allergens]').innerText()), 'Carga rápida: alérgenos etiquetados (huevo)');
+  check((await qr.locator('[data-ql-steps] li').count()) >= 4 && /Tip: Hacerla vuelta y vuelta/.test(await qr.locator('[data-ql-steps]').innerText()), 'Carga rápida: pasos ordenados con el tip del coach');
+  check(/Tortillas \/ Tartas \/ Revueltos/.test(await qr.innerText()), 'Carga rápida: categoría sugerida (Tortillas / Tartas / Revueltos)');
+  await qr.locator('[data-ql-use]').click();
+  check((await page.locator('[data-cat="ensalada"]').count()) === 1 && (await page.locator('[data-cat="licuado"]').count()) === 1, 'Nuevos platos: categorías ampliadas (ensaladas, licuados…)');
+  await page.locator('[data-new-cat]').click();
+  await page.locator('[data-new-cat-input]').fill('Tortillas de verduras');
+  await page.locator('[data-new-cat-save]').click();
+  check((await page.locator('[data-cat-custom="Tortillas de verduras"]').count()) === 1, 'Nuevos platos: «+ Nueva categoría» crea y selecciona una categoría propia');
+  check((await page.locator('[data-dish-steps]').inputValue()).split('\n').length >= 4, 'Nuevo plato: los pasos quedan listos para editar');
+  await page.getByRole('button', { name: /Guardar \]/ }).click();
+  await page.waitForTimeout(200);
+  const saved = page.locator('div.py-2\\.5', { hasText: 'Tortilla de Berenjena y Zucchini' }).or(page.locator('div.py-2\\.5', { hasText: 'Tortilla de berenjena y zucchini' }));
+  check((await saved.count()) > 0 && /Tortillas de verduras/.test(await saved.first().innerText()), 'Nuevo plato: guardado con su categoría propia');
+  check((await page.getByRole('button', { name: /★ Tortillas de verduras/ }).count()) > 0, 'Alimentos y marcas: filtro por la categoría propia');
+
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

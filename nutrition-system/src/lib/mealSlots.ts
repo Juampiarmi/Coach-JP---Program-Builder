@@ -77,6 +77,13 @@ export function dishSlots(categoria: string, nombre: string, detalle: string, fa
     case 'dulce':
       if (/alfajor proteico|alfajor de arroz|barrita|turr[oó]n|arroz con leche|gelatina/i.test(txt)) return ['peri', 'am'];
       return ['am'];
+    case 'colacion':
+    case 'licuado':
+    case 'postre':
+      return ['am', 'peri'];
+    case 'tortilla':
+      // Revueltos y tortillas: desayuno o almuerzo / cena; las tartas y tortillas grandes, almuerzo / cena.
+      return /tarta|pascualina/i.test(txt) ? ['main'] : ['main', 'am'];
     case 'fruitveg':
       return /vegetal|ensalada/i.test(txt) ? ['main'] : ['am', 'peri', 'main'];
     default:

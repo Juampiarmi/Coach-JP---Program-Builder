@@ -9,6 +9,9 @@ interface FoodDbState {
   items: BrandFood[];
   /** Versión del catálogo pre-cargado ya incorporada (migraciones aditivas). */
   seedVersion: number;
+  /** Categorías de platos creadas por el coach («+ Nueva categoría»). */
+  customCats: string[];
+  addCategory: (name: string) => string | null;
   upsert: (item: BrandFood) => void;
   remove: (id: string) => void;
   toggleAi: (id: string) => void;
@@ -28,6 +31,16 @@ export const useFoodDbStore = create<FoodDbState>()(
     (set, get) => ({
       items: seedFoodDb(),
       seedVersion: SEED_VERSION,
+      customCats: [],
+      addCategory: (name) => {
+        const clean = name.replace(/\s+/g, ' ').trim().slice(0, 40);
+        if (clean.length < 2) return null;
+        const label = clean.charAt(0).toUpperCase() + clean.slice(1);
+        const have = get().customCats.find((c) => c.toLowerCase() === label.toLowerCase());
+        if (have) return have;
+        set({ customCats: [...get().customCats, label] });
+        return label;
+      },
       upsert: (item) => {
         const items = get().items.some((x) => x.id === item.id) ? get().items.map((x) => (x.id === item.id ? item : x)) : [...get().items, item];
         set(sync(items));
@@ -54,7 +67,7 @@ export const useFoodDbStore = create<FoodDbState>()(
       name: 'coachjp-food-db',
       version: 3,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ items: s.items, seedVersion: s.seedVersion }),
+      partialize: (s) => ({ items: s.items, seedVersion: s.seedVersion, customCats: s.customCats }),
       // La DB guardada del coach recibe los ítems nuevos del catálogo (platos, quiosco…) sin perder sus ediciones.
       migrate: (persisted) => persisted as FoodDbState,
       merge: (persisted, current) => {
@@ -78,7 +91,9 @@ export const useFoodDbStore = create<FoodDbState>()(
           });
           items = [...items, ...seed.filter((x) => !have.has(x.id))];
         }
-        return { ...current, ...sync(items), seedVersion: SEED_VERSION };
+        // Categorías propias: las guardadas + las que usan los platos (importados de otro dispositivo).
+        const customCats = [...new Set([...(Array.isArray(saved.customCats) ? saved.customCats.filter((c): c is string => typeof c === 'string') : []), ...items.filter((x) => x.categoria === 'custom' && x.catLabel).map((x) => x.catLabel!)])];
+        return { ...current, ...sync(items), seedVersion: SEED_VERSION, customCats };
       },
     },
   ),

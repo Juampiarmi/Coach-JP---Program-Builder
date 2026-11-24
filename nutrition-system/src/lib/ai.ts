@@ -127,13 +127,13 @@ export interface AiPlanJson {
   coachNote?: string;
 }
 
-async function callClaude(ai: AiSettings, user: string): Promise<string> {
+async function callClaude(ai: AiSettings, user: string, system = `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}`, maxTokens = 32000): Promise<string> {
   // La key vive sólo en este navegador: la llamada va directo a la API de Anthropic.
   const client = new Anthropic({ apiKey: ai.apiKey, dangerouslyAllowBrowser: true });
   const params = {
     model: ai.model,
-    max_tokens: 32000,
-    system: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}`,
+    max_tokens: maxTokens,
+    system,
     messages: [{ role: 'user' as const, content: user }],
   };
   const stream =
@@ -150,11 +150,11 @@ async function callClaude(ai: AiSettings, user: string): Promise<string> {
   return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
 }
 
-async function callGemini(ai: AiSettings, user: string, onNotice?: (n: GeminiNotice) => void): Promise<GeminiResult> {
+async function callGemini(ai: AiSettings, user: string, onNotice?: (n: GeminiNotice) => void, system = `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}`): Promise<GeminiResult> {
   return geminiGenerate(
     ai,
     {
-      systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}` }] },
+      systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
     },
@@ -162,7 +162,7 @@ async function callGemini(ai: AiSettings, user: string, onNotice?: (n: GeminiNot
   );
 }
 
-async function callOpenAI(ai: AiSettings, user: string): Promise<string> {
+async function callOpenAI(ai: AiSettings, user: string, system = `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}`): Promise<string> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` },
@@ -171,7 +171,7 @@ async function callOpenAI(ai: AiSettings, user: string): Promise<string> {
       response_format: { type: 'json_object' },
       temperature: 0.3,
       messages: [
-        { role: 'system', content: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}` },
+        { role: 'system', content: system },
         { role: 'user', content: user },
       ],
     }),
@@ -191,6 +191,13 @@ export function extractJson(text: string): AiPlanJson {
   } catch {
     throw new Error('El JSON devuelto por la IA está malformado. Reintentá la compilación.');
   }
+}
+
+/** Pedido de texto genérico al proveedor configurado (carga rápida de platos, etc.). La key nunca sale del navegador. */
+export async function aiText(ai: AiSettings, system: string, user: string): Promise<string> {
+  if (!ai.apiKey.trim()) throw new Error('Sin API key de IA.');
+  if (ai.provider === 'gemini') return (await callGemini(ai, user, undefined, system)).text;
+  return ai.provider === 'claude' ? callClaude(ai, user, system, 4000) : callOpenAI(ai, user, system);
 }
 
 /** Compila el plan. `onNotice` informa reintentos / cambios de modelo (Gemini 503) a la terminal. */

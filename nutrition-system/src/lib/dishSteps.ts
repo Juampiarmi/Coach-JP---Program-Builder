@@ -26,9 +26,15 @@ export const DISH_STEPS: Record<string, string[]> = {
     'Armá: galleta, queso y el huevo arriba.',
   ],
   'Pancake de avena, coco y huevo': [
-    'Mixeá la avena, el coco, los huevos y la miel hasta que quede una pasta.',
-    'Sumá el saborizante que quieras: vainilla, canela, ralladura de limón o cacao amargo.',
-    'Cociná en sartén antiadherente a fuego medio 2-3 min por lado, hasta que dore.',
+    'Mixeá la avena, el coco, los huevos, la miel y 1 cdita de polvo de hornear hasta que quede una pasta.',
+    'Sumá el saborizante que quieras: vainilla, canela, ralladura de limón o cacao amargo, y dejá reposar 5 min.',
+    'Cociná en sartén antiadherente a fuego medio-bajo: cuando aparecen burbujitas, dalo vuelta y 1-2 min más hasta que dore.',
+  ],
+  'Panqueques de avena y yogur': [
+    'Mixeá la avena (o harina de avena) con el huevo, las claras, el yogur, el polvo de hornear y la vainilla.',
+    'Dejá reposar la mezcla 5 min para que la avena se hidrate.',
+    'En sartén antiadherente a fuego medio-bajo, cociná de a 2-3 cucharadas: cuando aparecen burbujitas, dalos vuelta y 1-2 min más.',
+    'Serví con fruta fresca (frutillas, banana o arándanos) y, si querés, un hilo de miel.',
   ],
   'Bowl de yogur proteico con granola y frutas': [
     'Poné el yogur proteico en un bowl.',
@@ -68,7 +74,7 @@ export const DISH_STEPS: Record<string, string[]> = {
     'Doralo en tostadora o sartén tapada 2-3 min por lado.',
   ],
   'Panqueques de avena con dulce de leche light': [
-    'Mixeá la avena con el huevo y la leche hasta que quede líquido.',
+    'Mixeá la avena con el huevo y la leche hasta que quede líquido y dejá reposar 5 min.',
     'Cociná finitos en sartén antiadherente a fuego medio, 1 min por lado.',
     'Untalos con una cucharadita de dulce de leche light y enrollalos.',
   ],

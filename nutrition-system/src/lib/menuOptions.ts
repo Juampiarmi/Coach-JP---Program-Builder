@@ -161,7 +161,7 @@ export const SEASONING_STEP: Record<Flavor, string> = {
   savory: 'Condimentá a gusto con sal moderada, pimienta, provenzal, pimentón o limón.',
   salad: 'Aderezá con el aceite de oliva de la porción, sal, vinagre o limón.',
 };
-const SAVORY_DISH_CATS = ['minuta', 'tarta', 'parrilla'];
+const SAVORY_DISH_CATS = ['minuta', 'tarta', 'parrilla', 'principal', 'guarnicion', 'tortilla', 'ensalada'];
 const SAVORY_TEXT = /s[aá]ndwich|tostado\b|wrap|toast|palta|queso (light|cremoso)|pizza|milanesa|empanada|tarta/i;
 const SWEET_ADDS = ['miel', 'dulce-membrillo'];
 
@@ -312,7 +312,7 @@ export interface Combo {
 
 const MAIN: MealRole[] = ['lunch', 'dinner'];
 const AM: MealRole[] = ['breakfast', 'snack'];
-const COMBOS: Combo[] = [
+export const COMBOS: Combo[] = [
   // ---- Desayuno / merienda ----
   {
     title: 'Tostadas integrales con huevos revueltos y queso untable',
@@ -336,7 +336,7 @@ const COMBOS: Combo[] = [
     title: 'Panqueques de avena y claras con frutillas y miel',
     roles: AM,
     parts: [{ id: 'claras', r: 'p', step: 33, max: 264, min: 66 }, { id: 'avena', r: 'c', max: 90, min: 20 }, { id: 'frutillas', r: 'x', g: 100 }, { id: 'miel', r: 'x', g: 10 }],
-    steps: ['Mixeá {avena} de avena con {claras} hasta que quede una pasta lisa.', 'Cociná de a cucharadas en sartén antiadherente a fuego medio, 2 min por lado.', 'Lavá y cortá {frutillas} de frutillas.', 'Serví los panqueques con las frutillas y {miel} de miel.'],
+    steps: ['Mixeá {avena} de avena arrollada con {claras}, 1 cdita de polvo de hornear y unas gotas de esencia de vainilla hasta que quede una pasta lisa.', 'Dejá reposar 5 min para que la avena se hidrate.', 'En sartén antiadherente a fuego medio-bajo, cociná de a 2-3 cucharadas: cuando aparecen burbujitas, dalos vuelta y 1-2 min más.', 'Serví con {frutillas} de frutillas cortadas y {miel} de miel.'],
   },
   {
     title: 'Ricota magra con tostadas de arroz, miel y nueces',
@@ -373,7 +373,7 @@ const COMBOS: Combo[] = [
   },
   // ---- Pre-entreno (carbo rápido, poca grasa) ----
   {
-    title: 'Tostadas de arroz con miel y banana',
+    title: 'Tostadas de arroz con miel y banana + yogur griego',
     roles: ['peri', 'snack'],
     parts: [{ id: 'yogur', r: 'p', max: 200 }, { id: 'banana', r: 'c', max: 360, min: 60 }, { id: 'tostadas-arroz', r: 'x', g: 16 }, { id: 'miel', r: 'x', g: 10 }],
     steps: ['Untá {tostadas-arroz} de tostadas de arroz con {miel} de miel.', 'Cortá {banana} de banana en rodajas y ponela arriba.', 'Acompañá con {yogur} de yogur griego.'],

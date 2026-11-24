@@ -118,7 +118,7 @@ const ALLERGEN_RE: Record<string, RegExp> = {
   veg: /\b(pollo|pechugas?|carnes?|vacun[oa]|cuadril|lomo|nalga|peceto|bifes?|asado|vac[ií]o|matambre|cerdo|bondiola|carr[eé]|jam[oó]n|chorizos?|morcilla|panceta|salame|milanesas? de (carne|pollo|nalga)|hamburguesas?|alb[oó]ndigas|pescados?|merluza|at[uú]n|salm[oó]n|mariscos?|langostinos?|camar[oó]n)\b/i,
 };
 const SAFE_RE: Record<string, RegExp> = {
-  lactose: /deslactosad|sin lactosa|zero lactosa|whey isolate|aislad|vegetal/i,
+  lactose: /deslactosad|sin lactosa|zero lactosa|whey isolate|aislad|vegetal|de soja|de almendras?|de coco|de arroz/i,
   dairy: /vegetal|de soja|de almendras?|de arroz|de coco|de avena|arveja/i,
   gluten: /sin tacc|sin gluten|libre de gluten/i,
   veg: /de soja|vegetal|de lentejas|de garbanzos|de porotos|de quinoa|de calabaza|de espinaca|veggie|vegana?/i,
