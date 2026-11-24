@@ -57,6 +57,7 @@
 <script src="cases-version.js"></script>
 <script src="cases-tips-bordes.js"></script>
 <script src="cases-femenino.js"></script>
+<script src="cases-ficha.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -110,6 +111,10 @@
     alumnoPulido: { run: function(i){ return alumnoPulido(i); }, valor: function(r){ return r; } },
     alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
     bancoFemenino: { run: function(i){ return bancoFemenino(i); }, valor: function(r){ return r; } },
+    iaMotor:      { run: function(i){ return iaMotor(i); }, valor: function(r){ return r; } },
+    audioSuite:   { run: function(i){ return audioSuite(i); }, valor: function(r){ return r; } },
+    fichaPlan:    { run: function(i){ return fichaPlan(i); }, valor: function(r){ return r; } },
+    generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
     bancoMetabolicos: { run: function(){ return auditarMetabolicos(); }, valor: function(r){ return r; } },
@@ -131,6 +136,42 @@
   /* ---------- app del alumno compilada (sin tocar el estado real: el alumno de prueba y su plan viven solo durante el compile) ---------- */
   var alumnoFrame = null;
   function alumnoWin(){ return alumnoFrame && alumnoFrame.contentWindow; }
+  /* ---------- AUDIO EN SILENCIO durante toda la suite ----------
+     Los tests del timer (pantalla completa, avisos en segundo plano, cronogramas...) corren el reloj real de la app del alumno: antes sonaban DE VERDAD por los
+     parlantes (el pitido sintetizado de siempre y, con la voz activa en este navegador, también la voz), mezclados mientras corría la suite. Ahora las dos ventanas
+     (Builder y app del alumno) usan un AudioContext mudo que solo cuenta lo que se habría reproducido: ningún test vuelve a sonar ni crea un contexto de audio real. */
+  var AUDIO = { tonos: 0, voces: 0, contextos: 0, ventanas: 0 };
+  function ctxMudo(){
+    function nodo(){ var fn = function(){ return nodo(); }; return new Proxy(fn, { get: function(o, p){ return p === 'then' ? undefined : (p === 'value' ? 0 : nodo()); }, set: function(){ return true; } }); }
+    var c = { state: 'running', currentTime: 0, sampleRate: 44100, destination: nodo(), resume: function(){ return Promise.resolve(); }, suspend: function(){ return Promise.resolve(); }, close: function(){ return Promise.resolve(); },
+      addEventListener: function(){}, removeEventListener: function(){}, __mudo: true };
+    c.createOscillator = function(){ AUDIO.tonos++; return nodo(); };
+    c.createBufferSource = function(){ AUDIO.voces++; return nodo(); };
+    ['createGain', 'createBiquadFilter', 'createWaveShaper', 'createDynamicsCompressor', 'createBuffer', 'createMediaElementSource'].forEach(function(n){ c[n] = function(){ return nodo(); }; });
+    c.decodeAudioData = function(ab, ok){ var b = { getChannelData: function(){ return new Float32Array(4); }, sampleRate: 44100, duration: 0.2, length: 4, numberOfChannels: 1 }; if(ok) ok(b); return Promise.resolve(b); };
+    return c;
+  }
+  function silenciarAudio(w){
+    if(!w || w.__jpAudioMudo) return;
+    var c = ctxMudo(), Falso = function(){ AUDIO.contextos++; return c; };
+    w.__jpAudioMudo = c;
+    try{ if(typeof w.ensureAudioCtx === 'function') w.ensureAudioCtx = function(){ return c; }; }catch(e){}
+    try{ w.AudioContext = Falso; w.webkitAudioContext = Falso; }catch(e){}
+    AUDIO.ventanas++;
+  }
+  function audioSuite(c){
+    var w = alumnoWin(), r = { ventanas: AUDIO.ventanas, alumnoMudo: !!(w && w.ensureAudioCtx && w.ensureAudioCtx().__mudo), builderMudo: !!(win && win.AudioContext && new win.AudioContext().__mudo) };
+    /* un timer real de la app: lo que hubiera sonado va al contexto mudo */
+    if(w && w.CoachWodTimer){
+      var TM = w.CoachWodTimer, t0 = AUDIO.tonos + AUDIO.voces, DN = w.Date.now, T0 = 1700000000000, reloj = T0, LS = w.localStorage, vz = LS.getItem('jp_voz'), mu = LS.getItem('jp_audio_muted');
+      w.Date.now = function(){ return reloj; };
+      LS.setItem('jp_voz', '0'); LS.setItem('jp_audio_muted', '0');      /* con la voz apagada el timer usa los tonos: se ve que van al contexto mudo */
+      try{ try{ TM.cerrar(); }catch(e0){} TM.configurar({ modo: 'tabata', work: 5, rest: 3, rondas: 1 }); TM.arrancar(); for(var k = 0; k < 14; k++){ reloj += 1000; TM.paso(); } }
+      finally{ w.Date.now = DN; try{ TM.reset(); TM.cerrar(); }catch(e9){} w.jpBox.reiniciar(); if(vz == null) LS.removeItem('jp_voz'); else LS.setItem('jp_voz', vz); if(mu == null) LS.removeItem('jp_audio_muted'); else LS.setItem('jp_audio_muted', mu); }
+      r.timerVaAlMudo = (AUDIO.tonos + AUDIO.voces) > t0;
+    }
+    return r;
+  }
   function prepararAlumno(cb){
     try{
       var S = getS(), id = 'ath_test_runner', fake = { id: id, nombre: 'Prueba', apellido: 'Runner', freq: 4, nivel: 'intermedio', genero: 'M', createdAt: Date.now() }, html = '';
@@ -869,8 +910,9 @@
     try{
       ls('jp_audio_muted', '0'); ls('jp_voz_lang', null); w.JP_I18N.setLang('es');
       if(c.caso === 'apagada'){
-        ls('jp_voz', null); montar();
-        var out = { defectoOff: V.activa() === false, noHabla: V.hablar('tick', 3) === false && plays.length === 0 };
+        ls('jp_voz', null); var out = { defectoOn: V.activa() === true };      /* sin preferencia guardada: voz encendida */
+        ls('jp_voz', '0'); montar();
+        out.apagadaPorElAlumno = V.activa() === false; out.noHabla = V.hablar('tick', 3) === false && plays.length === 0;
         w.jpBox.cuenta(3); out.tonoSuena = (creados.createOscillator || 0) > 0 && plays.length === 0;
         return out;
       }
@@ -894,9 +936,22 @@
       if(c.caso === 'respaldo'){
         ls('jp_voz', '1'); ls('jp_voz_lang', 'es'); montar(); ls('jp_audio_muted', '1');
         var q = { muteGeneral: V.hablar('tick', 3) || plays.length > 0 }; ls('jp_audio_muted', '0');
-        V.__vaciar(); q.cargandoCalla = V.hablar('tick', 3) === true && plays.length === 0 && !creados.createOscillator; V.__vaciar(); V.__fallo('es'); q.paqueteFalloCaeAlTono = V.hablar('tick', 3);
-        V.__vaciar(); w.ensureAudioCtx = function(){ return null; }; V.hablar('tick', 3); q.sinContexto = V.estado('es') === 'fallo' && V.hablar('tick', 3) === false;
+        V.__vaciar(); q.cargandoCalla = V.hablar('tick', 3) === true && plays.length === 0 && !creados.createOscillator; V.__vaciar(); V.__fallo('es'); creados = {};
+        /* paquete caído: silencio (el pitido viejo ya no se mezcla con la voz); se sigue reintentando la carga */
+        q.paqueteFalloCalla = V.hablar('tick', 3) === true && plays.length === 0 && !creados.createOscillator;
+        w.jpBox.cuenta(3); w.jpBox.go(); w.jpBox.chicharra(); q.timerSinPitidoConVozActiva = !creados.createOscillator;
+        V.__vaciar(); w.ensureAudioCtx = function(){ return null; }; V.hablar('tick', 3); q.sinContexto = V.estado('es') === 'fallo' && V.hablar('tick', 3) === true;
         return q;
+      }
+      if(c.caso === 'callar'){
+        /* lo que sonaba o quedó agendado en el timer anterior no suena encima del nuevo */
+        ls('jp_voz', '1'); ls('jp_voz_lang', 'es'); montar(); var k = {}, TMc = w.CoachWodTimer;
+        V.decir('go'); k.hablaba = V.hablando(); V.decir('halfway'); k.mitadEnEspera = V.pendiente();
+        TMc.reset(); k.resetCalla = !V.hablando() && !V.pendiente();
+        V.decir('rest'); TMc.cerrar(); k.cerrarCalla = !V.hablando();
+        V.decir('go'); V.decir('halfway'); V.decir('n3'); k.fraseNuevaDescartaMitad = !V.pendiente();
+        V.pista('rest'); V.callar(); plays.length = 0; V.hablar('fin', 0); k.pistaVieja = plays.length === 0;
+        return k;
       }
       if(c.caso === 'idioma'){
         ls('jp_voz', '1'); var i = {};
@@ -1514,7 +1569,7 @@
       rr.fuerzaRecta = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || '') && x.m; }).every(function(x){ return x.m.ex.length === 1; });
       rr.hayFuerza = todos.filter(function(x){ return /^Fuerza principal/.test(x.b.titulo || ''); }).length > 40;
       rr.masBisets = biset.length / (biset.length + recto.length) >= 0.35;
-      rr.mismasSeries = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets === x.m.ex[0].sets; }); });
+      rr.seriesPorEstacion = biset.every(function(x){ return x.m.ex.every(function(e){ return e.sets >= 1; }); }) && biset.some(function(x){ return x.m.ex.some(function(e){ return e.sets !== x.m.ex[0].sets; }); });
       rr.noDosGuiados = biset.every(function(x){ var t = x.m.ex.map(function(e){ return EST.infoEj(e.nombre).t; }); return t.filter(function(k){ return k === 'M' || k === 'P'; }).length < 2; });
       rr.mismaEstacion = biset.every(function(x){ if(typeof win.jpEstacion !== 'function') return true; var libs = x.m.ex.map(function(e){ return PB.exLib(e.nombre); }); return libs.every(function(l, i){ return !l || libs.every(function(o, j){ return j >= i || !o || win.jpEstacionCompat(win.jpEstacion(o), win.jpEstacion(l)); }); }); });
       rr.cadaDiaConBiset = jp.every(function(r){ return r.dias.every(function(d){ return (d.bloques || []).some(function(b){ return /Biset|Triset/.test(b.titulo || ''); }); }); });
@@ -1524,8 +1579,16 @@
         R('H', 'Peso muerto rumano', '3x6-8|2|150', '4x6-8|1|180'), R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45'), R('A', 'Patada de tríceps con mancuerna', '3x12-15|1|60', '4x12-15|0|45'),
         R('A', 'Jalón al pecho con agarre ancho', '3x10-12|1|75', '4x10-12|0|60'), R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60'), R('C', ['Plancha frontal'], '3x30s|1|45', '3x40s|0|45')];
       var sal = PB.agruparHipertrofia(fil, false, 'm');
-      rr.funcionPura = sal[0].rol === 'F' && sal.filter(function(f){ return f.rol === 'H' && [].concat(f.ej)[0] === 'Peso muerto rumano'; }).length === 1 && sal.filter(function(f){ return f.agrupada; }).length >= 2
-        && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length === 2 && d.sets >= 3 && d.reps.length === 2; })
+      /* volumen intacto: la suma de series por ejercicio antes y después de agrupar es la misma (cada estación conserva las suyas) */
+      var serie = function(lista){ var o = {}; lista.forEach(function(f){ var d = PB.partesDosis(f.i); [].concat(f.ej).forEach(function(n, k){ var gq = ''; try{ gq = EST.infoEj(n).g; }catch(e){} o[gq] = (o[gq] || 0) + (d.setsL && d.setsL[k] != null ? d.setsL[k] : d.sets); }); }); return JSON.stringify(Object.keys(o).sort().map(function(k){ return k + ':' + o[k]; })); };
+      rr.volumenIntacto = serie(fil) === serie(sal);
+      rr.unSoloRecto = sal.filter(function(f){ return f.rol !== 'C' && [].concat(f.ej).length === 1; }).length === 1;
+      /* la función pura: el primer básico (F) queda recto; el segundo básico pesado (rumano) encabeza un biset con un accesorio liviano (nunca con otro pesado);
+         cada grupo tiene sus estaciones con sus propias series; dos poleas nunca van juntas */
+      var conRumano = sal.filter(function(f){ return [].concat(f.ej).indexOf('Peso muerto rumano') >= 0; })[0];
+      rr.funcionPura = sal[0].rol === 'F' && [].concat(sal[0].ej).length === 1 && !!conRumano && conRumano.agrupada && [].concat(conRumano.ej)[0] === 'Peso muerto rumano'
+        && sal.filter(function(f){ return f.agrupada; }).length >= 3
+        && sal.filter(function(f){ return f.agrupada; }).every(function(f){ var d = PB.partesDosis(f.i); return f.ej.length >= 2 && d.sets >= 3 && d.reps.length === f.ej.length && d.setsL.length >= 1; })
         && !sal.some(function(f){ return f.agrupada && [].concat(f.ej).indexOf('Jalón al pecho con agarre ancho') >= 0 && [].concat(f.ej).indexOf('Cruce de cables en polea alta') >= 0; });
       return rr;
     }
@@ -1550,6 +1613,23 @@
       var sal = PB.agruparHipertrofia(fil, false, 'm'), pares = sal.filter(function(f2){ return f2.agrupada; });
       res.armadoSinDosPoleas = pares.every(function(f2){ var ks = [].concat(f2.ej).map(E); return !(ks.length > 1 && win.jpEsPolea(ks[0]) && win.jpEsPolea(ks[1])); });
       return res;
+    }
+    if(c.caso === 'unRecto'){
+      /* todas las plantillas del sistema: cuántas sesiones dejan un solo ejercicio de trabajo en serie recta (cardio, core y olímpicos aparte) */
+      var sisU = banco.filter(function(r){ return (r.dias || []).length && (r.std || r.sbSys || r.fbSys || r.elbSys || r.depSys || r.proVer != null || r.depDeporte || /^(bkstd_|bkdep_|bk_)/.test(r.id || '')); });
+      var excl = function(e){ return !e.g || (e.lib && e.lib.equipo === 'Cardio') || /clean|snatch|jerk|arranque|envi[oó]n|cargada/i.test(e.nombre + ' ' + ((e.lib && e.lib.en) || '')); };
+      var tot = 0, ok = 0, jp = 0, jpOk = 0, dosPesados = 0, fuera = {};
+      sisU.forEach(function(r){ r.dias.forEach(function(d){
+        var rect = 0;
+        (d.bloques || []).forEach(function(b){
+          if(b.category === 'warmup' || /^(calentamiento|core|metcon)$/.test(b.modalidad || '')) return;
+          var m = EST.parsearBloque(b); if(!m || m.rol === 'C' || m.ex.some(function(e){ return e.g === 'Core'; }) || m.ex.some(excl)) return;
+          if(m.ex.length === 1) rect++;
+        });
+        tot++; if(rect <= 1) ok++; else fuera[(r.id || '').replace(/\d+/g, '#')] = 1;
+        if(/^bkstd_jp26_/.test(r.id)){ jp++; if(rect <= 1) jpOk++; }
+      }); });
+      return { cobertura: ok / tot >= 0.88, coberturaJP: jpOk / jp >= 0.95, sesiones: tot > 200, detalle: Math.round(ok / tot * 100) + '% (' + ok + '/' + tot + ') · fuera: ' + Object.keys(fuera).join(', ') };
     }
     if(c.caso === 'colision'){
       /* regla anti-colisión sobre TODAS las plantillas del sistema: ningún biset/triset junta dos poleas ni dos estaciones distantes */
@@ -1710,6 +1790,19 @@
         r.pastillasDelHeader = pills.join(',') === 'EXTENDIDA · 90 MIN,ESTÁNDAR · 60 MIN*';
         d.getElementById('jpVer').querySelector('.jp-ver-b[data-ver="complete"]').click(); r.vuelveAExtendida = st.mode === 'complete' && !d.body.classList.contains('quick-mode');
         return r;
+      }
+      if(c.caso === 'estimada'){
+        st.mode = 'complete'; w.renderMain();
+        var vE = d.getElementById('jpVer'); if(!vE) return { sinSelector: true };
+        var est = vE.querySelector('.jp-ver-est'), h = vE.querySelector('.jp-ver-h'), o2 = {};
+        o2.aclaraEstimada = !!est && /estimad/i.test(est.textContent) && /energía/.test(est.textContent) && /recuperación/.test(est.textContent) && /nivel/.test(est.textContent) && /ritmo/.test(est.textContent);
+        o2.debajoDeLaExplicacion = !!(est && h) && (h.compareDocumentPosition(est) & 4) === 4;
+        o2.discreta = !!(est && h) && parseFloat(cs(est).fontSize) <= parseFloat(cs(h).fontSize) && est.getBoundingClientRect().height < 60;
+        var lang0 = w.JP_I18N.lang();
+        try{ w.JP_I18N.setLang('en'); w.renderMain(); var e2 = d.querySelector('#jpVer .jp-ver-est'); o2.enIngles = !!e2 && /estimates/i.test(e2.textContent); }
+        finally{ w.JP_I18N.setLang(lang0); try{ w.localStorage.removeItem('coachjp_lang'); }catch(eL){} w.renderMain(); }
+        var srcDur = String(win.jpPintarDuracion || ''); o2.builderAclara = /≈ /.test(srcDur) && /varía según el estado del alumno/.test(srcDur);
+        return o2;
       }
       if(c.caso === 'filtra'){
         var dia = { blocks: [{ id: 'a', title: 'Fuerza' }, { id: 'b', title: 'Core – Plancha', optional: true }], finisher: { id: 'f', title: 'Finisher', optional: true } }, o = {};
@@ -2033,6 +2126,300 @@
   }
 
   /* ---------- generadores de IA (CrossFit): prevalidación y objetivo de la semana ---------- */
+  /* ---------- motor de IA: se corre una vez antes de la suite (es asíncrono) y los casos leen el resultado ---------- */
+  var IA_RES = null;
+  function prepararIA(listo){
+    var AIx = win.CoachAI, out = {};
+    if(!AIx || !AIx.cfg){ IA_RES = { error: 'sin CoachAI' }; listo(); return; }
+    var AI = AIx.cfg(), guard = JSON.stringify({ keys: AI.keys, provider: AI.provider, fallback: AI.fallback, econ: AI.econ, models: AI.models, cooldown: AI.cooldown });
+    var fetch0 = win.fetch, toast0 = win.toast, cuerpos = [];
+    win.toast = function(){};
+    var colgado = function(url, o){ return new Promise(function(res, rej){ if(o && o.signal) o.signal.addEventListener('abort', function(){ var e = new Error('aborted'); e.name = 'AbortError'; rej(e); }); }); };
+    var responde = function(url, o){ cuerpos.push(JSON.parse(o.body)); return Promise.resolve(new win.Response(JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn' }), { status: 200 })); };
+    function restaurar(){ var g = JSON.parse(guard); Object.keys(g).forEach(function(k){ AI[k] = g[k]; }); win.fetch = fetch0; win.toast = toast0; }
+    (async function(){
+      try{
+        AI.keys = Object.assign({}, AI.keys, { anthropic: 'sk-test-0123456789abcdef', google: '', openai: '' }); AI.provider = 'anthropic'; AI.fallback = false; AI.econ = true; AI.cooldown = {};
+        AI.models = Object.assign({}, AI.models, { anthropic: 'claude-sonnet-5-5' });
+        /* 1) cancelación real: la petición colgada se corta en el acto */
+        win.fetch = colgado;
+        var ctrl = new win.AbortController(), t0 = Date.now(), e1 = null;
+        var p = AIx.generarTexto('hola', 'sistema', { maxTokens: 100, signal: ctrl.signal });
+        setTimeout(function(){ ctrl.abort(); }, 40);
+        try{ await p; }catch(e){ e1 = e; }
+        out.cancelado = !!(e1 && e1.cancelado); out.cancelaRapido = (Date.now() - t0) < 1500;
+        /* 2) tiempo máximo: una petición colgada no deja la app esperando */
+        var e2 = null, t1 = Date.now();
+        try{ await AIx.generarTexto('hola', 'sistema', { maxTokens: 100, timeoutMs: 120 }); }catch(e){ e2 = e; }
+        out.timeout = !!(e2 && e2.timeout); out.timeoutMsg = !!(e2 && /tardó más de/.test(e2.message)); out.timeoutRapido = (Date.now() - t1) < 2000;
+        /* 3) modelo rápido para pedidos cortos (modo económico) y el configurado para el resto */
+        win.fetch = responde;
+        await AIx.generarTexto('hola', 'sistema', { maxTokens: 200, rapido: true });
+        await AIx.generarTexto('hola', 'sistema', { maxTokens: 200 });
+        out.rapidoHaiku = cuerpos[0] && cuerpos[0].model === 'claude-haiku-5-5';
+        out.normalSonnet = cuerpos[1] && cuerpos[1].model === 'claude-sonnet-5-5';
+        AI.econ = false; await AIx.generarTexto('hola', 'sistema', { maxTokens: 200, rapido: true });
+        out.sinEconNoCambia = cuerpos[2] && cuerpos[2].model === 'claude-sonnet-5-5';
+        /* 4) caché de prompts: el system largo se marca, el corto va como texto */
+        await AIx.generarTexto('hola', new Array(600).join('reglas largas '), { maxTokens: 200 });
+        var s4 = cuerpos[3] && cuerpos[3].system;
+        out.cacheLargo = Array.isArray(s4) && s4[0] && s4[0].cache_control && s4[0].cache_control.type === 'ephemeral';
+        out.cortoTexto = typeof cuerpos[1].system === 'string';
+        /* 5) el botón: segundo toque = detener; vuelve al instante a su estado y avisa */
+        var hay0 = AIx.hayClave, esp0 = AIx.esperaCooldown, avisos = [];
+        AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 0; };
+        win.toast = function(m){ avisos.push(String(m)); };
+        var btn = { dataset: {}, isConnected: true, innerHTML: 'ORIGINAL', disabled: false }, recibioSenal = false;
+        var corre = win.jpIAEjecutar(btn, 'test', 'probar', function(senal){ recibioSenal = !!senal; btn.innerHTML = 'GENERANDO'; return new Promise(function(res, rej){ senal.addEventListener('abort', function(){ var e = new Error('c'); e.cancelado = true; rej(e); }); }); });
+        var ocupadoAntes = btn.dataset.iaBusy === '1';
+        win.jpIAEjecutar(btn, 'test', 'probar', function(){ return Promise.resolve(); });      /* segundo toque */
+        out.botonSenal = recibioSenal; out.botonOcupado = ocupadoAntes;
+        out.botonLibreAlInstante = btn.dataset.iaBusy === undefined && btn.innerHTML === 'ORIGINAL';
+        await corre;
+        out.botonAviso = avisos.some(function(a){ return /detenida/.test(a); });
+        out.botonSinError = !avisos.some(function(a){ return /No se pudo generar/.test(a); });
+        AIx.hayClave = hay0; AIx.esperaCooldown = esp0; win.toast = function(){};
+        /* 6) STREAMING: el texto llega por SSE en fragmentos (uno partido a la mitad) y se arma igual que la respuesta clásica; el avance se informa en vivo */
+        var enc = new win.TextEncoder();
+        var respSSE = function(lineas, o, abierto){
+          var rs = new win.ReadableStream({ start: function(cc){
+            lineas.forEach(function(l, i){ var s = l + '\n\n'; if(i === 0){ cc.enqueue(enc.encode(s.slice(0, 9))); cc.enqueue(enc.encode(s.slice(9))); } else cc.enqueue(enc.encode(s)); });
+            if(!abierto) cc.close();
+            if(o && o.signal) o.signal.addEventListener('abort', function(){ try{ cc.error(new win.DOMException('aborted', 'AbortError')); }catch(eA){} });
+          } });
+          return new win.Response(rs, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
+        };
+        var dA = function(tx){ return 'data: ' + JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: tx } }); };
+        var finA = 'data: ' + JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' } });
+        var urls = [], bodies = [], avances = [];
+        win.fetch = function(u, o){ urls.push(u); bodies.push(JSON.parse(o.body)); return Promise.resolve(respSSE(['event: message_start', dA('{"objetivo":"Tensión'), dA(' mecánica","tips":"SET-UP: ok"}'), finA, 'data: {"type":"message_stop"}'], o)); };
+        var txA = await AIx.generarTexto('hola', 'sistema', { maxTokens: 300, onProgreso: function(n){ avances.push(n); } });
+        out.streamArma = txA === '{"objetivo":"Tensión mecánica","tips":"SET-UP: ok"}';
+        out.streamPide = bodies[0] && bodies[0].stream === true;
+        out.streamAvance = avances.length >= 2 && avances[avances.length - 1] === txA.length;
+        /* Gemini: endpoint de streaming (SSE) y texto en varios candidatos */
+        AI.keys = Object.assign({}, AI.keys, { anthropic: '', google: 'AIza-test-0123456789abcdef', openai: '' }); AI.provider = 'google'; urls.length = 0;
+        win.fetch = function(u, o){ urls.push(u); return Promise.resolve(respSSE(['data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"a":' }] } }] }), 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: '1}' }] }, finishReason: 'STOP' }] })], o)); };
+        var txG = await AIx.generarTexto('hola', 'sistema', { maxTokens: 300 });
+        out.streamGoogle = txG === '{"a":1}' && /:streamGenerateContent\?alt=sse$/.test(urls[0] || '');
+        /* OpenAI */
+        AI.keys = Object.assign({}, AI.keys, { google: '', openai: 'sk-test-0123456789abcdef' }); AI.provider = 'openai'; bodies.length = 0;
+        win.fetch = function(u, o){ bodies.push(JSON.parse(o.body)); return Promise.resolve(respSSE(['data: ' + JSON.stringify({ choices: [{ delta: { content: '{"b":' }, finish_reason: null }] }), 'data: ' + JSON.stringify({ choices: [{ delta: { content: '2}' }, finish_reason: 'stop' }] }), 'data: [DONE]'], o)); };
+        var txO = await AIx.generarTexto('hola', 'sistema', { maxTokens: 300 });
+        out.streamOpenAI = txO === '{"b":2}' && bodies[0] && bodies[0].stream === true;
+        AI.keys = Object.assign({}, AI.keys, { anthropic: 'sk-test-0123456789abcdef', openai: '' }); AI.provider = 'anthropic';
+        /* 7) CONEXIÓN TRABADA (lo que pasaba tras horas sin uso): el primer pedido no recibe nada; a los N ms se corta y se reintenta UNA vez en el acto */
+        var pedidos = 0, t7 = Date.now(), reintentos = 0;
+        win.fetch = function(u, o){ pedidos++; return pedidos === 1 ? colgado(u, o) : Promise.resolve(respSSE([dA('{"ok":'), dA('true}'), finA], o)); };
+        var tx7 = await AIx.generarTexto('hola', 'sistema', { maxTokens: 300, primerByteMs: 120, onReintento: function(){ reintentos++; } });
+        out.trabadaReintenta = tx7 === '{"ok":true}' && pedidos === 2 && reintentos === 1;
+        out.trabadaRapido = (Date.now() - t7) < 2000;
+        /* 8) SILENCIO a mitad de la respuesta: llega un fragmento y nada más; se corta con un aviso claro (no queda girando) */
+        var e8 = null, t8 = Date.now();
+        win.fetch = function(u, o){ return Promise.resolve(respSSE([dA('{"objetivo":"a medias')], o, true)); };
+        try{ await AIx.generarTexto('hola', 'sistema', { maxTokens: 300, silencioMs: 150 }); }catch(e){ e8 = e; }
+        out.silencioCorta = !!(e8 && e8.timeout && e8.motivo === 'silencio' && /dejó de enviar texto/.test(e8.message)); out.silencioRapido = (Date.now() - t8) < 2000;
+        /* 9) RESPUESTA CORTADA (se cae la conexión sin el cierre): un reintento; si vuelve a pasar, error claro y nada a medias */
+        var p9 = 0, e9 = null;
+        win.fetch = function(u, o){ p9++; return Promise.resolve(respSSE([dA('{"objetivo":"incomp')], o)); };
+        try{ await AIx.generarTexto('hola', 'sistema', { maxTokens: 300 }); }catch(e){ e9 = e; }
+        out.cortadaReintentaUnaVez = p9 === 2 && !!e9 && /se cortó dos veces/.test(e9.message);
+        var p9b = 0;
+        win.fetch = function(u, o){ p9b++; return Promise.resolve(p9b === 1 ? respSSE([dA('{"x":')], o) : respSSE([dA('{"x":1}'), finA], o)); };
+        out.cortadaRecupera = (await AIx.generarTexto('hola', 'sistema', { maxTokens: 300 })) === '{"x":1}' && p9b === 2;
+        /* 10) sin streaming (opción) la llamada clásica sigue igual */
+        bodies.length = 0; win.fetch = function(u, o){ bodies.push(JSON.parse(o.body)); return responde(u, o); };
+        out.sinStreamClasico = (await AIx.generarTexto('hola', 'sistema', { maxTokens: 200, sinStream: true })) === '{"ok":true}' && bodies[0] && bodies[0].stream === undefined;
+        /* 11) botones con su propio flujo (tips de CrossFit, objetivo de la semana): segundo toque = detener, el botón queda libre y conserva su título */
+        var b11 = { dataset: {}, isConnected: true, innerHTML: 'IA', title: 'Generar', disabled: false };
+        var c11 = win.jpIATomar(b11); b11.innerHTML = 'GENERANDO'; b11.title = 'Detener';
+        var segundo = win.jpIATomar(b11);
+        out.tomarDetiene = !!c11 && segundo === null && c11.signal.aborted === true && b11.dataset.iaBusy === undefined && b11.innerHTML === 'IA' && b11.title === 'Generar';
+        var c11b = win.jpIATomar(b11); win.jpIASoltar(b11, c11, 'IA'); out.viejaNoLiberaNueva = b11.dataset.iaBusy === '1'; win.jpIASoltar(b11, c11b, 'IA'); out.nuevaLibera = b11.dataset.iaBusy === undefined;
+        out.generadoresConDetener = /jpIATomar/.test(String(win.generarTipsPacingIA)) && /jpIATomar/.test(String(win.generarObjetivoSemanaCF)) && /signal: senal/.test(String(win.generarTipsPacingIACore));
+        out.notasAcotadas = /maxTokens: 1400/.test(String(win.jpEstructurarNota)) && /notaCtrl/.test(String(win.jpEstructurarNota));
+        /* 12) ficha rápida → «Regenerar este día con IA»: solo los bloques sin texto propio, uno por uno, sin toasts por bloque */
+        var FR = win.CoachFichaRapida, gen0 = AIx.generarTexto, hay1 = AIx.hayClave, esp1 = AIx.esperaCooldown, pedidosIA = 0, avisos12 = [];
+        AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 0; }; win.toast = function(m){ avisos12.push(String(m)); };
+        AIx.generarTexto = function(){ pedidosIA++; return Promise.resolve(JSON.stringify({ objetivo: 'OBJETIVO IA CON LA FICHA nueva del alumno.', tips: 'SET-UP: Posición estable con los pies firmes y la columna neutra antes de empezar la serie.\nCUE EFICIENTE: Bajá en tres segundos y subí empujando el piso con todo el pie apoyado.\nCUIDADO / ERROR COMÚN: Si la cadera se adelanta o la rodilla colapsa, cortá la serie y bajá la carga.' })); };
+        await (async function(){
+          var Sx = getS(), PB = win.__jpPB, id12 = 'ath_test_fr_ia', guardar = win.save, render = win.renderBuilder, act0 = Sx.activeId, dia0 = Sx.ui.day, a12 = { id: id12, nombre: 'Prueba', apellido: 'IA', freq: 3, nivel: 'Intermedio', genero: 'F', tags: [], prohibidos: [], preferidos: [], ficha: { objetivo: ['Hipertrofia'] } };
+          win.save = function(){}; win.renderBuilder = function(){}; Sx.athletes.push(a12);
+          try{
+            var p12 = win.newPlan(a12); p12.dias = PB.construirDias(PB.LISTA.filter(function(x){ return x.id === 'jp26_f3_i'; })[0]); Sx.plans[id12] = p12; Sx.activeId = id12; Sx.ui.day = 0;
+            var d12 = p12.dias[0], trab = d12.bloques.filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && b.modalidad !== 'calentamiento'; });
+            trab[0].jpMano = { o: true }; var objManual = trab[0].objective;
+            await FR.regenerarIA(false);
+            out.fichaIAsoloAutomaticos = pedidosIA >= trab.length - 1 && trab[0].objective === objManual && trab.slice(1).every(function(b){ return b.objective === 'OBJETIVO IA CON LA FICHA nueva del alumno.'; });
+            out.fichaIAunAviso = avisos12.filter(function(m){ return /bloques del día con objetivo y tips según la ficha/.test(m); }).length === 1 && !avisos12.some(function(m){ return /Tips y objetivo generados con IA/.test(m); });
+            /* detener a mitad de camino */
+            pedidosIA = 0; avisos12.length = 0;
+            AIx.generarTexto = function(u, s, o){ pedidosIA++; if(pedidosIA === 1) setTimeout(function(){ FR.detenerIA(); }, 0); return new Promise(function(res, rej){ var t1 = setTimeout(function(){ res('{"objetivo":"OTRA","tips":"SET-UP: x"}'); }, 40); if(o && o.signal) o.signal.addEventListener('abort', function(){ clearTimeout(t1); var e = new Error('c'); e.cancelado = true; rej(e); }); }); };
+            await FR.regenerarIA(true);
+            out.fichaIAdetiene = pedidosIA === 1 && avisos12.some(function(m){ return /Regeneración detenida: 0 de/.test(m); }) && trab.slice(1).every(function(b){ return b.objective !== 'OTRA'; });
+          } finally { delete Sx.plans[id12]; var ix = Sx.athletes.indexOf(a12); if(ix >= 0) Sx.athletes.splice(ix, 1); Sx.activeId = act0; Sx.ui.day = dia0; win.save = guardar; win.renderBuilder = render; }
+        })();
+        AIx.generarTexto = gen0; AIx.hayClave = hay1; AIx.esperaCooldown = esp1;
+      }catch(e){ out.error = String(e && e.message || e); }
+      finally{ restaurar(); IA_RES = out; listo(); }
+    })();
+  }
+  function iaMotor(c){ if(!IA_RES) throw new Error('la pasada de IA no corrió'); return IA_RES; }
+  /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
+  function conAlumnoPrueba(datos, tplId, fn){
+    var S = getS(), PB = win.__jpPB, id = 'ath_test_ficha', guardar = win.save, render = win.renderBuilder, act0 = S.activeId, dia0 = S.ui.day;
+    var ath = Object.assign({ id: id, nombre: 'Prueba', apellido: 'Ficha', freq: 3, nivel: 'Intermedio', genero: 'F', tags: [], prohibidos: [], preferidos: [], ficha: { objetivo: ['Hipertrofia'] }, createdAt: Date.now() }, datos || {});
+    win.save = function(){}; win.renderBuilder = function(){};
+    S.athletes.push(ath);
+    try{
+      var p = win.newPlan(ath), tpl = PB.LISTA.filter(function(x){ return x.id === tplId; })[0];
+      if(!tpl) throw new Error('no está la plantilla ' + tplId);
+      p.dias = PB.construirDias(tpl); S.plans[id] = p; S.activeId = id; S.ui.day = 0;
+      return fn(ath, p);
+    } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); S.activeId = act0; S.ui.day = dia0; win.save = guardar; win.renderBuilder = render; }
+  }
+  function fichaPlan(c){
+    var BM = win.CoachMantenimiento, LD = win.CoachLecturaDia, FR = win.CoachFichaRapida;
+    if(!BM || !LD || !FR) throw new Error('el Builder no expone CoachMantenimiento / CoachLecturaDia / CoachFichaRapida');
+    if(c.caso === 'banco'){
+      var R = BM.rutinas, sec = R.map(function(r){ return r.id; }), titulos = R.map(function(r){ return r.titulo; }).join(' | ');
+      return { cantidad: R.length >= 10, sectoresPedidos: ['cadera', 'hombros', 'escapulas', 'tobillos', 'posterior', 'lower', 'upper'].every(function(k){ return sec.indexOf(k) >= 0; }),
+        extras: ['toracica', 'frontrack', 'press', 'descarga'].every(function(k){ return sec.indexOf(k) >= 0; }),
+        entre5y10: R.every(function(r){ var m = BM.minutos(r); return m >= 5 && m <= 10; }), conDosis: R.every(function(r){ return r.items.length >= 4 && BM.lineas(r, 1).slice(1).every(function(l){ return / — \S/.test(l); }); }),
+        conObjetivo: R.every(function(r){ return String(r.objetivo).split(/\s+/).length >= 12; }), nombres: /Movilidad de cadera/.test(titulos) && /Dorsiflexión de tobillos/.test(titulos) && /Amplitud escapular/.test(titulos) };
+    }
+    if(c.caso === 'insertar'){
+      var bl = [{ id: 'x1', titulo: 'Fuerza principal – Sentadilla', items: ['Sentadilla', '4x6 | RIR 2'] }], d = { bloques: bl, cooldown: ['Respiración nasal — 2 min'] }, bloquesAntes = JSON.stringify(bl), o = {};
+      BM.insertar(d, 'cadera', 'sumar');
+      o.noTocaBloques = d.bloques === bl && JSON.stringify(d.bloques) === bloquesAntes;
+      o.encabezado = d.cooldown[0] === '1. Vuelta a la calma' && d.cooldown[1] === 'Respiración nasal — 2 min' && /^2\. Body Maintenance · Movilidad de cadera · \d+ min \(opcional\)$/.test(d.cooldown[2]);
+      o.nota = /^Movilidad de cadera: /.test(d.cooldownNota) && d.mantenimiento.join() === 'cadera';
+      var largo = d.cooldown.length; BM.insertar(d, 'cadera', 'sumar'); o.sinDuplicar = d.cooldown.length === largo;
+      BM.insertar(d, 'tobillos', 'sumar'); o.dosRutinas = d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); }).length === 2 && d.mantenimiento.join() === 'cadera,tobillos';
+      BM.quitar(d, 'cadera'); o.quitaUna = d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); }).length === 1 && /^2\. Body Maintenance · Dorsiflexión/.test(d.cooldown.filter(function(l){ return /Body Maintenance/.test(l); })[0]) && !/Movilidad de cadera:/.test(d.cooldownNota);
+      BM.quitar(d, 'tobillos'); o.vuelveAlOriginal = d.cooldown.join('|') === 'Respiración nasal — 2 min' && !d.cooldownNota;
+      BM.insertar(d, 'upper', 'reemplazar'); o.reemplaza = /^1\. Body Maintenance · Upper body completo/.test(d.cooldown[0]) && d.cooldown.indexOf('Respiración nasal — 2 min') < 0;
+      return o;
+    }
+    if(c.caso === 'sugerir'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        var s0 = BM.sugerir(p, 0), s1 = BM.sugerir(p, 1), p2 = { dias: [{ bloques: [{ tipo: 'list', sportsPizarra: true, titulo: 'Fuerza principal – Front squat', items: ['Front squat', '5x3 | RIR 2'] }] }] };
+        return { piernaCadera: s0.length === 3 && s0.some(function(id){ return /cadera|lower|tobillos|posterior/.test(id); }) && !s0.some(function(id){ return /hombros|escapulas|upper|press/.test(id); }),
+          torsoHombros: s1.some(function(id){ return /hombros|upper|escapulas|toracica|press/.test(id); }) && !s1.some(function(id){ return /tobillos|cadera/.test(id); }),
+          olimpicoFrontRack: BM.sugerir(p2, 0)[0] === 'frontrack', detalle: s0.join(',') + ' / ' + s1.join(',') };
+      });
+    }
+    if(c.caso === 'lecturaMujer'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        var o = {}, r = LD.analizar(ath, p, 0), d = p.dias[0], prin = LD.principal(d), principalAntes = JSON.stringify(prin.items);
+        o.prioridadAlta = r.prioridad.nivel === 'alta'; o.esInferior = r.esInferior === true;
+        var est = r.sugerencias.filter(function(s){ return s.accion && s.accion.tipo === 'estacion'; })[0];
+        o.sugiereEstacion = !!est && /glúteo medio|glúteo mayor|Abducción|Hip thrust|Puente|Patada/i.test(est.txt);
+        o.nuncaElPrincipal = r.sugerencias.every(function(s){ return !s.accion || s.accion.bid !== prin.id; });
+        if(est){
+          var b = d.bloques.filter(function(x){ return x.id === est.accion.bid; })[0], antes = LD.estaciones(b).length;
+          o.aplica = LD.aplicar(est.accion, ath) === true;
+          var es = LD.estaciones(b), ks = es.map(function(e){ return win.jpEstacion(e.ex); });
+          o.sumaUnaEstacion = es.length === antes + 1 && es.length <= 3 && /^A\d/.test(es[es.length - 1].codigo);
+          o.sinCrucesDeEstacion = ks.every(function(k1, i){ return ks.every(function(k2, j){ return i === j || win.jpEstacionCompat(k1, k2); }); });
+          o.sinDosPoleas = ks.filter(function(k){ return win.jpEsPolea(k); }).length <= 1;
+          o.tituloSigue = new RegExp('^(Hipertrofia|Accesorios)? ?–? ?(Biset|Triset) ').test(b.titulo.replace(/^(?:Hipertrofia|Accesorios)\s*–\s*/, '')) || /(Biset|Triset) /.test(b.titulo);
+          o.pautasDeLaEstacion = new RegExp(es[es.length - 1].codigo + ' · SET-UP: ').test(b.tips) && !/pila de pesas/.test(b.tips.split('\n').filter(function(l){ return l.indexOf(es[es.length - 1].codigo + ' ·') === 0; }).join(' '));
+          var r2 = LD.analizar(ath, p, 0); o.semanaDentroDelMaximo = r2.gluteoSemana <= r2.meta[1];
+        }
+        o.principalIntacto = JSON.stringify(prin.items) === principalAntes;
+        return o;
+      });
+    }
+    if(c.caso === 'lecturaVaron'){
+      return conAlumnoPrueba({ genero: 'M', ficha: { objetivo: ['Fuerza'] }, nombre: 'Juan' }, 'jp26_m3_i', function(ath, p){
+        var r0 = LD.analizar(ath, p, 0), todos = [0, 1, 2].map(function(i){ return LD.analizar(ath, p, i); });
+        return { prioridadBase: r0.prioridad.nivel === 'base', sinAgregarGluteo: todos.every(function(r){ return !r.sugerencias.some(function(s){ return s.accion && s.accion.tipo === 'estacion'; }); }), conLectura: todos.every(function(r){ return r.sugerencias.length > 0; }) };
+      });
+    }
+    if(c.caso === 'lecturaExceso'){
+      return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
+        /* se infla el glúteo de toda la semana: la lectura pide bajar una serie (nunca en el básico) y la acción la baja */
+        p.dias.forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b.tipo === 'list') LD.estaciones(b).forEach(function(e){ if(e.ex && e.ex.grupo === 'Piernas/Glúteos' && e.iDosis >= 0) b.items[e.iDosis] = String(b.items[e.iDosis]).replace(/^\d+/, '6'); }); }); });
+        var r = LD.analizar(ath, p, 0), s = r.sugerencias.filter(function(x){ return x.accion && x.accion.tipo === 'serie' && x.accion.delta === -1; })[0], o = { pasaElMaximo: r.gluteoSemana > r.meta[1], pideBajar: !!s, sinSumarMas: !r.sugerencias.some(function(x){ return x.accion && (x.accion.tipo === 'estacion' || x.accion.delta === 1); }) };
+        if(s){ var b = p.dias[0].bloques.filter(function(x){ return x.id === s.accion.bid; })[0]; o.noEsElBasico = b !== LD.principal(p.dias[0]); LD.aplicar(s.accion, ath); o.bajaUna = /^5x/.test(b.items[s.accion.iDosis]); }
+        return o;
+      });
+    }
+    if(c.caso === 'fichaCambio'){
+      var a = { id: 'x', genero: 'F', nivel: 'Intermedio', tags: ['Valgo rodilla izquierda'], ficha: { objetivo: ['Hipertrofia'] } }, o2 = {};
+      FR.aplicarCambio(a, 'genero', 'M'); o2.genero = a.genero === 'M';
+      FR.aplicarCambio(a, 'objetivo', 'Recomposición corporal'); o2.objetivoMulti = a.ficha.objetivo.join() === 'Hipertrofia,Recomposición corporal';
+      FR.aplicarCambio(a, 'objetivo', 'Hipertrofia'); o2.objetivoQuita = a.ficha.objetivo.join() === 'Recomposición corporal';
+      FR.aplicarCambio(a, 'restriccion', 'Lumbar'); o2.restriccionEtiqueta = a.tags.indexOf('Molestia en lumbar') >= 0 && a.ficha.restricciones.join() === 'Rodilla,Lumbar';
+      FR.aplicarCambio(a, 'restriccion', 'Lumbar'); o2.restriccionSeQuita = a.tags.join() === 'Valgo rodilla izquierda';
+      FR.aplicarCambio(a, 'nivel', 'Avanzado'); o2.nivel = a.nivel === 'Avanzado';
+      o2.pideAlinear = FR.pendiente('x') === true;
+      return o2;
+    }
+    if(c.caso === 'alinear'){
+      return conAlumnoPrueba({ tags: ['Molestia en rodilla'], ficha: { objetivo: ['Hipertrofia', 'Readaptación'] } }, 'jp26_f3_i', function(ath, p){
+        var o = {}, d = p.dias[0], trab = d.bloques.filter(function(b){ return b.category !== 'warmup' && b.modalidad !== 'calentamiento'; });
+        var manual = trab[2]; manual.tips = 'Mi nota propia del bloque.'; manual.jpMano = { t: true };
+        var tipsOrig = trab[1].tips, objOrig = trab[1].objective, calent = d.bloques.filter(function(b){ return b.modalidad === 'calentamiento'; })[0], calAntes = calent ? calent.tips : '';
+        var r = FR.alinearLocal(ath, p, { sinDeshacer: true });
+        o.alineaBloques = r.bloques >= 10 && r.tips > 0 && r.objetivos > 0;
+        o.objetivoReadaptacion = /readaptación, el rango sin dolor manda/.test(trab[1].objective) && trab[1].objective.indexOf(objOrig) === 0;
+        o.lineaFicha = trab[1].tips.split('\n').filter(function(l){ return /^TU FICHA: /.test(l); }).length === 1 && trab[1].tips.indexOf(tipsOrig) === 0;
+        var conRodilla = trab.filter(function(b){ return /cuidá rodilla en /.test(b.tips || ''); });
+        o.cuidaRodilla = conRodilla.length > 0;
+        o.respetaManual = manual.tips === 'Mi nota propia del bloque.' && r.respetados >= 1;
+        o.calentamientoIntacto = !calent || calent.tips === calAntes;
+        FR.aplicarCambio(ath, 'objetivo', 'Readaptación'); FR.aplicarCambio(ath, 'restriccion', 'Rodilla');
+        FR.alinearLocal(ath, p, { sinDeshacer: true });
+        o.reemplazaSinDuplicar = trab[1].tips.split('\n').filter(function(l){ return /^TU FICHA: /.test(l); }).length === 1 && !/readaptación/.test(trab[1].objective) && /hipertrofia/.test(trab[1].objective);
+        o.sinRodillaYa = !trab.some(function(b){ return /cuidá rodilla en /.test(b.tips || ''); });
+        FR.alinearLocal(ath, p, { sinDeshacer: true, forzar: true });
+        o.forzarIncluyeManual = /^Mi nota propia del bloque\.\nTU FICHA: /.test(manual.tips) && !manual.jpMano;
+        return o;
+      });
+    }
+    if(c.caso === 'cooldownApp'){
+      var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+      var D = w.eval('DAYS'), st = w.eval('state'), day = D.filter(function(x){ return x.id === st.currentDay; })[0] || D[0], prev = day.cooldown, prevN = day.cooldownNota;
+      var dd = { cooldown: [] }; BM.insertar(dd, 'cadera', 'reemplazar');
+      try{
+        day.cooldown = dd.cooldown; day.cooldownNota = dd.cooldownNota; w.renderMain();
+        var card = w.document.querySelector('.cooldown-card');
+        return { tarjeta: !!card, encabezadoComoFase: !!card && !!card.querySelector('.cd-fase') && /Body Maintenance · Movilidad de cadera/.test(card.querySelector('.cd-fase').textContent),
+          items: !!card && card.querySelectorAll('li').length === dd.cooldown.length, nota: !!card && /Movilidad de cadera: Recuperás/.test((card.querySelector('.cd-nota') || {}).textContent || '') };
+      } finally { day.cooldown = prev; day.cooldownNota = prevN; w.renderMain(); }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* ---------- género del alumno/a en los prompts y títulos de bisets según sus ejercicios ---------- */
+  function generoTitulos(c){
+    if(c.caso === 'genero'){
+      var g = win.jpGeneroDe;
+      return { normaliza: [g('F'), g('Femenino'), g('mujer'), g('M'), g('Masculino'), g('Varón'), g('hombre'), g(''), g('x')].join(','),
+        mujer: /ALUMNA MUJER/.test(win.jpGeneroIA('F')) && /glúteo/.test(win.jpGeneroIA('F')) && /femenino/.test(win.jpGeneroIA('F')),
+        varon: /ALUMNO VARÓN/.test(win.jpGeneroIA('M')) && /masculino/.test(win.jpGeneroIA('M')),
+        vacio: win.jpGeneroIA('') === '',
+        enFicha: /ALUMNA MUJER/.test(win.jpFichaIA({ nombre: 'Ana', genero: 'F' })) && /ALUMNO VARÓN/.test(win.jpFichaIA({ nombre: 'Juan', genero: 'M' })) };
+    }
+    if(c.caso === 'tituloPizarra'){
+      var T = win.jpTituloAutoPizarra, items = ['A1. Jalón al pecho con agarre ancho', '3x10-12 | RIR 1', 'A2. Curl martillo', '3x12 | RIR 1', 'Rest 75s'];
+      var b1 = { tipo: 'list', sportsPizarra: true, titulo: 'Biset Jalón al pecho con agarre ancho + Curl martillo', items: ['A1. Jalón al pecho con agarre ancho', '3x10-12 | RIR 1', 'A2. Curl martillo', '3x12 | RIR 1', 'Rest 75s'] };
+      var prev1 = b1.items.slice(); b1.items[2] = 'A2. Extensión tríceps polea alta con cuerda';
+      var cambio1 = win.jpSyncTituloPizarra(b1, prev1);
+      var b2 = { tipo: 'list', sportsPizarra: true, titulo: 'Hipertrofia – Biset Jalón al pecho con agarre ancho + Curl martillo (12 MIN)', items: items.slice() };
+      var prev2 = b2.items.slice(); b2.items[0] = 'A1. Remo unilateral a una mano'; win.jpSyncTituloPizarra(b2, prev2);
+      var b3 = { tipo: 'list', sportsPizarra: true, titulo: 'Mi bloque de espalda', items: items.slice() };
+      var prev3 = b3.items.slice(); b3.items[2] = 'A2. Curl de bíceps con barra Z'; var cambio3 = win.jpSyncTituloPizarra(b3, prev3);
+      var b4 = { tipo: 'list', sportsPizarra: true, titulo: '', items: items.slice() };
+      var prev4 = []; win.jpSyncTituloPizarra(b4, prev4);
+      return { auto: T(items), triset: T(['A1. Curl martillo', '3x12', 'A2. Elevaciones laterales con mancuernas', '3x15', 'A3. Plancha lateral', '3x30s']), uno: T(['A1. Curl martillo', '3x12']),
+        sigueAEjercicios: cambio1 && b1.titulo === 'Biset Jalón al pecho con agarre ancho + Extensión tríceps polea alta con cuerda',
+        conservaPrefijoYMinutos: b2.titulo === 'Hipertrofia – Biset Remo unilateral a una mano + Curl martillo (12 MIN)',
+        respetaTituloPropio: cambio3 === false && b3.titulo === 'Mi bloque de espalda', vacioSeCompleta: b4.titulo === 'Biset Jalón al pecho con agarre ancho + Curl martillo' };
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   function iaCaso(c){
     var AIx = win.CoachAI, S = getS(), toasts = [], llamadas = 0;
     var orig = { hay: AIx.hayClave, esp: AIx.esperaCooldown, cfg: AIx.config, gen: AIx.generarTexto, toast: win.toast, active: S.activeId };
@@ -2180,14 +2567,14 @@
   function esperarBanco(n){
     var ok = false;
     try{ var b = getS().banco || []; ok = b.some(function(r){ return r && r.depDeporte === 'hyx' && (r.dias || []).length; }) && b.some(function(r){ return r && r.std && (r.dias || []).length; }); }catch(e){}
-    if(ok || n > 60) setTimeout(function(){ prepararAlumno(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
+    if(ok || n > 60) setTimeout(function(){ silenciarAudio(win); prepararAlumno(function(){ silenciarAudio(alumnoWin()); prepararIA(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
   }
   function listo(){
     try{ win = frame.contentWindow; return !!(win && win.jpAutoFormat && typeof win.jpDosisCanon === 'function' && typeof win.parsearImportacion === 'function' && typeof win.detectarFormatoCF === 'function' && typeof win.impCampoCoachDeTag === 'function'); }catch(e){ return false; }
   }
   var t = setInterval(function(){
     intentos++;
-    if(listo()){ clearInterval(t); esperarBanco(0); }
+    if(listo()){ clearInterval(t); silenciarAudio(win); esperarBanco(0); }
     else if(intentos > 120){ clearInterval(t); document.getElementById('out').innerHTML = '<p>No se pudo acceder a la app dentro del iframe. Serví la carpeta por http (no file://) y abrí esta pagina desde el mismo servidor.</p>'; }
   }, 250);
 })();

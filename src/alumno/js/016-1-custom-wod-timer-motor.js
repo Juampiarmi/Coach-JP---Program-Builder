@@ -451,6 +451,7 @@
   function sincronizarWodActivo(){ if(corriendo) paso(); }
   function reset(){
     corriendo = false; if(tick){ tick.stop(); } tick = null;
+    cueTrans = null; try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* ninguna frase del timer anterior suena sobre el nuevo */
     despierto(false);
     try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
@@ -539,6 +540,7 @@
   }
   function cerrarTimer(){
     var w = document.getElementById('cwtWrap');
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}
     if(w){ w.classList.remove('on'); w.classList.remove('cwt-minimized'); }
     if(corriendo) pausar();
     ocultarMini();

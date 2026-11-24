@@ -3325,7 +3325,7 @@ const JP_ESTACION_LB = { torre: 'la torre de poleas', jalon: 'la polea alta del 
    Regla anti-colisión: una polea se combina con material portátil (mancuernas o peso corporal / banda), nunca con otra polea ni con otra máquina. */
 const JP_POLEAS = ['torre', 'jalon', 'remo_sentado', 'banco_poleas'];
 const JP_ESTACION_OK = [['colchoneta', 'mancuernas'], ['colchoneta', 'kb'], ['mancuernas', 'kb'], ['pista', 'kb'], ['pista', 'mancuernas'],
-  ['rack', 'mancuernas'], ['rack', 'kb'], ['rack', 'colchoneta'], ['rack', 'pista'], ['barra_fija', 'mancuernas'], ['barra_fija', 'kb'], ['barra_fija', 'colchoneta']]
+  ['rack', 'mancuernas'], ['rack', 'kb'], ['rack', 'colchoneta'], ['rack', 'pista'], ['pista', 'colchoneta'], ['barra_fija', 'mancuernas'], ['barra_fija', 'kb'], ['barra_fija', 'colchoneta']]
   .concat(JP_POLEAS.map(p => [p, 'mancuernas']), JP_POLEAS.map(p => [p, 'colchoneta']), JP_POLEAS.map(p => [p, 'kb']));
 function jpEsPolea(k){ return JP_POLEAS.indexOf(k) >= 0; }
 function jpEstacion(ex){
@@ -3355,8 +3355,9 @@ function jpEstacionCompat(a, b){
   if(!a || !b) return true;
   if(jpEsPolea(a) && jpEsPolea(b)) return false; /* dos poleas en un mismo grupo: prohibido, aunque sea la misma torre (un cable ocupa al otro) */
   if(a === b) return true;
-  /* una máquina fija se combina con peso corporal / banda (se hace al lado, sin mover nada), nunca con otra máquina */
-  if((String(a).indexOf('maq:') === 0 && b === 'colchoneta') || (String(b).indexOf('maq:') === 0 && a === 'colchoneta')) return true;
+  /* una máquina fija (o el multipower) se combina con material PORTÁTIL —mancuernas, kettlebell, peso corporal o banda— que se lleva al lado de la máquina; nunca con otra máquina ni con una polea */
+  const fija = k => String(k).indexOf('maq:') === 0 || k === 'multipower', portatil = k => k === 'colchoneta' || k === 'mancuernas' || k === 'kb';
+  if((fija(a) && portatil(b)) || (fija(b) && portatil(a))) return true;
   return JP_ESTACION_OK.some(p => (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a));
 }
 function jpEstacionLb(k, ex){
@@ -3525,6 +3526,26 @@ const JP_EQUIV = {
   'curl de muneca inverso': ['Curl de muñeca en polea baja'],
   'rotacion externa en polea': ['Rotación externa manguito rotador']
 };
+/* versión PORTÁTIL (mancuernas, banda o peso corporal) de un accesorio de polea o máquina, del MISMO grupo muscular: la usa el armado de bisets del Banco
+   cuando el accesorio no puede ir al lado del básico (rack de barra) o de otra máquina. Solo accesorios: los básicos pesados nunca se cambian. */
+const JP_PORTATIL = {
+  'Patada de glúteo en polea cruzada': 'Patada de glúteo en cuadrupedia con mancuerna', 'Patada de glúteo en polea': 'Patada de glúteo en cuadrupedia con mancuerna',
+  'Elevaciones laterales en polea baja': 'Elevaciones laterales con mancuernas', 'Cruce de cables en polea baja': 'Aperturas en banco inclinado', 'Cruce de cables en polea alta': 'Aperturas en banco plano',
+  'Aperturas en banco inclinado con poleas': 'Aperturas en banco inclinado', 'Aperturas en banco plano con poleas': 'Aperturas en banco plano', 'Pec Deck / Contractor de pecho': 'Aperturas en banco plano',
+  'Elevación de talones sentado': 'Elevación de talones sentado con mancuerna',
+  'Elevación de gemelos de pie': 'Elevación de talones a una pierna', 'Elevación de talones en prensa': 'Elevación de talones a una pierna', 'Elevación de talones en burro (donkey)': 'Elevación de talones a una pierna',
+  'Curl femoral acostado': 'Curl femoral con deslizadores', 'Curl femoral sentado': 'Curl femoral con deslizadores', 'Curl femoral de pie en polea': 'Curl femoral con deslizadores', 'Curl femoral a una pierna acostado': 'Curl femoral con deslizadores',
+  'Abducción sentado en máquina': 'Abducción de cadera acostada con banda', 'Abducción de cadera en máquina': 'Abducción de cadera acostada con banda', 'Abducción de cadera en polea baja': 'Abducción de cadera acostada con banda',
+  'Extensión de cuádriceps': 'Sentadilla sissy', 'Extensión de cuádriceps a una pierna': 'Sentadilla sissy', 'Rotación externa en polea': 'Rotación externa manguito rotador',
+  'Extensión tríceps polea alta con cuerda': 'Press francés con mancuernas plano', 'Extensión tríceps tras nuca con cuerda': 'Extensión tríceps tras nuca a 2 manos', 'Curl martillo con cuerda polea baja': 'Curl martillo',
+  'Pull-over en polea alta brazos extendidos': ['Pull-over con mancuerna'],
+  'Face Pull con cuerda': ['Pájaro / Elevaciones posteriores inclinado', 'Pájaro con pecho apoyado en banco inclinado', 'Pájaro inclinado para dorsal ancho'],
+  'Contractor de pecho / Pec Deck inverso': ['Pájaro / Elevaciones posteriores inclinado', 'Pájaro con pecho apoyado en banco inclinado'],
+  'Remo sentado con agarre estrecho': ['Remo unilateral a una mano', 'Remo Pecho Apoyado en banco inclinado'], 'Remo en polea baja agarre en V': ['Remo unilateral a una mano', 'Remo Pecho Apoyado en banco inclinado'],
+  'Prensa 45°': ['Sentadilla goblet', 'Zancada inversa'], 'Prensa horizontal': ['Sentadilla goblet', 'Zancada inversa']
+};
+/* opciones portátiles de un ejercicio (lista, en orden de preferencia) */
+function jpPortatilDe(nombre){ const v = JP_PORTATIL[nombre]; return v ? [].concat(v) : []; }
 function jpLgFichaEj(ex){
   if(!ex) return { objetivo: 'Trabajo de este ejercicio con la dosis indicada, ejecución controlada y técnica estable.', pauta: '' };
   const campo = ex.grupo === 'Full Body / Cardio' || ex.equipo === 'Cardio' || jpEstacion(ex) === 'pista';
@@ -3661,6 +3682,186 @@ function jpCompletarTempoBloque(b){
   return n;
 }
 function jpLgExento(b){ return /circuito|simulaci[oó]n/i.test(String((b && b.titulo) || '')); }
+/* ============================================================
+   UN SOLO BÁSICO RECTO POR SESIÓN, EL RESTO EN BISETS (Banco de Rutinas, plantillas del sistema)
+   El primer ejercicio suelto de la sesión (el "Fuerza principal" si lo hay) queda en series rectas con su descanso completo;
+   cada uno de los demás ejercicios sueltos de trabajo se junta con otro en un biset práctico:
+     · músculo grande + músculo chico (jalón + curl martillo, sentadilla búlgara + gemelo, press + face pull) o antagonistas (pecho + espalda, bíceps + tríceps);
+     · nunca dos básicos pesados juntos, nunca dos ejercicios guiados (máquina / polea) y SIEMPRE la regla anti-colisión (jpEstacionCompat: sin dos poleas ni estaciones distantes);
+     · cada ejercicio conserva sus series, repeticiones, RIR, tempo y técnica (el volumen semanal no cambia), y las pautas de cada uno se rotulan con su nombre;
+     · descanso de la ronda: el del básico pesado si hay uno (hasta 180 s); si no, el promedio de los dos (60-120 s);
+     · lo que queda impar se suma como tercera estación a un biset vecino compatible (triset); solo si no hay ninguno queda recto.
+   Entrada en calor, core, metcon / cardio y bloques complejos no se tocan.
+   ============================================================ */
+const JP_BIS_GRANDE = { 'Pecho': 1, 'Espalda': 1, 'Cuádriceps': 1, 'Isquios': 1, 'Glúteo': 1 };
+const JP_BIS_AFIN = { 'Pecho|Espalda': 4, 'Espalda|Bíceps': 4, 'Pecho|Tríceps': 3, 'Hombro lateral|Tríceps': 3, 'Hombro anterior|Tríceps': 3, 'Bíceps|Tríceps': 4, 'Espalda|Hombro posterior': 3,
+  'Pecho|Hombro posterior': 3, 'Pecho|Bíceps': 3, 'Espalda|Tríceps': 3, 'Espalda|Hombro lateral': 3, 'Pecho|Hombro lateral': 3, 'Hombro lateral|Hombro posterior': 3, 'Hombro posterior|Bíceps': 3,
+  'Cuádriceps|Isquios': 3, 'Glúteo|Cuádriceps': 3, 'Glúteo|Isquios': 3, 'Gemelos|Cuádriceps': 4, 'Gemelos|Isquios': 4, 'Gemelos|Glúteo': 4, 'Glúteo|Glúteo': 2 };
+function jpBisAfin(g1, g2){
+  const a = JP_BIS_AFIN[g1 + '|' + g2] || JP_BIS_AFIN[g2 + '|' + g1] || 0;
+  if(a) return a;
+  if(!g1 || !g2 || g1 === 'Core' || g2 === 'Core') return 0;
+  if(!!JP_BIS_GRANDE[g1] !== !!JP_BIS_GRANDE[g2]) return 2;      /* grande + chico, aunque no sean del mismo sector */
+  return 1;
+}
+function jpBisPesado(m){
+  const e = m.ex[0], mx = Math.max.apply(null, (String(e.reps || '').match(/\d+/g) || ['12']).map(Number));
+  return e.efectivas !== undefined || (mx <= 8 && m.rest >= 120) || m.rest >= 150;
+}
+function jpBisEstacion(e){ try{ return e.lib ? jpEstacion(e.lib) : ''; }catch(x){ return ''; } }
+function jpBisCompat(exs){
+  const ks = exs.map(jpBisEstacion);
+  for(let i = 1; i < exs.length; i++) for(let j = 0; j < i; j++) if(ks[i] && ks[j] && !jpEstacionCompat(ks[j], ks[i])) return false;
+  if(exs.filter(e => e.t === 'M' || e.t === 'P').length > 1) return false;      /* nunca dos guiados en el mismo grupo */
+  if(exs.filter(e => e.ax).length > 1) return false;      /* nunca dos patrones axiales pesados juntos */
+  return true;
+}
+/* líneas de un bloque como estación k del biset: "A<k>. Nombre" + sus líneas de dosis (sin la línea de descanso) */
+function jpBisLineas(b, items, k, nombre){
+  const EST = window.__jpPB.EST, out = [];
+  let rotulo = false;
+  (items || []).forEach(l => {
+    const s = String(l || '').trim(); if(!s || /^(rest|descanso)\s*\d+\s*s/i.test(s)) return;
+    if(/^[A-F]\d+\.\s*/.test(s)){ out.push(s.replace(/^[A-F]\d+\.\s*/, 'A' + (k++) + '. ')); rotulo = true; return; }
+    if(!rotulo && !EST.parsearDosis(s)){ out.push('A' + (k++) + '. ' + s); rotulo = true; return; }
+    if(!rotulo){ out.push('A' + (k++) + '. ' + nombre); rotulo = true; }
+    out.push(s);
+  });
+  return { lineas: out, sig: k };
+}
+const RX_BIS_ROTULO = /^(SET-UP|TOP SET|EJECUCI[ÓO]N|DESCANSO|POSICI[ÓO]N|CARGA|AGARRE|ERROR[^:]{0,20}|TEMPO|T[ÉE]CNICA|RANGO|RESPIRACI[ÓO]N|PROGRESI[ÓO]N|CUE[^:]{0,20}|CUIDADO[^:]{0,25}|PIERNA D[ÉE]BIL PRIMERO|ESTÍMULO|EST[ÍI]MULO|RITMO|SOPORTE|OBJETIVO DE CARGA|POR QU[ÉE][^:]{0,40}|SERIES DE APROXIMACI[ÓO]N|INTENSIDAD|PAUSA)\s*:/i;
+function jpBisTips(tips, nombre){
+  const corto = String(nombre || '').toUpperCase();
+  return String(tips || '').split(/\n+/).map(l => l.trim()).filter(Boolean).map(l => (corto && RX_BIS_ROTULO.test(l)) ? corto + ' · ' + l : l).join('\n');
+}
+/* cambia un bloque suelto por su versión portátil: nombre en el título y en las líneas, objetivo y pautas de la ficha del ejercicio nuevo; devuelve el modelo nuevo o null */
+function jpBisPortatil(b, m, opt, contra){
+  const PB = window.__jpPB, EST = PB.EST, e = m.ex[0];
+  if((opt && opt.sinPortatil) || jpBisPesado(m) || typeof jpExDeNombre !== 'function') return null;
+  for(const nuevo of jpPortatilDe(e.nombre)){
+    const r = jpBisPortatilCon(b, m, nuevo);
+    if(r && (!contra || jpBisCompat(contra.concat(r.m.ex)))) return r;
+  }
+  return null;
+}
+function jpBisPortatilCon(b, m, nuevo){
+  const PB = window.__jpPB, EST = PB.EST, e = m.ex[0];
+  const ex = jpExDeNombre(nuevo); if(!ex) return null;
+  let g0 = ''; try{ g0 = EST.infoEj(nuevo).g || ''; }catch(x){}
+  if(g0 !== e.g) return null;      /* solo dentro del mismo grupo muscular: el volumen semanal no cambia */
+  const copia = JSON.parse(JSON.stringify(b)), viejo = e.etiqueta;
+  const cambiar = arr => (arr || []).map(l => { const s = String(l || ''); return (s.indexOf(viejo) >= 0 && !EST.parsearDosis(s.replace(/^[A-F]\d+\.\s*/, ''))) ? s.replace(viejo, nuevo) : s; });
+  copia.items = cambiar(copia.items);
+  if(copia.weekItems) Object.keys(copia.weekItems).forEach(k => { if(Array.isArray(copia.weekItems[k])) copia.weekItems[k] = cambiar(copia.weekItems[k]); });
+  if(String(copia.titulo || '').indexOf(viejo) >= 0) copia.titulo = String(copia.titulo).replace(viejo, nuevo); else if(!/^(Fuerza principal|Hipertrofia|Accesorios)\s*[–-]/i.test(copia.titulo || '')) copia.titulo = nuevo;
+  const kb = PB.kbDe ? PB.kbDe(nuevo) : null;
+  if(kb){ copia.objective = kb.o || copia.objective; copia.tips = ['SET-UP: ' + kb.s, 'CUE EFICIENTE: ' + kb.c, 'CUIDADO / ERROR COMÚN: ' + kb.x].filter(l => !/undefined/.test(l)).join('\n'); }
+  const m2 = EST.parsearBloque(copia);
+  if(!m2 || m2.ex.length !== 1 || m2.ex[0].nombre !== ex.es) return null;
+  return { b: copia, m: m2 };
+}
+function jpBisFusionar(d, bx, mx, grupo){
+  const PB = window.__jpPB, EST = PB.EST;
+  const todos = [{ b: bx, m: mx }].concat(grupo);
+  const exs = [].concat.apply([], todos.map(x => x.m.ex));
+  const pesado = todos.some(x => jpBisPesado(x.m));
+  const rests = todos.map(x => x.m.rest || 60);
+  const rest = pesado ? Math.min(180, Math.max.apply(null, rests)) : Math.max(60, Math.min(120, Math.round(rests.reduce((a, c) => a + c, 0) / rests.length / 15) * 15));
+  const armar = (sel) => { let k = 1; const L = []; todos.forEach(x => { const r = jpBisLineas(x.b, sel(x.b), k, x.m.ex[0].nombre); k = r.sig; r.lineas.forEach(s => L.push(s)); }); L.push('Rest ' + rest + 's'); return L; };
+  const items = armar(b => b.items);
+  const prueba = EST.parsearBloque(Object.assign({}, bx, { items: items, titulo: 'Hipertrofia – Biset' }));
+  if(!prueba || prueba.ex.length !== exs.length) return null;
+  /* semanas proyectadas (S1-S4): cada estación con SU dosis de esa semana */
+  const conWi = todos.filter(x => x.b.weekItems);
+  let wi = null;
+  if(conWi.length){
+    const esArr = Array.isArray(conWi[0].b.weekItems), claves = {};
+    conWi.forEach(x => Object.keys(x.b.weekItems).forEach(k => { claves[k] = 1; }));
+    wi = esArr ? [] : {};
+    Object.keys(claves).forEach(k => {
+      const algun = todos.some(x => x.b.weekItems && Array.isArray(x.b.weekItems[k]));
+      wi[k] = algun ? armar(b => (b.weekItems && Array.isArray(b.weekItems[k])) ? b.weekItems[k] : b.items) : (esArr ? null : undefined);
+    });
+  }
+  const nombres = exs.map(e => e.nombre), tipo = exs.length >= 3 ? 'Triset' : 'Biset';
+  const sets = Math.max.apply(null, exs.map(e => e.efectivas || e.sets || 3));
+  const conPrefijo = /^(Fuerza principal|Hipertrofia|Accesorios)\s*[–-]/i.test(bx.titulo || '');
+  bx.titulo = conPrefijo ? 'Hipertrofia – ' + tipo + ' ' + nombres.join(' + ') + ' (' + PB.minBloque(sets, exs.length, rest) + ' MIN)' : tipo + ' · ' + nombres.join(' + ');
+  bx.items = items; bx.restSeconds = rest; bx.modalidad = 'hipertrofia'; bx.category = bx.category || 'strength';
+  if(wi) bx.weekItems = wi; else delete bx.weekItems;
+  bx.objective = todos.map(x => String(x.b.objective || '').trim()).filter(Boolean).join(' ');
+  bx.tips = todos.map(x => jpBisTips(x.b.tips, x.m.ex.length === 1 ? x.m.ex[0].nombre : '')).filter(Boolean).join('\n');
+  const sl = exs.map(e => e.efectivas || e.sets || 0);
+  if(sl.some(s => s !== sl[0])) bx.tips += '\nSERIES POR ESTACIÓN: ' + sl.map((s, k) => 'A' + (k + 1) + ' ' + s).join(' · ') + ' series. Hacés las rondas completas mientras las estaciones tengan series y en las rondas que sobran solo la que todavía tiene, con el mismo descanso.';
+  bx.tips += '\nTRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + rest + ' s va recién al terminar cada ronda.';
+  if(bx.subtitulo) bx.subtitulo = tipo + ' · sin pausa entre estaciones';
+  grupo.forEach(x => { const i = d.bloques.indexOf(x.b); if(i >= 0) d.bloques.splice(i, 1); });
+  return bx;
+}
+function jpBisetarDias(dias, opt){
+  const PB = window.__jpPB, EST = PB && PB.EST, cambios = [];
+  if(!EST || typeof EST.parsearBloque !== 'function' || typeof jpEstacionCompat !== 'function') return cambios;
+  (dias || []).forEach((d, di) => {
+    const trabajo = b => {
+      if(!b || b.tipo !== 'list' || !b.sportsPizarra || b.category === 'warmup' || /^(calentamiento|core|metcon)$/.test(b.modalidad || '') || /^(cardio|metcon|endurance)$/.test(b.category || '')) return null;
+      const m = EST.parsearBloque(b);
+      if(!m || m.rol === 'C' || m.complejo || m.ex.some(e => e.g === 'Core')) return null;
+      if(m.ex.some(e => !e.g || (e.lib && e.lib.equipo === 'Cardio') || /clean|snatch|jerk|arranque|envi[oó]n|cargada/i.test(e.nombre + ' ' + ((e.lib && e.lib.en) || '')))) return null;
+      return m;
+    };
+    let mods = (d.bloques || []).map(b => ({ b: b, m: trabajo(b) })).filter(x => x.m);
+    const sueltos = mods.filter(x => x.m.ex.length === 1);
+    if(sueltos.length < 2) return;
+    const principal = sueltos.filter(x => /^Fuerza principal/i.test(x.b.titulo || ''))[0] || sueltos[0];
+    const resto = sueltos.filter(x => x !== principal), usado = new Set();
+    resto.forEach((x, k) => {
+      if(usado.has(x)) return;
+      let mejor = null, pts = 0;
+      let cambioX = null, cambioY = null;
+      for(let j = k + 1; j < resto.length; j++){
+        const y = resto[j]; if(usado.has(y)) continue;
+        if(jpBisPesado(x.m) && jpBisPesado(y.m)) continue;
+        let px = null, py = null, pen = 0;
+        if(!jpBisCompat(x.m.ex.concat(y.m.ex))){
+          /* estaciones que chocan: el accesorio pasa a su versión portátil (mancuernas / banda / peso corporal) si así entra al lado del otro */
+          py = jpBisPortatil(y.b, y.m, opt, x.m.ex);
+          if(py) pen = 4;
+          else { px = jpBisPortatil(x.b, x.m, opt, y.m.ex); if(px) pen = 4; else continue; }
+        }
+        const p = jpBisAfin(x.m.ex[0].g, y.m.ex[0].g) * 10 - (j - k) - pen;
+        if(p > pts){ pts = p; mejor = y; cambioX = px; cambioY = py; }
+      }
+      if(!mejor) return;
+      usado.add(x); usado.add(mejor);
+      const reemplazar = (orig, nuevo) => { const i = d.bloques.indexOf(orig.b); if(i >= 0){ d.bloques[i] = nuevo.b; orig.b = nuevo.b; orig.m = nuevo.m; } };
+      if(cambioX) reemplazar(x, cambioX);
+      if(cambioY) reemplazar(mejor, cambioY);
+      if(jpBisFusionar(d, x.b, x.m, [mejor])) cambios.push({ dia: di + 1, bloque: x.b.titulo, accion: 'biset', detalle: x.m.ex[0].nombre + ' + ' + mejor.m.ex[0].nombre });
+    });
+    /* impares: tercera estación de un biset vecino compatible */
+    resto.filter(x => !usado.has(x)).forEach(x => {
+      if(jpBisPesado(x.m)){
+        const pos0 = d.bloques.indexOf(x.b);
+        const c1 = (d.bloques || []).map(b => ({ b: b, m: trabajo(b) })).filter(c => c.m && c.b !== x.b && c.m.ex.length === 2 && !jpBisPesado(c.m) && jpBisCompat(x.m.ex.concat(c.m.ex)) && c.m.ex.some(e => jpBisAfin(e.g, x.m.ex[0].g)))
+          .sort((a, c) => Math.abs(d.bloques.indexOf(a.b) - pos0) - Math.abs(d.bloques.indexOf(c.b) - pos0))[0];
+        if(c1 && jpBisFusionar(d, x.b, x.m, [c1])) cambios.push({ dia: di + 1, bloque: x.b.titulo, accion: 'triset', detalle: x.m.ex[0].nombre + ' encabeza ' + c1.m.ex.map(e => e.nombre).join(' + ') });
+        return;
+      }
+      const pos = d.bloques.indexOf(x.b);
+      const bisets = (d.bloques || []).map(b => ({ b: b, m: trabajo(b) })).filter(c => c.m && c.b !== x.b && c.m.ex.length === 2 && !jpBisPesado(c.m))
+        .sort((a, c) => Math.abs(d.bloques.indexOf(a.b) - pos) - Math.abs(d.bloques.indexOf(c.b) - pos));
+      let c = bisets.filter(c0 => jpBisCompat(c0.m.ex.concat(x.m.ex)))[0];
+      if(!c){
+        /* sin lugar tal cual: se prueba su versión portátil */
+        for(const c0 of bisets){ const px = jpBisPortatil(x.b, x.m, opt, c0.m.ex); if(px){ const i = d.bloques.indexOf(x.b); if(i >= 0) d.bloques[i] = px.b; x.b = px.b; x.m = px.m; c = c0; break; } }
+      }
+      if(!c) return;
+      if(jpBisFusionar(d, c.b, c.m, [x])) cambios.push({ dia: di + 1, bloque: c.b.titulo, accion: 'triset', detalle: '+ ' + x.m.ex[0].nombre });
+    });
+  });
+  if(opt && opt.id){ (window.JP_BISET_LOG = window.JP_BISET_LOG || {})[opt.id] = cambios; }
+  return cambios;
+}
 function jpSanearLogisticaDias(dias, opt){
   const cambios = [];
   (dias || []).forEach((d, di) => {
@@ -3683,6 +3884,9 @@ function jpSanearLogisticaDias(dias, opt){
       }
     }
   });
+  if(opt && opt.id && !opt.sinBisets){
+    try{ jpBisetarDias(dias, opt); }catch(eB){ console.warn('bisets del Banco', eB); }      /* su registro va a JP_BISET_LOG: es la estructura buscada, no una corrección */
+  }
   (dias || []).forEach((d, di) => {
     let nt = 0; (d.bloques || []).forEach(b => { nt += jpCompletarTempoBloque(b); });
     if(nt) cambios.push({ dia: di + 1, bloque: '(varios)', accion: 'tempo', detalle: nt + ' línea(s) de dosis completadas con el tempo de su ejercicio' });
@@ -8611,6 +8815,21 @@ function contextoBloqueIA(b){
    mismo objeto S.athletes[] que edita la Ficha (modal "Editar alumno/a") y los chips del Builder, así que
    cualquier cambio (objetivo, lesiones, vetados, preferidos, notas) se refleja en la siguiente generación sin
    pasos intermedios. Devuelve '' si no hay alumno. Todos los generadores con IA anteponen este bloque. */
+/* GÉNERO DEL ALUMNO/A -> 'f' | 'm' | '' (acepta F / M / Femenino / Masculino / Mujer / Varón / Hombre) */
+function jpGeneroDe(v){
+  const g = String((v && typeof v === 'object') ? (v.genero || v.sexo || '') : (v || '')).trim().toLowerCase();
+  if(!g) return '';
+  if(/^(f|fem|mujer|female|woman|dama)/.test(g)) return 'f';
+  if(/^(m|masc|var[oó]n|hombre|male|man)/.test(g)) return 'm';
+  return '';
+}
+/* directiva de género para TODOS los prompts de IA (selección de ejercicios, volumen/prioridades, títulos y redacción). Vacía si no hay género cargado. */
+function jpGeneroIA(v){
+  const g = jpGeneroDe(v);
+  if(g === 'f') return 'GÉNERO: ALUMNA MUJER. Redactá todo en femenino ("la alumna", "sentada", "apoyada", "concentrada"). Prioridades: tren inferior y glúteo protagonistas (el glúteo es el grupo con más volumen semanal: extensión de cadera —hip thrust, puente, peso muerto rumano— y abducción para glúteo medio), cuádriceps e isquios en su rango, gemelo presente; tren superior en volumen moderado (espalda y hombro lateral por delante de pecho y brazos). Títulos y tips nombran ese foco (glúteo, estabilidad de pelvis) cuando el bloque lo trabaja. La intensidad (RIR) y la exigencia técnica son las mismas que para un varón: nada de cargas "livianas" ni tono condescendiente por ser mujer.';
+  if(g === 'm') return 'GÉNERO: ALUMNO VARÓN. Redactá todo en masculino ("el alumno", "sentado", "apoyado", "concentrado"). Prioridades: básicos pesados (sentadilla, peso muerto, press, remo) como eje, distribución equilibrada torso/pierna con más volumen relativo en pecho, espalda, hombros y brazos que en glúteo aislado; el glúteo se trabaja dentro de los compuestos de pierna y bisagra.';
+  return '';
+}
 function jpFichaIA(ath){
   if(!ath) return '';
   const L = [];
@@ -8627,6 +8846,7 @@ function jpFichaIA(ath){
   L.push('Ejercicios PROHIBIDOS (vetados por el coach): ' + (ban.length ? ban.join('; ') : 'ninguno'));
   if(pref.length) L.push('Ejercicios / patrones PREFERIDOS (priorizar cuando sea seguro): ' + pref.join('; '));
   if(ath.notas && String(ath.notas).trim()) L.push('Notas del coach sobre el alumno/a: ' + String(ath.notas).trim().slice(0, 700));
+  const dirGen = jpGeneroIA(ath); if(dirGen) L.push(dirGen);
   L.push('REGLAS DE LA FICHA: nunca propongas un ejercicio prohibido ni una variante equivalente; evitá los que carguen las zonas lesionadas o regresionalos y aclaralo; adaptá volumen, intensidad y vocabulario al nivel y al objetivo; si algo choca con la ficha, gana la ficha.');
   return L.join('\n');
 }
@@ -8706,25 +8926,57 @@ function jpIALibre(btn, originalHtml){
   if(!btn) return;
   if(btn.dataset) delete btn.dataset.iaBusy;
   if(btn.isConnected){ btn.disabled = false; if(originalHtml != null) btn.innerHTML = originalHtml; }
+  if(btn._jpTitle !== undefined){ btn.title = btn._jpTitle; delete btn._jpTitle; }
 }
 /* Ejecuta un generador de IA de forma segura: prevalida entorno / clave / pausa / conexión ANTES de armar nada, deja pasar un clic a la vez, atrapa cualquier error
    (también los datos nulos al armar el contexto) y muestra el motivo real una sola vez. El botón siempre vuelve a quedar libre. */
+/* CANCELAR: cada generación lleva un AbortController. Un segundo toque sobre el mismo botón (que muestra ⏹ mientras genera) corta la petición en el acto:
+   el botón vuelve a su estado de inmediato y nada del bloque cambia (los tips y el objetivo solo se escriben cuando llega una respuesta completa). */
+function jpIACancelar(btn){
+  if(!btn || !btn._jpAbort) return false;
+  const ctrl = btn._jpAbort, html = btn._jpHtml;
+  delete btn._jpAbort; delete btn._jpHtml;
+  try{ ctrl.abort(); }catch(e){}
+  jpIALibre(btn, html);
+  toast('Generación con IA detenida: el bloque quedó como estaba', 'info');
+  return true;
+}
+/* generadores con su propio flujo (tips de CrossFit, objetivo de la semana): mismo contrato que jpIAEjecutar — segundo toque = detener, el botón se libera solo
+   si sigue siendo de ESTA generación (una generación vieja que termina tarde nunca libera el botón de una nueva). */
+function jpIATomar(btn){
+  if(btn && btn.dataset && btn.dataset.iaBusy === '1'){ jpIACancelar(btn); return null; }
+  if(jpIAOcupado(btn)) return null;
+  const ctrl = (typeof AbortController === 'function') ? new AbortController() : { signal: undefined, abort: function(){} };
+  if(btn){ btn._jpAbort = ctrl; btn._jpHtml = btn.innerHTML; btn._jpTitle = btn.title || ''; }
+  return ctrl;
+}
+function jpIASoltar(btn, ctrl, html){
+  if(!btn) return;
+  if(btn._jpAbort === ctrl){ delete btn._jpAbort; delete btn._jpHtml; jpIALibre(btn, html); }
+  else if(!btn._jpAbort && btn.dataset && btn.dataset.iaBusy === '1') jpIALibre(btn, html);
+}
+function jpIAEsCancelado(e){ return !!(e && (e.cancelado || e.name === 'AbortError')); }
 async function jpIAEjecutar(btn, etiqueta, quehace, fn){
+  if(btn && btn.dataset && btn.dataset.iaBusy === '1'){ jpIACancelar(btn); return; }
   if(jpIAOcupado(btn)) return;
   const html = btn ? btn.innerHTML : null;
+  const ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+  if(btn && ctrl){ btn._jpAbort = ctrl; btn._jpHtml = html; }
   try{
     if(!jpIAListo(quehace)) return;
-    await fn();
+    await fn(ctrl ? ctrl.signal : undefined);
   }catch(e){
+    if(e && (e.cancelado || e.name === 'AbortError')) return;      /* cancelado por el coach: ya se avisó y se limpió el botón */
     console.warn(etiqueta, e);
     if(!(e && e.__toast)) toast('No se pudo generar: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    jpIALibre(btn, html);
+    if(btn && btn._jpAbort === ctrl){ delete btn._jpAbort; delete btn._jpHtml; jpIALibre(btn, html); }
+    else if(btn && !btn._jpAbort && btn.dataset && btn.dataset.iaBusy === '1') jpIALibre(btn, html);
   }
 }
 function nombrarBloqueConIA(bid, btn){ return jpIAEjecutar(btn, 'nombrarBloqueConIA', 'nombrar bloques automáticamente', () => nombrarBloqueConIACore(bid, btn)); }
 function generarFocoDiaConIA(btn){ return jpIAEjecutar(btn, 'generarFocoDiaConIA', 'generar la ficha del día automáticamente', () => generarFocoDiaConIACore(btn)); }
-function generarTipsSports(bid, btn){ return jpIAEjecutar(btn, 'generarTipsSports', 'generar tips automáticamente', () => generarTipsSportsCore(bid, btn)); }
+function generarTipsSports(bid, btn){ return jpIAEjecutar(btn, 'generarTipsSports', 'generar tips automáticamente', senal => generarTipsSportsCore(bid, btn, senal)); }
 async function nombrarBloqueConIACore(bid, btn){
   const b = findBlock(bid); if(!b) return;
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -8777,7 +9029,7 @@ async function nombrarBloqueConIACore(bid, btn){
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 200 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 200, rapido: true });
     const raw = String(out || '').trim();
     let j = null;
     /* directiva crítica (2026-09) -- mismo bug de parseo frágil ya
@@ -8938,7 +9190,7 @@ async function generarFocoDiaConIACore(btn){
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900, rapido: true });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -8989,8 +9241,8 @@ async function generarFocoDiaConIACore(btn){
    1) prevalida entorno, clave, pausa de proveedores y conexión ANTES de armar nada (jpIAListo); 2) todo el armado va dentro del try; 3) un clic a la vez;
    4) el aviso de error es el motivo real, una sola vez. */
 async function generarTipsPacingIA(bid, btn){
-  if(jpIAOcupado(btn)) return;
-  const originalHtml = btn ? btn.innerHTML : null;
+  const ctrl = jpIATomar(btn); if(!ctrl) return;
+  const originalHtml = btn ? btn._jpHtml : null;
   try{
     const b = findBlock(bid);
     if(!b){ toast('No se encontró el bloque: actualizá la pantalla y probá de nuevo', 'warn'); return; }
@@ -9000,16 +9252,17 @@ async function generarTipsPacingIA(bid, btn){
     const ctxPrev = contextoBloqueIA(b);
     if(!ctxPrev.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
     if(!jpIAListo('generar tips automáticamente')) return;
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
-    await generarTipsPacingIACore(b, btn);
+    if(btn){ btn.disabled = false; btn.innerHTML = '<span class="spin"></span> ⏹'; btn.title = 'Detener la generación con IA'; }
+    await generarTipsPacingIACore(b, btn, ctrl.signal);
   }catch(e){
+    if(jpIAEsCancelado(e)) return;      /* detenido por el coach: el bloque quedó como estaba */
     console.warn('generarTipsPacingIA', e);
     if(!(e && e.__toast)) toast('No se pudieron generar los tips: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    jpIALibre(btn, originalHtml);
+    jpIASoltar(btn, ctrl, originalHtml);
   }
 }
-async function generarTipsPacingIACore(b, btn){
+async function generarTipsPacingIACore(b, btn, senal){
   const ctx = contextoBloqueIA(b);
   const ad = contextoAtletaDiaIA();
   const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
@@ -9039,7 +9292,8 @@ async function generarTipsPacingIACore(b, btn){
   /* el armado del contexto ya pasó: de acá en más solo hay red. Los errores de red/API los avisa callAI() (con el motivo real) y suben al botón. */
   {
     /* 1500 tokens: foco + pacing + nota con SET-UP / CUE / ERROR de 2 movimientos no entra en 900 (Gemini corta el JSON y daba "respuesta cortada") */
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500, signal: senal, onProgreso: jpIAAvance(btn, senal, ' ⏹') });
+    if(senal && senal.aborted){ const eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -9107,8 +9361,8 @@ function resumenSemanaCFParaIA(p, wi){
   return { texto: L.join('\n\n').slice(0, 7500), bloques: bloquesTotal, dias: L.length };
 }
 async function generarObjetivoSemanaCF(btn){
-  if(jpIAOcupado(btn)) return;
-  const originalHtml = btn ? btn.innerHTML : null;
+  const ctrl = jpIATomar(btn); if(!ctrl) return;
+  const originalHtml = btn ? btn._jpHtml : null;
   try{
     const p = plan(S.activeId);
     if(!p){ toast('Seleccioná un alumno/a', 'warn'); return; }
@@ -9123,7 +9377,7 @@ async function generarObjetivoSemanaCF(btn){
     if(!res.bloques){ toast(esCF ? 'Cargá al menos un WOD, levantamiento o bloque en esta semana antes de generar el objetivo con IA' : 'Cargá al menos un bloque de ejercicios en los días antes de generar el objetivo de la semana con IA', 'warn'); return; }
     if(!jpIAListo('generar el objetivo de la semana')) return;
     if(previo.length > 24 && typeof confirm === 'function' && !confirm('Esta semana ya tiene un objetivo escrito. ¿Lo reemplazo por uno nuevo generado con IA?')) return;
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    if(btn){ btn.disabled = false; btn.innerHTML = '<span class="spin"></span> ⏹'; btn.title = 'Detener la generación con IA'; }
     const ad = contextoAtletaDiaIA();
     const semLb = (w.short || ('S' + (wi + 1))) + (w.name ? ' · ' + w.name : '');
     const contexto = [
@@ -9154,7 +9408,8 @@ async function generarObjetivoSemanaCF(btn){
     const sistema = esCF ? sistemaCF : sistemaSB;
     const user = contexto + '\n\nRedactá el objetivo de la semana en JSON.';
     /* 1400 tokens: el texto es de ~150 palabras, el resto es margen para que el JSON no se corte */
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400, signal: ctrl.signal, onProgreso: jpIAAvance(btn, ctrl.signal, ' ⏹') });
+    if(ctrl.signal && ctrl.signal.aborted) return;      /* detenido: el objetivo anterior queda intacto */
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -9170,10 +9425,11 @@ async function generarObjetivoSemanaCF(btn){
     save(); renderBuilder();
     toast('Objetivo de ' + (w.short || ('S' + (wi + 1))) + ' generado con IA ⚡ — revisalo y editalo si hace falta');
   }catch(e){
+    if(jpIAEsCancelado(e)) return;
     console.warn('generarObjetivoSemanaCF', e);
     if(!(e && e.__toast)) toast('No se pudo generar el objetivo de la semana: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    jpIALibre(btn, originalHtml);
+    jpIASoltar(btn, ctrl, originalHtml);
   }
 }
 /* Equivalente de generarTipsPacingIA() de arriba pero para bloques de
@@ -9183,8 +9439,18 @@ async function generarObjetivoSemanaCF(btn){
    genéricos b.tips/b.objective (los que ya lee y guarda el acordeón
    "📋 Pautas & Estrategia del Coach" de renderDay()) en vez de
    b.cfCierre.*, que es exclusivo de CrossFit. */
-async function generarTipsSportsCore(bid, btn){
-  const b = findBlock(bid); if(!b) return;
+/* avance en vivo en el botón mientras la IA escribe (streaming): el coach ve que la respuesta está llegando, nunca un spinner mudo */
+function jpIAAvance(btn, senal, sufijo){
+  return function(n){
+    if(!btn || !btn.isConnected || (senal && senal.aborted)) return;
+    const k = n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + ' k' : String(n);
+    btn.innerHTML = '<span class="spin"></span> ✍️ ' + k + (sufijo || '');
+  };
+}
+async function generarTipsSportsCore(bid, btn, senal, opt){
+  opt = opt || {};
+  const b = findBlock(bid);
+  if(!b){ toast('No se encontró el bloque (la pantalla quedó desactualizada): actualizá y probá de nuevo', 'warn'); return; }
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
     toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
     if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
@@ -9226,7 +9492,10 @@ async function generarTipsSportsCore(bid, btn){
     'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas + (demanda ? '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + demanda : '');
 
   const originalHtml = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  /* mientras genera, el botón queda HABILITADO y muestra ⏹: tocarlo de nuevo cancela la petición (jpIACancelar) */
+  btn.disabled = !senal; btn.innerHTML = '<span class="spin"></span>' + (senal ? ' ⏹' : '');
+  const tituloPrev = btn.title; if(senal) btn.title = 'Detener la generación con IA';
+  const cortado = () => { if(senal && senal.aborted){ const e = new Error('Generación cancelada'); e.cancelado = true; throw e; } };
   /* una respuesta de la IA → { objetivo, tips }; si el JSON vino cortado se rescatan los campos que alcanzaron a llegar */
   const extraer = raw => {
     let j = null;
@@ -9240,7 +9509,7 @@ async function generarTipsSportsCore(bid, btn){
     return { objetivo: (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g, '').trim(), tips: partes.slice(1).join('\n').trim() };
   };
   try{
-    const pedir = async (tokens, extra) => extraer(String(await window.CoachAI.generarTexto(user + (extra || ''), sistema, { maxTokens: tokens }) || '').trim());
+    const pedir = async (tokens, extra) => { const out = await window.CoachAI.generarTexto(user + (extra || ''), sistema, { maxTokens: tokens, signal: senal, onProgreso: jpIAAvance(btn, senal, senal ? ' ⏹' : '') }); cortado(); return extraer(String(out || '').trim()); };
     let r = await pedir(esBiset ? 3400 : 2200, '');
     if(!r.objetivo && !r.tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
     const ath = (typeof active === 'function') ? active() : null;
@@ -9251,17 +9520,22 @@ async function generarTipsSportsCore(bid, btn){
       const p2 = TI.procesar(r2.tips, estaciones, { ath: ath, tempo: b.tempo });
       if(r2.tips){ proc = p2; if(r2.objetivo) r.objetivo = r2.objetivo; }
     }
+    cortado();      /* si el coach canceló mientras llegaba la respuesta, no se escribe nada */
     if(r.objetivo) b.objective = r.objetivo;
     if(proc.texto){
       b.tips = proc.texto;
     }
+    /* texto nuevo generado: deja de contar como edición a mano y no arrastra la línea de la alineación anterior */
+    delete b.jpMano; delete b.jpFicha;
     save(); renderBuilder();
-    toast(proc.cortada ? 'Tips generados: se completó con la base del Banco lo que la IA dejó a medias ⚡' : 'Tips y objetivo generados con IA ⚡');
+    if(!opt.silencioso) toast(proc.cortada ? 'Tips generados: se completó con la base del Banco lo que la IA dejó a medias ⚡' : 'Tips y objetivo generados con IA ⚡');
   }catch(e){
+    if(e && (e.cancelado || e.name === 'AbortError')){ if(opt.silencioso) throw e; return; }      /* cancelado: los tips previos quedan intactos y el botón ya se limpió */
+    if(opt.silencioso) throw e;      /* el llamador (alinear con la ficha) informa el error una sola vez */
     console.warn('generarTipsSports', e);
     if(!(e && e.__toast)) toast('Error en API: ' + String((e && e.message) || e).slice(0, 220), 'err');
   }finally{
-    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; btn.title = tituloPrev; }
   }
 }
 
@@ -9330,6 +9604,36 @@ function autoTituloBiset(ejercicios){
    calculado por el caller antes de mutar el array) -- no el b.titulo
    crudo, que siempre coincide consigo mismo y volvería la protección un
    no-op (pisaría cualquier título, incluso uno escrito a mano). */
+/* Pizarra (bloque de lista con líneas A1. / A2. / A3.): "Biset Jalón al pecho + Curl martillo". Devuelve '' si el bloque no es un grupo de 2 o 3 ejercicios. */
+function jpTituloAutoPizarra(items){
+  const nombres = [];
+  (Array.isArray(items) ? items : []).forEach(l => {
+    const m = /^[A-Fa-f]\d{1,2}[.):]\s*(.+?)(?:\s+[—–]\s+.*)?$/.exec(String(l || '').trim());
+    if(!m) return;
+    const crudo = m[1].replace(/\s*\([^)]*\)\s*$/, '').replace(/\s*[|·].*$/, '').trim();
+    const ex = (typeof jpExDeNombre === 'function') ? jpExDeNombre(m[1]) : null;
+    const n = ex ? ex.es : crudo;
+    if(n) nombres.push(n);
+  });
+  if(nombres.length < 2 || nombres.length > 3) return '';
+  return (nombres.length === 2 ? 'Biset ' : 'Triset ') + nombres.join(' + ');
+}
+/* el núcleo de un título del Banco ("Hipertrofia – Biset X + Y (10 MIN)" -> "Biset X + Y") para saber si sigue siendo el automático */
+function jpNucleoTitulo(t){
+  const s = String(t || '').trim(), mPre = /^((?:Fuerza principal|Hipertrofia|Accesorios|Core)\s*[–-]\s*)/i.exec(s), mSuf = /(\s*\(\s*\d+\s*MIN\s*\))\s*$/i.exec(s);
+  const pre = mPre ? mPre[1] : '', suf = mSuf ? mSuf[1] : '';
+  return { pre: pre, suf: suf, nucleo: s.slice(pre.length, s.length - suf.length).trim() };
+}
+/* al editar las líneas de un biset de la Pizarra, el título acompaña a los ejercicios reales; si el coach escribió un título propio, no se toca */
+function jpSyncTituloPizarra(b, itemsPrevios){
+  if(!b || b.tipo !== 'list' || !b.sportsPizarra) return false;
+  const nuevo = jpTituloAutoPizarra(b.items); if(!nuevo) return false;
+  const viejo = jpTituloAutoPizarra(itemsPrevios), p = jpNucleoTitulo(b.titulo);
+  const esAuto = !p.nucleo || p.nucleo === viejo || RX_TITULO_GENERICO.test(p.nucleo) || /^(biset|triset)$/i.test(p.nucleo);
+  if(!esAuto || p.nucleo === nuevo) return false;
+  b.titulo = p.pre + nuevo + p.suf;
+  return true;
+}
 function syncTituloBiset(b, previoAuto){
   if(!b || b.tipo !== 'superset') return;
   var defaultLb = (TIPOS.superset || {}).lb;
@@ -9933,11 +10237,14 @@ function bindBuilder(){
     }
     if(t.dataset.bf){
       const b = findBlock(t.dataset.b); if(!b) return;
+      const itemsPrevios = (t.dataset.bf === 'items' && Array.isArray(b.items)) ? b.items.slice() : null;
       /* findBlock() ya resuelve `b` DENTRO de la semana activa (d.bloques
          apunta ahí, ver sincronizarBloquesSemana()) -- así que escribir en
          b.items acá ya escribe en el bloque propio de ESA semana, sin
          ningún desvío especial por campo/disciplina como antes. */
       setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
+      /* el coach escribió a mano el objetivo o los tips (tecla real, no un volcado de un generador): queda marcado y "Alinear con la ficha" lo respeta */
+      if(e.isTrusted && (t.dataset.bf === 'objective' || t.dataset.bf === 'tips')){ b.jpMano = b.jpMano || {}; b.jpMano[t.dataset.bf === 'objective' ? 'o' : 't'] = true; }
       /* FIX (bug introducido en la directiva de independencia de semanas):
          esta rama dependía de una variable esPlanCF que ese refactor había
          retirado sin darse cuenta de este segundo uso -- cualquier tecla
@@ -9966,6 +10273,12 @@ function bindBuilder(){
       if(t.dataset.bf === 'items' && b.tipo === 'list' && b.sportsPizarra){
         const blEl = t.closest('.block');
         if(blEl) alertasChipsSports(blEl, b);
+        /* título del biset según los ejercicios reales que quedaron escritos */
+        if(itemsPrevios && jpSyncTituloPizarra(b, itemsPrevios)){
+          save();
+          const ti = blEl && blEl.querySelector('[data-bf="titulo"]');
+          if(ti && document.activeElement !== ti) ti.value = b.titulo;
+        }
       }
       /* directiva (Metodologías avanzadas): el campo de parámetro
          (cargas de drop set, esquema de rest-pause, % de back-off, etc.)
@@ -10371,6 +10684,7 @@ JP_I18N.add('es', {
   'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
   'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
   'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.ver.est': 'Los tiempos son estimados: según tu energía, tu recuperación, tu nivel y tu ritmo del día, la sesión puede llevarte un poco más o un poco menos.',
   'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
@@ -10412,6 +10726,7 @@ JP_I18N.add('en', {
   'app.ver.h.std': 'Main blocks only. The complementary work ({n}) is kept for the extended version.',
   'app.ver.h.ext': 'Full session: adds {n} complementary block(s) to the main ones.',
   'app.ver.h.igual': 'This session has no complementary blocks: both versions are the same.',
+  'app.ver.est': 'Times are estimates: depending on your energy, recovery, level and pace on the day, the session may take you a little more or a little less.',
   'app.plan.t': 'LOAD PLAN · based on your history', 'app.plan.hecho': '✓ done', 'app.plan.desc': 'DELOAD', 'app.plan.pico': 'PEAK',
   'app.notif.work': '💪 Go! · Round {r}/{n}',
   'app.notif.work.simple': '💪 Go!',
@@ -14672,6 +14987,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
   }
   function reset(){
     running = false; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* la voz de este descanso no sigue sonando después de reiniciarlo */
     round = 0; remaining = restSeconds; lastBeepSec = null; endTs = 0;
     playBtn.disabled = false; playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
@@ -15029,7 +15345,9 @@ function jpVersionHtml(day){
   };
   return '<div class="jp-ver" id="jpVer" role="group" aria-label="' + jpT('app.ver.t') + '"><div class="jp-ver-seg">' +
     btn('quick', jpT('app.ver.std'), jpT('app.ver.m60'), !ext) + btn('complete', jpT('app.ver.ext'), jpT('app.ver.m90'), ext) +
-    '</div><p class="jp-ver-h">' + hint + '</p></div>';
+    '</div><p class="jp-ver-h">' + hint + '</p>' +
+    /* las duraciones son una referencia: dependen del estado del alumno/a ese día (una línea discreta, debajo de la explicación de la versión) */
+    '<p class="jp-ver-est">⏱ ' + jpT('app.ver.est') + '</p></div>';
 }
 function jpSetVersion(modo){
   if((modo !== 'quick' && modo !== 'complete') || state.mode === modo) return;
@@ -16522,19 +16840,22 @@ window.JP_VOZ_PACK = {"es":{"n3":"SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYzLjEuMTAyAA
      como respaldo (si algún día la app se publica con la carpeta al lado) y como fuente del paquete.
    · Al activarse (o al arrancar con la voz activa) los clips se decodifican a AudioBuffer en el MISMO AudioContext de los tonos (ensureAudioCtx): reproducir una frase es un
      start() igual que un beep, sin latencia y por el mismo compresor. Se recorta el silencio inicial de cada clip.
-   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NO suena (la voz reemplaza al pitido; si el
-     clip todavía se está cargando, ese aviso queda en silencio). Solo si el paquete no se pudo cargar (estado "fallo") devuelve false y suena el tono de siempre para que el timer
-     no quede mudo. Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
-   · Preferencias: jp_voz ('1' activa; por defecto apagada) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
+   · Contrato con jpPerfilSonido.reproducir: con la voz activa, jpVoz.hablar(ev, n, clip) devuelve true SIEMPRE: dice la frase y el tono NUNCA suena (la voz reemplaza al pitido).
+     Si el clip todavía se está cargando, o el paquete falló (se reintenta cada 20 s), ese aviso queda en silencio: antes el fallo caía al pitido viejo y se escuchaban los dos
+     sistemas mezclados (pitido antes o junto a la voz). Voz apagada = tonos como siempre. El mute general (jp_audio_muted) silencia voz y tonos.
+   · callar(): corta la frase en curso y lo que quedó agendado ("Mitad" diferido, pista de transición). El timer lo llama al reiniciarse o cerrarse, así ninguna frase del
+     timer anterior suena encima del nuevo.
+   · Preferencias: jp_voz (ACTIVA por defecto desde 2026-11; '0' = el alumno la apagó en Ajustes o en el chip del timer y vuelven los tonos) y jp_voz_lang ('en' por defecto | 'es' | 'auto'). 'auto' sigue el idioma de la app (JP_I18N).
    ========================================================= */
 var jpVoz = (function(){
   var KEY = 'jp_voz', KEY_L = 'jp_voz_lang', BASES = ['voz/', '../voz/'], VIGENCIA_PISTA = 2500;
-  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000;
+  var BUF = {}, cargas = {}, ESTADO = {}, falloT = {}, base = null, manifest = null, actual = null, pistaTxt = null, pistaT = 0, hablaT = 0, REINTENTO_MS = 20000, diferida = null;
   /* pista del timer -> frase: lo que el timer anuncia antes de la transición ('done' = fin de todo) */
   var PISTAS = { tono: '_tono', go: 'go', rest: 'rest', work: 'work', next_round: 'next_round', last_round: 'last_round', done: 'finish', finish: 'finish', halfway: 'halfway' };
   function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
   function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
-  function activa(){ return lsGet(KEY) === '1'; }
+  /* la voz viene encendida: solo un '0' guardado (el alumno la apagó a propósito) la desactiva */
+  function activa(){ return lsGet(KEY) !== '0'; }
   function silenciada(){ try{ return typeof isAudioMuted === 'function' && isAudioMuted(); }catch(e){ return false; } }
   /* idioma de la voz: por defecto INGLÉS (más firme y de app profesional), sin importar el idioma de la app; Ajustes permite ES, EN o AUTO (sigue el idioma de la app) */
   var IDIOMA_DEFECTO = 'en';
@@ -16619,9 +16940,11 @@ var jpVoz = (function(){
     if(!e){ cargar(lang); return false; }
     /* "Mitad" es un aviso suave: si justo se está diciendo una cuenta o una transición ("¡Go!", "Rest"), espera a que termine en vez de cortarla */
     if(id === 'halfway' && actual && Date.now() - hablaT < 900){
-      setTimeout(function(){ if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
+      clearTimeout(diferida);
+      diferida = setTimeout(function(){ diferida = null; if(activa() && !silenciada() && !(actual && Date.now() - hablaT < 900)) decir('halfway'); }, 1000);
       return true;
     }
+    if(id !== 'halfway' && diferida){ clearTimeout(diferida); diferida = null; }      /* una frase nueva descarta el "Mitad" que había quedado esperando */
     var ctx = null; try{ ctx = ensureAudioCtx(); }catch(x){}
     if(!ctx) return false;
     function tocar(){
@@ -16645,8 +16968,8 @@ var jpVoz = (function(){
     if(!activa() || silenciada()) return false;
     var lang = idioma(), st = ESTADO[lang];
     if(st === 'fallo'){
-      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, tonos */
-      return false;
+      if(Date.now() - (falloT[lang] || 0) > REINTENTO_MS) cargar(lang);    /* se reintenta de vez en cuando; mientras tanto, silencio (nunca el pitido viejo encima de la voz) */
+      return true;
     }
     if(!st) cargar(lang);
     var id = null;
@@ -16661,8 +16984,15 @@ var jpVoz = (function(){
     return true;
   }
 
+  /* corta la voz del timer anterior: la frase que suena, el "Mitad" diferido y la pista pendiente */
+  function callar(){
+    if(diferida){ clearTimeout(diferida); diferida = null; }
+    pistaTxt = null;
+    if(actual){ try{ actual.stop(); }catch(e){} actual = null; }
+  }
   function probar(){
     try{ gestoAudio(); }catch(e){}
+    callar();
     cargar().then(function(ok){
       if(!ok){
         var pr = document.getElementById('hdpVozProbar');
@@ -16716,7 +17046,8 @@ var jpVoz = (function(){
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
 
   return {
-    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar,
+    activa: activa, activar: activar, idioma: idioma, preferencia: pref, fijarIdioma: fijarIdioma, cargar: cargar, decir: decir, hablar: hablar, pista: pista, probar: probar, pintar: pintar, callar: callar,
+    hablando: function(){ return !!actual; }, pendiente: function(){ return !!diferida; },
     /* clips ya decodificados por idioma (QA / tests) */
     listos: function(lang){ var b = BUF[lang || idioma()] || {}; return Object.keys(b).filter(function(k){ return k !== '__listo'; }); },
     /* tests: sin red ni sonido real */
@@ -16725,7 +17056,7 @@ var jpVoz = (function(){
     __bytes: bytesDe,
     __poner: function(lang, id, buf){ BUF[lang] = BUF[lang] || {}; BUF[lang][id] = { b: buf, off: 0 }; BUF[lang].__listo = true; ESTADO[lang] = 'ok'; },
     __fallo: function(lang){ ESTADO[lang] = 'fallo'; falloT[lang] = Date.now(); },
-    __vaciar: function(){ BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
+    __vaciar: function(){ callar(); BUF = {}; cargas = {}; ESTADO = {}; falloT = {}; manifest = null; base = null; pistaTxt = null; hablaT = 0; }
   };
 })();
 window.jpVoz = jpVoz;
@@ -26605,6 +26936,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   function sincronizarWodActivo(){ if(corriendo) paso(); }
   function reset(){
     corriendo = false; if(tick){ tick.stop(); } tick = null;
+    cueTrans = null; try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}      /* ninguna frase del timer anterior suena sobre el nuevo */
     despierto(false);
     try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
@@ -26693,6 +27025,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function cerrarTimer(){
     var w = document.getElementById('cwtWrap');
+    try{ if(window.jpVoz) jpVoz.callar(); }catch(eV){}
     if(w){ w.classList.remove('on'); w.classList.remove('cwt-minimized'); }
     if(corriendo) pausar();
     ocultarMini();
@@ -48785,6 +49118,8 @@ html body:not(#_):not(#__) .jp-ver-b i{ font-style:normal; opacity:.6; }
 html body:not(#_):not(#__) .jp-ver-b span{ font-weight:700; letter-spacing:.06em; }
 html body:not(#_):not(#__) .jp-ver-b.on{ color:#FFFFFF; background:linear-gradient(180deg,#F26A1B,#E24F0D); border-color:#FF9B5E; box-shadow:0 8px 16px -10px rgba(238,90,18,.85); }
 html body:not(#_):not(#__) .jp-ver-h{ margin:8px 4px 0; font-size:.74rem; line-height:1.45; color:#9FB0D8; }
+/* aclaración de duración estimada: misma voz que la explicación, un punto más tenue y en itálica para que se lea como nota */
+html body:not(#_):not(#__) .jp-ver-est{ margin:4px 4px 0; font-size:.7rem; line-height:1.45; color:#7F8FB8; font-style:italic; }
 
 /* ---------- 3 · plan de cargas por semana (dentro de "Registrar carga") ---------- */
 html body:not(#_):not(#__) .jp-qc-plan{ margin:2px 0 10px; padding:9px 10px 10px; border-radius:12px; background:rgba(8,14,34,.5); border:1px solid rgba(150,178,240,.2); }
@@ -50369,6 +50704,85 @@ document.addEventListener('DOMContentLoaded', init);
       hints:['gemini-3.8-flash','gemini-3.7-flash'] }
   };
   const ORDEN = ['anthropic','openai','google'];
+  /* MODELO RÁPIDO (auditoría de velocidad 2026-11): los pedidos cortos (nombre de un bloque, foco del día, ficha) no necesitan el modelo grande.
+     Con el modo económico activo (por defecto) y opts.rapido, Anthropic usa Haiku y OpenAI gpt-4o-mini; Gemini flash ya es el rápido.
+     Si el coach eligió a mano un modelo puntual (opts.model) se respeta. */
+  const MODELO_RAPIDO = { anthropic: 'claude-haiku-5-5', openai: 'gpt-4o-mini', google: '' };
+  /* TIEMPO MÁXIMO por llamada: sin esto una petición colgada dejaba el botón girando minutos. Corto para respuestas chicas, más largo para planes. */
+  function timeoutDe(maxTok, opts){
+    if(opts && opts.timeoutMs) return opts.timeoutMs;
+    /* con streaming el texto llega a medida que se escribe: el tope total puede ser holgado, porque una conexión trabada se detecta antes por silencio */
+    if(streamActivo(opts)) return maxTok <= 1600 ? 60000 : (maxTok <= 6000 ? 180000 : 300000);
+    return maxTok <= 1600 ? 45000 : (maxTok <= 6000 ? 90000 : 150000);
+  }
+  /* CAUSA RAÍZ DE LOS "CUELGUES" (uso real, 2026-11): sin streaming la respuesta llegaba entera recién al final. Un objetivo + coaching tips largo (2000-5000 tokens)
+     tardaba 40-120 s sin ninguna señal de vida, y una conexión que quedó muerta tras horas de inactividad (suspensión, cambio de red, socket viejo reusado)
+     era indistinguible de una respuesta lenta: solo el tope total la cortaba, y después se empezaba de cero con otro proveedor.
+     Ahora: (1) STREAMING en los tres proveedores (SSE): el texto llega en vivo y el botón muestra el avance; (2) PRIMER BYTE: si el servidor no empieza a
+     responder en 25 s la conexión se da por trabada y se reintenta UNA vez en el acto (pedido nuevo); (3) SILENCIO: si a mitad de la respuesta no llega nada
+     durante 30 s, se corta; (4) una respuesta que se corta sin su cierre se reintenta una vez en vez de entregar texto a medias. */
+  const T_PRIMER_BYTE = 25000, T_SILENCIO = 30000;
+  function streamActivo(opts){
+    return AI.stream !== false && !(opts && opts.sinStream) && typeof TextDecoder === 'function';
+  }
+  /* lee el SSE del proveedor y lo convierte en la MISMA respuesta JSON que daría la llamada sin streaming (así el resto del flujo no cambia) */
+  async function leerSSE(r, prov, latido, onProgreso, senal){
+    const lector = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', texto = '', fin = '', error = null, hubo = false;
+    const linea = l => {
+      if(l.slice(0, 5) !== 'data:') return;
+      const d = l.slice(5).trim(); if(!d || d === '[DONE]') return;
+      let j; try{ j = JSON.parse(d); }catch(e){ return; }
+      hubo = true;
+      if(j && j.error){ error = j.error; return; }
+      if(prov === 'anthropic'){
+        if(j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') texto += j.delta.text || '';
+        else if(j.type === 'message_delta' && j.delta && j.delta.stop_reason) fin = j.delta.stop_reason;
+      } else if(prov === 'google'){
+        const c = (j.candidates || [])[0];
+        if(c){ texto += ((c.content && c.content.parts) || []).filter(pt => !pt.thought).map(pt => pt.text || '').join(''); if(c.finishReason) fin = c.finishReason; }
+        else if(j.promptFeedback && j.promptFeedback.blockReason) fin = 'BLOCKED';
+      } else {
+        const c = (j.choices || [])[0];
+        if(c){ if(c.delta && c.delta.content) texto += c.delta.content; if(c.finish_reason) fin = c.finish_reason; }
+      }
+    };
+    try{
+      for(;;){
+        const { value, done } = await lector.read();
+        if(done) break;
+        latido();
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while((i = buf.indexOf('\n')) >= 0){ linea(buf.slice(0, i).replace(/\r$/, '')); buf = buf.slice(i + 1); }
+        if(onProgreso && texto && !(senal && senal.aborted)){ try{ onProgreso(texto.length); }catch(e){} }
+      }
+    }finally{ try{ lector.releaseLock(); }catch(e){} }
+    buf += dec.decode();
+    if(buf.trim()) linea(buf.trim());
+    if(error){
+      const tipo = String(error.type || error.status || error.code || '');
+      const status = /overloaded/i.test(tipo) ? 529 : (/rate|RESOURCE_EXHAUSTED|429/i.test(tipo) ? 429 : (/unavailable|503/i.test(tipo) ? 503 : 500));
+      return { status: status, raw: JSON.stringify({ error: error }) };
+    }
+    /* sin señal de cierre: la conexión se cayó a mitad de la respuesta (el texto que llegó está incompleto) */
+    if(!fin){ const eC = new Error('La conexión se cortó a mitad de la respuesta'); eC.cortadaRed = true; eC.parcial = texto.length; throw eC; }
+    let raw;
+    if(prov === 'anthropic') raw = { content: [{ type: 'text', text: texto }], stop_reason: fin };
+    else if(prov === 'google') raw = fin === 'BLOCKED' && !texto ? { candidates: [] } : { candidates: [{ content: { parts: [{ text: texto }] }, finishReason: fin }] };
+    else raw = { choices: [{ message: { content: texto }, finish_reason: fin }] };
+    return { status: 200, raw: JSON.stringify(raw), vacio: !hubo };
+  }
+  function errCancelado(){ const e = new Error('Generación cancelada'); e.cancelado = true; e.name = 'AbortError'; e.__toast = true; return e; }
+  /* espera que se corta si el coach cancela */
+  function esperarCancelable(ms, signal){
+    return new Promise((ok, mal) => {
+      if(signal && signal.aborted) return mal(errCancelado());
+      const id = setTimeout(() => { if(signal) signal.removeEventListener('abort', alAbortar); ok(); }, ms);
+      function alAbortar(){ clearTimeout(id); mal(errCancelado()); }
+      if(signal) signal.addEventListener('abort', alAbortar, { once: true });
+    });
+  }
   /* nombres de modelo aceptados por proveedor: solo familias reales con los parametros que usa esta app */
   const RX_MODELO = {
     anthropic: /^claude-[a-z0-9][a-z0-9.\-]*$/,
@@ -50632,8 +51046,14 @@ document.addEventListener('DOMContentLoaded', init);
   /* pregunta a Google que modelos con generateContent tiene disponibles esta clave (endpoint oficial ListModels): evita depender de nombres escritos a mano */
   async function descubrirModelosGoogle(){
     const k = keyOf('google'); if(!k) throw new Error('Cargá primero la API Key de Google.');
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': k } });
-    const raw = await r.text();
+    /* con tiempo máximo: esta consulta corre en medio de una generación (modelo 404) y antes podía quedar esperando para siempre */
+    const ctrlL = (typeof AbortController === 'function') ? new AbortController() : null, relojL = ctrlL ? setTimeout(() => ctrlL.abort(), 15000) : null;
+    let r, raw;
+    try{
+      r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': k }, signal: ctrlL ? ctrlL.signal : undefined, cache: 'no-store' });
+      raw = await r.text();
+    }catch(eL){ throw new Error('Google no respondió la lista de modelos a tiempo (' + String((eL && eL.message) || eL).slice(0, 80) + ').'); }
+    finally{ if(relojL) clearTimeout(relojL); }
     if(!r.ok){ let msg = raw; try{ msg = JSON.parse(raw).error.message; }catch(e){} const e = new Error('HTTP ' + r.status + ' — ' + String(msg).slice(0, 200)); e.status = r.status; throw e; }
     const list = (JSON.parse(raw).models || []).filter(m => (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0)
       .map(m => String(m.name || '').replace(/^models\//, ''))
@@ -50665,8 +51085,11 @@ document.addEventListener('DOMContentLoaded', init);
        llamador puntual (ej. el selector del panel de nutrición) puede pedir
        un modelo EXACTO sin tocar la configuración global guardada en
        AI.models[prov] -- opts.model tiene prioridad si viene informado. */
-    const model = (opts && opts.model) || AI.models[prov] || cfg.model;
+    const rapido = opts && opts.rapido && !opts.model && AI.econ !== false && MODELO_RAPIDO[prov];
+    const model = (opts && opts.model) || rapido || AI.models[prov] || cfg.model;
     let modeloAct = model;
+    const senalExt = opts && opts.signal;
+    if(senalExt && senalExt.aborted) throw errCancelado();
     if(prov === 'google' && !(opts && opts.model) && modeloAgotado(model)){ const alt0 = CADENA_GOOGLE.find(m => !modeloAgotado(m)); if(alt0) modeloAct = alt0; }
     /* opts.maxTokens permite a un llamador puntual (ej. el plan de nutrición,
        cuyo JSON de respuesta es mucho más largo que el resto) pedir más margen
@@ -50681,7 +51104,10 @@ document.addEventListener('DOMContentLoaded', init);
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       };
-      body = { model: model, max_tokens: maxTok, system: system, messages: [{ role:'user', content: user }] };
+      /* el system largo (reglas de tips, biblioteca de ejercicios) se repite idéntico entre llamadas: se marca para el caché de prompts de Anthropic
+         (la segunda llamada procesa ese tramo mucho más rápido y más barato). Los system cortos van como texto simple. */
+      const sys = String(system || '').length > 4000 ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system;
+      body = { model: model, max_tokens: maxTok, system: sys, messages: [{ role:'user', content: user }] };
     } else if(prov === 'google'){
       url = cfg.url + encodeURIComponent(modeloAct) + ':generateContent';
       headers = { 'content-type': 'application/json', 'x-goog-api-key': keyOf(prov) };
@@ -50716,11 +51142,44 @@ document.addEventListener('DOMContentLoaded', init);
       if(body.response_format) delete body.response_format;
     }
 
-    async function enviar(bodyEnviado){
+    /* un envío con sus tres relojes (total, primer byte y silencio entre fragmentos); con streaming arma la misma respuesta que la llamada clásica */
+    async function enviarUnaVez(bodyEnviado){
       let r;
+      const conStream = streamActivo(opts);
+      let urlEnv = url, bodyEnv = bodyEnviado;
+      if(conStream){
+        if(prov === 'google') urlEnv = url.replace(/:generateContent$/, ':streamGenerateContent?alt=sse');
+        else bodyEnv = Object.assign({}, bodyEnviado, { stream: true });
+      }
+      const ctrl = (typeof AbortController === 'function') ? new AbortController() : null, ms = timeoutDe(maxTok, opts);
+      const msPrimer = conStream ? Math.min(ms, (opts && opts.primerByteMs) || T_PRIMER_BYTE) : ms;
+      const msSilencio = Math.min(ms, (opts && opts.silencioMs) || T_SILENCIO);
+      let motivo = '';
+      const reloj = ctrl ? setTimeout(() => { motivo = motivo || 'total'; ctrl.abort(); }, ms) : null;
+      let relojVida = (ctrl && msPrimer < ms) ? setTimeout(() => { motivo = motivo || 'primer'; ctrl.abort(); }, msPrimer) : null;
+      const latido = () => { if(!ctrl) return; clearTimeout(relojVida); relojVida = setTimeout(() => { motivo = motivo || 'silencio'; ctrl.abort(); }, msSilencio); };
+      const reenviar = () => { if(ctrl) ctrl.abort(); };
+      if(senalExt && ctrl) senalExt.addEventListener('abort', reenviar, { once: true });
       try{
-        r = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(bodyEnviado) });
+        r = await fetch(urlEnv, { method:'POST', headers: headers, body: JSON.stringify(bodyEnv), signal: ctrl ? ctrl.signal : undefined, cache: 'no-store' });
+        const tipo = (r.headers && typeof r.headers.get === 'function' && r.headers.get('content-type')) || '';
+        if(conStream && r.ok && /event-stream/i.test(tipo) && r.body && typeof r.body.getReader === 'function'){
+          latido();
+          const s = await leerSSE(r, prov, latido, opts && opts.onProgreso, senalExt);
+          return { res: { ok: s.status === 200, status: s.status, headers: r.headers }, raw: s.raw };
+        }
+        if(conStream) latido();
+        return { res: r, raw: await r.text() };
       }catch(errRed){
+        if(senalExt && senalExt.aborted) throw errCancelado();
+        if(errRed && errRed.cortadaRed){ errRed.prov = prov; throw errRed; }
+        if(motivo){
+          const seg = Math.round((motivo === 'primer' ? msPrimer : (motivo === 'silencio' ? msSilencio : ms)) / 1000);
+          const eT = new Error(motivo === 'total'
+            ? PROV[prov].lb + ' (' + modeloAct + ') tardó más de ' + seg + ' s en responder: se cortó la espera para no dejar la app colgada. Probá de nuevo, o activá el modo económico / un modelo más rápido en ⚙️ Configuración de IA.'
+            : PROV[prov].lb + ' (' + modeloAct + ') ' + (motivo === 'primer' ? 'no empezó a responder en ' + seg + ' s' : 'dejó de enviar texto durante ' + seg + ' s') + ': la conexión quedó trabada (suele pasar tras un rato sin uso o un cambio de red). Probá de nuevo.');
+          eT.timeout = true; eT.motivo = motivo; eT.prov = prov; throw eT;
+        }
         /* directiva crítica (2026-09) -- diagnóstico de "todos los motores
            fallaron": fetch() rechaza con el mismo TypeError genérico
            ("Failed to fetch"/"NetworkError"/"Load failed") tanto si no hay
@@ -50736,11 +51195,39 @@ document.addEventListener('DOMContentLoaded', init);
            habilita CORS en su API REST) -- por eso el aviso queda sólo para
            OpenAI, no aplica al resto. */
         throw new Error('No se pudo conectar con ' + PROV[prov].lb + ' (' + (errRed && errRed.message || 'error de red') + '). Puede ser la conexión a internet, un bloqueo del navegador (extensión, CORS) o el servicio caído: usá "🔌 Probar conexión" en ⚙️ Configuración de IA para ver el detalle.');
+      }finally{
+        if(reloj) clearTimeout(reloj);
+        if(relojVida) clearTimeout(relojVida);
+        if(senalExt && ctrl) senalExt.removeEventListener('abort', reenviar);
       }
-      return { res: r, raw: await r.text() };
+    }
+    /* conexión trabada antes del primer byte o respuesta cortada a mitad de camino: un reintento inmediato con un pedido nuevo (nunca más de uno) */
+    async function enviar(bodyEnviado){
+      try{ return await enviarUnaVez(bodyEnviado); }
+      catch(e){
+        if(senalExt && senalExt.aborted) throw errCancelado();
+        if((e && e.timeout && e.motivo === 'primer') || (e && e.cortadaRed)){
+          try{ console.info('[CoachAI] ' + PROV[prov].lb + ': ' + (e.cortadaRed ? 'respuesta cortada' : 'conexión trabada') + ' — reintento inmediato'); }catch(e1){}
+          try{ if(opts && opts.onReintento) opts.onReintento(e); }catch(e2){}
+          try{ return await enviarUnaVez(bodyEnviado); }
+          catch(e3){
+            if(e3 && e3.cortadaRed){ const eF = new Error('La conexión con ' + PROV[prov].lb + ' se cortó dos veces a mitad de la respuesta: no se escribió nada a medias. Revisá la conexión y probá de nuevo.'); eF.timeout = true; eF.prov = prov; throw eF; }
+            throw e3;
+          }
+        }
+        throw e;
+      }
     }
 
     let { res, raw } = await enviar(body);
+
+    /* el modelo rápido no está habilitado para esta clave: se repite UNA vez con el modelo configurado (nunca se queda sin respuesta por el atajo) */
+    if(rapido && (res.status === 404 || (res.status === 400 && /model/i.test(raw)))){
+      const normal = AI.models[prov] || cfg.model;
+      if(body.model) body.model = normal;
+      modeloAct = normal;
+      ({ res, raw } = await enviar(body));
+    }
 
     /* Gemini 404 (modelo inexistente / sin acceso para esta clave): se prueba el resto de la cadena vigente antes de rendirse */
     if(prov === 'google' && res.status === 404 && !(opts && opts.model)){
@@ -50913,6 +51400,12 @@ document.addEventListener('DOMContentLoaded', init);
       try{
         return await callProvider(prov, system, user, opts);
       }catch(err){
+        if(err.cancelado) throw err;      /* el coach frenó la generación: sin toast de error ni reintentos */
+        /* un proveedor que no responde a tiempo no frena la app: con el fallback activo se sigue con el próximo que tenga clave (sin ponerlo en pausa) */
+        if(err.timeout && AI.fallback !== false){
+          const altT = nextProvider(prov);
+          if(altT && intentados.indexOf(altT) < 0){ log('⌛ ' + PROV[prov].lb + ' no respondió a tiempo — sigo con ' + PROV[altT].lb + '…', 'warn'); prov = altT; continue; }
+        }
         if(!err.rate){
           if(!err.__toast){ err.__toast = true; try{ toast('Error en API: ' + String((err && err.message) || err).slice(0, 220), 'err'); }catch(e){} }
           throw err;
@@ -50920,7 +51413,7 @@ document.addEventListener('DOMContentLoaded', init);
         /* espera corta: reintenta el mismo proveedor */
         if(err.secs <= 20 && !(opts && opts.sinEspera)){      /* sinEspera: el llamador (generador de sesion) maneja la pausa con cuenta regresiva visible */
           log('⏳ ' + PROV[prov].lb + ' pidió esperar ' + err.secs + 's — reintentando…', 'warn');
-          await new Promise(r => setTimeout(r, (err.secs + 1) * 1000));
+          await esperarCancelable((err.secs + 1) * 1000, opts && opts.signal);
           continue;
         }
         setCooldown(prov, err.secs);
@@ -51059,6 +51552,7 @@ document.addEventListener('DOMContentLoaded', init);
     if(ath.deportes) L.push('Extra: ' + ath.deportes);
     if(ath.compat) L.push('Compatibilidad: ' + ath.compat);
     if(ath.genero) L.push('Género: ' + ath.genero);
+    { const dirGen = (typeof jpGeneroIA === 'function') ? jpGeneroIA(ath) : ''; if(dirGen) L.push(dirGen); }
     if(ath.notas && String(ath.notas).trim()) L.push('NOTAS DEL COACH SOBRE EL ALUMNO (obligatorias): ' + String(ath.notas).trim().slice(0, 700));
     if((ath.tags || []).length) L.push('LESIONES: ' + ath.tags.join('; '));
     if((ath.prohibidos || []).length) L.push('PROHIBIDOS: ' + ath.prohibidos.join('; '));
@@ -51310,11 +51804,15 @@ document.addEventListener('DOMContentLoaded', init);
     const notes = [];
     let okCount = 0;
     try{
+      /* VELOCIDAD: el mesociclo no depende de los días: se pide en paralelo con el reparto y los días (antes iba todo en fila) */
+      let mesoProm = null;
       if($('#aiMeso').checked){
-        log('Generando progresión del mesociclo…');
-        const meso = sanitizeMeso(extractJson(await callAI(SYS, mesoPrompt(ath, opts), log)), notes);
-        if(meso){ p.meso = meso; log('✔ Mesociclo actualizado (' + meso.map(w => w.short).join(', ') + ')', 'ok'); }
-        else log('⚠ El modelo no devolvió un mesociclo válido: se mantiene el actual.', 'warn');
+        log('Generando progresión del mesociclo (en paralelo)…');
+        mesoProm = callAI(SYS, mesoPrompt(ath, opts), log).then(txt => {
+          const meso = sanitizeMeso(extractJson(txt), notes);
+          if(meso){ p.meso = meso; log('✔ Mesociclo actualizado (' + meso.map(w => w.short).join(', ') + ')', 'ok'); }
+          else log('⚠ El modelo no devolvió un mesociclo válido: se mantiene el actual.', 'warn');
+        }).catch(e => { log('⚠ Mesociclo: ' + esc(e.message || String(e)) + ' — se mantiene el actual.', 'warn'); });
       }
 
       /* reparto de focos: una sola llamada chica que ahorra tokens en todo el resto */
@@ -51329,7 +51827,9 @@ document.addEventListener('DOMContentLoaded', init);
       }
 
       const resumen = [];
-      for(let k = 0; k < targets.length; k++){
+      /* VELOCIDAD: los días se piden de a 3 en paralelo (cada uno con su foco del reparto); antes iban de a uno y la semana tardaba N veces una llamada.
+         3 a la vez entra en el límite por minuto de las claves gratuitas; si igual llega un 429, callAI reintenta solo. */
+      const generarDia = async (k) => {
         const di = targets[k];
         const foco = focos[k] || null;
         log('Generando ' + esc(p.dias[di].short) + ' (' + (k + 1) + '/' + targets.length + ')…');
@@ -51337,14 +51837,24 @@ document.addEventListener('DOMContentLoaded', init);
         const day = sanitizeDay(extractJson(txt), ath, di, notes);
         day.id = p.dias[di].id || day.id;
         /* una respuesta vacía o inválida NUNCA pisa un día cargado */
-        if(!day.bloques || !day.bloques.length){ log('⚠ ' + esc(p.dias[di].short) + ': la IA no devolvió bloques válidos, se conserva el día como estaba.', 'warn'); continue; }
+        if(!day.bloques || !day.bloques.length){ log('⚠ ' + esc(p.dias[di].short) + ': la IA no devolvió bloques válidos, se conserva el día como estaba.', 'warn'); return; }
         p.dias[di] = day;
         resumen.push(day.short + ': ' + (day.label || day.title));
         okCount++;
         log('✔ ' + esc(day.short) + ' — ' + esc(day.label) + ' · ' + day.bloques.length + ' bloques', 'ok');
         save();
         if(S.ui.view === 'builder') renderBuilder();
-      }
+      };
+      let sig = 0, primerError = null;
+      const trabajador = async () => {
+        while(sig < targets.length && !primerError){
+          const k = sig++;
+          try{ await generarDia(k); }catch(e){ primerError = primerError || e; }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, targets.length) }, trabajador));
+      if(mesoProm) await mesoProm;
+      if(primerError) throw primerError;
 
       save(); renderBuilder();
       const dang = notes.filter(n => n.t === 'err').length;
@@ -55264,7 +55774,9 @@ body{overflow-x:hidden}
       return propio.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => /^[A-F]\d\s*·/.test(l) ? l : pre + l);
     }
     const kb = (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null;
-    const generico = !kb || RX_KB_GENERICO.test(kb.o || '');
+    /* la base del Banco se busca por palabra clave: una abducción CON BANDA caía en las pautas de la máquina ("pila de pesas"). Si el texto habla de máquina o polea y el ejercicio no lo es, se usan las pautas por patrón */
+    const deOtroEquipo = !!kb && /m[áa]quina|pila de pesas|polea|cable/i.test([kb.s, kb.c, kb.x].join(' ')) && !/M[áa]quina|Polea|Multipower/.test(String(ex.equipo || ''));
+    const generico = !kb || RX_KB_GENERICO.test(kb.o || '') || deOtroEquipo;
     let su, cue, cu;
     if(!generico){ su = kb.s; cue = kb.c; cu = kb.x; }
     else {
@@ -67004,9 +67516,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       else top.appendChild(chip);
     }
     const d = e.detalle;
-    chip.innerHTML = '⏱️ Duración estimada de sesión: <b>' + e.min + ' min</b>' +
+    chip.innerHTML = '⏱️ Duración estimada de sesión: <b>≈ ' + e.min + ' min</b>' +
       '<span class="det">calentamiento ' + Math.round(d.calentamiento) + ' · fuerza ' + Math.round(d.fuerza) +
-      ' · WOD ' + Math.round(d.wod) + ' · descansos ' + Math.round(d.descansos) + '</span>';
+      ' · WOD ' + Math.round(d.wod) + ' · descansos ' + Math.round(d.descansos) + ' · varía según el estado del alumno/a</span>';
+    chip.title = 'Es una estimación: el tiempo real depende de la energía, la recuperación, el nivel y el ritmo de ejecución del alumno/a ese día.';
   }
   window.jpPintarDuracion = pintarDuracion;
   /* en vivo: cada cambio en un campo del dia recalcula la duracion */
@@ -67593,7 +68106,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     '"refs" son 1 o 2 referencias científicas reales y verificables en formato «Autor et al., año — título simplificado». ' +
     'No inventes estudios: usá literatura clásica y ampliamente citada de entrenamiento de fuerza.';
 
+  /* una nota a la vez: un segundo toque mientras redacta la detiene (antes podía quedar esperando hasta 150 s sin forma de cortarla) */
+  let notaCtrl = null;
   async function estructurar(){
+    if(notaCtrl){ try{ notaCtrl.abort(); }catch(e){} notaCtrl = null; const ld = document.getElementById('ctxLoad'); if(ld) ld.style.display = 'none'; try{ toast('Redacción con IA detenida: la nota anterior quedó como estaba', 'info'); }catch(e){} return null; }
     const a = (typeof active === 'function') ? active() : null;
     if(!a){ try{ toast('Elegí un alumno primero', 'warn'); }catch(e){} return null; }
     const ta = document.getElementById('ctxTxt');
@@ -67606,14 +68122,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     let nota = null;
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
+    const miCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
     if(conIA){
+      notaCtrl = miCtrl;
       try{
         const user = jpFichaPrefijo(a) + 'Alumno: ' + ((a.nombre || '') + ' ' + (a.apellido || '')).trim() +
           '. Frecuencia: ' + (a.freq || 4) + ' días. ' +
           (a.tags && a.tags.length ? 'Antecedentes: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Notas rápidas del coach: ' + borrador;
-        const txt = await window.CoachAI.generarTexto(user, SISTEMA);
+        /* la nota es un JSON corto (foco + adaptación + 2 referencias): tope de tokens acotado y modelo rápido -- sin tope usaba el máximo global (8000) y el tiempo máximo largo */
+        const txt = await window.CoachAI.generarTexto(user, SISTEMA, { maxTokens: 1400, rapido: true, signal: miCtrl ? miCtrl.signal : undefined });
+        if(miCtrl && miCtrl.signal.aborted) return null;
         /* directiva crítica (2026-09) -- auditoría total de generadores:
            mismo bug de parseo frágil (regex crudo + JSON.parse directo, sin
            tolerar fences de markdown ni saltos de línea sin escapar dentro
@@ -67629,7 +68149,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                    motor: 'ia' };
         }
       }catch(e){
+        if(miCtrl && miCtrl.signal.aborted) return null;      /* detenida por el coach */
         try{ toast('La IA no respondió: se redactó con el motor local', 'warn'); }catch(x){}
+      }finally{
+        if(notaCtrl === miCtrl) notaCtrl = null;
       }
     }
     if(!nota){
@@ -70530,6 +71053,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   function ficha(prog){
     const c = construir(prog);
     if(typeof window.jpModernizarDia === 'function'){ c.dias.forEach(d => window.jpModernizarDia(d.bloques, prog.niv)); }
+    try{ if(typeof jpBisetarDias === 'function') jpBisetarDias(c.dias, { id: 'pro_' + prog.id }); }catch(eB){ console.warn('bisets', eB); }
     return {
       id: uid2('bk'), ic: prog.genero === 'f' ? '♀' : (prog.genero === 'm' ? '♂' : '🏋️'),
       tipo:'base', disc: prog.freq === 1 ? 'dia' : 'hiper', niv: prog.niv || 'intermedio',
@@ -70538,7 +71062,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       dias: c.dias, meso: JSON.parse(JSON.stringify(SEMANAS)),
       meta: { mesoDisc:'hiper', mesoNivel: prog.niv || 'intermedio', mesoName: prog.lb,
               mesoObjetivo: prog.obj, mesoTexto: prog.notas },
-      faltantes: c.faltantes, proVer: prog.ver || 0
+      faltantes: c.faltantes, proVer: prog.ver || 0, bisV: (window.__jpPB && window.__jpPB.EST) ? 1 : 0
     };
   }
 
@@ -70549,6 +71073,11 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       /* programas con versión nueva (p.ver): la copia guardada se actualiza UNA sola vez y solo si el coach no la tocó (sin 'editada' y con el cierre original) */
       const ya = S.banco.filter(x => x.nombre === p.lb)[0];
       if(ya){
+        /* bisV 1: un solo básico recto por sesión y el resto en bisets (jpBisetarDias); la copia que el coach no editó se rehace una vez */
+        if(!ya.editada && (ya.bisV || 0) < 1 && window.__jpPB && window.__jpPB.EST){
+          const nb = ficha(p); ya.dias = nb.dias; ya.notas = nb.notas; ya.meta = Object.assign(ya.meta || {}, nb.meta); ya.proVer = p.ver || ya.proVer || 0; ya.bisV = 1; n++;
+          return;
+        }
         if(p.ver && (ya.proVer || 0) < p.ver && !ya.editada && /FINISHER METABÓLICO|CIERRE AL FALLO|Abductores en máquina|Abducción de cadera en máquina/.test(JSON.stringify(ya.dias || []))){
           const nf = ficha(p); ya.dias = nf.dias; ya.notas = nf.notas; ya.meta = Object.assign(ya.meta || {}, nf.meta); ya.proVer = p.ver; n++;
         } else if(p.ver && (ya.proVer || 0) < p.ver){ ya.proVer = p.ver; }      /* editada o ya distinta: se respeta tal cual */
@@ -70666,6 +71195,8 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   }
   function mount(){
     guardarBanco(true);
+    /* el motor del Banco (bisets) se carga más abajo en la página: segunda pasada cuando ya está disponible */
+    setTimeout(() => { try{ if(window.__jpPB && window.__jpPB.EST && guardarBanco(true)){ try{ save(); }catch(e){} } }catch(e){} }, 1200);
     boton();
     [700, 1800, 3000].forEach(ms => setTimeout(boton, ms));
     ['renderBuilder','go','renderDay'].forEach(fn => {
@@ -83124,8 +83655,10 @@ JP_I18N.add('en', {
   /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
   function R(rol, ej, i, a, o){ var r = { rol: rol, ej: ej, i: i, a: a }; if(o){ for(var k in o) r[k] = o[k]; } return r; }
   function partesDosis(s){
-    var p = String(s || '').split('|'), m = /^(\d+)\s*x\s*(.+)$/i.exec((p[0] || '').trim()) || [];
-    return { sets: parseInt(m[1], 10) || 3, reps: String(m[2] || '10').split('/').map(function(x){ return x.trim(); }), rir: String(p[1] == null ? '1' : p[1]).split('/').map(function(x){ return x.trim(); }), rest: parseInt(p[2], 10) || 90, tec: (p[3] || '').trim() };
+    /* "4/3x8/12": cada estación de un biset conserva SUS series (el volumen semanal no cambia al agrupar); sets = la primera, setsL = una por estación */
+    var p = String(s || '').split('|'), m = /^(\d+(?:\s*\/\s*\d+)*)\s*x\s*(.+)$/i.exec((p[0] || '').trim()) || [];
+    var setsL = m[1] ? String(m[1]).split('/').map(function(x){ return parseInt(x, 10) || 3; }) : [3];
+    return { sets: setsL[0], setsL: setsL, reps: String(m[2] || '10').split('/').map(function(x){ return x.trim(); }), rir: String(p[1] == null ? '1' : p[1]).split('/').map(function(x){ return x.trim(); }), rest: parseInt(p[2], 10) || 90, tec: (p[3] || '').trim() };
   }
   function nombreCorto(n){ return String(n).replace(/\s*\(.*\)\s*$/, ''); }
   function minBloque(sets, estaciones, rest){ return Math.max(4, Math.round(sets * (estaciones * 45 + rest) / 60 + 2)); }
@@ -83220,12 +83753,14 @@ JP_I18N.add('en', {
     var ejs = [].concat(av && fila.ea ? fila.ea : fila.ej);
     var multi = ejs.length > 1, nombresCortos = ejs.map(nombreCorto);
     var titulo = (fila.rol === 'B' ? 'Hipertrofia – Biset ' : (fila.rol === 'T' ? 'Hipertrofia – Triset ' : (fila.rol === 'C' ? 'Core – ' : (PREF[fila.rol] || 'Hipertrofia') + ' – '))) + nombresCortos.join(' + ');
-    var mins = minBloque(d.sets, ejs.length + ejs.filter(esUnilateral).length, d.rest);      /* un ejercicio por lado dura el doble */
+    var setsDe = function(k){ return (d.setsL && d.setsL[k] != null) ? d.setsL[k] : d.sets; };
+    var setsMax = Math.max.apply(null, ejs.map(function(e, k){ return setsDe(k); }));
+    var mins = minBloque(setsMax, ejs.length + ejs.filter(esUnilateral).length, d.rest);      /* un ejercicio por lado dura el doble */
     var L = ['[BLOQUE ' + n + '] [' + TAG[fila.rol] + '] ' + titulo + ' (' + mins + ' MIN)'];
     var tecTxt = d.tec && TEC[d.tec] ? ' | ' + TEC[d.tec].lb : '';
     ejs.forEach(function(e, k){
       var reps = conLado(e, d.reps[k] != null ? d.reps[k] : d.reps[d.reps.length - 1]), rir = d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1];
-      var dosis = d.sets + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
+      var dosis = setsDe(k) + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
       L.push((multi ? 'A' + (k + 1) + '. ' : '') + etiquetaEj(e));
       L.push(dosis);
     });
@@ -83254,12 +83789,16 @@ JP_I18N.add('en', {
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
+      var sl = ejs.map(function(e, k){ return setsDe(k); });
+      if(sl.some(function(x){ return x !== sl[0]; })){
+        L.push('SERIES POR ESTACIÓN: ' + ejs.map(function(e, k){ return 'A' + (k + 1) + ' ' + sl[k]; }).join(' · ') + ' series. Hacés las rondas completas mientras las estaciones tengan series y en las rondas que sobran solo la que todavía tiene, con el mismo descanso.');
+      }
       lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
     }
     if(av && d.tec && TEC[d.tec]) L.push(TEC[d.tec].tip);
     nr.pos.forEach(function(x){ L.push(x); });
-    var grupos = ejs.map(function(e){ var x = exLib(e); return { ej: e, grupo: x ? x.grupo : '', patron: x ? x.patron : '', sets: d.sets }; });
-    return { txt: L.join('\n'), sets: d.sets * ejs.length, grupos: grupos, mins: mins };
+    var grupos = ejs.map(function(e, k){ var x = exLib(e); return { ej: e, grupo: x ? x.grupo : '', patron: x ? x.patron : '', sets: setsDe(k) }; });
+    return { txt: L.join('\n'), sets: ejs.reduce(function(a, e, k){ return a + setsDe(k); }, 0), grupos: grupos, mins: mins };
   }
 
   /* ---------- entrada en calor específica por tipo de día: movilidad + activación + potenciación (10 min) ---------- */
@@ -84540,65 +85079,107 @@ JP_I18N.add('en', {
     }
     return null;
   }
+  /* ---------- UN SOLO BÁSICO RECTO, TODO LO DEMÁS EN BISETS (2026-11) ----------
+     · el primer ejercicio de fuerza del día (rol F; si no hay, el primer compuesto pesado) queda en series rectas con su descanso completo;
+     · TODOS los demás ejercicios sueltos (otros básicos, hipertrofia y accesorios) se juntan en bisets prácticos: antagonistas o del mismo sector
+       (pecho + espalda, bíceps + tríceps, cuádriceps + isquios, glúteo + gemelo) y, si no, músculo grande + músculo chico (jalón + curl martillo, prensa + gemelo);
+     · nunca dos básicos pesados juntos ni dos compuestos de pierna de hipertrofia (salvo que no quede otra pareja), nunca dos guiados y siempre la regla anti-colisión (estacionOk);
+     · cada estación conserva SUS series ("4/3x8/12"): el volumen semanal por grupo es exactamente el de las filas del día;
+     · descanso de la ronda: el del básico pesado si hay uno (hasta 180 s); si no, el promedio (60-120 s);
+     · el que queda impar entra como tercera estación de un biset compatible (triset); el core y los bisets que ya trae el día no se tocan. */
+  var GRANDE = { 'Pecho': 1, 'Espalda': 1, 'Cuádriceps': 1, 'Isquios': 1, 'Glúteo': 1 };
+  var INF = { 'Glúteo': 1, 'Cuádriceps': 1, 'Isquios': 1 };
+  function afinidadAmplia(g1, g2){
+    var x = afinidad(g1, g2); if(x) return x;
+    if(!g1 || !g2 || g1 === 'Core' || g2 === 'Core') return 0;
+    if(!!GRANDE[g1] !== !!GRANDE[g2]) return 2;      /* músculo grande + músculo chico */
+    return 1;
+  }
+  /* versión portátil (mancuernas / banda / peso corporal) del accesorio, del mismo grupo y compatible con la pareja (JP_PORTATIL, ver logística de sala) */
+  function portatil(c, contra, usados){
+    if(c.pes || c.f.n || typeof jpPortatilDe !== 'function') return null;
+    var ops = jpPortatilDe(c.nuevoNombre || c.n);
+    for(var i = 0; i < ops.length; i++){
+      var nm = ops[i];
+      if(usados[nm] || !PB.exLib(nm) || grupoDe(nm) !== c.g || !estacionOk(contra.nuevoNombre || contra.n, nm)) continue;
+      return { c: c, a: nm };
+    }
+    return null;
+  }
   function agruparHipertrofia(filas, av, genero){
-    var cand = [], usados = {};
+    var cand = [], usados = {}, principal = -1;
     filas.forEach(function(f){ [].concat(f.ej, f.ea || []).forEach(function(n){ if(n) usados[n] = 1; }); });
     filas.forEach(function(f, ix){
-      if((f.rol !== 'H' && f.rol !== 'A') || f.fin || (f.ej == null)) return;
+      if(f.fin || f.ej == null) return;
+      if(f.rol === 'F' && principal < 0){ principal = ix; return; }      /* el básico del día: series rectas */
+      if(f.rol !== 'H' && f.rol !== 'A' && f.rol !== 'F') return;
       var nombres = nombreDe(f, av), dosis = av ? f.a : f.i;
       if(nombres.length !== 1 || !dosis) return;
-      var d = PB.partesDosis(dosis);
-      if(esBasicoPesado(f, d) || /\bpor lado\b/i.test(String(d.reps[0])) && f.rol === 'H' && d.rest >= 120) return;
-      cand.push({ ix: ix, f: f, d: d, n: nombres[0], g: grupoDe(nombres[0]), usado: false });
+      var d = PB.partesDosis(dosis), g = grupoDe(nombres[0]);
+      if(g === 'Core') return;
+      cand.push({ ix: ix, f: f, d: d, n: nombres[0], g: g, pes: f.rol === 'F' || esBasicoPesado(f, d), usado: false });
     });
-    var pares = [];
-    cand.forEach(function(x, k){
-      if(x.usado) return;
-      var mejor = null, mejorPts = 0, mejorCambio = null;
-      for(var j = k + 1; j < cand.length && j <= k + 6; j++){
-        var y = cand[j]; if(y.usado) continue;
-        var pts = afinidad(x.g, y.g); if(!pts || Math.abs(x.d.sets - y.d.sets) > 1) continue;
-        /* dos compuestos pesados de pierna seguidos (rumano + búlgara, prensa + sentadilla) saturan: en pierna al menos una de las dos estaciones es un accesorio (rol A) */
-        var inf = { 'Glúteo': 1, 'Cuádriceps': 1, 'Isquios': 1 };
-        if(inf[x.g] && inf[y.g] && x.f.rol === 'H' && y.f.rol === 'H') continue;
-        var cambio = null;
-        if(!estacionOk(x.n, y.n)){
-          /* estaciones que chocan: se prueba cambiar una de las dos por una variante del mismo grupo que comparta estación con la otra (mancuernas con mancuernas, torre con torre) */
-          var vy = variante(y, x, usados, genero), vx = vy ? null : variante(x, y, usados, genero);
-          if(vy) cambio = { c: y, a: vy }; else if(vx) cambio = { c: x, a: vx }; else continue;
-          pts -= 0.5;
+    /* sin rol F: el primer compuesto pesado hace de básico del día */
+    if(principal < 0){ var p0 = cand.filter(function(c){ return c.pes; })[0]; if(p0) cand.splice(cand.indexOf(p0), 1); }
+    var grupos = [];
+    [0, 1].forEach(function(pasada){
+      cand.forEach(function(x, k){
+        if(x.usado) return;
+        var mejor = null, mejorPts = 0, mejorCambio = null;
+        for(var j = k + 1; j < cand.length; j++){
+          var y = cand[j]; if(y.usado) continue;
+          if(x.pes && y.pes) continue;
+          if(pasada === 0 && INF[x.g] && INF[y.g] && x.f.rol !== 'A' && y.f.rol !== 'A') continue;      /* rumano + búlgara saturan: solo si no queda otra */
+          var pts = afinidadAmplia(x.g, y.g); if(!pts) continue;
+          var cambio = null;
+          if(!estacionOk(x.n, y.n)){
+            cambio = portatil(y, x, usados) || portatil(x, y, usados);
+            if(!cambio){ var vy = variante(y, x, usados, genero), vx = vy ? null : variante(x, y, usados, genero); if(vy) cambio = { c: y, a: vy }; else if(vx) cambio = { c: x, a: vx }; else continue; }
+          }
+          pts = pts * 10 - (j - k) - (cambio ? 4 : 0);
+          if(pts > mejorPts){ mejorPts = pts; mejor = y; mejorCambio = cambio; }
         }
-        /* una serie de diferencia solo si no se infla un grupo que ya está en su techo (pecho y cuádriceps): ahí las dos estaciones deben tener las mismas series.
-           Los pares con una polea o una máquina (regla anti-colisión: máquina fija + material portátil) exigen las mismas series: el volumen semanal del grupo no se mueve */
-        var menor = x.d.sets < y.d.sets ? x : (y.d.sets < x.d.sets ? y : null);
-        if(menor && (menor.g === 'Pecho' || menor.g === 'Cuádriceps')) continue;
-        if(menor && (esFija(x.n) || esFija(y.n))) continue;
-        pts = pts * 10 - Math.abs(x.d.sets - y.d.sets) * 3 - (j - k) - (cambio ? 8 : 0);
-        if(pts > mejorPts){ mejorPts = pts; mejor = y; mejorCambio = cambio; }
-      }
-      if(mejor){
+        if(!mejor) return;
         x.usado = mejor.usado = true;
         if(mejorCambio){ usados[mejorCambio.a] = 1; mejorCambio.c.nuevoNombre = mejorCambio.a; }
-        pares.push([x, mejor]);
-      }
+        grupos.push(mejor.pes && !x.pes ? [mejor, x] : [x, mejor]);      /* el básico pesado va primero (A1) */
+      });
     });
-    if(!pares.length) return filas;
+    /* impares: tercera estación de un biset compatible y sin básico pesado */
+    cand.filter(function(c){ return !c.usado && !c.pes; }).forEach(function(z){
+      var entra = function(gr, nm){ return gr.every(function(c){ return estacionOk(c.nuevoNombre || c.n, nm); }) && gr.filter(function(c){ var t0 = ''; try{ t0 = PB.EST.infoEj(c.nuevoNombre || c.n).t; }catch(e){} return t0 === 'M' || t0 === 'P'; }).length + (function(){ var t1 = ''; try{ t1 = PB.EST.infoEj(nm).t; }catch(e){} return (t1 === 'M' || t1 === 'P') ? 1 : 0; })() < 2; };
+      var alts = (typeof jpPortatilDe === 'function' && !z.f.n) ? jpPortatilDe(z.n).filter(function(nm){ return PB.exLib(nm) && grupoDe(nm) === z.g && !usados[nm]; }) : [];
+      var altPara = function(gr){ for(var i = 0; i < alts.length; i++) if(entra(gr, alts[i])) return alts[i]; return ''; };
+      var ok = grupos.filter(function(gr){ return gr.length === 2 && !gr.some(function(c){ return c.pes; }) && gr.some(function(c){ return afinidadAmplia(c.g, z.g); }) && (entra(gr, z.n) || altPara(gr)); })
+        .sort(function(p, q){ return Math.abs(p[0].ix - z.ix) - Math.abs(q[0].ix - z.ix); })[0];
+      if(ok){ if(!entra(ok, z.n)){ var al = altPara(ok); z.nuevoNombre = al; usados[al] = 1; } ok.push(z); z.usado = true; }
+    });
+    /* un básico pesado que quedó sin pareja liviana encabeza (A1) un biset liviano compatible: triset con el descanso del básico */
+    cand.filter(function(c){ return !c.usado && c.pes; }).forEach(function(z){
+      var ok = grupos.filter(function(gr){ return gr.length === 2 && !gr.some(function(c){ return c.pes; }) && gr.every(function(c){ return estacionOk(c.nuevoNombre || c.n, z.n); }) && gr.some(function(c){ return afinidadAmplia(c.g, z.g); }); })
+        .sort(function(p, q){ return Math.abs(p[0].ix - z.ix) - Math.abs(q[0].ix - z.ix); })[0];
+      if(ok){ ok.unshift(z); z.usado = true; }
+    });
+    if(!grupos.length) return filas;
     var porIx = {}, quitar = {};
-    pares.forEach(function(p){
-      var x = p[0], y = p[1], a1 = x.f, a2 = y.f;
-      var sets = Math.max(x.d.sets, y.d.sets), rest = Math.max(60, Math.min(120, Math.round((x.d.rest + y.d.rest) / 2 / 15) * 15)), tec = y.d.tec || x.d.tec;
-      function dosisPar(lv){
-        var d1 = PB.partesDosis(lv === 'a' ? a1.a : a1.i), d2 = PB.partesDosis(lv === 'a' ? a2.a : a2.i), t = d2.tec || d1.tec;
-        return sets + 'x' + d1.reps[0] + '/' + d2.reps[0] + '|' + d1.rir[0] + '/' + d2.rir[0] + '|' + rest + (t ? '|' + t : '');
+    grupos.forEach(function(gr){
+      var pes = gr.some(function(c){ return c.pes; });
+      function dosisGrupo(lv){
+        var ds = gr.map(function(c){ return PB.partesDosis(lv === 'a' ? (c.f.a || c.f.i) : c.f.i); });
+        var sl = ds.map(function(d){ return d.sets; }), mismas = sl.every(function(s){ return s === sl[0]; });
+        var rs = ds.map(function(d){ return d.rest; }), rest = pes ? Math.min(180, Math.max.apply(null, rs)) : Math.max(60, Math.min(120, Math.round(rs.reduce(function(s, r){ return s + r; }, 0) / rs.length / 15) * 15));
+        var t = ''; ds.forEach(function(d){ if(d.tec) t = d.tec; });
+        return (mismas ? sl[0] : sl.join('/')) + 'x' + ds.map(function(d){ return d.reps[0]; }).join('/') + '|' + ds.map(function(d){ return d.rir[0]; }).join('/') + '|' + rest + (t ? '|' + t : '');
       }
-      var o = { n: [].concat(a1.n || [], a2.n || []) };
+      var o = { n: [].concat.apply([], gr.map(function(c){ return [].concat(c.f.n || []); })) };
       if(!o.n.length) delete o.n;
-      if(a1.tp || a2.tp) o.tp = [(a1.tp && a1.tp[0]) || undefined, (a2.tp && a2.tp[0]) || undefined];
-      var ej = [x.nuevoNombre || [].concat(a1.ej)[0], y.nuevoNombre || [].concat(a2.ej)[0]];
-      if(a1.ea || a2.ea) o.ea = [].concat(a1.ea || a1.ej).concat(a2.ea || a2.ej);
-      var par = PB.R('B', ej, dosisPar('i'), dosisPar('a'), o);
+      if(gr.some(function(c){ return c.f.tp; })) o.tp = gr.map(function(c){ return (c.f.tp && c.f.tp[0]) || undefined; });
+      var ej = gr.map(function(c){ return c.nuevoNombre || [].concat(c.f.ej)[0]; });
+      if(gr.some(function(c){ return c.f.ea; })) o.ea = gr.map(function(c){ return c.nuevoNombre || [].concat(c.f.ea || c.f.ej)[0]; });
+      var par = PB.R(gr.length >= 3 ? 'T' : 'B', ej, dosisGrupo('i'), dosisGrupo('a'), o);
       par.agrupada = true;
-      porIx[x.ix] = par; quitar[y.ix] = true;
+      var primero = Math.min.apply(null, gr.map(function(c){ return c.ix; }));
+      porIx[primero] = par; gr.forEach(function(c){ if(c.ix !== primero) quitar[c.ix] = true; });
     });
     var out = [];
     filas.forEach(function(f, ix){ if(quitar[ix]) return; out.push(porIx[ix] || f); });
@@ -84634,7 +85215,7 @@ JP_I18N.add('en', {
       d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
       return d;
     });
-    try{ if(typeof jpSanearLogisticaDias === 'function') jpSanearLogisticaDias(dias, { id: tpl.id }); }catch(eSn){ console.warn('saneo logística', eSn); }
+    try{ if(typeof jpSanearLogisticaDias === 'function') jpSanearLogisticaDias(dias, { id: tpl.id, sinBisets: true }); }catch(eSn){ console.warn('saneo logística', eSn); }
     return dias;
   }
   function metaDe(tpl){
@@ -85767,17 +86348,26 @@ JP_I18N.add('en', {
     return out;
   }
   function hayIA(){ return !!(window.CoachAI && window.CoachAI.generarTexto); }
+  /* cancelación real de la petición en curso (Banco: un bloque o la plantilla entera) */
+  var iaCtrl = null, avanceBanco = null;
+  /* avance en vivo (streaming) en el botón que está generando */
+  function avanceEn(btn, prefijo, sufijo){
+    return function(n){ if(!btn || !btn.isConnected || !iaBusy) return; btn.innerHTML = prefijo + ' ✍️ ' + (n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + ' k' : n) + sufijo; };
+  }
+  function esCancelado(err){ return !!(err && (err.cancelado || err.name === 'AbortError')); }
   function pedirTips(r, b){
     return pedirTipsUna(r, b, false).then(function(o){ return o && o.cortada ? pedirTipsUna(r, b, true) : o; });
   }
   function pedirTipsUna(r, b, reintento){
     var tempos = tempoDe(b), items = (b.items || []).map(function(l){ return String(l).replace(/\s*\|\s*Tempo\s*[0-9Xx]{4}/i, ''); }).join('\n');
-    var user = 'PLANTILLA: ' + (r.nombre || '') + ' · nivel ' + (r.niv || 'intermedio') + (r.genero ? ' · ' + (r.genero === 'f' ? 'mujer' : 'hombre') : '') + '\nBLOQUE: ' + (b.titulo || '') +
+    var dirGen = (typeof jpGeneroIA === 'function') ? jpGeneroIA(r.genero) : '';
+    var user = 'PLANTILLA: ' + (r.nombre || '') + ' · nivel ' + (r.niv || 'intermedio') + (r.genero ? ' · ' + (r.genero === 'f' ? 'mujer' : 'hombre') : '') + (dirGen ? '\n' + dirGen : '') + '\nBLOQUE: ' + (b.titulo || '') +
       '\nEJERCICIOS Y DOSIS:\n' + items + (tempos.length ? '\n\nTEMPOS ACTUALES (mantenelos, solo en la línea TEMPO):\n' + tempos.join('\n') : '') + '\n\nEscribí ahora el objetivo fisiológico y los coaching tips de este bloque.';
     var TI = window.CoachAuto && window.CoachAuto.tipsIA, est = TI ? TI.estacionesDe(b.items || [], b.titulo) : [], dem = TI ? TI.demanda({ tipo: 'list', items: b.items || [], titulo: b.titulo }) : '';
     if(dem) user = user.replace(/\n\nEscribí ahora/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + dem + '\n\nEscribí ahora');
     if(reintento && TI) user += '\n\n' + TI.CORRECCION;
-    return window.CoachAI.generarTexto(user, SIS_TIPS + (TI ? '\n' + TI.REGLAS : ''), { maxTokens: reintento ? 5200 : 3400, plain: true, sinEspera: true }).then(function(out){
+    return window.CoachAI.generarTexto(user, SIS_TIPS + (TI ? '\n' + TI.REGLAS : ''), { maxTokens: reintento ? 5200 : 3400, plain: true, sinEspera: true, signal: iaCtrl ? iaCtrl.signal : undefined, onProgreso: avanceBanco }).then(function(out){
+      if(iaCtrl && iaCtrl.signal.aborted){ var eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
       var t = String(out || '').replace(/\x60{3}[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
       var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
       var obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : '';
@@ -85799,23 +86389,35 @@ JP_I18N.add('en', {
   function iaUnBloque(di, bi, btn){
     var r = actual; if(!r) return;
     if(!hayIA() || !window.CoachAI.hayClave()){ toast('Configurá una clave de IA para regenerar los tips', 'warn'); try{ window.CoachAI && window.CoachAI.config && window.CoachAI.config(); }catch(e){} return; }
-    if(iaBusy) return;
+    if(iaBusy){
+      /* segundo toque = detener: se corta la petición y el botón vuelve en el acto; los campos no se tocan */
+      if(iaCtrl && btn.dataset.iaUno === '1'){ iaCtrl.abort(); iaCtrl = null; iaBusy = false; delete btn.dataset.iaUno; btn.disabled = false; if(btn._orig != null) btn.innerHTML = btn._orig; toast('Generación con IA detenida: los tips quedaron como estaban', 'info'); }
+      /* antes el toque en OTRO bloque no hacía nada (parecía tildado): ahora se avisa qué está corriendo y cómo frenarlo */
+      else toast('Ya hay tips generándose con IA en otro bloque: esperá a que termine o tocá ⏹ en ese botón para detenerlo', 'warn');
+      return;
+    }
     var box = btn.closest('.pv-ed'); if(!box) return;
     var b = JSON.parse(JSON.stringify(r.dias[di].bloques[bi]));
     var v = function(f){ var el = box.querySelector('[data-pvf="' + f + '"]'); return el ? el.value : ''; };
     b.titulo = v('titulo'); b.items = v('items').split(/\n/).filter(function(x){ return x.trim(); }); b.tips = v('tips');
-    iaBusy = true; var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Regenerando…';
+    iaBusy = true; var orig = btn.innerHTML; btn._orig = orig; btn.dataset.iaUno = '1'; btn.disabled = false; btn.innerHTML = '⏳ Regenerando… · ⏹ Detener';
+    var miCtrl = iaCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    avanceBanco = avanceEn(btn, '⏳ Regenerando…', ' · ⏹ Detener');
     pedirTips(r, b).then(function(o){
+      if(miCtrl && miCtrl.signal.aborted) return;
       var ob = box.querySelector('[data-pvf="objective"]'), tp = box.querySelector('[data-pvf="tips"]');
       if(o.objective && ob) ob.value = o.objective; if(o.tips && tp) tp.value = o.tips;
       toast('✨ Tips regenerados: revisalos y tocá «Guardar cambios»');
-    }).catch(errIA).then(function(){ iaBusy = false; btn.disabled = false; btn.innerHTML = orig; });
+    }).catch(function(err){ if(!esCancelado(err)) errIA(err); }).then(function(){
+      if(miCtrl && miCtrl.signal.aborted) return;      /* ya se limpió al detener */
+      iaBusy = false; iaCtrl = null; avanceBanco = null; delete btn.dataset.iaUno; btn.disabled = false; btn.innerHTML = orig;
+    });
   }
   /* toda la plantilla: bloque por bloque, con progreso y cancelación; guarda a medida que avanza */
   async function iaPlantilla(btn){
     var r = actual; if(!r) return;
     if(!hayIA() || !window.CoachAI.hayClave()){ toast('Configurá una clave de IA para regenerar los tips', 'warn'); try{ window.CoachAI && window.CoachAI.config && window.CoachAI.config(); }catch(e){} return; }
-    if(iaBusy){ iaStop = true; btn.innerHTML = '⏹ Deteniendo…'; return; }
+    if(iaBusy){ iaStop = true; if(iaCtrl) iaCtrl.abort(); btn.innerHTML = '⏹ Deteniendo…'; return; }      /* corta también la petición en curso, no espera a que termine el bloque */
     if(esSist(r)){
       if(!confirm('Se reescriben el objetivo y los coaching tips de todos los bloques de esta plantilla del sistema con IA (puede tardar unos minutos). Los ejercicios y dosis no cambian. Queda marcada como editada y «↩ Restaurar original» vuelve a la del sistema.\n\n¿Continuar?')) return;
       r.editada = 1; r.editadaEl = new Date().toLocaleDateString('es-AR');
@@ -85827,12 +86429,15 @@ JP_I18N.add('en', {
       btn.innerHTML = '⏹ Detener · ' + (i + 1) + '/' + lista.length;
       var b = r.dias[lista[i][0]].bloques[lista[i][1]];
       try{
+        iaCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
+        avanceBanco = avanceEn(btn, '⏹ Detener · ' + (i + 1) + '/' + lista.length, '');
         var o = await pedirTips(r, b);
+        if(iaStop) break;
         if(o.objective) b.objective = o.objective; if(o.tips) b.tips = o.tips;
         hechos++; try{ save(); }catch(e){}
-      }catch(err){ errIA(err); falla = true; break; }
+      }catch(err){ if(esCancelado(err) || iaStop) break; errIA(err); falla = true; break; }
     }
-    iaBusy = false; iaStop = false; btn.innerHTML = orig;
+    iaBusy = false; iaStop = false; iaCtrl = null; avanceBanco = null; btn.innerHTML = orig;
     try{ if(window.CoachAuditoria && window.CoachAuditoria.tempoANotas) window.CoachAuditoria.tempoANotas(r); save(); }catch(e){}
     abrir(r.id);
     toast('✨ ' + hechos + ' de ' + lista.length + ' bloques con tips nuevos' + (falla ? ' (se detuvo por un error)' : ''));
@@ -87260,30 +87865,41 @@ JP_I18N.add('en', {
       'Ejercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\n' +
       'Biserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ..." (regla de cambio entre estaciones y descanso).';
   }
-  async function llamarSimple(user, sistemaTxt, btn, maxTokens){
+  /* senal: cancelación real (también corta la espera de un reintento por límite de la API); el botón muestra cuánto texto va llegando */
+  async function llamarSimple(user, sistemaTxt, btn, maxTokens, senal, sufijo){
+    var avance = (typeof jpIAAvance === 'function' && btn) ? jpIAAvance(btn, senal, sufijo || '') : null;
     for(var i = 1; ; i++){
-      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: maxTokens || 1600, plain: true, sinEspera: true }); }
+      if(senal && senal.aborted){ var eC = new Error('Generación cancelada'); eC.cancelado = true; throw eC; }
+      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: maxTokens || 1600, plain: true, sinEspera: true, signal: senal, onProgreso: avance }); }
       catch(err){
-        if(!esCuota(err) || i >= REINTENTOS) throw err;
-        for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){ if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…'; await new Promise(function(r){ setTimeout(r, 1000); }); }
+        if((err && (err.cancelado || err.name === 'AbortError')) || !esCuota(err) || i >= REINTENTOS) throw err;
+        for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){
+          if(senal && senal.aborted){ var eC2 = new Error('Generación cancelada'); eC2.cancelado = true; throw eC2; }
+          if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…' + (sufijo || ''); await new Promise(function(r){ setTimeout(r, 1000); });
+        }
       }
     }
   }
   async function recalcularTips(bid, btn){
-    var b = findBlock(bid), ta = textareaItems(bid); if(!b) return false;
+    /* segundo toque mientras recalcula = detener en el acto: el objetivo y los tips anteriores quedan intactos */
+    if(btn && btn._gsCtrl){ var cPrev = btn._gsCtrl; btn._gsCtrl = null; try{ cPrev.abort(); }catch(eA){} btn.disabled = false; if(btn._gsOrig != null) btn.innerHTML = btn._gsOrig; toast('Generación con IA detenida: el bloque quedó como estaba', 'info'); return false; }
+    var b = findBlock(bid), ta = textareaItems(bid);
+    if(!b){ toast('No se encontró el bloque (la pantalla quedó desactualizada): actualizá y probá de nuevo', 'warn'); return false; }
     if(!hayClaveIA()){ toast('Configurá una clave de IA para recalcular los tips', 'err'); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return false; }
     var ath = active(), items = ta ? ta.value : (b.items || []).join('\n'), tempos = String(b.tips || '').split(/\n+/).filter(function(l){ return /tempo/i.test(l); });
     var user = 'ALUMNO/A Y FICHA TÁCTICA:\n' + window.CoachAI.athLine(ath) + '\n\nBLOQUE: ' + (b.titulo || '') + ' (' + categoriaBloque(b.titulo) + ')\nEJERCICIOS Y DOSIS ACTUALES:\n' + items +
       (tempos.length ? '\n\nTEMPOS ACTUALES (mantenelos, siguiendo la regla de tempo):\n' + tempos.join('\n') : '') + '\n\nEscribí ahora el objetivo fisiológico y los coaching tips de este bloque para estos ejercicios.';
-    var original = btn ? btn.innerHTML : '';
-    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="gs-spin"></span> Recalculando…'; }
+    var original = btn ? btn.innerHTML : '', ctrl = (typeof AbortController === 'function') ? new AbortController() : null, senal = ctrl ? ctrl.signal : undefined;
+    if(btn){ btn._gsCtrl = ctrl; btn._gsOrig = original; btn.disabled = !ctrl; btn.innerHTML = '<span class="gs-spin"></span> Recalculando…' + (ctrl ? ' · ⏹' : ''); }
+    var cancelado = function(){ return !!(senal && senal.aborted); };
     try{
       var TI = window.CoachAuto && window.CoachAuto.tipsIA, itemsArr = items.split(/\r?\n/), est = TI ? TI.estacionesDe(itemsArr, b.titulo) : [];
       var demanda = TI ? TI.demanda({ tipo: 'list', items: itemsArr, titulo: b.titulo }) : '';
       if(demanda) user = user.replace(/\n\nEscribí ahora el objetivo/, '\n\nDEMANDA REAL DEL BLOQUE (usá estos números en los tips):\n' + demanda + '\n\nEscribí ahora el objetivo');
       var obj = '', tips = [], proc = null;
       for(var intento = 1; intento <= 2; intento++){
-        var out = await llamarSimple(user + (intento > 1 && TI ? '\n\n' + TI.CORRECCION : ''), sistemaTips(ath), btn, intento > 1 ? 5200 : 3400);
+        var out = await llamarSimple(user + (intento > 1 && TI ? '\n\n' + TI.CORRECCION : ''), sistemaTips(ath), btn, intento > 1 ? 5200 : 3400, senal, ctrl ? ' · ⏹' : '');
+        if(cancelado()) return false;
         var t = String(out || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
         var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
         obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : ''; tips = limpiarBloque({ items: [], cierre: { tips: mt ? mt[1].trim() : '' } }).tips;
@@ -87299,8 +87915,10 @@ JP_I18N.add('en', {
         var hay = tips.some(function(x){ return /tempo/i.test(x) && (k ? new RegExp('^' + k + '\\s*[·.]').test(x) : /^tempo\s*:/i.test(x)); });
         if(!hay) tips.push(l);
       });
+      if(cancelado()) return false;
       var tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + bid + '"]'), tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + bid + '"]');
       if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Recalcular tips con IA');
+      delete b.jpMano; delete b.jpFicha;
       if(obj){ b.objective = obj; if(tObj){ tObj.value = obj; tObj.dispatchEvent(new Event('input', { bubbles: true })); } }
       if(tips.length){ b.tips = tips.join('\n'); if(tTips){ tTips.value = b.tips; tTips.dispatchEvent(new Event('input', { bubbles: true })); } }
       try{ save(); }catch(er){}
@@ -87308,11 +87926,13 @@ JP_I18N.add('en', {
       toast('✨ Objetivo y tips recalculados para los ejercicios actuales');
       return true;
     }catch(err){
+      if(cancelado() || (err && (err.cancelado || err.name === 'AbortError'))) return false;      /* detenido: ya se avisó y se limpió el botón */
       if(esCuota(err)) toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key', 'warn');
-      else toast('No se pudieron recalcular los tips: ' + String((err && err.message) || err).slice(0, 80), 'err');
+      else if(!(err && err.__toast)) toast('No se pudieron recalcular los tips: ' + String((err && err.message) || err).slice(0, 160), 'err');
       return false;
     }finally{
-      if(btn){ btn.disabled = false; btn.innerHTML = original; }
+      /* solo esta generación libera el botón (si se detuvo y se volvió a tocar, el botón ya es de la nueva) */
+      if(btn && (btn._gsCtrl === ctrl || !btn._gsCtrl)){ if(btn._gsCtrl === ctrl) btn._gsCtrl = null; if(!cancelado()){ btn.disabled = false; btn.innerHTML = original; } }
       if(ta) marcarObsoleto(ta);
     }
   }
@@ -88942,7 +89562,7 @@ TIPS: Es la versión de descarga del Run Block: una sola tanda de 3 x 800m (no d
    ========================================================= */
 (function(){
   'use strict';
-  var VER = 4, ID = 'bk_wlbb_woman_adv', NOMBRE = 'weightlifting and bodybuilding woman advanced';
+  var VER = 5, ID = 'bk_wlbb_woman_adv', NOMBRE = 'weightlifting and bodybuilding woman advanced';
   var TXT = String.raw`=== DÍA 1: Lunes · Full Piernas y Glúteos · Cuádriceps y Back Squat ===
 [NOMBRE DEL DÍA] Full Piernas y Glúteos · Cuádriceps & Back Squat
 [FOCO DEL COACH] Día de fuerza máxima en cuádriceps y glúteo: Back Squat libre como eje principal con pirámide de fuerza, Barbell Hip Thrust pesado como segundo gran levantamiento y cierre de alta tensión mecánica con Myo-Reps y Drop-Sets. Todo el trabajo efectivo va a RIR 0-1; no hay series de relleno.
@@ -89437,7 +90057,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
    ========================================================= */
 (function(){
   'use strict';
-  var VER = 6;      /* 6: regla anti-colisión (Hyrox: core sin dos poleas); 5: la descripción de las versiones mujer explica qué cambia; 4: mujeres con más glúteo y gemelo (Recomposición, MTB y Hyrox); 3: sin battle ropes y recomposición femenina con cardio pre-entreno + cierre en máquina; 2: Hyrox rehecho (14-dias-hyrox.js); la ficha de las plantillas ya guardadas se refresca en sembrar() */
+  var VER = 7;      /* 7: un solo básico recto por sesión y el resto en bisets; 6: regla anti-colisión (Hyrox: core sin dos poleas); 5: la descripción de las versiones mujer explica qué cambia; 4: mujeres con más glúteo y gemelo (Recomposición, MTB y Hyrox); 3: sin battle ropes y recomposición femenina con cardio pre-entreno + cierre en máquina; 2: Hyrox rehecho (14-dias-hyrox.js); la ficha de las plantillas ya guardadas se refresca en sembrar() */
 
   /* ---------- 0 · helpers de redacción ---------- */
   var LET = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -90247,7 +90867,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
    ========================================================= */
 (function(){
   'use strict';
-  var VER = 4;      /* 4: regla anti-colisión (nunca dos poleas ni dos máquinas en un biset; la polea va con mancuernas o banda); 3: la descripción dice las cifras medidas; 2: enfoque femenino con más glúteo (biset de glúteo en cada sesión, hip thrust de cinco series, gemelo en dos días y menos cuádriceps acumulado) */
+  var VER = 5;      /* 5: un solo básico recto y el resto en bisets; 4: regla anti-colisión (nunca dos poleas ni dos máquinas en un biset; la polea va con mancuernas o banda); 3: la descripción dice las cifras medidas; 2: enfoque femenino con más glúteo (biset de glúteo en cada sesión, hip thrust de cinco series, gemelo en dos días y menos cuádriceps acumulado) */
 
   /* ---------- 0 · helpers de redacción ---------- */
   function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
@@ -90581,6 +91201,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     });
     armarDias.avisos = r.avisos || [];
     if(r.dias.length !== E.sesiones.length) console.warn('fullbody: ' + E.nombre + ' esperaba ' + E.sesiones.length + ' días y hay ' + r.dias.length);
+    try{ if(typeof jpBisetarDias === 'function') jpBisetarDias(dias, { id: E.id }); }catch(eB){ console.warn('bisets', eB); }
     try{ if(window.CoachBaseJP && typeof window.CoachBaseJP.proyectar === 'function') window.CoachBaseJP.proyectar({ dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []) }, E.niv); }catch(e){ console.warn('fullbody proyectar', e); }
     return dias;
   }
@@ -90670,7 +91291,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
    ========================================================= */
 (function(){
   'use strict';
-  var VER = 2, ID = 'elb_5d_f', NOMBRE = 'rutina 5 dias mujer dolor espalda baja';
+  var VER = 3, ID = 'elb_5d_f', NOMBRE = 'rutina 5 dias mujer dolor espalda baja';
 
   function dose(s, r, t, rir, tec){ return s + 'x' + r + (t ? ' | Tempo ' + t : '') + (rir !== undefined && rir !== '' ? ' | RIR ' + rir : '') + (tec ? ' | ' + tec : ''); }
   function pira(a, b, top, back, tempo, rir){
@@ -90860,6 +91481,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     });
     armarDias.avisos = r.avisos || [];
     if(r.dias.length !== SESIONES.length) console.warn('espalda baja: se esperaban ' + SESIONES.length + ' días y hay ' + r.dias.length);
+    try{ if(typeof jpBisetarDias === 'function') jpBisetarDias(dias, { id: ID, sinPortatil: true }); }catch(eB){ console.warn('bisets', eB); }      /* plan lumbar: las máquinas con respaldo son la indicación, no se cambian por mancuernas */
     try{ if(window.CoachBaseJP && typeof window.CoachBaseJP.proyectar === 'function') window.CoachBaseJP.proyectar({ dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []) }, 'avanzado'); }catch(e){ console.warn('espalda baja proyectar', e); }
     return dias;
   }
@@ -93319,3 +93941,772 @@ html body:not(#_):not(#__) .jp-badge{ display:none !important; }
 })();
 </script>
 <!--/BUILDER-PICKER-->
+<!-- Body Maintenance (cierres de movilidad), lectura del día (sugerencias de volumen / glúteo) y ficha rápida (alinear objetivos y tips) -->
+<script>
+/* =========================================================
+   BODY MAINTENANCE / STRETCHING WORKOUTS · banco de cierres opcionales de 5 a 10 minutos
+   ---------------------------------------------------------
+   · Rutinas cortas de movilidad y flexibilidad organizadas por sector corporal (cadera, hombros, escápulas, tobillos, cadena posterior,
+     tren inferior y superior completos, torácica, front rack, press por encima de la cabeza, lumbar y descarga general).
+   · Se insertan en el COOL-DOWN del día (d.cooldown + d.cooldownNota): la app del alumno ya lo muestra como su propia tarjeta
+     «Cool-Down y Recuperación» al final de la sesión. NO se crea ningún bloque: la estructura principal del entrenamiento, el volumen,
+     los bisets y las alertas no cambian. Cada rutina entra con su encabezado numerado («1. Body Maintenance · …»), que la app lee
+     como subtítulo de fase, y queda marcada como OPCIONAL.
+   · Sugerencia del día: según los grupos que más trabajó la sesión (mismo cálculo que el volumen del Builder) se proponen primero
+     las rutinas que mejor la complementan.
+   · API: window.CoachMantenimiento = { rutinas, sectores, porId, lineas, minutos, sugerir, insertar, quitar, abrir }
+   ========================================================= */
+(function(){
+  'use strict';
+  var SECTORES = [
+    { k: 'cadera',    lb: 'Cadera' },
+    { k: 'hombros',   lb: 'Hombros' },
+    { k: 'escapulas', lb: 'Escápulas' },
+    { k: 'tobillos',  lb: 'Tobillos' },
+    { k: 'posterior', lb: 'Isquios / cadena posterior' },
+    { k: 'lower',     lb: 'Tren inferior' },
+    { k: 'upper',     lb: 'Tren superior' },
+    { k: 'toracica',  lb: 'Torácica' },
+    { k: 'olimpico',  lb: 'Front rack / overhead' },
+    { k: 'general',   lb: 'Descarga general' }
+  ];
+  /* m: segundos estimados de cada ítem (para la duración total que ve el coach); todas las rutinas quedan entre 5 y 10 minutos */
+  var RUTINAS = [
+    { id: 'cadera', sector: 'cadera', titulo: 'Movilidad de cadera', icono: '🦵',
+      objetivo: 'Recuperás la rotación interna y externa y la extensión de cadera que la sentadilla, el peso muerto y estar sentado te van quitando.',
+      items: [['Cambio de cadera 90/90', '2x8 por lado, lento', 70], ['Estiramiento de flexor de cadera en estocada (rodilla en el piso)', '2x40 s por lado', 170], ['Paloma en el piso (glúteo y rotadores)', '2x40 s por lado', 170], ['Rana con balanceo atrás (aductores)', '2x10', 60], ['Sentadilla profunda sostenida con apoyo', '2x40 s', 90]] },
+    { id: 'hombros', sector: 'hombros', titulo: 'Movilidad de hombros', icono: '🙆',
+      objetivo: 'Devolvés rango a la articulación del hombro después de empujar y tirar: pectoral y dorsal más largos, manguito activo y brazos arriba sin compensar con la espalda.',
+      items: [['Dislocaciones con banda o palo', '2x12', 60], ['Estiramiento de pectoral en marco de puerta', '2x30 s por lado', 130], ['Rotación externa con banda', '2x15 por lado', 90], ['Deslizamientos en pared (wall slides)', '2x10', 60], ['Estiramiento de dorsal en banco (postura de rezo)', '2x40 s', 90]] },
+    { id: 'escapulas', sector: 'escapulas', titulo: 'Amplitud escapular', icono: '🪽',
+      objetivo: 'Las escápulas vuelven a deslizar libres sobre la caja torácica: más rango para remar, jalar y empujar, y un hombro que trabaja centrado.',
+      items: [['Retracciones escapulares colgado', '2x10', 60], ['Flexiones escapulares (scap push-ups)', '2x12', 60], ['Apertura de banda', '2x15', 60], ['Y-T-W boca abajo en el piso', '1x8 de cada letra', 90], ['Gato-camello pensando en las escápulas', '1x10', 40]] },
+    { id: 'tobillos', sector: 'tobillos', titulo: 'Dorsiflexión de tobillos', icono: '🦶',
+      objetivo: 'Más rango de tobillo para que la rodilla avance en la sentadilla y la zancada sin levantar el talón ni cargar la zona lumbar.',
+      items: [['Rodilla a la pared (knee to wall)', '2x10 por lado', 100], ['Estiramiento de gemelo en pared (rodilla extendida)', '2x30 s por lado', 130], ['Estiramiento de sóleo (rodilla flexionada)', '2x30 s por lado', 130], ['Sentadilla con talones apoyados sostenida', '2x30 s', 70], ['Elevación de puntas de pie (tibial anterior)', '2x15', 50]] },
+    { id: 'posterior', sector: 'posterior', titulo: 'Isquios y cadena posterior', icono: '🧘',
+      objetivo: 'Alargás isquiosurales y glúteos después de la bisagra de cadera: vuelve el rango para el próximo peso muerto y baja la tensión de la espalda baja.',
+      items: [['Estiramiento de isquios acostado con banda', '2x40 s por lado', 170], ['Bisagra de cadera con palo (sin carga)', '2x10', 60], ['Deslizamiento neural sentado (nervio ciático)', '2x10 por lado', 80], ['Pinza de pie con rodillas apenas flexionadas', '2x30 s', 70], ['Postura del niño con brazos largos', '1x60 s', 60]] },
+    { id: 'lower', sector: 'lower', titulo: 'Lower body completo', icono: '🦿',
+      objetivo: 'Recorrés todo el tren inferior en 10 minutos: cadera, cuádriceps, isquios, aductores y tobillo, para bajar la rigidez de un día de piernas y llegar suelto al próximo.',
+      items: [['World\'s greatest stretch', '2x5 por lado', 100], ['Estiramiento de flexor de cadera en estocada', '1x40 s por lado', 85], ['Paloma en el piso', '1x40 s por lado', 85], ['Estiramiento de cuádriceps acostado de lado', '1x40 s por lado', 85], ['Estiramiento de isquios acostado con banda', '1x40 s por lado', 85], ['Rodilla a la pared (knee to wall)', '1x10 por lado', 50], ['Rana sostenida (aductores)', '1x45 s', 45]] },
+    { id: 'upper', sector: 'upper', titulo: 'Upper body completo', icono: '💪',
+      objetivo: 'Cerrás un día de torso devolviendo rango a columna dorsal, pecho, dorsales, hombros, brazos y cuello: menos rigidez y mejor postura para el resto del día.',
+      items: [['Gato-camello', '1x10', 40], ['Rotación torácica en cuadrupedia', '2x8 por lado', 90], ['Estiramiento de pectoral en marco de puerta', '1x40 s por lado', 85], ['Estiramiento de dorsal en banco (postura de rezo)', '1x45 s', 45], ['Dislocaciones con banda o palo', '1x12', 30], ['Estiramiento de tríceps por encima de la cabeza', '1x30 s por lado', 65], ['Inclinación lateral de cuello suave', '1x20 s por lado', 45]] },
+    { id: 'toracica', sector: 'toracica', titulo: 'Movilidad torácica', icono: '🔄',
+      objetivo: 'La columna dorsal vuelve a rotar y extenderse: es la base para un press por encima de la cabeza limpio y para que la zona lumbar no compense.',
+      items: [['Rotación torácica en cuadrupedia (thread the needle)', '2x8 por lado', 100], ['Extensión torácica sobre rodillo', '2x8', 70], ['Libro abierto acostado de lado', '2x8 por lado', 100], ['Gato-camello', '1x10', 40]] },
+    { id: 'frontrack', sector: 'olimpico', titulo: 'Movilidad de front rack', icono: '🏋️',
+      objetivo: 'Codos arriba y muñecas cómodas con la barra sobre los hombros: el rango que piden el front squat, la cargada y el thruster.',
+      items: [['Estiramiento de dorsal y tríceps en banco (rezo con codos apoyados)', '2x40 s', 90], ['Flexo-extensión de muñecas en cuadrupedia', '2x10', 50], ['Rodillo en dorsal ancho', '1x60 s por lado', 120], ['Rack con barra vacía sostenido, codos altos', '2x20 s', 60], ['Extensión torácica sobre rodillo', '1x10', 40]] },
+    { id: 'press', sector: 'olimpico', titulo: 'Movilidad para press por encima de la cabeza', icono: '⬆️',
+      objetivo: 'Brazos completamente arriba sin arquear la espalda: dorsal largo, columna dorsal móvil y escápulas que rotan hacia arriba.',
+      items: [['Deslizamientos en pared (wall slides)', '2x10', 60], ['Estiramiento de dorsal en banco (postura de rezo)', '2x40 s', 90], ['Dislocaciones con banda o palo', '2x12', 60], ['Elevación de brazos boca abajo en Y', '2x10', 60], ['Extensión torácica sobre rodillo', '1x10', 40]] },
+    { id: 'lumbar', sector: 'posterior', titulo: 'Descarga de espalda baja', icono: '🌀',
+      objetivo: 'Bajás la carga de la zona lumbar después de sentadillas, peso muerto o remos pesados: movimiento suave, flexores de cadera largos y control del tronco.',
+      items: [['Rodillas al pecho acostado', '1x40 s', 40], ['Gato-camello', '1x10', 40], ['Rotación de columna acostado', '1x30 s por lado', 65], ['Estiramiento de flexor de cadera en estocada', '1x40 s por lado', 85], ['Bird dog lento', '1x8 por lado', 70]] },
+    { id: 'descarga', sector: 'general', titulo: 'Descarga general y respiración', icono: '🌬️',
+      objetivo: 'Pasás del modo entrenamiento al modo recuperación: respiración lenta, columna suelta y piernas arriba para que el cuerpo empiece a recuperar apenas terminás.',
+      items: [['Respiración diafragmática acostado con pies en la pared', '2 min', 120], ['Postura del niño', '1x60 s', 60], ['Rotación de columna acostado', '1x30 s por lado', 60], ['Piernas en la pared', '1 min', 60]] }
+  ];
+  function porId(id){ return RUTINAS.filter(function(r){ return r.id === id; })[0] || null; }
+  function minutos(r){ var s = 0; (r.items || []).forEach(function(i){ s += i[2] || 45; }); return Math.max(5, Math.min(10, Math.round(s / 60))); }
+  /* líneas del cool-down: encabezado numerado (la app lo muestra como subtítulo) + un ítem por movimiento en formato «Movimiento — dosis» */
+  function encabezado(r, n){ return (n || 1) + '. Body Maintenance · ' + r.titulo + ' · ' + minutos(r) + ' min (opcional)'; }
+  function lineas(r, n){ return [encabezado(r, n)].concat(r.items.map(function(i){ return i[0] + ' — ' + i[1]; })); }
+  var RX_ENC = /^\d+\.\s*Body Maintenance · /;
+
+  /* grupos que más trabajó el día (mismo cálculo que el volumen del Builder) -> rutinas que mejor lo complementan */
+  function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function sugerir(p, di){
+    var puntos = {}, suma = function(id, n){ puntos[id] = (puntos[id] || 0) + n; };
+    var dia = {};
+    try{ if(typeof window.jpCalcVolumen === 'function' && p) dia = window.jpCalcVolumen(p).porDia[di] || {}; }catch(e){}
+    var g = function(k){ return dia[k] || 0; };
+    var inferior = g('Cuádriceps') + g('Glúteo / Isquios') + g('Glúteo medio') + g('Isquios') + g('Piernas') + g('Gemelos');
+    var superior = g('Pectoral') + g('Espalda') + g('Hombros') + g('Bíceps') + g('Tríceps') + g('Brazos') + g('Salud de hombro');
+    suma('cadera', g('Cuádriceps') + g('Glúteo / Isquios') + g('Glúteo medio') + g('Piernas'));
+    suma('tobillos', g('Cuádriceps') + g('Gemelos') + g('Piernas') * 0.5);
+    suma('posterior', g('Glúteo / Isquios') + g('Isquios'));
+    suma('lumbar', (g('Glúteo / Isquios') + g('Espalda')) * 0.4);
+    suma('lower', inferior * 0.7);
+    suma('hombros', g('Pectoral') + g('Hombros') + g('Salud de hombro'));
+    suma('press', g('Hombros') * 0.8 + g('Tríceps') * 0.3);
+    suma('escapulas', g('Espalda') + g('Bíceps') * 0.4);
+    suma('toracica', (g('Espalda') + g('Pectoral') + g('Hombros')) * 0.35);
+    suma('upper', superior * 0.7);
+    /* levantamientos olímpicos, front squat, thruster -> front rack */
+    try{
+      var d = p && p.dias && p.dias[di], txt = nz((d && (d.bloques || []).map(function(b){ return (b.titulo || '') + ' ' + (b.items || []).join(' '); }).join(' ')) || '');
+      if(/front squat|sentadilla frontal|clean|cargada|thruster|snatch|arranque|jerk|envion/.test(txt)) suma('frontrack', 14);
+      if(/press militar|press de hombro|push press|overhead|por encima de la cabeza|handstand/.test(txt)) suma('press', 4);
+    }catch(e){}
+    if(inferior && superior) suma('descarga', 3);
+    var ids = Object.keys(puntos).filter(function(k){ return puntos[k] > 0; }).sort(function(a, b){ return puntos[b] - puntos[a]; });
+    if(!ids.length) ids = ['descarga', 'lower', 'upper'];
+    return ids.slice(0, 3);
+  }
+
+  /* inserta la rutina al cierre del día: 'sumar' (después de lo que ya tenga el cool-down) o 'reemplazar' (deja solo la rutina). Nunca toca d.bloques. */
+  function insertar(d, id, modo){
+    var r = porId(id); if(!d || !r) return false;
+    var prev = Array.isArray(d.cooldown) ? d.cooldown.slice() : [];
+    /* una rutina que ya estaba se reemplaza (no se duplica) */
+    var limpio = quitarDeLista(prev, r.titulo);
+    var base = modo === 'reemplazar' ? [] : limpio;
+    var n = base.filter(function(l){ return /^\d+\.\s/.test(l); }).length + 1;
+    /* si el cool-down tenía ítems sueltos sin encabezado, se les pone uno para que la rutina nueva no se mezcle */
+    if(base.length && !/^\d+\.\s/.test(base[0])){ base = ['1. Vuelta a la calma'].concat(base); n = 2; }
+    d.cooldown = base.concat(lineas(r, n));
+    var notas = (d.cooldownNota && modo !== 'reemplazar') ? String(d.cooldownNota).split(/\s*\n\s*/).filter(function(x){ return x && x.indexOf(r.titulo + ':') !== 0; }) : [];
+    notas.push(r.titulo + ': ' + r.objetivo);
+    d.cooldownNota = notas.join('\n');
+    d.mantenimiento = (Array.isArray(d.mantenimiento) && modo !== 'reemplazar' ? d.mantenimiento.filter(function(x){ return x !== id; }) : []).concat([id]);
+    return true;
+  }
+  function quitarDeLista(lista, titulo){
+    var out = [], saltando = false;
+    lista.forEach(function(l){
+      if(RX_ENC.test(l)){ saltando = l.indexOf('· ' + titulo + ' ·') >= 0; if(saltando) return; }
+      else if(/^\d+\.\s/.test(l)) saltando = false;
+      if(!saltando) out.push(l);
+    });
+    return out;
+  }
+  function quitar(d, id){
+    var r = porId(id); if(!d || !r) return false;
+    d.cooldown = quitarDeLista(Array.isArray(d.cooldown) ? d.cooldown : [], r.titulo);
+    /* renumerado de los encabezados que quedan; un "1. Vuelta a la calma" que quedó solo se vuelve a ítems sueltos */
+    var k = 0; d.cooldown = d.cooldown.map(function(l){ return /^\d+\.\s/.test(l) ? (++k) + '. ' + l.replace(/^\d+\.\s*/, '') : l; });
+    if(k === 1 && d.cooldown[0] === '1. Vuelta a la calma') d.cooldown = d.cooldown.slice(1);
+    d.cooldownNota = String(d.cooldownNota || '').split(/\s*\n\s*/).filter(function(x){ return x && x.indexOf(r.titulo + ':') !== 0; }).join('\n');
+    d.mantenimiento = (d.mantenimiento || []).filter(function(x){ return x !== id; });
+    return true;
+  }
+
+  /* ---------- UI: botón junto al Cool-down del día + modal del banco ---------- */
+  function esc(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function css(){
+    if(document.getElementById('bmCss')) return;
+    var st = document.createElement('style'); st.id = 'bmCss';
+    st.textContent =
+      '.bm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}' +
+      '.bm-bar .bm-tag{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid rgba(52,211,153,.45);color:#6EE7B7;background:rgba(52,211,153,.08)}' +
+      '.bm-bar .bm-x{cursor:pointer;margin-left:4px;opacity:.7}' +
+      '#bmModal{position:fixed;inset:0;z-index:9000;background:rgba(5,8,14,.72);display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow:auto}' +
+      '#bmModal .bm-box{width:min(880px,100%);background:#11151c;border:1px solid var(--line-2,#2a2f3a);border-radius:16px;padding:18px 18px 14px;color:var(--txt,#e8ecf2)}' +
+      '#bmModal h3{margin:0 0 4px;font-size:17px}#bmModal .bm-sub{margin:0 0 12px;font-size:12.5px;color:var(--muted,#8b94a3);line-height:1.5}' +
+      '#bmModal .bm-fil{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}' +
+      '#bmModal .bm-f{cursor:pointer;padding:6px 11px;border-radius:999px;border:1px solid var(--line-2,#2a2f3a);background:transparent;color:var(--txt-2,#c3c9d3);font:600 12px/1 inherit;font-family:inherit}' +
+      '#bmModal .bm-f.on{border-color:#34D399;color:#6EE7B7;background:rgba(52,211,153,.1)}' +
+      '#bmModal .bm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}' +
+      '#bmModal .bm-c{border:1px solid var(--line-2,#2a2f3a);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);display:flex;flex-direction:column;gap:6px}' +
+      '#bmModal .bm-c.sug{border-color:rgba(52,211,153,.6);box-shadow:0 0 0 1px rgba(52,211,153,.25) inset}' +
+      '#bmModal .bm-c h4{margin:0;font-size:14px;display:flex;align-items:center;gap:6px}#bmModal .bm-c h4 small{margin-left:auto;font-size:11px;color:#6EE7B7;font-weight:700}' +
+      '#bmModal .bm-c p{margin:0;font-size:12px;color:var(--muted,#8b94a3);line-height:1.45}' +
+      '#bmModal .bm-c ul{margin:0;padding-left:16px;font-size:12px;line-height:1.5;color:var(--txt-2,#c3c9d3)}' +
+      '#bmModal .bm-acts{display:flex;gap:6px;margin-top:auto;flex-wrap:wrap}' +
+      '#bmModal .bm-sugtag{font-size:10.5px;font-weight:800;letter-spacing:.06em;color:#34D399;text-transform:uppercase}' +
+      '#bmModal .bm-foot{display:flex;justify-content:flex-end;margin-top:12px}' +
+      '@media(max-width:560px){#bmModal{padding:10px 8px}#bmModal .bm-box{padding:14px 12px}}';
+    document.head.appendChild(st);
+  }
+  var filtro = '';
+  function pintarModal(){
+    var m = document.getElementById('bmModal'); if(!m) return;
+    var p = (typeof plan === 'function' && S.activeId) ? plan(S.activeId) : null, di = (S.ui && S.ui.day) || 0, d = p && p.dias ? p.dias[di] : null;
+    var sug = sugerir(p, di), ya = (d && d.mantenimiento) || [];
+    var lista = RUTINAS.filter(function(r){ return !filtro || r.sector === filtro; }).slice().sort(function(a, b){
+      var ia = sug.indexOf(a.id), ib = sug.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    m.querySelector('.bm-fil').innerHTML = '<button type="button" class="bm-f' + (!filtro ? ' on' : '') + '" data-bmf="">Todas</button>' +
+      SECTORES.map(function(s){ return '<button type="button" class="bm-f' + (filtro === s.k ? ' on' : '') + '" data-bmf="' + s.k + '">' + esc(s.lb) + '</button>'; }).join('');
+    m.querySelector('.bm-grid').innerHTML = lista.map(function(r){
+      var esSug = sug.indexOf(r.id) >= 0, puesta = ya.indexOf(r.id) >= 0;
+      return '<div class="bm-c' + (esSug ? ' sug' : '') + '" data-bmid="' + r.id + '">' + (esSug ? '<span class="bm-sugtag">Sugerida para este día</span>' : '') +
+        '<h4>' + r.icono + ' ' + esc(r.titulo) + '<small>' + minutos(r) + ' min</small></h4><p>' + esc(r.objetivo) + '</p>' +
+        '<ul>' + r.items.map(function(i){ return '<li>' + esc(i[0]) + ' — ' + esc(i[1]) + '</li>'; }).join('') + '</ul>' +
+        '<div class="bm-acts">' + (puesta
+          ? '<button type="button" class="btn xs ghost" data-bmquitar="' + r.id + '">✕ Quitar del cierre</button>'
+          : '<button type="button" class="btn xs gold" data-bmsumar="' + r.id + '">➕ Agregar al cierre del día</button><button type="button" class="btn xs ghost" data-bmreemp="' + r.id + '" title="Deja el cool-down solo con esta rutina">↺ Reemplazar el cool-down</button>') +
+        '</div></div>';
+    }).join('');
+    var t = m.querySelector('.bm-dia'); if(t) t.textContent = d ? ((d.short || ('Día ' + (di + 1))) + (d.title ? ' · ' + d.title : '')) : '';
+  }
+  function abrir(){
+    css();
+    if(!S.activeId){ try{ toast('Elegí un alumno/a primero', 'warn'); }catch(e){} return; }
+    var m = document.getElementById('bmModal');
+    if(!m){
+      m = document.createElement('div'); m.id = 'bmModal';
+      m.innerHTML = '<div class="bm-box" role="dialog" aria-label="Body Maintenance"><h3>🧘 Body Maintenance · Stretching (5-10 min)</h3>' +
+        '<p class="bm-sub">Cierres opcionales de movilidad y flexibilidad para el final de la sesión. Se suman al <b>Cool-Down</b> de <b class="bm-dia"></b>: no crean bloques ni cambian el entrenamiento principal, y el alumno/a los ve como su propia tarjeta al terminar.</p>' +
+        '<div class="bm-fil"></div><div class="bm-grid"></div><div class="bm-foot"><button type="button" class="btn ghost" data-bmcerrar="1">Cerrar</button></div></div>';
+      document.body.appendChild(m);
+      m.addEventListener('click', function(e){
+        if(e.target === m || e.target.closest('[data-bmcerrar]')){ m.remove(); return; }
+        var f = e.target.closest('[data-bmf]'); if(f){ filtro = f.getAttribute('data-bmf'); pintarModal(); return; }
+        var b = e.target.closest('[data-bmsumar],[data-bmreemp],[data-bmquitar]'); if(!b) return;
+        var d = (typeof curDay === 'function') ? curDay() : null; if(!d) return;
+        var id = b.getAttribute('data-bmsumar') || b.getAttribute('data-bmreemp') || b.getAttribute('data-bmquitar');
+        if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Body Maintenance'); }catch(eU){} }
+        var r = porId(id);
+        if(b.hasAttribute('data-bmquitar')){ quitar(d, id); toast('Body Maintenance quitado: ' + r.titulo); }
+        else { insertar(d, id, b.hasAttribute('data-bmreemp') ? 'reemplazar' : 'sumar'); toast('🧘 ' + r.titulo + ' (' + minutos(r) + ' min) agregado al cierre del día'); }
+        try{ save(); }catch(eS){} try{ renderBuilder(); }catch(eR){} pintarModal();
+      });
+    }
+    pintarModal();
+  }
+  /* botón y etiquetas debajo del Cool-down de cada día (Sports y CrossFit) */
+  function barra(){
+    var ta = document.querySelector('#dayPanel textarea[data-df="cooldown"]'); if(!ta) return;
+    css();
+    var d = (typeof curDay === 'function') ? curDay() : null, ids = (d && d.mantenimiento) || [];
+    var bar = ta.parentNode.querySelector('.bm-bar');
+    if(!bar){ bar = document.createElement('div'); bar.className = 'bm-bar'; ta.parentNode.insertBefore(bar, ta.nextSibling); }
+    bar.innerHTML = '<button type="button" class="btn xs" data-bmabrir="1" title="Rutinas de 5 a 10 minutos de movilidad y stretching por sector, para el cierre de la sesión">🧘 Body Maintenance</button>' +
+      ids.map(function(id){ var r = porId(id); return r ? '<span class="bm-tag">' + r.icono + ' ' + esc(r.titulo) + ' · ' + minutos(r) + ' min<span class="bm-x" data-bmx="' + id + '" title="Quitar">✕</span></span>' : ''; }).join('');
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('[data-bmabrir]')){ abrir(); return; }
+    var x = t.closest('[data-bmx]');
+    if(x){ var d = curDay(); if(d){ if(window.CoachUndo && CoachUndo.vigilar){ try{ CoachUndo.vigilar('Quitar Body Maintenance'); }catch(eU){} } quitar(d, x.getAttribute('data-bmx')); try{ save(); }catch(eS){} renderBuilder(); } }
+  });
+  var _rb = window.renderBuilder;
+  if(typeof _rb === 'function'){
+    window.renderBuilder = function(){ var r = _rb.apply(this, arguments); try{ barra(); }catch(e){ console.warn('body maintenance', e); } return r; };
+  }
+  window.CoachMantenimiento = { rutinas: RUTINAS, sectores: SECTORES, porId: porId, lineas: lineas, minutos: minutos, sugerir: sugerir, insertar: insertar, quitar: quitar, abrir: abrir };
+})();
+</script>
+<script>
+/* =========================================================
+   LECTURA DEL DÍA · sugerencias de volumen y ejercicios sobre la distribución por grupo muscular (Builder, Sports)
+   ---------------------------------------------------------
+   El panel «📈 Volumen semanal de series efectivas» ya mostraba CUÁNTO se trabaja cada grupo en el día y en la semana. Esta capa lo
+   interpreta frente a la ficha del alumno/a (género, objetivo, énfasis, nivel, restricciones) y propone acciones CONCRETAS, con foco
+   en los glúteos:
+     · más series en una estación de glúteo que ya está en el día;
+     · una estación complementaria (glúteo mayor o glúteo medio) sumada como A2 / A3 de un bloque que ya existe;
+     · trabajo de repeticiones altas cuando todo el glúteo del día es pesado;
+     · bajar una serie cuando el volumen semanal pasa el rango.
+   Reglas del sistema que cada acción respeta:
+     · la serie recta principal (el básico del día) NUNCA se toca ni se convierte en biset;
+     · una estación nueva solo entra en un bloque compatible por logística (jpEstacionCompat: nunca dos poleas, nunca dos máquinas,
+       máquina o polea solo con material portátil) y como máximo hasta un triset;
+     · el volumen sube solo si la semana sigue dentro del rango de la meta (nunca se pasa del máximo);
+     · los ejercicios vetados o con antecedente directo en la ficha no se proponen.
+   API: window.CoachLecturaDia = { analizar(ath, p, di), aplicar(accion), prioridadGluteo(ath) }
+   ========================================================= */
+(function(){
+  'use strict';
+  function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
+  function esc(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  var MAYOR = ['Hip thrust con mancuerna', 'Puente de glúteo con banda', 'Patada de glúteo en cuadrupedia con mancuerna', 'Patada de glúteo con banda', 'Puente de glúteo a una pierna', 'Hip thrust en máquina', 'Puente de rana'];
+  var MEDIO = ['Abducción de cadera acostada con banda', 'Abducción con banda (monster walk)', 'Abducción de cadera en máquina', 'Zancada lateral'];
+  var INFERIOR = ['Cuádriceps', 'Glúteo / Isquios', 'Glúteo medio', 'Isquios', 'Piernas', 'Gemelos'];
+  var SUPERIOR = ['Pectoral', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Brazos', 'Salud de hombro', 'Antebrazo'];
+  var RANGOS = { 'Pectoral': [12, 22], 'Espalda': [12, 22], 'Glúteo / Isquios': [12, 22], 'Cuádriceps': [12, 22], 'Piernas': [12, 22], 'Hombros': [8, 16], 'Bíceps': [8, 16], 'Tríceps': [8, 16], 'Brazos': [8, 16], 'Gemelos': [8, 16], 'Isquios': [8, 16], 'Glúteo medio': [8, 16] };
+
+  /* grupo del panel de volumen para un ejercicio (mismo criterio que volGroup del Builder) */
+  function grupo(ex){
+    if(!ex) return '';
+    var n = nz(ex.es);
+    if(ex.grupo === 'Piernas/Glúteos'){
+      if(ex.patron === 'Cadera dominante') return 'Glúteo / Isquios';
+      if(ex.patron === 'Abducción / Aducción') return 'Glúteo medio';
+      if(ex.patron === 'Rodilla dominante') return 'Cuádriceps';
+      if(/gemelo|talones|soleo/.test(n)) return 'Gemelos';
+      if(/femoral|isquio|nordico/.test(n)) return 'Isquios';
+      return 'Piernas';
+    }
+    if(ex.grupo === 'Brazos') return ex.patron === 'Bíceps' ? 'Bíceps' : (ex.patron === 'Tríceps' ? 'Tríceps' : 'Brazos');
+    return ex.grupo;
+  }
+  function esGluteo(ex){ var g = grupo(ex); return g === 'Glúteo / Isquios' || g === 'Glúteo medio'; }
+  function exDe(nombre){ try{ return (typeof jpExDeNombre === 'function') ? jpExDeNombre(nombre) : null; }catch(e){ return null; } }
+  function nombreCompleto(ex){ return ex.es + (ex.en ? ' (' + ex.en + ')' : ''); }
+  function repsMax(r){ var m = String(r || '').match(/\d+/g); return m ? Math.max.apply(null, m.map(Number)) : 0; }
+
+  /* estaciones de un bloque de Pizarra con la línea de su dosis: [{codigo, nombre, ex, sets, reps, iNombre, iDosis}] */
+  var RX_EST = /^([A-F])(\d{1,2})[.):]\s*(.+)$/i, RX_DOS = /^(\d+)\s*x\s*([^|]+?)\s*(?:\|.*)?$/i;
+  function estaciones(b){
+    var out = [], cur = null, prevNombre = '', prevI = -1, iRest = -1;
+    (b.items || []).forEach(function(l, i){
+      var t = String(l || '').trim(); if(!t) return;
+      var mE = RX_EST.exec(t);
+      if(mE){
+        var nom = mE[3].replace(/\s*\|.*$/, '').trim();
+        cur = { codigo: mE[1].toUpperCase() + mE[2], nombre: nom, iNombre: i, iDosis: -1, sets: 0, reps: '' };
+        var mi = /\|\s*(\d+)\s*x\s*([^|]+)/.exec(mE[3]);
+        if(mi){ cur.iDosis = i; cur.sets = parseInt(mi[1], 10); cur.reps = mi[2].trim(); cur.enLinea = true; }
+        out.push(cur); return;
+      }
+      var mD = RX_DOS.exec(t);
+      if(mD){
+        if(!cur){ cur = { codigo: '', nombre: prevNombre, iNombre: prevI, iDosis: -1 }; out.push(cur); }
+        if(cur.iDosis < 0){ cur.iDosis = i; cur.sets = parseInt(mD[1], 10); cur.reps = mD[2].trim(); }
+        return;
+      }
+      if(/^(rest|descanso)\b/i.test(t)){ iRest = i; return; }
+      if(!cur && !/^[-•]/.test(t)){ prevNombre = t; prevI = i; }
+    });
+    out.forEach(function(e){ e.ex = exDe(e.nombre); });
+    out.iRest = iRest;
+    return out;
+  }
+  function esCalentamiento(b){ return b.category === 'warmup' || b.modalidad === 'calentamiento'; }
+  function esTrabajo(b){ return b && b.tipo === 'list' && b.sportsPizarra && !esCalentamiento(b) && !/^(metcon|cardio|endurance)$/.test(b.category || '') && b.modalidad !== 'metcon' && b.modalidad !== 'core' && b.modalidad !== 'movilidad'; }
+  /* el básico del día: el bloque de fuerza principal (o, si no está rotulado, el primer bloque de trabajo con un solo ejercicio) */
+  function principal(d){
+    var bs = (d.bloques || []).filter(esTrabajo);
+    var f = bs.filter(function(b){ return b.modalidad === 'fuerza' || /^fuerza principal/i.test(b.titulo || ''); })[0];
+    if(f) return f;
+    return bs.filter(function(b){ return estaciones(b).length === 1; })[0] || null;
+  }
+
+  /* prioridad del glúteo según la ficha */
+  function prioridadGluteo(ath){
+    ath = ath || {};
+    var f = ath.ficha || {}, obj = [].concat(f.objetivo || []).map(nz), enf = [].concat(f.enfasis || []).map(nz), foco = nz(ath.foco), g = nz(ath.genero).charAt(0);
+    var estetico = !obj.length || obj.some(function(o){ return /hipertrofia|recomposicion/.test(o); });
+    if(enf.indexOf('gluteo') >= 0 || /glute|gluteo/.test(foco)) return { nivel: 'alta', motivo: 'énfasis en glúteo de la ficha' };
+    if(g === 'f' && estetico) return { nivel: 'alta', motivo: 'alumna mujer · ' + (obj.length ? obj.join(', ') : 'objetivo estético') };
+    if(g === 'f') return { nivel: 'media', motivo: 'alumna mujer · ' + obj.join(', ') };
+    if(obj.some(function(o){ return /hipertrofia|recomposicion/.test(o); })) return { nivel: 'media', motivo: obj.join(', ') };
+    return { nivel: 'base', motivo: obj.length ? obj.join(', ') : 'sin objetivo estético' };
+  }
+  var META_SEMANA = { alta: [16, 26], media: [12, 22], base: [10, 20] }, META_DIA = { alta: 9, media: 6, base: 3 };
+
+  function vetado(ath, ex){
+    try{ return (typeof checkExercise === 'function') && checkExercise(ath, ex).some(function(a){ return a.level === 'danger'; }); }catch(e){ return false; }
+  }
+  function conRiesgo(ath, ex){
+    try{ return (typeof checkExercise === 'function') && checkExercise(ath, ex).some(function(a){ return a.level === 'warn'; }); }catch(e){ return false; }
+  }
+  /* mejor bloque donde sumar una estación de la lista: no es el principal, tiene 1 o 2 estaciones resueltas y la estación nueva es compatible con todas */
+  function destino(ath, d, lista, prin, usados, preferirInferior){
+    var enDia = {}; (d.bloques || []).forEach(function(b){ if(b.tipo === 'list') estaciones(b).forEach(function(e){ if(e.ex) enDia[e.ex.id] = 1; }); });
+    var cands = lista.map(exDe).filter(function(ex){ return ex && !enDia[ex.id] && !vetado(ath, ex) && !conRiesgo(ath, ex); });
+    var bloques = (d.bloques || []).filter(function(b){ return esTrabajo(b) && b !== prin && usados.indexOf(b) < 0; }).map(function(b){ return { b: b, est: estaciones(b) }; })
+      .filter(function(x){ return x.est.length >= 1 && x.est.length <= 2 && x.est.every(function(e){ return e.ex && e.iDosis >= 0 && !e.enLinea; }); });
+    var puntaje = function(x){ var inf = x.est.filter(function(e){ return INFERIOR.indexOf(grupo(e.ex)) >= 0; }).length; return (preferirInferior ? inf * 10 : 0) + (x.est.length === 1 ? 3 : 0); };
+    bloques.sort(function(a, c){ return puntaje(c) - puntaje(a); });
+    for(var i = 0; i < bloques.length; i++){
+      var keys = bloques[i].est.map(function(e){ return jpEstacion(e.ex); });
+      for(var j = 0; j < cands.length; j++){
+        var k = jpEstacion(cands[j]);
+        if(keys.every(function(kk){ return jpEstacionCompat(kk, k); })) return { b: bloques[i].b, est: bloques[i].est, ex: cands[j] };
+      }
+    }
+    return null;
+  }
+
+  function analizar(ath, p, di){
+    var out = { prioridad: prioridadGluteo(ath), sugerencias: [], dia: {}, semana: {} };
+    var d = p && p.dias && p.dias[di]; if(!d) return out;
+    var v = { total: {}, porDia: [] };
+    try{ v = window.jpCalcVolumen(p); }catch(e){}
+    var dia = v.porDia[di] || {}, tot = v.total || {}, g = function(o, k){ return o[k] || 0; };
+    out.dia = dia; out.semana = tot;
+    var pr = out.prioridad.nivel, meta = META_SEMANA[pr], inferior = INFERIOR.reduce(function(s, k){ return s + g(dia, k); }, 0), superior = SUPERIOR.reduce(function(s, k){ return s + g(dia, k); }, 0);
+    var gDia = g(dia, 'Glúteo / Isquios') + g(dia, 'Glúteo medio'), gMedio = g(dia, 'Glúteo medio'), gSem = g(tot, 'Glúteo / Isquios') + g(tot, 'Glúteo medio');
+    out.esInferior = inferior >= 6 && inferior >= superior; out.gluteoDia = gDia; out.gluteoMedioDia = gMedio; out.gluteoSemana = gSem; out.meta = meta;
+    var prin = principal(d), usados = [], S_ = out.sugerencias, inicial = /inicial/.test(nz(ath && ath.nivel));
+    var dosisMayor = inicial ? '2x12-15 | Tempo 2011 | RIR 2' : '3x12-15 | Tempo 2011 | RIR 1', dosisMedio = inicial ? '2x15-20 | Tempo 2011 | RIR 2' : '3x15-20 | Tempo 2011 | RIR 1';
+    var sumaEstacion = function(lista, dosis, sets, nivel, porque, preferirInf){
+      if(gSem + sets > meta[1]) return false;
+      var dst = destino(ath, d, lista, prin, usados, preferirInf); if(!dst) return false;
+      usados.push(dst.b);
+      var conQue = dst.est.map(function(e){ return e.ex.es; }).join(' + ');
+      S_.push({ nivel: nivel, txt: porque + ': sumá ' + dst.ex.es + ' (' + dosis.split(' | ')[0] + ') como ' + (dst.est.length === 1 ? 'A2 del bloque «' + conQue + '» (queda en biset)' : 'A3 del biset «' + conQue + '» (queda en triset)') + '.',
+        accion: { tipo: 'estacion', bid: dst.b.id, exId: dst.ex.id, dosis: dosis } });
+      gSem += sets;
+      return true;
+    };
+    /* 1) día de tren inferior con el glúteo como prioridad */
+    if(out.esInferior && pr !== 'base'){
+      if(!gMedio) sumaEstacion(MEDIO, dosisMedio, inicial ? 2 : 3, 'alta', 'Falta glúteo medio hoy (estabilidad de cadera y forma lateral del glúteo)', true);
+      if(gDia + (S_.length ? 3 : 0) < META_DIA[pr]){
+        /* primero, más series en lo que ya está (fuera del básico) */
+        var est = []; (d.bloques || []).forEach(function(b){ if(esTrabajo(b) && b !== prin) estaciones(b).forEach(function(e){ if(e.ex && esGluteo(e.ex) && e.iDosis >= 0 && e.sets && e.sets < (pr === 'alta' ? 5 : 4)) est.push({ b: b, e: e }); }); });
+        if(est.length && gSem + 1 <= meta[1]){
+          var x = est[0];
+          S_.push({ nivel: 'media', txt: 'El glúteo suma ' + gDia + ' series hoy (meta del día ≈ ' + META_DIA[pr] + '): pasá ' + x.e.ex.es + ' de ' + x.e.sets + ' a ' + (x.e.sets + 1) + ' series.', accion: { tipo: 'serie', bid: x.b.id, iDosis: x.e.iDosis, delta: 1 } });
+          gSem += 1;
+        }
+        if(gDia + 1 + (S_.length > 1 ? 3 : 0) < META_DIA[pr]) sumaEstacion(MAYOR, dosisMayor, inicial ? 2 : 3, 'alta', 'Al día le falta volumen directo de glúteo mayor', true);
+      }
+      /* todo el glúteo del día es pesado (≤ 8 repeticiones): repeticiones altas como complemento */
+      var gEst = []; (d.bloques || []).forEach(function(b){ if(esTrabajo(b)) estaciones(b).forEach(function(e){ if(e.ex && esGluteo(e.ex)) gEst.push(e); }); });
+      if(gEst.length && gEst.every(function(e){ return repsMax(e.reps) && repsMax(e.reps) <= 8; }) && !S_.some(function(s){ return s.accion && s.accion.tipo === 'estacion'; })){
+        if(!sumaEstacion(MAYOR, inicial ? '2x15-20 | Tempo 2011 | RIR 2' : '3x15-20 | Tempo 2011 | RIR 1', inicial ? 2 : 3, 'media', 'Todo el glúteo de hoy es pesado (8 repeticiones o menos): sumá trabajo metabólico de 15-20 repeticiones', true))
+          S_.push({ nivel: 'media', txt: 'Todo el glúteo de hoy es pesado (8 repeticiones o menos): el próximo bloque de glúteo puede ir a 12-20 repeticiones para sumar estrés metabólico.' });
+      }
+    }
+    /* 2) día de torso con el glúteo como prioridad alta y la semana corta de glúteo: un complemento portátil al cierre */
+    if(!out.esInferior && pr === 'alta' && superior && gSem < meta[0]){
+      sumaEstacion(MEDIO.concat(MAYOR), dosisMedio, inicial ? 2 : 3, 'media', 'La semana queda corta de glúteo (' + gSem + ' de ' + meta[0] + '-' + meta[1] + ' series) y hoy es día de torso', false);
+    }
+    /* 3) glúteo por encima del rango semanal: una serie menos fuera del básico */
+    if(gSem > meta[1]){
+      var ult = null; (d.bloques || []).forEach(function(b){ if(esTrabajo(b) && b !== prin) estaciones(b).forEach(function(e){ if(e.ex && esGluteo(e.ex) && e.iDosis >= 0 && e.sets > 2) ult = { b: b, e: e }; }); });
+      S_.push(ult ? { nivel: 'alta', txt: 'El glúteo suma ' + gSem + ' series en la semana (máximo sugerido ' + meta[1] + '): bajá ' + ult.e.ex.es + ' de ' + ult.e.sets + ' a ' + (ult.e.sets - 1) + ' series para recuperar mejor.', accion: { tipo: 'serie', bid: ult.b.id, iDosis: ult.e.iDosis, delta: -1 } }
+                  : { nivel: 'alta', txt: 'El glúteo suma ' + gSem + ' series en la semana (máximo sugerido ' + meta[1] + '): conviene bajar una serie en algún accesorio de glúteo.' });
+    }
+    /* 4) otros grupos del día fuera de su rango semanal (lectura; el ajuste fino queda en manos del coach) */
+    Object.keys(dia).sort(function(a, b){ return dia[b] - dia[a]; }).slice(0, 3).forEach(function(k){
+      if(k === 'Glúteo / Isquios' || k === 'Glúteo medio' || !RANGOS[k] || S_.length >= 4) return;
+      var n = g(tot, k), r = RANGOS[k];
+      if(n > r[1] + 2) S_.push({ nivel: 'media', txt: k + ': ' + n + ' series en la semana, arriba del rango ' + r[0] + '-' + r[1] + '. Si la recuperación se resiente, bajá una serie en el accesorio de ' + k.toLowerCase() + ' de hoy.' });
+      else if(n < r[0] && pr !== 'alta') S_.push({ nivel: 'info', txt: k + ': ' + n + ' series en la semana, debajo del rango ' + r[0] + '-' + r[1] + '. Hay margen para una serie más en el accesorio de ' + k.toLowerCase() + '.' });
+    });
+    if(!S_.length) S_.push({ nivel: 'ok', txt: 'La distribución del día está alineada con el objetivo de la ficha: no hace falta ajustar volumen ni ejercicios.' });
+    return out;
+  }
+
+  /* ---------- aplicar una acción (siempre deshacible con Ctrl+Z) ---------- */
+  function aplicar(a, ath){
+    if(!a) return false;
+    var b = (typeof findBlock === 'function') ? findBlock(a.bid) : null; if(!b || !Array.isArray(b.items)) return false;
+    var items = b.items.slice(), prev = b.items.slice();
+    if(a.tipo === 'serie'){
+      var l = String(items[a.iDosis] || ''), m = /^(\s*)(\d+)(\s*x)/i.exec(l); if(!m) return false;
+      var n = Math.max(1, Math.min(6, parseInt(m[2], 10) + (a.delta || 0)));
+      items[a.iDosis] = m[1] + n + l.slice(m[1].length + m[2].length);
+    } else if(a.tipo === 'estacion'){
+      var ex = (S.exercises || []).filter(function(e){ return e.id === a.exId; })[0]; if(!ex) return false;
+      var est = estaciones(b); if(!est.length || est.length > 2) return false;
+      /* reglas: nunca en el bloque principal, nunca cruzando estaciones */
+      var d0 = (typeof curDay === 'function') ? curDay() : null;
+      if(d0 && principal(d0) === b) return false;
+      var k = jpEstacion(ex); if(!est.every(function(e){ return e.ex && jpEstacionCompat(jpEstacion(e.ex), k); })) return false;
+      if(est.length === 1 && !est[0].codigo){ items[est[0].iNombre] = 'A1. ' + String(items[est[0].iNombre]).trim(); est[0].codigo = 'A1'; }
+      var num = est.reduce(function(mx, e){ var q = parseInt(String(e.codigo).slice(1), 10) || 0; return Math.max(mx, q); }, 0) + 1, letra = (est[0].codigo || 'A').charAt(0);
+      var nuevas = [letra + num + '. ' + nombreCompleto(ex), a.dosis], pos = est.iRest >= 0 ? est.iRest : items.length;
+      items.splice.apply(items, [pos, 0].concat(nuevas));
+      /* pautas de la estación nueva, en el mismo formato del Banco (se suman a las que ya estaban) */
+      try{ if(window.CoachAuto && CoachAuto.tipsBanco){ var tl = CoachAuto.tipsBanco(ex, { ath: ath || null, codigo: letra + num }); if(tl.length) b.tips = (String(b.tips || '').trim() ? String(b.tips).trim() + '\n' : '') + tl.join('\n'); } }catch(eT){}
+      /* título: si era el nombre del ejercicio suelto o un "Biset X + Y" automático, acompaña a las estaciones nuevas */
+      try{
+        var T = jpNucleoTitulo(b.titulo), nombres = est.map(function(e){ return e.ex.es; });
+        var eraAuto = !T.nucleo || nz(T.nucleo) === nz(nombres.join(' + ')) || nz(T.nucleo) === nz(nombres[0]) || nz(T.nucleo) === nz((nombres.length === 2 ? 'Biset ' : 'Triset ') + nombres.join(' + '));
+        if(eraAuto) b.titulo = T.pre + (nombres.length + 1 === 2 ? 'Biset ' : 'Triset ') + nombres.concat([ex.es]).join(' + ') + T.suf;
+      }catch(eTi){}
+    } else return false;
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Sugerencia del día'); }catch(eU){} }
+    b.items = items;
+    try{ if(typeof jpSyncTituloPizarra === 'function' && a.tipo === 'estacion') jpSyncTituloPizarra(b, prev); }catch(eS){}
+    return true;
+  }
+
+  /* ---------- UI: tarjeta debajo del panel de volumen ---------- */
+  function css(){
+    if(document.getElementById('ldCss')) return;
+    var st = document.createElement('style'); st.id = 'ldCss';
+    st.textContent =
+      '#jpLecturaDia .ld-card{margin:0 0 14px;padding:12px 14px;border:1px solid var(--line-2,#2a2f3a);border-radius:12px;background:rgba(255,255,255,.02)}' +
+      '#jpLecturaDia .ld-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:800;font-size:13px}' +
+      '#jpLecturaDia .ld-pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid rgba(255,85,0,.45);color:#FFB38A;background:rgba(255,85,0,.08)}' +
+      '#jpLecturaDia .ld-pill.media{border-color:rgba(0,229,255,.4);color:#7DF0FF;background:rgba(0,229,255,.06)}#jpLecturaDia .ld-pill.base{border-color:var(--line-2,#2a2f3a);color:var(--muted,#8b94a3);background:transparent}' +
+      '#jpLecturaDia .ld-met{margin:6px 0 8px;font-size:12px;color:var(--txt-2,#c3c9d3)}#jpLecturaDia .ld-met b{color:#fff}' +
+      '#jpLecturaDia ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}' +
+      '#jpLecturaDia li{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.45;padding:7px 9px;border-radius:9px;background:rgba(255,255,255,.025);border-left:3px solid var(--line-2,#2a2f3a)}' +
+      '#jpLecturaDia li.alta{border-left-color:#FF5500}#jpLecturaDia li.media{border-left-color:#00B8D4}#jpLecturaDia li.ok{border-left-color:#34D399}' +
+      '#jpLecturaDia li span{flex:1}#jpLecturaDia li .btn{flex:0 0 auto}' +
+      '#jpLecturaDia .ld-hint{margin-top:8px;font-size:11px;color:var(--muted,#8b94a3);line-height:1.45}';
+    document.head.appendChild(st);
+  }
+  var ultimo = null;
+  function pintar(){
+    var vol = document.getElementById('volCard'); if(!vol || !vol.parentNode) return;
+    var cont = document.getElementById('jpLecturaDia');
+    if(!cont){ cont = document.createElement('div'); cont.id = 'jpLecturaDia'; vol.parentNode.insertBefore(cont, vol.nextSibling); }
+    var ath = (typeof active === 'function') ? active() : null, p = ath ? plan(ath.id) : null;
+    if(!ath || !p || (p.meta && p.meta.mesoDisc === 'crossfit') || !vol.innerHTML){ cont.innerHTML = ''; ultimo = null; return; }
+    css();
+    var di = Math.min((S.ui && S.ui.day) || 0, p.dias.length - 1), r = analizar(ath, p, di), pr = r.prioridad;
+    ultimo = r;
+    var lb = { alta: 'Glúteo: prioridad alta', media: 'Glúteo: prioridad media', base: 'Glúteo: volumen de base' }[pr.nivel];
+    cont.innerHTML = '<div class="ld-card"><div class="ld-h">🧭 Lectura del día · ' + esc((p.dias[di] || {}).short || ('Día ' + (di + 1))) +
+      '<span class="ld-pill ' + pr.nivel + '" title="' + esc(pr.motivo) + '">' + lb + ' · ' + esc(pr.motivo) + '</span></div>' +
+      '<div class="ld-met">Glúteo hoy: <b>' + r.gluteoDia + '</b> series' + (r.gluteoMedioDia ? ' (glúteo medio ' + r.gluteoMedioDia + ')' : '') + ' · semana: <b>' + r.gluteoSemana + '</b> de una meta de ' + r.meta[0] + '-' + r.meta[1] + '</div>' +
+      '<ul>' + r.sugerencias.map(function(s, i){ return '<li class="' + s.nivel + '"><span>' + esc(s.txt) + '</span>' + (s.accion ? '<button type="button" class="btn xs gold" data-ldap="' + i + '">Aplicar</button>' : '') + '</li>'; }).join('') + '</ul>' +
+      '<div class="ld-hint">Las acciones nunca tocan la serie recta principal, suman estaciones solo en bloques compatibles (sin dos poleas ni dos máquinas) y no pasan el máximo semanal. Se deshacen con Ctrl+Z.</div></div>';
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target && e.target.closest && e.target.closest('[data-ldap]'); if(!t || !ultimo) return;
+    var s = ultimo.sugerencias[parseInt(t.getAttribute('data-ldap'), 10)]; if(!s || !s.accion) return;
+    if(aplicar(s.accion, active())){ try{ save(); }catch(eS){} renderBuilder(); toast('✔ Sugerencia aplicada: ' + s.txt.split(':')[0]); }
+    else toast('No se pudo aplicar: el bloque cambió desde la lectura. Revisá el día y volvé a intentar.', 'warn');
+  });
+  var _rb = window.renderBuilder;
+  if(typeof _rb === 'function'){
+    window.renderBuilder = function(){ var r = _rb.apply(this, arguments); try{ pintar(); }catch(e){ console.warn('lectura del día', e); } return r; };
+  }
+  window.CoachLecturaDia = { analizar: analizar, aplicar: aplicar, prioridadGluteo: prioridadGluteo, estaciones: estaciones, principal: principal };
+})();
+</script>
+<script>
+/* =========================================================
+   FICHA RÁPIDA DEL ALUMNO/A (Builder) + ALINEAR OBJETIVOS Y COACHING TIPS CON LA FICHA
+   ---------------------------------------------------------
+   · Arriba del día, una tarjeta compacta muestra lo que define la programación (género, nivel, objetivo, énfasis y restricciones) y se
+     edita con un toque, sin abrir el modal grande ni salir del día. Escribe en los MISMOS campos de siempre (ath.genero, ath.nivel,
+     ath.ficha.objetivo / enfasis, etiquetas «Molestia en …» de ath.tags), así la IA, la lectura del día y la app del alumno/a ven el cambio.
+     «📋 Ficha completa» abre el modal de siempre.
+   · Al cambiar la ficha aparece «Alinear objetivos y tips»:
+       ⚙️ Motor local (instantáneo, todo el plan): cada bloque de trabajo recibe UNA oración en su objetivo fisiológico y UNA línea
+          «TU FICHA:» en sus coaching tips (objetivo, nivel, prioridad de glúteo y cuidados por las restricciones de ESE bloque).
+          Lo que se agrega queda registrado (b.jpFicha) y la próxima alineación reemplaza SOLO eso: el resto del texto (del Banco,
+          de la IA o del coach) no se toca.
+       ✨ IA (día actual): regenera objetivo y tips de cada bloque del día con la ficha nueva (los prompts ya la reciben), uno por uno,
+          con avance y ⏹ para detener.
+     Ediciones manuales: el objetivo o los tips que el coach escribió a mano en el Builder (b.jpMano) se respetan; un tilde permite
+     incluirlos a propósito.
+   API: window.CoachFichaRapida = { aplicarCambio, alinearLocal, fraseObjetivo, lineaTips, regenerarIA, detenerIA }
+   ========================================================= */
+(function(){
+  'use strict';
+  var OBJETIVOS = ['Hipertrofia', 'Fuerza', 'Recomposición corporal', 'Readaptación', 'Rendimiento'];
+  var ENFASIS = ['Glúteo', 'Espalda', 'Pecho', 'Hombros', 'Brazos', 'Cuádriceps', 'Isquios', 'Core'];
+  var ZONAS = ['Hombro', 'Rodilla', 'Lumbar', 'Cadera', 'Muñeca', 'Codo', 'Cuello', 'Tobillo'];
+  var NIVELES = ['Inicial', 'Intermedio', 'Avanzado'];
+  function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
+  function esc(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  /* con varios objetivos manda el más específico (la hipertrofia es el más general) */
+  var PRIORIDAD_OBJ = ['Readaptación', 'Recomposición corporal', 'Fuerza', 'Rendimiento', 'Hipertrofia'];
+  function objetivoPrincipal(ath){ var l = objetivosDe(ath); return PRIORIDAD_OBJ.filter(function(o){ return l.indexOf(o) >= 0; })[0] || ''; }
+  function objetivosDe(ath){ var f = (ath && ath.ficha) || {}; return [].concat(f.objetivo || []).filter(function(o){ return OBJETIVOS.indexOf(o) >= 0; }); }
+  function zonasDe(ath){ return ZONAS.filter(function(z){ return (ath.tags || []).some(function(t){ return nz(t).indexOf(nz(z)) >= 0; }); }); }
+
+  /* ---------- un cambio de la ficha (lo usa la tarjeta; también se puede llamar desde la consola o los tests) ---------- */
+  function aplicarCambio(ath, campo, valor){
+    if(!ath) return false;
+    ath.ficha = ath.ficha || {};
+    if(campo === 'genero') ath.genero = ath.genero === valor ? '' : valor;
+    else if(campo === 'nivel') ath.nivel = valor;
+    else if(campo === 'objetivo' || campo === 'enfasis'){
+      var l = [].concat(ath.ficha[campo] || []), i = l.indexOf(valor);
+      if(i >= 0) l.splice(i, 1); else l.push(valor);
+      ath.ficha[campo] = l;
+    } else if(campo === 'restriccion'){
+      var z = nz(valor), tiene = (ath.tags || []).some(function(t){ return nz(t).indexOf(z) >= 0; });
+      ath.tags = tiene ? (ath.tags || []).filter(function(t){ return nz(t).indexOf(z) < 0; }) : (ath.tags || []).concat(['Molestia en ' + valor.toLowerCase()]);
+      var rz = ZONAS.filter(function(zz){ return (ath.tags || []).some(function(t){ return nz(t).indexOf(nz(zz)) >= 0; }); });
+      if(rz.length) ath.ficha.restricciones = rz; else delete ath.ficha.restricciones;
+    } else return false;
+    pendiente[ath.id] = true;
+    return true;
+  }
+
+  /* ---------- textos alineados con la ficha ---------- */
+  var FRASE_OBJ = {
+    'Hipertrofia': 'Para tu objetivo de hipertrofia, llegá cerca del fallo con técnica limpia y sumá repeticiones o carga semana a semana.',
+    'Fuerza': 'Para tu objetivo de fuerza, priorizá la calidad de cada repetición y los descansos completos: la carga sube cuando la técnica se sostiene.',
+    'Recomposición corporal': 'Para tu objetivo de recomposición, respetá los descansos y el RIR indicado: sostener la densidad suma gasto sin resignar músculo.',
+    'Readaptación': 'Como estás en readaptación, el rango sin dolor manda: si aparece molestia, bajá la carga o el recorrido antes de seguir.',
+    'Rendimiento': 'Pensando en tu rendimiento, subí con intención rápida y bajá con control: es fuerza que se transfiere a tu deporte.'
+  };
+  var CUE_OBJ = {
+    'Hipertrofia': 'última serie cerca del fallo con técnica limpia',
+    'Fuerza': 'descansos completos y repeticiones de calidad',
+    'Recomposición corporal': 'descansos justos para sostener la densidad',
+    'Readaptación': 'solo en rango sin dolor',
+    'Rendimiento': 'intención rápida en la subida'
+  };
+  function estacionesDe(b){
+    try{ if(window.CoachAuto && CoachAuto.tipsIA) return CoachAuto.tipsIA.estacionesBloque(b) || []; }catch(e){}
+    return [];
+  }
+  function trabajaGluteo(est){ return est.some(function(e){ return e.ex && e.ex.grupo === 'Piernas/Glúteos' && (e.ex.patron === 'Cadera dominante' || e.ex.patron === 'Abducción / Aducción'); }); }
+  function prioridadAlta(ath){ try{ return window.CoachLecturaDia && CoachLecturaDia.prioridadGluteo(ath).nivel === 'alta'; }catch(e){ return false; } }
+  function fraseObjetivo(ath, b){
+    var est = estacionesDe(b), obj = objetivoPrincipal(ath), partes = [];
+    if(obj && FRASE_OBJ[obj]) partes.push(FRASE_OBJ[obj]);
+    if(trabajaGluteo(est) && prioridadAlta(ath)) partes.push('Tu prioridad es el glúteo: buscá que empuje él en cada repetición, no la zona lumbar ni el cuádriceps.');
+    else if(/inicial/.test(nz(ath.nivel))) partes.push('Como estás empezando, dejá dos repeticiones en reserva y priorizá aprender el movimiento.');
+    return partes.slice(0, 2).join(' ');
+  }
+  function lineaTips(ath, b){
+    var est = estacionesDe(b), obj = objetivoPrincipal(ath), cues = [];
+    if(obj && CUE_OBJ[obj]) cues.push(CUE_OBJ[obj]);
+    if(/inicial/.test(nz(ath.nivel))) cues.push('RIR 2 en todas las series mientras afianzás la técnica');
+    else if(/avanzado/.test(nz(ath.nivel)) && obj !== 'Hipertrofia' && obj !== 'Readaptación') cues.push('la última serie puede ir a RIR 0 si la técnica se sostiene');
+    if(trabajaGluteo(est) && prioridadAlta(ath)) cues.push('sentí el glúteo como motor del movimiento');
+    /* cuidados por las restricciones de la ficha, solo de los ejercicios de ESTE bloque */
+    var zonas = {};
+    est.forEach(function(e){ if(!e.ex || typeof checkExercise !== 'function') return; checkExercise(ath, e.ex).forEach(function(a){ if(a.zonaLb) (zonas[a.zonaLb] = zonas[a.zonaLb] || []).push(e.ex.es); }); });
+    Object.keys(zonas).forEach(function(z){ cues.push('cuidá ' + z.toLowerCase() + ' en ' + zonas[z].join(' y ') + ': rango sin dolor y, si molesta, bajá la carga o el recorrido'); });
+    if(!cues.length) return '';
+    var t = cues.join('; ');
+    return 'TU FICHA: ' + t.charAt(0).toUpperCase() + t.slice(1) + '.';
+  }
+  function esTrabajo(b){
+    return b && !(b.category === 'warmup' || b.modalidad === 'calentamiento') && b.modalidad !== 'movilidad' &&
+      ((b.tipo === 'list' && b.sportsPizarra) || b.tipo === 'block' || b.tipo === 'superset');
+  }
+  /* reemplaza SOLO lo que agregó la alineación anterior; lo demás (Banco, IA, coach) queda igual */
+  function alinearBloque(ath, b, forzar){
+    var r = { o: false, t: false, manual: false };
+    var prev = b.jpFicha || {}, mano = b.jpMano || {};
+    var fo = fraseObjetivo(ath, b), lt = lineaTips(ath, b);
+    if(!mano.o || forzar){
+      var o = String(b.objective || '');
+      if(prev.o && o.indexOf(prev.o) >= 0) o = o.replace(prev.o, '');
+      o = o.replace(/\s{2,}/g, ' ').trim();
+      var nuevo = fo ? (o ? o + ' ' + fo : fo) : o;
+      if(nuevo !== String(b.objective || '')){ b.objective = nuevo; r.o = true; }
+      prev.o = fo;
+    } else r.manual = true;
+    if(!mano.t || forzar){
+      var ls = String(b.tips || '').split(/\r?\n/).filter(function(l){ return l.trim() && !(prev.t && l.trim() === prev.t) && !((!mano.t || forzar) && /^TU FICHA:/.test(l.trim())); });
+      if(lt) ls.push(lt);
+      var nt = ls.join('\n');
+      if(nt !== String(b.tips || '')){ b.tips = nt; r.t = true; }
+      prev.t = lt;
+    } else r.manual = true;
+    if(forzar) delete b.jpMano;
+    b.jpFicha = prev;
+    return r;
+  }
+  function alinearLocal(ath, p, opt){
+    opt = opt || {};
+    var res = { bloques: 0, objetivos: 0, tips: 0, respetados: 0 };
+    if(!ath || !p) return res;
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function' && !opt.sinDeshacer){ try{ CoachUndo.vigilar('Alinear objetivos y tips con la ficha'); }catch(eU){} }
+    (p.dias || []).forEach(function(d, di){
+      if(opt.soloDia != null && di !== opt.soloDia) return;
+      (d.bloques || []).forEach(function(b){
+        if(!esTrabajo(b)) return;
+        var r = alinearBloque(ath, b, !!opt.forzar);
+        res.bloques++; if(r.o) res.objetivos++; if(r.t) res.tips++; if(r.manual) res.respetados++;
+      });
+    });
+    delete pendiente[ath.id];
+    return res;
+  }
+
+  /* ---------- IA: objetivo y tips del día actual, bloque por bloque, con ⏹ ---------- */
+  var ia = { corriendo: false, ctrl: null, hechos: 0, total: 0, actual: '' };
+  async function regenerarIA(forzar){
+    if(ia.corriendo) return;
+    var ath = active(), p = ath ? plan(ath.id) : null, d = (typeof curDay === 'function') ? curDay() : null;
+    if(!ath || !p || !d) return;
+    if(typeof jpIAListo === 'function' && !jpIAListo('regenerar objetivos y tips con la ficha')) return;
+    var lista = (d.bloques || []).filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && esTrabajo(b) && (forzar || !(b.jpMano && (b.jpMano.o || b.jpMano.t))); });
+    if(!lista.length){ toast('No hay bloques de trabajo para regenerar en este día (o todos tienen texto propio)', 'info'); return; }
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Regenerar objetivos y tips con IA (ficha)'); }catch(eU){} }
+    ia = { corriendo: true, ctrl: (typeof AbortController === 'function') ? new AbortController() : null, hechos: 0, total: lista.length, actual: '' };
+    pintar();
+    var falla = null;
+    for(var i = 0; i < lista.length; i++){
+      if(ia.ctrl && ia.ctrl.signal.aborted) break;
+      var b = lista[i]; ia.actual = b.titulo || ('Bloque ' + (i + 1)); pintar();
+      var btn = { innerHTML: '', title: '', disabled: false, isConnected: false, dataset: {} };
+      try{ await generarTipsSportsCore(b.id, btn, ia.ctrl ? ia.ctrl.signal : undefined, { silencioso: true }); }
+      catch(e){ if(!(e && (e.cancelado || e.name === 'AbortError'))) falla = e; break; }
+      if(ia.ctrl && ia.ctrl.signal.aborted) break;
+      ia.hechos++;
+    }
+    var det = ia.ctrl && ia.ctrl.signal.aborted;
+    ia.corriendo = false; ia.ctrl = null; delete pendiente[ath.id];
+    try{ save(); }catch(eS){} try{ renderBuilder(); }catch(eR){}
+    toast(det ? 'Regeneración detenida: ' + ia.hechos + ' de ' + ia.total + ' bloques quedaron con la ficha nueva' : (falla ? 'Se cortó en el bloque ' + (ia.hechos + 1) + ': ' + String(falla.message || falla).slice(0, 120) : '✨ ' + ia.hechos + ' bloques del día con objetivo y tips según la ficha'), det ? 'info' : (falla ? 'warn' : ''));
+  }
+  function detenerIA(){ if(ia.ctrl){ try{ ia.ctrl.abort(); }catch(e){} } }
+
+  /* ---------- UI ---------- */
+  var pendiente = {}, abierta = false, forzar = false;
+  function css(){
+    if(document.getElementById('frCss')) return;
+    var st = document.createElement('style'); st.id = 'frCss';
+    st.textContent =
+      '#jpFichaRapida .fr-card{margin:0 0 12px;padding:10px 14px;border:1px solid var(--line-2,#2a2f3a);border-radius:12px;background:rgba(255,255,255,.02)}' +
+      '#jpFichaRapida .fr-res{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px}' +
+      '#jpFichaRapida .fr-res b{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#FF8A4D;margin-right:4px}' +
+      '#jpFichaRapida .fr-t{padding:3px 9px;border-radius:999px;border:1px solid var(--line-2,#2a2f3a);color:var(--txt-2,#c3c9d3);font-size:11.5px}' +
+      '#jpFichaRapida .fr-t.warn{border-color:rgba(224,101,74,.6);color:#F0A08C}#jpFichaRapida .fr-t.vacio{border-style:dashed;color:var(--muted,#8b94a3)}' +
+      '#jpFichaRapida .fr-acts{margin-left:auto;display:flex;gap:6px}' +
+      '#jpFichaRapida .fr-ed{margin-top:10px;display:grid;gap:8px}' +
+      '#jpFichaRapida .fr-g{display:flex;flex-wrap:wrap;align-items:center;gap:6px}#jpFichaRapida .fr-g > span{flex:0 0 96px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b94a3)}' +
+      '#jpFichaRapida .fr-c{cursor:pointer;padding:6px 11px;border-radius:999px;border:1px solid var(--line-2,#2a2f3a);background:transparent;color:var(--txt-2,#c3c9d3);font:600 12px/1 inherit;font-family:inherit}' +
+      '#jpFichaRapida .fr-c.on{background:rgba(255,85,0,.14);border-color:#FF5500;color:#FF8A4D}#jpFichaRapida .fr-c.on.warn{background:rgba(224,101,74,.14);border-color:#E0654A;color:#F0A08C}' +
+      '#jpFichaRapida .fr-al{margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid rgba(0,229,255,.35);background:rgba(0,229,255,.05);display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12.5px}' +
+      '#jpFichaRapida .fr-al p{margin:0;flex:1 1 260px;line-height:1.45}#jpFichaRapida .fr-al label{font-size:11.5px;color:var(--muted,#8b94a3);display:flex;align-items:center;gap:5px}' +
+      '@media(max-width:640px){#jpFichaRapida .fr-g > span{flex-basis:100%}#jpFichaRapida .fr-acts{margin-left:0}}';
+    document.head.appendChild(st);
+  }
+  function chip(campo, valor, on, warn){ return '<button type="button" class="fr-c' + (on ? ' on' : '') + (warn ? ' warn' : '') + '" data-frc="' + campo + '" data-frv="' + esc(valor) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(valor) + '</button>'; }
+  function pintar(){
+    var vol = document.getElementById('volCard'); if(!vol || !vol.parentNode) return;
+    var cont = document.getElementById('jpFichaRapida');
+    if(!cont){ cont = document.createElement('div'); cont.id = 'jpFichaRapida'; vol.parentNode.insertBefore(cont, vol); }
+    var ath = (typeof active === 'function') ? active() : null, p = ath ? plan(ath.id) : null;
+    if(!ath || !p){ cont.innerHTML = ''; return; }
+    css();
+    var f = ath.ficha || {}, obj = objetivosDe(ath), enf = [].concat(f.enfasis || []), zs = zonasDe(ath), gen = String(ath.genero || '').toUpperCase().charAt(0);
+    var t = function(txt, cls){ return '<span class="fr-t' + (cls ? ' ' + cls : '') + '">' + esc(txt) + '</span>'; };
+    var h = '<div class="fr-card"><div class="fr-res"><b>👤 Ficha</b>' +
+      t(gen === 'F' ? 'Mujer' : (gen === 'M' ? 'Varón' : 'Género sin definir'), gen ? '' : 'vacio') + t(ath.nivel || 'Nivel sin definir', ath.nivel ? '' : 'vacio') +
+      (obj.length ? obj.map(function(o){ return t(o); }).join('') : t('Objetivo sin definir', 'vacio')) +
+      (enf.length ? t('Énfasis: ' + enf.join(', ')) : '') + (zs.length ? t('Cuidar: ' + zs.join(', '), 'warn') : '') +
+      '<span class="fr-acts"><button type="button" class="btn xs" data-frtoggle="1">' + (abierta ? '▴ Listo' : '✏️ Editar rápido') + '</button><button type="button" class="btn xs ghost" data-frfull="1" title="Abre la ficha completa del alumno/a">📋 Ficha completa</button></span></div>';
+    if(abierta){
+      h += '<div class="fr-ed">' +
+        '<div class="fr-g"><span>Género</span>' + chip('genero', 'F', gen === 'F').replace('>F<', '>Mujer<') + chip('genero', 'M', gen === 'M').replace('>M<', '>Varón<') + '</div>' +
+        '<div class="fr-g"><span>Nivel</span>' + NIVELES.map(function(n){ return chip('nivel', n, ath.nivel === n); }).join('') + '</div>' +
+        '<div class="fr-g"><span>Objetivo</span>' + OBJETIVOS.map(function(o){ return chip('objetivo', o, obj.indexOf(o) >= 0); }).join('') + '</div>' +
+        '<div class="fr-g"><span>Énfasis</span>' + ENFASIS.map(function(o){ return chip('enfasis', o, enf.indexOf(o) >= 0); }).join('') + '</div>' +
+        '<div class="fr-g"><span>Restricciones</span>' + ZONAS.map(function(z){ return chip('restriccion', z, zs.indexOf(z) >= 0, true); }).join('') + '</div></div>';
+    }
+    if(ia.corriendo){
+      h += '<div class="fr-al"><p>✨ Regenerando con IA: bloque ' + (ia.hechos + 1) + ' de ' + ia.total + (ia.actual ? ' · ' + esc(ia.actual) : '') + '</p><button type="button" class="btn xs" data-frstop="1">⏹ Detener</button></div>';
+    } else if(pendiente[ath.id]){
+      h += '<div class="fr-al"><p><b>La ficha cambió.</b> Alineá los objetivos fisiológicos y los coaching tips con la ficha nueva: el motor local suma una oración y una línea «TU FICHA» en cada bloque del plan (sin tocar el resto del texto); la IA reescribe los bloques de este día.</p>' +
+        '<label><input type="checkbox" data-frforzar="1"' + (forzar ? ' checked' : '') + '> incluir textos escritos a mano</label>' +
+        '<button type="button" class="btn xs gold" data-fralin="1">⚙️ Alinear todo el plan</button><button type="button" class="btn xs" data-fria="1">✨ Regenerar este día con IA</button><button type="button" class="btn xs ghost" data-frdesc="1">Ahora no</button></div>';
+    }
+    cont.innerHTML = h + '</div>';
+  }
+  document.addEventListener('change', function(e){ var c = e.target && e.target.closest && e.target.closest('[data-frforzar]'); if(c) forzar = c.checked; });
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest || !t.closest('#jpFichaRapida')) return;
+    var ath = active(); if(!ath) return;
+    if(t.closest('[data-frtoggle]')){ abierta = !abierta; pintar(); return; }
+    if(t.closest('[data-frfull]')){ if(typeof openAth === 'function') openAth(ath.id); return; }
+    if(t.closest('[data-frstop]')){ detenerIA(); return; }
+    if(t.closest('[data-frdesc]')){ delete pendiente[ath.id]; pintar(); return; }
+    if(t.closest('[data-fralin]')){
+      var r = alinearLocal(ath, plan(ath.id), { forzar: forzar });
+      try{ save(); }catch(eS){} renderBuilder();
+      toast('⚙️ Ficha aplicada en ' + r.bloques + ' bloques (' + r.objetivos + ' objetivos y ' + r.tips + ' tips actualizados)' + (r.respetados ? ' · ' + r.respetados + ' con texto propio respetado' : ''));
+      return;
+    }
+    if(t.closest('[data-fria]')){ regenerarIA(forzar); return; }
+    var c = t.closest('[data-frc]');
+    if(c){
+      if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Editar ficha rápida'); }catch(eU){} }
+      if(aplicarCambio(ath, c.getAttribute('data-frc'), c.getAttribute('data-frv'))){ try{ save(); }catch(eS){} renderBuilder(); }
+    }
+  });
+  /* guardar la ficha completa (modal) también ofrece alinear */
+  var _save = window.saveAth;
+  if(typeof _save === 'function'){
+    window.saveAth = function(){
+      var id = (typeof editAthId !== 'undefined') ? editAthId : null, a0 = id ? getAth(id) : null;
+      var antes = a0 ? JSON.stringify([a0.genero, a0.nivel, a0.tags, a0.ficha && a0.ficha.objetivo, a0.ficha && a0.ficha.enfasis, a0.foco]) : null;
+      var r = _save.apply(this, arguments);
+      try{ var a1 = id ? getAth(id) : null; if(a1 && antes !== JSON.stringify([a1.genero, a1.nivel, a1.tags, a1.ficha && a1.ficha.objetivo, a1.ficha && a1.ficha.enfasis, a1.foco])){ pendiente[a1.id] = true; renderBuilder(); } }catch(e){}
+      return r;
+    };
+  }
+  var _rb = window.renderBuilder;
+  if(typeof _rb === 'function'){
+    window.renderBuilder = function(){ var r = _rb.apply(this, arguments); try{ pintar(); }catch(e){ console.warn('ficha rápida', e); } return r; };
+  }
+  window.CoachFichaRapida = { aplicarCambio: aplicarCambio, alinearLocal: alinearLocal, fraseObjetivo: fraseObjetivo, lineaTips: lineaTips, regenerarIA: regenerarIA, detenerIA: detenerIA, pendiente: function(id){ return !!pendiente[id]; } };
+})();
+</script>

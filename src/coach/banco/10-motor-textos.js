@@ -96,8 +96,10 @@
   /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
   function R(rol, ej, i, a, o){ var r = { rol: rol, ej: ej, i: i, a: a }; if(o){ for(var k in o) r[k] = o[k]; } return r; }
   function partesDosis(s){
-    var p = String(s || '').split('|'), m = /^(\d+)\s*x\s*(.+)$/i.exec((p[0] || '').trim()) || [];
-    return { sets: parseInt(m[1], 10) || 3, reps: String(m[2] || '10').split('/').map(function(x){ return x.trim(); }), rir: String(p[1] == null ? '1' : p[1]).split('/').map(function(x){ return x.trim(); }), rest: parseInt(p[2], 10) || 90, tec: (p[3] || '').trim() };
+    /* "4/3x8/12": cada estación de un biset conserva SUS series (el volumen semanal no cambia al agrupar); sets = la primera, setsL = una por estación */
+    var p = String(s || '').split('|'), m = /^(\d+(?:\s*\/\s*\d+)*)\s*x\s*(.+)$/i.exec((p[0] || '').trim()) || [];
+    var setsL = m[1] ? String(m[1]).split('/').map(function(x){ return parseInt(x, 10) || 3; }) : [3];
+    return { sets: setsL[0], setsL: setsL, reps: String(m[2] || '10').split('/').map(function(x){ return x.trim(); }), rir: String(p[1] == null ? '1' : p[1]).split('/').map(function(x){ return x.trim(); }), rest: parseInt(p[2], 10) || 90, tec: (p[3] || '').trim() };
   }
   function nombreCorto(n){ return String(n).replace(/\s*\(.*\)\s*$/, ''); }
   function minBloque(sets, estaciones, rest){ return Math.max(4, Math.round(sets * (estaciones * 45 + rest) / 60 + 2)); }
@@ -192,12 +194,14 @@
     var ejs = [].concat(av && fila.ea ? fila.ea : fila.ej);
     var multi = ejs.length > 1, nombresCortos = ejs.map(nombreCorto);
     var titulo = (fila.rol === 'B' ? 'Hipertrofia – Biset ' : (fila.rol === 'T' ? 'Hipertrofia – Triset ' : (fila.rol === 'C' ? 'Core – ' : (PREF[fila.rol] || 'Hipertrofia') + ' – '))) + nombresCortos.join(' + ');
-    var mins = minBloque(d.sets, ejs.length + ejs.filter(esUnilateral).length, d.rest);      /* un ejercicio por lado dura el doble */
+    var setsDe = function(k){ return (d.setsL && d.setsL[k] != null) ? d.setsL[k] : d.sets; };
+    var setsMax = Math.max.apply(null, ejs.map(function(e, k){ return setsDe(k); }));
+    var mins = minBloque(setsMax, ejs.length + ejs.filter(esUnilateral).length, d.rest);      /* un ejercicio por lado dura el doble */
     var L = ['[BLOQUE ' + n + '] [' + TAG[fila.rol] + '] ' + titulo + ' (' + mins + ' MIN)'];
     var tecTxt = d.tec && TEC[d.tec] ? ' | ' + TEC[d.tec].lb : '';
     ejs.forEach(function(e, k){
       var reps = conLado(e, d.reps[k] != null ? d.reps[k] : d.reps[d.reps.length - 1]), rir = d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1];
-      var dosis = d.sets + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
+      var dosis = setsDe(k) + 'x' + reps + ' | Tempo ' + tempoFila(fila, k, e) + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
       L.push((multi ? 'A' + (k + 1) + '. ' : '') + etiquetaEj(e));
       L.push(dosis);
     });
@@ -226,12 +230,16 @@
         L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
       });
       L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
+      var sl = ejs.map(function(e, k){ return setsDe(k); });
+      if(sl.some(function(x){ return x !== sl[0]; })){
+        L.push('SERIES POR ESTACIÓN: ' + ejs.map(function(e, k){ return 'A' + (k + 1) + ' ' + sl[k]; }).join(' · ') + ' series. Hacés las rondas completas mientras las estaciones tengan series y en las rondas que sobran solo la que todavía tiene, con el mismo descanso.');
+      }
       lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
     }
     if(av && d.tec && TEC[d.tec]) L.push(TEC[d.tec].tip);
     nr.pos.forEach(function(x){ L.push(x); });
-    var grupos = ejs.map(function(e){ var x = exLib(e); return { ej: e, grupo: x ? x.grupo : '', patron: x ? x.patron : '', sets: d.sets }; });
-    return { txt: L.join('\n'), sets: d.sets * ejs.length, grupos: grupos, mins: mins };
+    var grupos = ejs.map(function(e, k){ var x = exLib(e); return { ej: e, grupo: x ? x.grupo : '', patron: x ? x.patron : '', sets: setsDe(k) }; });
+    return { txt: L.join('\n'), sets: ejs.reduce(function(a, e, k){ return a + setsDe(k); }, 0), grupos: grupos, mins: mins };
   }
 
   /* ---------- entrada en calor específica por tipo de día: movilidad + activación + potenciación (10 min) ---------- */

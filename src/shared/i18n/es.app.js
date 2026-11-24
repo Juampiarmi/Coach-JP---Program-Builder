@@ -13,6 +13,7 @@ JP_I18N.add('es', {
   'app.ver.h.std': 'Solo los bloques principales de la sesión. Lo complementario ({n}) queda para la versión extendida.',
   'app.ver.h.ext': 'Sesión completa: suma {n} complementario(s) a los bloques principales.',
   'app.ver.h.igual': 'Esta sesión no tiene bloques complementarios: las dos versiones son iguales.',
+  'app.ver.est': 'Los tiempos son estimados: según tu energía, tu recuperación, tu nivel y tu ritmo del día, la sesión puede llevarte un poco más o un poco menos.',
   'app.plan.t': 'PLAN DE CARGAS · según tu historial', 'app.plan.hecho': '✓ hecho', 'app.plan.desc': 'DESCARGA', 'app.plan.pico': 'PICO',
   /* voz del timer (088-voz-del-timer.js) */
   /* avisos del sistema con el teléfono bloqueado y aviso de pantalla encendida */
