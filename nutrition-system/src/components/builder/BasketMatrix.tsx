@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ShoppingBasket } from 'lucide-react';
+import { allergiesOf, conflictOf } from '@/lib/allergens';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { BRAND_CATEGORIES, BRAND_CATEGORY_LABEL, brandLabel, portionLabel, type BrandFood } from '@/lib/foodBrandDb';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
@@ -19,7 +20,10 @@ export function BasketMatrix() {
   const plan = usePlanStore((s) => s.plan);
   const setAnamnesis = usePlanStore((s) => s.setAnamnesis);
   const basket = sanitizeAnamnesis(plan.anamnesis).basket;
-  const usable = items.filter((b) => b.disponible_para_ia);
+  // Alergias / prescripciones del alumno: lo incompatible no aparece en la canasta.
+  const allergies = allergiesOf(plan);
+  const safeB = (b: BrandFood) => (!allergies.length || !conflictOf({ food: `${b.nombre} ${b.marca ?? ''}` }, allergies).length) && !(b.lactosa && allergies.some((a) => a === 'lactose' || a === 'dairy'));
+  const usable = items.filter((b) => b.disponible_para_ia && safeB(b));
   const selected = new Set(basket ?? usable.map((b) => b.id));
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -78,7 +82,7 @@ export function BasketMatrix() {
 
         <div className="mt-3 space-y-1.5">
           {BRAND_CATEGORIES.map((c) => {
-            const rows = items.filter((b) => b.categoria === c);
+            const rows = items.filter((b) => b.categoria === c && safeB(b));
             if (!rows.length) return null;
             const okRows = rows.filter((b) => b.disponible_para_ia);
             const on = okRows.filter((b) => selected.has(b.id)).length;

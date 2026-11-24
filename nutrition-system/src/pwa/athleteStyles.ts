@@ -551,6 +551,10 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .salad b{color:var(--title)}
 .salad i{display:block;font-style:normal;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--cyan)}
 .salads .sl-note{padding:8px 12px;font-size:11.5px;color:var(--muted)}
+.qs-row{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;color:var(--text);line-height:1.5}
+.qs-row b{display:block;color:var(--title)}
+.qs-row b i{font-style:normal;font-weight:500;color:var(--muted);font-size:11px}
+.qs-row em{font-style:normal;color:var(--cyan);font-weight:700}
 `;
 
 export default styles;

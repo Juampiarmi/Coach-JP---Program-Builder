@@ -75,6 +75,7 @@ const runtime = String.raw`
     rebal: store.get('rebal:' + today, {}),
     outDrinks: [],
     outFoods: [],
+    shopCouple: !!store.get('shopCouple', false),
     outRebal: true,
     batchMode: store.get('batchMode', 'on'),
     batchDone: store.get('batch:' + weekKey, {}),
@@ -177,7 +178,7 @@ const runtime = String.raw`
   // Valores aproximados por unidad típica en Argentina (copa 150 ml, pinta 500 ml, vaso de trago 350 ml).
   var OUT_DRINKS = [
     { id: 'vino', icon: '🍷', label: 'Copa de vino', c: 31 },
-    { id: 'cerveza', icon: '🍺', label: 'Pinta de cerveza', c: 54 },
+    { id: 'cerveza', al: ['gluten'], icon: '🍺', label: 'Pinta de cerveza', c: 54 },
     { id: 'fernet-comun', icon: '🥃', label: 'Fernet con coca común', c: 52 },
     { id: 'fernet', icon: '🥃', label: 'Fernet con coca zero', c: 32 },
     { id: 'gin', icon: '🍸', label: 'Gin tonic', c: 44 },
@@ -185,25 +186,27 @@ const runtime = String.raw`
   ];
   // Catálogo argentino para salir a comer: kcal y macros aproximados por porción real.
   var OUT_FOODS = [
-    { cat: 'Empanadas', id: 'emp-carne-h', label: 'Empanada de carne al horno', unit: '1 u', p: 11, c: 27, f: 13 },
-    { cat: 'Empanadas', id: 'emp-carne-f', label: 'Empanada de carne frita', unit: '1 u', p: 11, c: 27, f: 21 },
-    { cat: 'Empanadas', id: 'emp-pollo-h', label: 'Empanada de pollo al horno', unit: '1 u', p: 12, c: 26, f: 9 },
-    { cat: 'Empanadas', id: 'emp-pollo-f', label: 'Empanada de pollo frita', unit: '1 u', p: 12, c: 26, f: 16 },
-    { cat: 'Parrilla', id: 'asado-tira', label: 'Asado de tira', unit: '200 g cocido', p: 48, c: 0, f: 44 },
-    { cat: 'Parrilla', id: 'vacio', label: 'Vacío', unit: '200 g cocido', p: 50, c: 0, f: 34 },
-    { cat: 'Parrilla', id: 'chorizo', label: 'Chorizo', unit: '1 u (100 g)', p: 14, c: 2, f: 27 },
-    { cat: 'Parrilla', id: 'provoleta', label: 'Provoleta', unit: '1 porción (100 g)', p: 25, c: 2, f: 27 },
-    { cat: 'Sánguches', id: 'milanga', label: 'Sánguche de milanesa completo', unit: '1 u', p: 45, c: 85, f: 48 },
-    { cat: 'Sánguches', id: 'lomito', label: 'Lomito completo', unit: '1 u', p: 55, c: 75, f: 52 },
-    { cat: 'Pizza', id: 'pizza-muzza', label: 'Pizza de muzzarella', unit: '1 porción (1/8)', p: 12, c: 30, f: 11 },
-    { cat: 'Pizza', id: 'pizza-fuga', label: 'Fugazzeta', unit: '1 porción (1/8)', p: 13, c: 30, f: 14 },
-    { cat: 'Postres y helado', id: 'helado-bocha', label: 'Helado de crema', unit: '1 bocha', p: 2.5, c: 18, f: 6.5 },
-    { cat: 'Postres y helado', id: 'helado-agua', label: 'Helado al agua / frutal', unit: '1 bocha', p: 0.5, c: 22, f: 0.5 },
-    { cat: 'Postres y helado', id: 'helado-cuarto', label: 'Helado de crema', unit: '¼ kg', p: 9, c: 63, f: 23 },
-    { cat: 'Postres y helado', id: 'flan-ddl', label: 'Flan con dulce de leche', unit: '1 porción', p: 7, c: 50, f: 11 },
-    { cat: 'Postres y helado', id: 'flan', label: 'Flan solo', unit: '1 porción', p: 5, c: 30, f: 5.5 },
-    { cat: 'Postres y helado', id: 'panqueque-ddl', label: 'Panqueque con dulce de leche', unit: '1 u', p: 7, c: 52, f: 12 },
+    { cat: 'Empanadas', id: 'emp-carne-h', al: ['gluten', 'veg'], label: 'Empanada de carne al horno', unit: '1 u', p: 11, c: 27, f: 13 },
+    { cat: 'Empanadas', id: 'emp-carne-f', al: ['gluten', 'veg'], label: 'Empanada de carne frita', unit: '1 u', p: 11, c: 27, f: 21 },
+    { cat: 'Empanadas', id: 'emp-pollo-h', al: ['gluten', 'veg'], label: 'Empanada de pollo al horno', unit: '1 u', p: 12, c: 26, f: 9 },
+    { cat: 'Empanadas', id: 'emp-pollo-f', al: ['gluten', 'veg'], label: 'Empanada de pollo frita', unit: '1 u', p: 12, c: 26, f: 16 },
+    { cat: 'Parrilla', id: 'asado-tira', al: ['veg'], label: 'Asado de tira', unit: '200 g cocido', p: 48, c: 0, f: 44 },
+    { cat: 'Parrilla', id: 'vacio', al: ['veg'], label: 'Vacío', unit: '200 g cocido', p: 50, c: 0, f: 34 },
+    { cat: 'Parrilla', id: 'chorizo', al: ['veg'], label: 'Chorizo', unit: '1 u (100 g)', p: 14, c: 2, f: 27 },
+    { cat: 'Parrilla', id: 'provoleta', al: ['lactose', 'dairy'], label: 'Provoleta', unit: '1 porción (100 g)', p: 25, c: 2, f: 27 },
+    { cat: 'Sánguches', id: 'milanga', al: ['gluten', 'veg', 'egg', 'lactose', 'dairy'], label: 'Sánguche de milanesa completo', unit: '1 u', p: 45, c: 85, f: 48 },
+    { cat: 'Sánguches', id: 'lomito', al: ['gluten', 'veg', 'egg', 'lactose', 'dairy'], label: 'Lomito completo', unit: '1 u', p: 55, c: 75, f: 52 },
+    { cat: 'Pizza', id: 'pizza-muzza', al: ['gluten', 'lactose', 'dairy'], label: 'Pizza de muzzarella', unit: '1 porción (1/8)', p: 12, c: 30, f: 11 },
+    { cat: 'Pizza', id: 'pizza-fuga', al: ['gluten', 'lactose', 'dairy'], label: 'Fugazzeta', unit: '1 porción (1/8)', p: 13, c: 30, f: 14 },
+    { cat: 'Postres y helado', id: 'helado-bocha', al: ['lactose', 'dairy'], label: 'Helado de crema', unit: '1 bocha', p: 2.5, c: 18, f: 6.5 },
+    { cat: 'Postres y helado', id: 'helado-agua', al: [], label: 'Helado al agua / frutal', unit: '1 bocha', p: 0.5, c: 22, f: 0.5 },
+    { cat: 'Postres y helado', id: 'helado-cuarto', al: ['lactose', 'dairy'], label: 'Helado de crema', unit: '¼ kg', p: 9, c: 63, f: 23 },
+    { cat: 'Postres y helado', id: 'flan-ddl', al: ['egg', 'lactose', 'dairy'], label: 'Flan con dulce de leche', unit: '1 porción', p: 7, c: 50, f: 11 },
+    { cat: 'Postres y helado', id: 'flan', al: ['egg', 'lactose', 'dairy'], label: 'Flan solo', unit: '1 porción', p: 5, c: 30, f: 5.5 },
+    { cat: 'Postres y helado', id: 'panqueque-ddl', al: ['gluten', 'egg', 'lactose', 'dairy'], label: 'Panqueque con dulce de leche', unit: '1 u', p: 7, c: 52, f: 12 },
   ];
+  // Lo que el alumno no puede comer (alergias o vegetariano) directamente no aparece.
+  function outOk(x) { return !(x.al || []).some(function (a) { return (D.allergies || []).indexOf(a) >= 0; }); }
   function outFood(id) { return OUT_FOODS.filter(function (x) { return x.id === id; })[0]; }
   function outDrink(id) { return OUT_DRINKS.filter(function (x) { return x.id === id; })[0]; }
   function kcalOf(x) { return x.p * 4 + x.c * 4 + x.f * 9; }
@@ -717,15 +720,23 @@ const runtime = String.raw`
     var onDays = Math.max(0, Math.min(7, D.trainingDays)), mult = { on: onDays, off: 7 - onDays, both: 7 };
     var rules = D.shopRules || {};
     var acc = {};
-    D.meals.forEach(function (m) {
-      m.items.map(resolveItem).forEach(function (it) {
-        var rule = (it.foodId && rules[it.foodId]) || {};
-        var key = rule.key || it.foodId || 'x:' + it.food;
-        if (!acc[key]) acc[key] = { foodId: it.foodId, name: rule.name || it.food, rule: rule, grams: 0 };
-        else if (!acc[key].foodId) acc[key].foodId = it.foodId;
-        acc[key].grams += it.grams * mult[m.day];
+    var addMeals = function (meals, mlt, resolve) {
+      meals.forEach(function (m) {
+        m.items.map(resolve).forEach(function (it) {
+          var rule = (it.foodId && rules[it.foodId]) || {};
+          var key = rule.key || it.foodId || 'x:' + it.food;
+          if (!acc[key]) acc[key] = { foodId: it.foodId, name: rule.name || it.food, rule: rule, grams: 0 };
+          else if (!acc[key].foodId) acc[key].foodId = it.foodId;
+          acc[key].grams += it.grams * mlt[m.day];
+        });
       });
-    });
+    };
+    addMeals(D.meals, mult, resolveItem);
+    // Modo Parejas: lista combinada (lo de los dos, cada uno con sus gramos y sus días de entreno).
+    if (S.shopCouple && D.partner) {
+      var pOn = Math.max(0, Math.min(7, D.partner.trainingDays || onDays));
+      addMeals(D.partner.meals, { on: pOn, off: 7 - pOn, both: 7 }, function (it) { return it; });
+    }
     // Verdulería concreta: la «verdura» del plan se reparte en verduras reales con unidades de verdulería.
     var vk = Object.keys(acc).filter(function (k) { return acc[k].foodId === 'vegetales'; })[0];
     if (vk) {
@@ -803,7 +814,7 @@ const runtime = String.raw`
   }
 
   function shopText(list) {
-    var t = '🛒 *LISTA DE COMPRAS SEMANAL* · ' + D.athlete.name + '\nSemana del ' + weekKey.split('-').reverse().join('/') + ' · ' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso\n';
+    var t = '🛒 *LISTA DE COMPRAS SEMANAL* · ' + D.athlete.name + (S.shopCouple && D.partner ? ' + ' + D.partner.name + ' (pareja)' : '') + '\nSemana del ' + weekKey.split('-').reverse().join('/') + ' · ' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso\n';
     list.forEach(function (g) {
       t += '\n*' + g.cat.toUpperCase() + '*\n';
       g.items.forEach(function (i) {
@@ -832,6 +843,7 @@ const runtime = String.raw`
     if (S.panel === 'shop') {
       var list = shoppingList();
       var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco. Pan, galletas, carnes, leche, arroz, fideos, avena, frutas y verduras: <b>marca a elección</b>' + (D.glutenSeal && D.glutenSeal.length ? ' (siempre con el logo oficial Sin TACC en los envasados)' : '') + '.</p>';
+      if (D.partner) h2 += '<div class="tabs shop-couple"><button data-shopcouple="0" class="' + (S.shopCouple ? '' : 'on') + '">SÓLO MI LISTA</button><button data-shopcouple="1" class="' + (S.shopCouple ? 'on' : '') + '">PAREJA · YO + ' + esc(D.partner.name.toUpperCase()) + '</button></div>' + (S.shopCouple ? '<p class="muted" style="font-size:12px">Suma lo de los dos (cada uno con sus porciones): una sola compra para la semana.</p>' : '');
       h2 += '<button class="wa-btn" data-washop="1">[ 📲 Mandar lista por WhatsApp ]</button>';
       h2 += '<button class="batch-btn" data-panel="batch">[ 🍳 GUÍA DE BATCH COOKING DEL FIN DE SEMANA ]</button>';
       list.forEach(function (g) {
@@ -871,18 +883,18 @@ const runtime = String.raw`
         h3 += '<label class="lbl">¿Qué comida reemplaza?</label><select id="out-meal" class="inp">' + targets.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (x.m.id === def ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + mealName(x.m, mode) + ' · ' + n0(x.kcal) + ' kcal') + '</option>'; }).join('') + '</select>';
         // Catálogo argentino: si elegís lo que vas a comer, se registra con esos números (si no, con los de tu comida).
         var oc = countOf(S.outFoods), cats = [];
-        OUT_FOODS.forEach(function (x) { if (cats.indexOf(x.cat) < 0) cats.push(x.cat); });
+        OUT_FOODS.filter(outOk).forEach(function (x) { if (cats.indexOf(x.cat) < 0) cats.push(x.cat); });
         h3 += '<details class="out-cat"' + (S.outFoods.length ? ' open' : '') + '><summary>🇦🇷 ¿Qué vas a comer? Calorías y macros de lo típico (opcional)</summary>';
         cats.forEach(function (c) {
           h3 += '<div class="oc-h">' + esc(c) + '</div>';
-          OUT_FOODS.filter(function (x) { return x.cat === c; }).forEach(function (x) {
+          OUT_FOODS.filter(function (x) { return x.cat === c && outOk(x); }).forEach(function (x) {
             var nn = oc[x.id] || 0;
             h3 += '<div class="oc-row' + (nn ? ' on' : '') + '"><span class="oc-n">' + esc(x.label) + '<i>' + esc(x.unit) + ' · P ' + n0(x.p) + ' · C ' + n0(x.c) + ' · G ' + n0(x.f) + '</i></span><b>' + n0(kcalOf(x)) + ' kcal</b>' + (nn ? '<button data-outfoodrm="' + x.id + '" aria-label="Quitar uno">−</button><em>' + nn + '</em>' : '') + '<button data-outfood="' + x.id + '" aria-label="Sumar uno">+</button></div>';
           });
         });
         h3 += '</details>';
         var dcnt = countOf(S.outDrinks);
-        h3 += '<label class="lbl">Bebida social (opcional · tocá varias veces para sumar)</label><div class="scenes drinks">' + OUT_DRINKS.map(function (d) { var q = dcnt[d.id] || 0; return '<button data-drink="' + d.id + '" class="' + (q ? 'on' : '') + '">' + d.icon + ' ' + (q > 1 ? q + ' × ' : '') + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal c/u</i></button>'; }).join('') + (S.outDrinks.length ? '<button data-drink="__none" class="ghost">✕ sin bebida</button>' : '') + '</div>';
+        h3 += '<label class="lbl">Bebida social (opcional · tocá varias veces para sumar)</label><div class="scenes drinks">' + OUT_DRINKS.filter(outOk).map(function (d) { var q = dcnt[d.id] || 0; return '<button data-drink="' + d.id + '" class="' + (q ? 'on' : '') + '">' + d.icon + ' ' + (q > 1 ? q + ' × ' : '') + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal c/u</i></button>'; }).join('') + (S.outDrinks.length ? '<button data-drink="__none" class="ghost">✕ sin bebida</button>' : '') + '</div>';
         var dk = S.outDrinks.reduce(function (a, id) { var d = outDrink(id); return a + (d ? d.c * 4 : 0); }, 0);
         // Trueques de alcohol: lo que "cuesta" la bebida en comida real.
         var EMP = outFood('emp-carne-h'), BOCHA = outFood('helado-bocha');
@@ -1063,6 +1075,11 @@ const runtime = String.raw`
     var list = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ CALCULADORA DE PORCIONES VISUALES · SIN BALANZA ]</div><h3>Tu mano es la medida</h3>';
     h += '<div class="hands"><div><b>✋ 1 palma de la mano</b><span>≈ 120 g de carne, pollo o pescado cocido (el grosor y el tamaño de tu palma, sin los dedos)</span></div><div><b>✊ 1 puño</b><span>≈ 150 g de arroz, fideos o papa cocidos · 1 fruta mediana</span></div><div><b>🤲 1 mano ahuecada</b><span>≈ 30 g de avena, tutucas o cereal</span></div><div><b>👍 1 pulgar</b><span>≈ 15 g de frutos secos o pasta de maní</span></div><div><b>🥄 1 cda</b><span>≈ 13 g de aceite · 20 g de miel · 15 g de queso untable</span></div><div><b>🥛 1 pote</b><span>≈ 190-200 g de yogur griego o proteico</span></div></div>';
+    if (D.quickSwaps && D.quickSwaps.length) {
+      h += '<div class="qswaps"><div class="tag" style="margin-top:12px">[ REEMPLAZOS RÁPIDOS 1 A 1 ]</div><p class="muted" style="font-size:12px">Cada fila aporta lo mismo: cambiá una fuente por otra sin desarmar tu plan.</p>';
+      D.quickSwaps.forEach(function (g) { if (g.items.length) h += '<div class="qs-row"><b>' + esc(g.title) + ' <i>' + esc(g.ref) + '</i></b><span>' + g.items.map(esc).join(' <em>≈</em> ') + '</span></div>'; });
+      h += '</div>';
+    }
     h += '<p class="muted" style="font-size:12px;margin-top:10px">Equivalencias de lo que elegiste hoy (día ' + S.mode.toUpperCase() + '). Si cambiás de opción en una comida, esta lista se actualiza:</p>';
     list.forEach(function (x) {
       var otl = x.alt ? x.alt.title : x.m.title;
@@ -2054,7 +2071,7 @@ const runtime = String.raw`
   // ---------- Eventos ----------
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'w-in') { e.preventDefault(); saveWeight(); } });
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outfood],[data-outfoodrm],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-fradd],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-ci],[data-cisave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outfood],[data-outfoodrm],[data-outrebal],[data-unfree],[data-washop],[data-shopcouple],[data-fridgeuse],[data-fradd],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-ci],[data-cisave],[data-goto],[data-welcome],[data-migrate],[data-help],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) { S.ci = null; return closeSheet(); }
@@ -2135,6 +2152,7 @@ const runtime = String.raw`
     if (ds.storyphoto === 'pick') { if (storyInput) storyInput.click(); return; }
     if (ds.storyphoto === 'clear') { var sc0 = storyState(); if (sc0.url && sc0.own) URL.revokeObjectURL(sc0.url); sc0.img = null; sc0.url = ''; return renderSheet(); }
     if (ds.scanstory) return storyFromScan();
+    if (ds.shopcouple !== undefined) { S.shopCouple = ds.shopcouple === '1'; store.set('shopCouple', S.shopCouple); return renderSheet(); }
     if (ds.washop) return window.open('https://wa.me/?text=' + encodeURIComponent(shopText(shoppingList())), '_blank');
     if (ds.help) { S.help = S.help === ds.help ? '' : ds.help; return render(); }
     if (ds.migrate) return migrateHistory();

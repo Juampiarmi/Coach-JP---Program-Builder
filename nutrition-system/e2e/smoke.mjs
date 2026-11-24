@@ -207,6 +207,42 @@ try {
   check((await page.getByText('Lucía Test').count()) > 0 && (await meals.count()) > 0, 'Asignar rápido: alumno nuevo con su plan aplicado');
   check((await page.locator('[data-allergen-flag]').count()) === 0, 'APLV: el plan asignado llega sin lácteos');
 
+  // Desglose del 100 % calórico y reemplazos rápidos 1 a 1.
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  const split = page.locator('[data-macro-split] [data-split-day="on"]');
+  check(await split.isVisible(), 'Macros: desglose del 100 % calórico (entreno y descanso)');
+  const pcts = (await split.locator('[data-split]').allInnerTexts()).map((t) => parseInt(/(\d+) %/.exec(t)[1]));
+  check(pcts.length === 3 && pcts.reduce((a, b) => a + b, 0) === 100, `Macros: proteínas + carbos + grasas = 100 % (${pcts.join(' + ')})`);
+  await page.locator('[data-quick-swaps] > button').click();
+  await page.locator('[data-qswap="papa"]').click();
+  const applyRow = page.locator('[data-qswap-apply]').first();
+  check(await applyRow.isVisible(), 'Reemplazos rápidos: lista los ingredientes que se pueden cambiar con los gramos calculados');
+  const papaBefore = await page.getByText(/^Papa/).count();
+  await applyRow.click();
+  await page.waitForTimeout(150);
+  check((await page.getByText(/^Papa/).count()) > papaBefore || (await page.locator('select option:checked', { hasText: /^Papa/ }).count()) > 0, 'Reemplazos rápidos: se aplica en la comida con un clic');
+  // Vegetariano: la carne y el pescado desaparecen de los selectores del Builder.
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  await page.locator('[data-allergy="veg"]').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  await page.waitForTimeout(150);
+  const pickerOpts = await page.locator('select:has(option:text-matches("Agregar alimento"))').first().locator('option').allInnerTexts();
+  check(pickerOpts.length > 5 && !pickerOpts.some((o) => /pollo|cuadril|merluza|atún|jamón|picada/i.test(o)), 'Vegetariano: carnes y pescados no aparecen al agregar alimentos');
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  await page.locator('[data-allergy="veg"]').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  // Modo Parejas: Persona B con el mismo menú y sus gramos, lado a lado, y lista de compras combinada.
+  await page.locator('[data-couple-create]').click();
+  await page.waitForTimeout(300);
+  const ctable = page.locator('[data-couple-table]');
+  check(await ctable.isVisible() && (await ctable.locator('tbody tr').count()) > 0, 'Modo Parejas: menú compartido con las porciones de los dos lado a lado');
+  const heads = await ctable.locator('thead th').allInnerTexts();
+  check(heads.some((h) => /^ÉL/.test(h)) && heads.some((h) => /^ELLA/.test(h)), `Modo Parejas: columnas Él / Ella (${heads.slice(1).join(' · ')})`);
+  const firstRow = await ctable.locator('tbody tr').first().locator('td').allInnerTexts();
+  check(firstRow[1] !== firstRow[2], 'Modo Parejas: cada uno con sus gramos');
+  await page.locator('[data-couple-shop]').click();
+  check((await page.locator('[data-couple-shoplist] tr').count()) > 3, 'Modo Parejas: lista de compras combinada (A + B)');
+
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 

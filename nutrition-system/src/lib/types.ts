@@ -99,6 +99,8 @@ export interface Meal {
   steps?: string[];
   /** Opciones 2 a 5 · alternativas equivalentes en macros. */
   alts?: MealOption[];
+  /** Modo Parejas: id de la comida de la pareja (plan líder) de la que es espejo. */
+  pairId?: string;
 }
 
 export interface Supplement {
@@ -164,6 +166,10 @@ export interface AthletePlan {
   coachNote: string;
   /** Anamnesis Pro (lifestyle, cronobiología, clínica y gastronomía). */
   anamnesis?: Anamnesis;
+  /** Modo Parejas: id del alumno con el que comparte menú (cada uno con sus gramos). */
+  partnerId?: string;
+  /** Modo Parejas: versión (updatedAt) del plan líder copiada en este espejo. */
+  partnerSyncAt?: number;
   updatedAt: number;
 }
 

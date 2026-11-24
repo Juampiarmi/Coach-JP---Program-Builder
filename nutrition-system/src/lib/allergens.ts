@@ -11,8 +11,8 @@ import type { AthletePlan, FoodItem, Meal, MealOption, MealRole, Sex } from './t
  * Cuando el alumno tiene una restricción, el banco elige recetas aptas o sustituye el ingrediente por un equivalente
  * seguro y coherente (mismo rol en el plato: proteína, carbo o grasa), y el plan no se publica si queda alguno.
  */
-export type Allergen = 'gluten' | 'lactose' | 'dairy' | 'nuts' | 'legumes' | 'shellfish' | 'egg';
-export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'dairy', 'nuts', 'legumes', 'shellfish', 'egg'];
+export type Allergen = 'gluten' | 'lactose' | 'dairy' | 'nuts' | 'legumes' | 'shellfish' | 'egg' | 'veg';
+export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'dairy', 'nuts', 'legumes', 'shellfish', 'egg', 'veg'];
 
 export const ALLERGEN_INFO: Record<Allergen, { label: string; seal: string; short: string }> = {
   gluten: { label: 'Gluten (TACC)', seal: 'Sin TACC', short: 'gluten' },
@@ -22,12 +22,21 @@ export const ALLERGEN_INFO: Record<Allergen, { label: string; seal: string; shor
   legumes: { label: 'Legumbres', seal: 'Sin legumbres', short: 'legumbres' },
   shellfish: { label: 'Pescados / mariscos', seal: 'Sin pescado', short: 'pescado' },
   egg: { label: 'Huevo', seal: 'Sin huevo', short: 'huevo' },
+  // Prescripción alimentaria (no alergia): ovo-lácteo, sin carnes, pollo, fiambres ni pescado.
+  veg: { label: 'Vegetariano', seal: 'Vegetariano', short: 'carne' },
 };
 
 /** Alérgenos reales de cada alimento de la base ([] = apto para todos). */
 export const FOOD_ALLERGENS: Record<string, Allergen[]> = {
-  merluza: ['shellfish'],
-  atun: ['shellfish'],
+  merluza: ['shellfish', 'veg'],
+  atun: ['shellfish', 'veg'],
+  pollo: ['veg'],
+  cuadril: ['veg'],
+  lomo: ['veg'],
+  nalga: ['veg'],
+  picada: ['veg'],
+  cerdo: ['veg'],
+  jamon: ['veg'],
   huevo: ['egg'],
   claras: ['egg'],
   ricota: ['lactose', 'dairy'],
@@ -90,6 +99,11 @@ export const conflictOf = (it: { foodId?: string; food?: string }, allergies: Al
 export const foodIsSafe = (foodId: string, allergies: Allergen[]) => conflictOf({ foodId, food: FOOD_BY_ID[foodId]?.name }, allergies).length === 0;
 /** Filtro para alternativas y swaps: sólo alimentos aptos para el alumno (undefined = sin restricciones). */
 export const acceptFor = (allergies: Allergen[]) => (allergies.length ? (foodId: string) => foodIsSafe(foodId, allergies) : undefined);
+/** Filtro de selectores (Builder y app): los alimentos incompatibles con el alumno directamente no aparecen. */
+export function allowedFor(plan: Parameters<typeof allergiesOf>[0]) {
+  const allergies = allergiesOf(plan);
+  return (foodId: string) => !allergies.length || foodIsSafe(foodId, allergies);
+}
 /** Leche como bebida: en los planes de mujer las alternativas no la proponen (yogur griego, café apenas cortado). */
 export const FLUID_MILK = new Set(['leche', 'leche-deslactosada', 'bebida-soja', 'bebida-almendra']);
 /** Filtro de alternativas del alumno: alergias + mujer sin leche fluida. */
@@ -121,9 +135,17 @@ const PROTEIN_SNACK = () => ['yogur-proteico', 'yogur-deslactosado', 'yogur-vege
 const MILK_SUBS = () => ['leche-deslactosada', 'bebida-soja', 'bebida-almendra'];
 const YOGURT_SUBS = (c: SubCtx) => ['yogur-deslactosado', 'yogur-vegetal', ...(c.r === 'p' ? ['claras', 'huevo'] : ['bebida-soja', 'banana'])];
 const CHEESE_SUBS = (c: SubCtx) => (c.r === 'p' ? ['queso-deslactosado', 'jamon', 'huevo', 'tofu'] : ['queso-deslactosado', 'palta']);
+const MEAT_SUBS = (c: SubCtx) => (c.role && MAIN_ROLES.includes(c.role) ? ['tofu', 'soja-texturizada', 'huevo', 'queso-light', 'queso-deslactosado'] : ['huevo', 'queso-light', 'tofu', 'yogur']);
 const SUBS: Record<string, (c: SubCtx) => string[]> = {
-  merluza: () => ['pollo', 'nalga', 'tofu', 'huevo', 'queso-light'],
-  atun: () => ['pollo', 'jamon', 'huevo', 'queso-light', 'tofu'],
+  pollo: MEAT_SUBS,
+  cuadril: MEAT_SUBS,
+  lomo: MEAT_SUBS,
+  nalga: MEAT_SUBS,
+  picada: (c) => ['soja-texturizada', ...MEAT_SUBS(c)],
+  cerdo: MEAT_SUBS,
+  jamon: () => ['queso-light', 'queso-deslactosado', 'huevo'],
+  merluza: () => ['pollo', 'nalga', 'tofu', 'huevo', 'queso-light', 'queso-deslactosado'],
+  atun: () => ['pollo', 'jamon', 'huevo', 'queso-light', 'tofu', 'queso-deslactosado'],
   huevo: EGG_SUBS,
   claras: EGG_SUBS,
   // Lactosa → deslactosados; APLV → bebidas y yogures vegetales fortificados, proteína vegetal, huevo o carne.
@@ -444,7 +466,7 @@ export function fixPlanAllergens<P extends Pick<AthletePlan, 'meals' | 'anamnesi
 /** Sellos de aptitud de una opción para las restricciones del alumno (+ vegetariano si no lleva carne ni pescado). */
 export function sealsFor(items: { foodId?: string; food: string }[], allergies: Allergen[], veg: boolean): string[] {
   const seals = allergies.filter((a) => items.every((i) => !conflictOf(i, [a]).length)).map((a) => ALLERGEN_INFO[a].seal);
-  if (veg && items.every((i) => !i.foodId || !MEAT.has(i.foodId))) seals.push('Vegetariano');
+  if (veg && !allergies.includes('veg') && items.every((i) => !i.foodId || !MEAT.has(i.foodId))) seals.push('Vegetariano');
   return seals;
 }
 

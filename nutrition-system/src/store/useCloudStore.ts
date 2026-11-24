@@ -59,7 +59,8 @@ interface CloudState {
   connectPlan: (plan: AthletePlan, slug?: string) => Promise<CloudLink | null>;
   uploadAll: () => Promise<number>;
   saveDraft: (force?: boolean) => Promise<void>;
-  publish: (note?: string) => Promise<number | null>;
+  /** Publica el plan activo (o `target`, ej. la pareja en el Modo Parejas). */
+  publish: (note?: string, target?: AthletePlan) => Promise<number | null>;
   setPin: (pin: string | null) => Promise<string | null>;
   rotateLink: () => Promise<string | null>;
   revokeDevices: () => Promise<string | null>;
@@ -396,8 +397,8 @@ export const useCloudStore = create<CloudState>()(
           }
         },
 
-        publish: async (note = '') => {
-          const plan = active();
+        publish: async (note = '', target) => {
+          const plan = target ?? active();
           let link = get().links[plan.id];
           set({ error: '' });
           // Seguridad clínica: un plan con alérgenos declarados nunca llega al alumno.

@@ -11,6 +11,9 @@ import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { fixedFromAnamnesis } from '@/lib/agenda';
 import { swapBase } from '@/lib/baseSwap';
 import { setCoachPhone as setCoachContact } from '@/lib/coachContact';
+import { QUICK_SWAPS, quickSwapItems } from '@/lib/quickSwaps';
+import { mirrorForPartner } from '@/lib/couple';
+import { setPartnerResolver } from '@/lib/exportHtml';
 import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
@@ -105,6 +108,8 @@ interface PlanState {
   addFood: (mealId: string, foodId: string, grams?: number) => void;
   setItemGrams: (mealId: string, itemId: string, grams: number) => void;
   swapItem: (mealId: string, itemId: string, foodId: string) => void;
+  /** Reemplazo rápido 1 a 1 (tarjeta de macros): mismo aporte del macro principal, unidades enteras y topes. */
+  quickSwap: (mealId: string, itemId: string, swapId: string) => void;
   /** Título / técnica / pasos de la Opción 1 o lista de alternativas. */
   setMealOption: (mealId: string, patch: Partial<Pick<Meal, 'title' | 'technique' | 'steps' | 'alts'>>) => void;
   /** Genera / cambia la alternativa `slot` (0 = Opción 2 … 3 = Opción 5). `cycle` recorre el ranking. Devuelve cuántas hay. */
@@ -144,6 +149,14 @@ interface PlanState {
   /** Cambio atómico de atleta: plan saneado, notas propias y estado de vista reseteado (simulador incluido). */
   selectAthlete: (id: string) => void;
   deleteAthlete: (id: string) => void;
+  /** Modo Parejas: vincula al alumno activo con otro de la base (su menú pasa a ser el del activo, con sus gramos). */
+  linkPartner: (id: string | null) => void;
+  /** Modo Parejas: crea a la Persona B (sexo opuesto) con el menú del activo y la vincula. */
+  createPartner: () => void;
+  /** Modo Parejas: pasa el menú del activo a su pareja (cada uno con sus gramos). */
+  pushMenuToPartner: () => void;
+  /** Modo Parejas: recalcula los gramos del activo con el menú de su pareja. */
+  pullMenuFromPartner: () => void;
   /** Recibe un plan desde la nube (otro dispositivo del coach): reemplaza el activo o la entrada de la base local. */
   receiveCloudPlan: (raw: unknown) => string | null;
 }
@@ -406,6 +419,27 @@ export const usePlanStore = create<PlanState>()(
           }),
         })),
 
+      quickSwap: (mealId, itemId, swapId) =>
+        set((s) => {
+          const sw = QUICK_SWAPS.flatMap((g) => g.items).find((x) => x.id === swapId);
+          if (!sw) return {};
+          return {
+            plan: mapMeal(s.plan, mealId, (m) => {
+              const before = m.items.find((i) => i.id === itemId);
+              if (!before) return m;
+              const next = quickSwapItems(before, sw, { sex: s.plan.profile.sex, role: m.role });
+              // Si el reemplazo trae un ingrediente que la comida ya tenía (yogur + claras), se suman en un solo ítem.
+              const items = m.items.flatMap((i) => (i.id === itemId ? next : [i]));
+              const merged: typeof items = [];
+              for (const it of items) {
+                const dup = merged.find((x) => x.foodId && x.foodId === it.foodId);
+                if (dup) Object.assign(dup, itemFromFood(dup.foodId!, dup.grams + it.grams), { id: dup.id });
+                else merged.push({ ...it });
+              }
+              return fitAltsToMain({ ...m, items: merged });
+            }),
+          };
+        }),
       setMealOption: (mealId, patch) => set((s) => ({ plan: mapMeal(s.plan, mealId, (m) => ({ ...m, ...patch })) })),
       generateAlt: (mealId, slot, cycle = 0) => {
         const s = get();
@@ -567,6 +601,51 @@ export const usePlanStore = create<PlanState>()(
         return plan.id;
       },
 
+      linkPartner: (id) =>
+        set((s) => {
+          const roster = { ...s.roster };
+          const prev = s.plan.partnerId && roster[s.plan.partnerId];
+          if (prev) roster[prev.id] = { ...prev, partnerId: undefined, partnerSyncAt: undefined };
+          if (!id || !roster[id]) return { plan: touch({ ...s.plan, partnerId: undefined, partnerSyncAt: undefined }), roster };
+          const other = roster[id];
+          if (other.partnerId && other.partnerId !== s.plan.id && roster[other.partnerId]) roster[other.partnerId] = { ...roster[other.partnerId], partnerId: undefined, partnerSyncAt: undefined };
+          const plan = touch({ ...s.plan, partnerId: id, partnerSyncAt: undefined });
+          roster[id] = mirrorForPartner(other, plan);
+          return { plan, roster };
+        }),
+      createPartner: () =>
+        set((s) => {
+          const fresh = seedPlan();
+          const sex = s.plan.profile.sex === 'F' ? 'M' : 'F';
+          const first = s.plan.profile.name.split(' ')[0] || 'Atleta';
+          fresh.profile = {
+            ...fresh.profile,
+            ...s.plan.profile,
+            name: `Pareja de ${first}`,
+            sex,
+            weightKg: sex === 'F' ? 60 : 78,
+            heightCm: sex === 'F' ? 163 : 176,
+            bodyFatPct: sex === 'F' ? 26 : 16,
+            bodyFatBand: null,
+          };
+          fresh.periodization = { ...s.plan.periodization };
+          fresh.anamnesis = { ...sanitizeAnamnesis(s.plan.anamnesis), allergies: [] };
+          const plan = touch({ ...s.plan, partnerId: fresh.id, partnerSyncAt: undefined });
+          return { plan, roster: { ...s.roster, [fresh.id]: mirrorForPartner({ ...fresh, partnerId: plan.id }, plan) } };
+        }),
+      pushMenuToPartner: () =>
+        set((s) => {
+          const other = s.plan.partnerId ? s.roster[s.plan.partnerId] : undefined;
+          if (!other) return {};
+          const plan = touch({ ...s.plan, partnerSyncAt: undefined });
+          return { plan, roster: { ...s.roster, [other.id]: mirrorForPartner(other, plan) } };
+        }),
+      pullMenuFromPartner: () =>
+        set((s) => {
+          const other = s.plan.partnerId ? s.roster[s.plan.partnerId] : undefined;
+          if (!other) return {};
+          return { plan: mirrorForPartner(s.plan, other), roster: { ...s.roster, [other.id]: { ...other, partnerSyncAt: undefined } } };
+        }),
       deleteAthlete: (id) =>
         set((s) => {
           if (id !== s.plan.id) {
@@ -689,3 +768,9 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
     anamnesis: sanitizeAnamnesis(p.anamnesis),
   };
 }
+
+// Modo Parejas: la exportación encuentra el plan de la pareja en la base local (lista de compras combinada).
+setPartnerResolver((id) => {
+  const s = usePlanStore.getState();
+  return id === s.plan.id ? s.plan : s.roster[id];
+});

@@ -15,8 +15,10 @@ import { BlockHeader, Cite, cx, HudButton, Label, NumInput, Panel, Segmented, To
 import { BalanceBanner } from './BalanceBanner';
 import { NewDishButton } from './FoodBrandDatabase';
 import { fixedFromAnamnesis, hhmm, mainAnchors, trainingOf } from '@/lib/agenda';
-import { acceptFor, ALLERGEN_INFO, allergiesOf, conflictOf, foodIsSafe } from '@/lib/allergens';
+import { acceptForPlan, ALLERGEN_INFO, allergiesOf, allowedFor, conflictOf, foodIsSafe } from '@/lib/allergens';
 import { baseOptions, bases, kindOf } from '@/lib/baseSwap';
+import { MacroSplitPanel } from './MacroSplit';
+import { CouplePanel } from './CouplePanel';
 import { StickySummary } from './StickySummary';
 import { timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
@@ -45,8 +47,11 @@ function FoodPicker({ onPick, role }: { onPick: (id: string) => void; role: Meal
   const allCustom = usePlanStore((s) => s.customFoods);
   // Re-render al editar la Food & Brand DB; sus marcas locales ya viven en FOODS como custom.
   useFoodDbStore((s) => s.items);
+  // Alergias / prescripciones del alumno: lo incompatible ni siquiera aparece en la lista.
+  const plan = usePlanStore((s) => s.plan);
+  const safe = allowedFor(plan);
   // Filtro estricto por franja: sólo lo que corresponde a este momento del día (sin parrilla en el desayuno, etc.).
-  const ok = (f: FoodRef) => fitsSlot(f, role);
+  const ok = (f: FoodRef) => fitsSlot(f, role) && safe(f.id);
   const custom = allCustom.filter(ok);
   const customIds = new Set(allCustom.map((f) => f.id));
   const brands = FOODS.filter((f) => f.custom && !customIds.has(f.id) && ok(f));
@@ -407,7 +412,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
 /** Cambiar la base de la comida (pollo → cuadril, arroz → papa) en la Opción 1 y en todas las alternativas. */
 function BaseSwapper({ meal, onDone }: { meal: Meal; onDone: () => void }) {
   const swapMealBase = usePlanStore((s) => s.swapMealBase);
-  const accept = acceptFor(allergiesOf(usePlanStore.getState().plan));
+  const accept = acceptForPlan(usePlanStore.getState().plan);
   const list = bases(meal);
   const [from, setFrom] = useState(list[0]?.foodId ?? '');
   const opts = from ? baseOptions(meal, from, accept) : [];
@@ -787,6 +792,8 @@ export function MealsTab() {
   return (
     <div className="space-y-4">
       <StickySummary />
+      <MacroSplitPanel />
+      <CouplePanel />
       <BlockHeader block="estructura" />
       <Panel title="ESTRUCTURA DEL DÍA · COMIDAS Y HORARIOS" block="estructura" tone="fire" right={<Utensils className="h-4 w-4 text-fire/80" />}>
         <p className="-mt-1 mb-3 text-[13px] text-steel">Armá las comidas del día de entreno y de descanso. Cada comida puede tener hasta 5 opciones con los mismos macros; tu alumno elige la que quiera. La línea de proteína te avisa si desayuno, almuerzo y cena llegan al mínimo para el músculo.</p>

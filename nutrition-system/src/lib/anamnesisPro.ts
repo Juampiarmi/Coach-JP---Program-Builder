@@ -17,6 +17,7 @@ export const ALLERGIES = [
   { id: 'legumes', label: 'Legumbres' },
   { id: 'shellfish', label: 'Pescados / Mariscos' },
   { id: 'egg', label: 'Huevo' },
+  { id: 'veg', label: 'Vegetariano' },
 ] as const;
 
 export const SNACK_OPTIONS = ['Tutucas de maíz', 'Frutos secos', 'Chocolate 70%', 'Galletas de arroz', 'Almohaditas de avena', 'Fruta fresca', 'Yogur proteico', 'Gelatina light'];
@@ -114,11 +115,13 @@ const ALLERGEN_RE: Record<string, RegExp> = {
   shellfish: /\b(camar[oó]n|camarones|langostinos?|mariscos?|mejillones|calamar|pulpo|vieiras?|pescados?|merluza|at[uú]n|salm[oó]n|caballa|sardinas?|surub[ií]|pejerrey|abadejo|tilapia|trucha|anchoas?)\b/i,
   egg: /\b(huevos?|claras?|omelett?e|tortilla|revuelto|merengue|mayonesa)\b/i,
   legumes: /\b(lentejas?|garbanzos?|porotos?|arvejas?|soja|man[ií])\b/i,
+  veg: /\b(pollo|pechugas?|carnes?|vacun[oa]|cuadril|lomo|nalga|peceto|bifes?|asado|vac[ií]o|matambre|cerdo|bondiola|carr[eé]|jam[oó]n|chorizos?|morcilla|panceta|salame|milanesas? de (carne|pollo|nalga)|hamburguesas?|alb[oó]ndigas|pescados?|merluza|at[uú]n|salm[oó]n|mariscos?|langostinos?|camar[oó]n)\b/i,
 };
 const SAFE_RE: Record<string, RegExp> = {
   lactose: /deslactosad|sin lactosa|zero lactosa|whey isolate|aislad|vegetal/i,
   dairy: /vegetal|de soja|de almendras?|de arroz|de coco|de avena|arveja/i,
   gluten: /sin tacc|sin gluten|libre de gluten/i,
+  veg: /de soja|vegetal|de lentejas|de garbanzos|de porotos|de quinoa|de calabaza|de espinaca|veggie|vegana?/i,
 };
 
 export function allergenHits(foodName: string, allergies: string[]) {

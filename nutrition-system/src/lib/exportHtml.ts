@@ -13,6 +13,7 @@ import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from
 import { fitsSlot, foodSlots } from './mealSlots';
 import { friendlyMealName, modernizeName } from './foodBrandDb';
 import { portionCap } from './portionCaps';
+import { QUICK_SWAPS } from './quickSwaps';
 import { BRAND_TIERS, needsGlutenSeal, SUGGESTED_BRAND, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
 import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
@@ -83,6 +84,12 @@ export interface ExportIcons {
   maskable512: string;
   apple180: string;
 }
+
+/** Modo Parejas: cómo encontrar el plan de la pareja (lo registra el store del Builder). */
+let partnerResolver: (id: string) => AthletePlan | undefined = () => undefined;
+export const setPartnerResolver = (fn: (id: string) => AthletePlan | undefined) => {
+  partnerResolver = fn;
+};
 
 export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: DayMode; icons?: ExportIcons }) {
   const t = computeTelemetry(plan);
@@ -184,6 +191,19 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     units: Object.fromEntries(FOODS.filter((f) => unitStep(f.id) !== 5).map((f) => [f.id, unitStep(f.id)])),
     anchors: GROUP_ANCHOR,
     avoid: FOODS.filter((f) => !foodIsSafe(f.id, allergies)).map((f) => f.id),
+    allergies,
+    // Modo Parejas: la opción 1 de cada comida de la pareja (sólo para la lista de compras combinada).
+    partner: (() => {
+      const pp = plan.partnerId ? partnerResolver(plan.partnerId) : undefined;
+      if (!pp || pp.partnerId !== plan.id) return null;
+      return {
+        name: pp.profile.name.split(' ')[0] || 'Pareja',
+        trainingDays: pp.profile.trainingDaysPerWeek,
+        meals: pp.meals.map((m) => ({ day: m.day, items: m.items.filter((i) => i.grams > 0).map((i) => ({ foodId: i.foodId, food: i.food, grams: i.grams, p: i.p, c: i.c, f: i.f, leucine: i.leucine })) })),
+      };
+    })(),
+    // Reemplazos rápidos 1 a 1 (guía en Porciones sin balanza), sin lo que el alumno no puede comer.
+    quickSwaps: QUICK_SWAPS.map((g) => ({ title: g.title, ref: g.ref, items: g.items.filter((x) => x.parts.every(([id]) => foodIsSafe(id, allergies))).map((x) => x.label) })),
     celiacWarning: allergies.includes('gluten') ? CELIAC_PLATE_WARNING : '',
     // WhatsApp del coach (check-in semanal con un toque).
     coachPhone: coachPhone(),

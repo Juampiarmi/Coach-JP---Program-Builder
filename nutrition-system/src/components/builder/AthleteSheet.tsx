@@ -8,6 +8,7 @@ import { goalFor, sessionKcalFor, sportFor, SPORTS } from '@/lib/precalc';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, Label, NumberField, Panel, Segmented, TextField } from '../hud/primitives';
 import { AnamnesisForm } from './AnamnesisForm';
+import { MacroSplitBars } from './MacroSplit';
 import { PeriodizationTab } from './PeriodizationTab';
 import { addMinutes, AllergyChips, PrecalcPanel, ProfileTab, toMinutes, WeekdayPicker } from './ProfileTab';
 
@@ -139,10 +140,9 @@ export function AthleteSheet() {
       </Panel>
 
       <PrecalcPanel title="3 · MACROS PRECALCULADOS · ENTRENO VS. DESCANSO" />
-      <p className="-mt-2 px-1 text-[12px] text-mute">
-        En uso ahora: entreno <b className="text-steel">{fmt0(t.kcalOn)} kcal</b> (P {fmt1(plan.periodization.on.p)} · C {fmt1(plan.periodization.on.c)} · G {fmt1(plan.periodization.on.f)} g/kg) · descanso{' '}
-        <b className="text-steel">{fmt0(t.kcalOff)} kcal</b> (P {fmt1(plan.periodization.off.p)} · C {fmt1(plan.periodization.off.c)} · G {fmt1(plan.periodization.off.f)} g/kg).
-      </p>
+      <Panel block="macros" title="EN USO · EL 100 % DE LAS CALORÍAS POR MACRO">
+        <MacroSplitBars />
+      </Panel>
 
       <div className="pt-2 font-mono text-[10px] tracking-[0.2em] text-mute">DETALLE AVANZADO</div>
       <Advanced title="Perfil físico completo · precisión ISAK, actividad diaria, gasto y energía disponible">

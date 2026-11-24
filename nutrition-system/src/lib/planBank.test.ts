@@ -1,7 +1,7 @@
 // Prueba automática del Banco de Planes Maestros: 24 planes (8 perfiles × 3 variantes) × 6 pesos de referencia
 // × 4 horarios de entreno × día de entreno y de descanso. Falla si algún ingrediente (opción 1 o alternativas)
 // supera su tope duro de la Tabla Única de Topes, si una toma supera el volumen sólido cómodo para el sexo, si la
-// proteína de una mujer sale de 1,6-2,4 g/kg, si el día no cierra a ±5 % de las calorías, si una comida tiene
+// proteína de una mujer sale de 1,6-2,3 g/kg, si el día no cierra a ±5 % de las calorías, si una comida tiene
 // menos de 4 opciones, si la variante no se respeta (gluten en Sin TACC, carne en vegetariano) o si la agenda no es
 // la argentina: la cena es siempre la última comida (21:00-22:30), no hay «antes de dormir», ninguna comida cae
 // durante el entreno y entre dos tomas hay al menos 1 h 30. Uso: npm run test:unit
@@ -57,9 +57,8 @@ for (const plan of BANK_PLAN_IDS) {
         if (meals.length > base) extras += meals.length - base;
         if (meals.length < base) short.push(`${tag}: ${meals.length} comidas de ${base}`);
         checks++;
-        // Mujer: proteína en su rango real. Hasta 2,4 g/kg; en las más livianas (< 60 kg) el piso visible de carne en
-        // almuerzo y cena (≥ 120 g) la puede llevar hasta 2,8 g/kg (dentro de lo seguro en déficit, ISSN 2017).
-        const pMax = w < 60 ? 2.8 : 2.45;
+        // Mujer: proteína en su rango fisiológico 1,6-2,3 g/kg, también en las más livianas con el bife de ≥ 120 g.
+        const pMax = 2.3;
         if (sex === 'F' && (p / w < 1.6 || p / w > pMax)) fails.push(`${tag}: proteína ${(p / w).toFixed(2)} g/kg (rango 1,6-${pMax})`);
         if (Math.abs(dev) > 0.05) fails.push(`${tag}: el día cierra en ${Math.round(kcal)} kcal vs ${Math.round(T.kcal)} (${(dev * 100).toFixed(1)} %)`);
         for (const m of meals) {

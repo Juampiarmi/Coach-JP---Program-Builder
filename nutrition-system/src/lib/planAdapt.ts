@@ -57,7 +57,7 @@ const stepOf = (id?: string) => {
 };
 
 /** Un ingrediente escalado por k, redondeado a su unidad y dentro de su rango por toma para el sexo del alumno. */
-function scaleItem(it: FoodItem, k: number, sex: Sex, role: Meal['role']): FoodItem {
+export function scaleItem(it: FoodItem, k: number, sex: Sex, role: Meal['role']): FoodItem {
   if (it.foodId && FOOD_BY_ID[it.foodId]) {
     const cap = portionCap(it.foodId, { sex, role });
     const st = stepOf(it.foodId);

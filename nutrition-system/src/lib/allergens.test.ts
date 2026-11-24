@@ -8,7 +8,7 @@ import { BANK_PLAN_IDS, BANK_VARIANTS, buildBankPlan, planLabel, REF_WEIGHTS, se
 import { portionCap } from './portionCaps';
 import { seedPlan } from './seed';
 
-const SETS: Allergen[][] = [['gluten'], ['lactose'], ['dairy'], ['nuts'], ['legumes'], ['shellfish'], ['egg'], ['gluten', 'lactose'], ['lactose', 'nuts'], ['egg', 'lactose'], ['dairy', 'legumes'], ['dairy', 'nuts', 'legumes'], ['gluten', 'lactose', 'nuts', 'legumes', 'shellfish', 'egg']];
+const SETS: Allergen[][] = [['gluten'], ['lactose'], ['dairy'], ['nuts'], ['legumes'], ['shellfish'], ['egg'], ['gluten', 'lactose'], ['lactose', 'nuts'], ['egg', 'lactose'], ['dairy', 'legumes'], ['dairy', 'nuts', 'legumes'], ['gluten', 'lactose', 'nuts', 'legumes', 'shellfish', 'egg'], ['veg'], ['veg', 'gluten'], ['veg', 'lactose'], ['veg', 'egg']];
 const fails: string[] = [];
 let checks = 0;
 let worst = 0;
@@ -32,14 +32,14 @@ for (const plan of BANK_PLAN_IDS)
             const opts = [{ title: m.title ?? '', items: m.items }, ...(m.alts ?? [])];
             minOpts = Math.min(minOpts, opts.length);
             // Vegetariano sin huevo ni legumbres: casi toda la proteína es láctea; se aceptan 2 opciones (caso extremo).
-            const extreme = variant === 'veg' && set.includes('legumes') && (set.includes('egg') || set.includes('dairy'));
+            const extreme = (variant === 'veg' || set.includes('veg')) && set.includes('legumes') && (set.includes('egg') || set.includes('dairy'));
             if (opts.length < (extreme ? 2 : 3)) fails.push(`${tag} · ${m.name}: sólo ${opts.length} opciones aptas`);
             for (const o of opts) {
               for (const it of o.items) {
                 checks++;
                 const bad = conflictOf(it, set);
                 if (bad.length) fails.push(`${tag} · ${m.name} · ${o.title}: ${it.food} (${bad.join('/')})`);
-                const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg' }).max;
+                const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg' || set.includes('veg') }).max;
                 if (it.grams > cap) fails.push(`${tag} · ${m.name}: ${it.food} ${it.grams} g supera el tope de ${cap} g`);
               }
               // El título no nombra un alimento que el plato ya no lleva.

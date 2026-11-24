@@ -1,6 +1,6 @@
 import { portionCap, withCapSex } from './portionCaps';
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
-import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2 } from './foods';
+import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2, snapUnit, unitStep } from './foods';
 import { fitAltsToMain } from './menuOptions';
 import { consolidateItems, consolidateMeal } from './schedule';
 import { uid } from './seed';
@@ -36,6 +36,8 @@ function sourceOf(item: FoodItem): Anchor | null {
 }
 
 function rescale(item: FoodItem, grams: number): FoodItem {
+  // Huevos, claras y barras: siempre unidades enteras.
+  if (item.foodId && unitStep(item.foodId) !== 5) grams = snapUnit(item.foodId, grams);
   if (item.foodId && FOOD_BY_ID[item.foodId]) return { ...item, grams, ...macrosFor(item.foodId, grams)! };
   const k = item.grams > 0 ? grams / item.grams : 0;
   return { ...item, grams, p: round1(item.p * k), c: round1(item.c * k), f: round1(item.f * k), leucine: round2(item.leucine * k) };
@@ -76,7 +78,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
       meals
         .flatMap((m) =>
           days.includes(m.day)
-            ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0 && (gap < 0 || i.grams < capOf(i, m))).map((i) => ({ ...i, cap: capOf(i, m) }))
+            ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && unitStep(i.foodId) === 5 && i.grams > 0 && (gap < 0 || i.grams < capOf(i, m))).map((i) => ({ ...i, cap: capOf(i, m) }))
             : [],
         )
         .sort((a, b) => b[macro] - a[macro])[0];
