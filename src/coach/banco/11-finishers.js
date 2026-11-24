@@ -19,7 +19,7 @@
   var FIN = {};
 
   /* ---------- día de EMPUJE (Push / hombro y pecho): piernas, tracción y cardio, sin empuje ---------- */
-  FIN.push = { tag: 'FINISHER', t: 'Cierre metabólico · Remo, bici y arrastre (EMOM)',
+  FIN.push = { tag: 'FINISHER', t: 'Cierre metabólico EMOM · Remo, bici y arrastre',
     i: { min: 12, l: ['EMOM 12 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite cuatro veces.',
                       '- Minuto 1: Remo ergómetro x 250 m a ritmo de carrera',
                       '- Minuto 2: Assault bike x 12 calorías',
@@ -38,7 +38,7 @@
            'SENSACIÓN OBJETIVO: respiración agitada, piernas calientes y los hombros frescos. Si terminás destruido, la carga fue demasiada.'] };
 
   /* ---------- día de TRACCIÓN (Pull / espalda y bíceps): piernas y empuje ligero, sin remo, SkiErg ni agarre ---------- */
-  FIN.pull = { tag: 'FINISHER', t: 'Cierre metabólico · Trineo, wall balls y bici (For Time)',
+  FIN.pull = { tag: 'FINISHER', t: 'Cierre metabólico For Time · Trineo, wall balls y bici',
     i: { min: 10, l: ['3 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 90 segundos de descanso al cerrar cada ronda.',
                       '- Sled push / Trineo x 20 m con una carga que te permita caminar firme',
                       '- Wall balls x 15 repeticiones (6 kg a 3 m)',
@@ -57,7 +57,7 @@
            'SENSACIÓN OBJETIVO: piernas llenas, respiración al límite pero controlada y la espalda fresca.'] };
 
   /* ---------- día de PIERNA (cuádriceps / pierna completa): tren superior y core, sin trineo de empuje ni escaladora ---------- */
-  FIN.pierna = { tag: 'FINISHER', t: 'Cierre metabólico · SkiErg, arrastre y slam ball (AMRAP)',
+  FIN.pierna = { tag: 'FINISHER', t: 'Cierre metabólico AMRAP · SkiErg, arrastre y slam ball',
     i: { min: 8, l: ['AMRAP 8 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda y anotás cuántas hiciste.',
                      '- SkiErg x 200 m a ritmo fuerte',
                      '- Arrastre de trineo (sled pull) x 15 m con una carga que te permita caminar firme',
@@ -96,7 +96,7 @@
            'SENSACIÓN OBJETIVO: pulsaciones altas, espalda y brazos calientes y el glúteo descansando.'] };
 
   /* ---------- segundo día de GLÚTEO de la semana: mismo criterio, otro formato (EMOM) para no repetir el cierre ---------- */
-  FIN.gluteB = { tag: 'FINISHER', t: 'Cierre metabólico · SkiErg, arrastre y bici (EMOM)',
+  FIN.gluteB = { tag: 'FINISHER', t: 'Cierre metabólico EMOM · SkiErg, arrastre y bici',
     i: { min: 10, l: ['EMOM 10 minutos: en cada minuto hacés UNA estación y descansás lo que sobre; la secuencia de tres minutos se repite hasta cerrar los diez.',
                       '- Minuto 1: SkiErg x 12 calorías a ritmo fuerte',
                       '- Minuto 2: Arrastre de trineo (sled pull) x 15 m con una carga moderada',
@@ -105,8 +105,8 @@
                       '- Minuto 1: SkiErg x 15 calorías a ritmo fuerte',
                       '- Minuto 2: Arrastre de trineo (sled pull) x 20 m con una carga exigente',
                       '- Minuto 3: Assault bike x 12 calorías a un ritmo sostenible'] },
-    obj: 'Cerrás el segundo día de glúteo de la semana con otro formato de competición (EMOM): el SkiErg, el arrastre y la bici suben las pulsaciones con espalda, brazos y core y casi sin cadera cargada, así el glúteo recupera para la próxima sesión.',
-    tips: ['POR QUÉ ESTÁ ACÁ: hoy el glúteo ya trabajó con volumen. Este cierre suma capacidad aeróbica y gasto sin repetir cadera ni rodilla, y cambia el formato respecto del primer día de glúteo de la semana.',
+    obj: 'Cerrás este día de glúteo con otro formato de competición (EMOM): el SkiErg, el arrastre y la bici suben las pulsaciones con espalda, brazos y core y casi sin cadera cargada, así el glúteo recupera para la próxima sesión.',
+    tips: ['POR QUÉ ESTÁ ACÁ: hoy el glúteo ya trabajó con volumen. Este cierre suma capacidad aeróbica y gasto sin repetir cadera ni rodilla, y cambia el formato respecto del cierre del otro día de glúteo de la semana (intervalos 40:20).',
            'INTERFERENCIA: no hay trineo de empuje, escaladora, zancadas ni burpees a propósito: son estaciones de cadera y rodilla que ya se cansaron.',
            'FORMATO: el EMOM te marca el ritmo. Si una estación te lleva el minuto entero, bajá la carga o las calorías.',
            'TRANSICIÓN: cambiá de estación caminando rápido, sin correr: los segundos de pausa son parte del entrenamiento.',
@@ -115,7 +115,7 @@
            'SENSACIÓN OBJETIVO: pulsaciones altas, espalda y brazos calientes y el glúteo descansando.'] };
 
   /* ---------- día de TORSO (empuje + tracción): piernas y cardio de competición ---------- */
-  FIN.torso = { tag: 'FINISHER', t: 'Cierre metabólico · Trineo, burpee broad jump y bici (For Time)',
+  FIN.torso = { tag: 'FINISHER', t: 'Cierre metabólico For Time · Trineo, burpee broad jump y bici',
     i: { min: 10, l: ['3 rondas por tiempo (For Time): las tres estaciones en orden, con 10 segundos de transición entre ellas y 90 segundos de descanso al cerrar cada ronda.',
                       '- Sled push / Trineo x 20 m con una carga que te permita caminar firme',
                       '- Burpee broad jump x 8 repeticiones a ritmo de carrera',
@@ -134,7 +134,7 @@
            'SENSACIÓN OBJETIVO: piernas llenas, respiración agitada y el torso fresco.'] };
 
   /* ---------- cuerpo completo: mini simulación de carrera ---------- */
-  FIN.full = { tag: 'FINISHER', t: 'Cierre metabólico · Mini simulación Hyrox (For Time)',
+  FIN.full = { tag: 'FINISHER', t: 'Cierre metabólico For Time · Mini simulación Hyrox',
     i: { min: 10, l: ['2 rondas por tiempo (For Time): las cinco estaciones en orden, con 10 segundos de transición entre ellas y 2 minutos de descanso al cerrar la primera ronda.',
                       '- SkiErg x 200 m a ritmo de carrera',
                       '- Sled push / Trineo x 15 m con una carga que te permita caminar firme',
@@ -156,7 +156,7 @@
            'SENSACIÓN OBJETIVO: respiración agitada, cuerpo caliente y la técnica intacta hasta la última estación.'] };
 
   /* ---------- transporte y wall balls: densidad con bajo impacto articular ---------- */
-  FIN.carry = { tag: 'FINISHER', t: 'Cierre metabólico · Transporte y wall balls (AMRAP)',
+  FIN.carry = { tag: 'FINISHER', t: 'Cierre metabólico AMRAP · Transporte y wall balls',
     i: { min: 8, l: ['AMRAP 8 minutos: las tres estaciones en orden, sin pausa entre ellas; cada vuelta completa suma una ronda.',
                      '- Farmer carry x 30 m con una carga que te permita caminar firme',
                      '- Wall balls x 10 repeticiones (6 kg a 3 m)',

@@ -114,6 +114,9 @@
     iaMotor:      { run: function(i){ return iaMotor(i); }, valor: function(r){ return r; } },
     audioSuite:   { run: function(i){ return audioSuite(i); }, valor: function(r){ return r; } },
     fichaPlan:    { run: function(i){ return fichaPlan(i); }, valor: function(r){ return r; } },
+    revisadas:    { run: function(){ return auditarRevisadas(); }, valor: function(r){ return r; } },
+    bisetNaranja: { run: function(i){ return bisetNaranja(i); }, valor: function(r){ return r; } },
+    renombres:    { run: function(i){ return renombresBiblioteca(i); }, valor: function(r){ return r; } },
     generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
@@ -204,7 +207,8 @@
     if(cuenta('metcon') < 1) P.push(tag + ': falta el cardio / finisher metabólico');
     if(!bl.some(function(b){ return (b.items || []).some(function(l){ return /^A2\.\s/.test(l); }); })) P.push(tag + ': falta un biset o triset');
     if(String(d.focusText || '').length < 200) P.push(tag + ': el foco del día es muy corto');
-    if((bl[0].items || []).length < 5) P.push(tag + ': la entrada en calor tiene menos de 5 ejercicios');
+    /* 2026-11: las entradas en calor de Bodybuilding pasaron a 4 ejercicios y 7 minutos (movilidad, activación y potenciación); la de carrera sigue con 6 */
+    if((bl[0].items || []).length < 4) P.push(tag + ': la entrada en calor tiene menos de 4 ejercicios');
     var series = 0;
     bl.forEach(function(b, i){
       series += seriesDe(b.items);
@@ -226,7 +230,8 @@
     (PB.LISTA || []).forEach(function(t){
       var dias = PB.construirDias(t), av = t.niv === 'avanzado';
       if(dias.length !== t.f) P.push(t.id + ': tiene ' + dias.length + ' días y debería tener ' + t.f);
-      dias.forEach(function(d){ auditarDia(t.id, d, { minSeries: av ? 28 : 24, minHiper: 2 }).forEach(function(x){ P.push(x); }); });
+      /* piso por sesión: 16 series en intermedio y 24 en élite (las sesiones de refuerzo del plan de 5 días son cortas a propósito: el volumen se controla por semana, ver bank.bb.04) */
+      dias.forEach(function(d){ auditarDia(t.id, d, { minSeries: av ? 24 : 16, minHiper: 2 }).forEach(function(x){ P.push(x); }); });
       logistica(t.id).forEach(function(x){ P.push(x); });
     });
     return P;
@@ -1315,7 +1320,7 @@
       var tipos = function(){ return EST.alertasDia(d, { niv: 'avanzado', genero: 'm' }).map(function(a){ return a.k; }).sort().join(','); };
       var base = tipos();
       /* dos poleas seguidas en el mismo biset */
-      b = bloqueCon(d, 'Biset Pájaro'); EST.cambiarEjercicio(d, b, 0, 'Cruce de cables deltoides posterior', 'avanzado'); EST.cambiarEjercicio(d, b, 1, 'Encogimientos en polea baja', 'avanzado');
+      b = bloqueCon(d, 'Biset Face Pull'); EST.cambiarEjercicio(d, b, 0, 'Cruce de cables deltoides posterior', 'avanzado'); EST.cambiarEjercicio(d, b, 1, 'Encogimientos en polea baja', 'avanzado');
       var conPoleas = tipos();
       /* dos patrones axiales */
       var f = bloqueCon(d, 'Remo Pecho Apoyado'); EST.cambiarEjercicio(d, f, 0, 'Remo con barra inclinado', 'avanzado');
@@ -2088,23 +2093,77 @@
     (getS().banco || []).forEach(function(r){ if(/battle\s*rope/i.test(JSON.stringify(r.dias || []))) P.push(r.id + ' · ' + r.nombre + ': todavía tiene battle ropes'); });
     return P;
   }
-  /* recomposición femenina: abre con cardio de baja intensidad en cinta con inclinación (10 a 15 min) y cierra con una máquina de cardio al fallo; sin dominadas lastradas */
+  /* recomposición femenina: cada sesión abre con 8 a 12 minutos de cardio suave en una máquina que cambia según el día (cinta con pendiente, elíptico o bicicleta;
+     el día de densidad no lleva, los circuitos ya son el trabajo metabólico) y cierra con una máquina de cardio cuyo formato también rota; un solo cierre al fallo por semana */
   function auditarRecFem(){
-    var P = [], S = getS(), n = 0;
+    var P = [], S = getS(), n = 0, RX_PRE = /cinta|el[ií]ptico|bicicleta/i, RX_MAQ = /echo bike|concept2|skierg|ski erg|bicicleta|el[ií]ptico|cinta|caminata/i;
     (S.banco || []).forEach(function(r){
       if(!/Recomposici/i.test(r.nombre || '') || r.genero !== 'f') return;
       n++;
-      var txt = JSON.stringify(r.dias || []);
+      var txt = JSON.stringify(r.dias || []), pres = {}, cierres = {}, fallos = 0;
+      /* las dos recomposiciones del Banco Pro conservan su marco propio (cinta con inclinación al inicio): acá solo se revisa que abran y cierren con cardio */
+      if(!/^bkdep_rec_/.test(r.id)){
+        (r.dias || []).forEach(function(d, k){
+          var bl = d.bloques || [], a = bl[0], z = bl[bl.length - 1];
+          if(!a || !/cinta/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' '))) P.push(r.id + ' día ' + (k + 1) + ': no abre con cardio en cinta');
+          if(!z || !RX_MAQ.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(r.id + ' día ' + (k + 1) + ': no cierra con una máquina de cardio');
+        });
+        return;
+      }
       if(/weighted pull|dominadas lastradas/i.test(txt)) P.push(r.id + ': tiene dominadas lastradas');
       (r.dias || []).forEach(function(d, k){
-        var bl = d.bloques || [], a = bl[0], z = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1);
-        if(!a || !/cinta/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' ')) || !/inclinaci/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' '))) P.push(tag + ': no abre con cardio en cinta con inclinación');
-        else { var m = /(\d+)\s*min/i.exec((a.items || []).join(' ') + ' ' + (a.titulo || '')); var mins = m ? parseInt(m[1], 10) : 0; if(mins < 10 || mins > 15) P.push(tag + ': el cardio pre-entreno dura ' + mins + ' min (tiene que ser de 10 a 15)'); }
-        if(!z || !/echo bike|concept2|skierg|ski erg|ciclismo|bicicleta/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': no cierra con una máquina de cardio (Echo Bike, Concept2, SkiErg o ciclismo)');
-        else if(!/fallo/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': el cierre en máquina no se lleva al fallo');
+        var bl = d.bloques || [], a = bl[0], z = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1), densidad = /densidad/i.test((d.title || '') + ' ' + (d.label || ''));
+        var ta = String(a && a.titulo || '') + ' ' + ((a && a.items) || []).join(' ');
+        if(!densidad){
+          if(!a || !/^Activación cardiovascular/i.test(a.titulo || '') || !RX_PRE.test(ta)) P.push(tag + ': no abre con la activación cardiovascular (cinta, elíptico o bicicleta)');
+          else { var m = /(\d+)\s*min/i.exec(ta); var mins = m ? parseInt(m[1], 10) : 0; if(mins < 8 || mins > 12) P.push(tag + ': la activación dura ' + mins + ' min (tiene que ser de 8 a 12)'); pres[(RX_PRE.exec(ta) || [''])[0].toLowerCase()] = 1; }
+        }
+        var tz = String(z && z.titulo || '') + ' ' + ((z && z.items) || []).join(' ');
+        if(!z || !RX_MAQ.test(tz)) P.push(tag + ': no cierra con una máquina de cardio');
+        else { cierres[String(z.titulo || '').replace(/\s*\(\d+ MIN\)\s*$/i, '')] = 1; if(/alta intensidad|al fallo/i.test(String(z.titulo || ''))) fallos++; }
+        if(/impacto|saltos?|carrera/i.test(String(z && z.titulo || ''))) P.push(tag + ': el cierre no es de bajo impacto');
       });
+      if(fallos > 1) P.push(r.id + ': ' + fallos + ' cierres al fallo en la semana (máximo 1)');
+      if(Object.keys(pres).length < 2) P.push(r.id + ': la activación es siempre la misma máquina');
+      if(Object.keys(cierres).length < Math.min(3, (r.dias || []).length)) P.push(r.id + ': los cierres no rotan (' + Object.keys(cierres).join(' | ') + ')');
     });
     if(n < 8) P.push('esperaba 8 plantillas de recomposición femenina y hay ' + n);
+    return P;
+  }
+  /* plantillas revisadas en la tanda 2026-11 (Bodybuilding 3 y 5 días y Recomposición 5 días mujer): volumen semanal dentro de los rangos del panel, sin alertas
+     (fatiga axial, poleas, estaciones, RIR), core que no se repite, entrada en calor de 7 minutos, sesiones de 90 minutos o menos y sin paréntesis dobles en los nombres */
+  function auditarRevisadas(){
+    var PB = win.__jpPB, EST = PB.EST, P = [], ids = (PB.LISTA || []).map(function(t){ return t.id; });      /* las 12 plantillas de Bodybuilding (3, 4 y 5 días · hombres y mujeres · intermedio y élite) */
+    if(ids.length !== 12) P.push('esperaba 12 plantillas de Bodybuilding y hay ' + ids.length);
+    ids.forEach(function(id){
+      var t = PB.LISTA.filter(function(x){ return x.id === id; })[0]; if(!t){ P.push(id + ': no existe'); return; }
+      var dias = PB.construirDias(t);
+      EST.volumen(dias, t.g, t.niv).forEach(function(v){ if(v.est !== 'ok') P.push(id + ': ' + v.g + ' ' + v.v + ' fuera de ' + v.lo + '-' + v.hi); });
+      EST.alertasPlan(dias).forEach(function(a){ P.push(id + ': ' + a.msg); });
+      dias.forEach(function(d, k){
+        var tag = id + ' día ' + (k + 1);
+        EST.alertasDia(d, { niv: t.niv, genero: t.g }).forEach(function(a){ P.push(tag + ': ' + a.msg); });
+        var wu = d.bloques[0] || {};
+        if((wu.items || []).length !== 4 || !/\(7 MIN\)/.test(wu.titulo || '')) P.push(tag + ': la entrada en calor no es de 4 ejercicios y 7 minutos');
+        var mins = d.bloques.reduce(function(s0, b){ var m = /\((\d+)\s*MIN\)/i.exec(b.titulo || ''); return s0 + (m ? +m[1] : 0); }, 0);
+        if(mins > 90) P.push(tag + ': dura ' + mins + ' minutos');
+        d.bloques.forEach(function(b){ [b.titulo].concat(b.items || []).forEach(function(l){ if(/\)\s*\(/.test(String(l || '').replace(/\s*\(\d+ MIN\)\s*$/, ''))) P.push(tag + ': paréntesis dobles en «' + l + '»'); }); });
+        var core = d.bloques.filter(function(b){ return b.modalidad === 'core'; });
+        if(core.length !== 1 || (EST.parsearBloque(core[0]) || { ex: [] }).ex.length !== 1) P.push(tag + ': el core no es un solo ejercicio');
+      });
+      /* los bisets quedan como los escribió la plantilla: ninguno se reemplaza ni se reacomoda por logística */
+      logistica(t.id).forEach(function(x){ P.push(x); });
+    });
+    /* recomposición mujer avanzada de 5 días: la búlgara no está en el bloque de core y el Día 1 no pasa de 21 series de tren inferior (antes 26) */
+    var rec = (getS().banco || []).filter(function(r){ return r.id === 'bkdep_rec_1_f_5'; })[0];
+    if(!rec) P.push('bkdep_rec_1_f_5: no existe');
+    else {
+      rec.dias.forEach(function(d, k){ d.bloques.forEach(function(b){ if(/core/i.test(b.titulo || '') && /bulgar|búlgara/i.test((b.items || []).join(' '))) P.push('recomposición día ' + (k + 1) + ': la búlgara sigue dentro del core'); }); });
+      var inf = 0; rec.dias[0].bloques.forEach(function(b){ var m = EST.parsearBloque(Object.assign({}, b, { tipo: 'list', sportsPizarra: true, modalidad: 'hipertrofia' })); if(m) m.ex.forEach(function(e){ if(/Glúteo|Cuádriceps|Isquios|Gemelos/.test(e.g)) inf += (e.efectivas != null ? e.efectivas : e.sets); }); });
+      if(inf > 21) P.push('recomposición día 1: ' + inf + ' series de tren inferior (máximo 21; antes eran 26)');
+      var d5 = rec.dias[4], t5 = JSON.stringify(d5.bloques);
+      if(/ZANCADAS|multiarticulares encadenados/.test(t5)) P.push('recomposición día 5: los textos de los circuitos no coinciden con los ejercicios de la versión mujer');
+    }
     return P;
   }
   function auditarSplit3(){
@@ -2266,6 +2325,32 @@
   }
   function iaMotor(c){ if(!IA_RES) throw new Error('la pasada de IA no corrió'); return IA_RES; }
   /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
+  /* biset / triset de la app del alumno en naranja de la marca (#EE5A12): recuadro, pastilla, línea guía, letras A1/A2, conector «sin pausa» y aviso de transición; nada en ámbar */
+  function bisetNaranja(){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var doc = w.document, caja = doc.createElement('div');
+    caja.innerHTML = '<div class="jp-sb-board"><div class="jp-sb-biset"><div class="jp-sb-biset-title"><span class="jp-sb-biset-pill">BISET</span><span class="jp-sb-biset-sub">SIN PAUSA ENTRE ESTACIONES</span></div>' +
+      '<div class="jp-sb-bracket"><div class="jp-sb-subex-resumen"><span class="jp-sb-letra">A1</span> Press</div><div class="jp-sb-subex-resumen"><span class="jp-sb-letra">A2</span> Remo</div></div>' +
+      '<div class="jp-tip-ex jp-tip-trans"><b class="jp-tip-lb">TRANSICIÓN</b> pasá sin pausa</div></div></div>';
+    doc.body.appendChild(caja);
+    try{
+      var q = function(sel){ return caja.querySelector(sel); }, cs = function(el, ps){ return w.getComputedStyle(el, ps || null); };
+      var bis = q('.jp-sb-biset'), pill = q('.jp-sb-biset-pill'), sub = q('.jp-sb-biset-sub'), br = q('.jp-sb-bracket'), le = caja.querySelectorAll('.jp-sb-letra'), con = cs(caja.querySelectorAll('.jp-sb-subex-resumen')[1], '::before'), tr = q('.jp-tip-trans .jp-tip-lb');
+      var NAR = 'rgb(238, 90, 18)', TXT = 'rgb(255, 138, 76)';
+      var todos = [cs(bis).borderTopColor, cs(bis).backgroundImage, cs(pill).backgroundColor, cs(sub).color, cs(br).borderLeftColor, cs(le[0]).backgroundColor, con.color, con.borderTopColor, cs(tr).color].join(' ');
+      return { recuadro: /238, 90, 18/.test(cs(bis).borderTopColor) && /238, 90, 18/.test(cs(bis).backgroundImage), pastilla: cs(pill).backgroundColor === NAR && cs(pill).color === 'rgb(11, 19, 43)',
+        lineaGuia: cs(br).borderLeftColor === NAR, letras: [].every.call(le, function(x){ return cs(x).backgroundColor === NAR && cs(x).color === 'rgb(11, 19, 43)'; }),
+        textosLegibles: cs(sub).color === TXT && con.color === TXT && /SIN PAUSA/.test(con.content), transicion: cs(tr).color === TXT, sinAmbar: !/255, 194, 75/.test(todos) };
+    } finally { caja.remove(); }
+  }
+  /* biblioteca v10: nombres sin paréntesis; el nombre viejo queda como alias (un plan guardado con el viejo sigue encontrando el ejercicio y su video) */
+  function renombresBiblioteca(){
+    var S = getS(), PB = win.__jpPB, conPar = S.exercises.filter(function(e){ return /^(Curl de bíceps en banco inclinado|Abducción caminando|Zancada con paso largo|Hollow rock|Sentadilla péndulo|Sentadilla con cinturón|Elevación de talones en burro|Elevación de puntas de pie)/.test(e.es); });
+    var viejo = PB.exLib('Curl de bíceps en banco inclinado (Mancuernas)'), viejo2 = PB.exLib('Abducción con banda (monster walk)');
+    var etiqueta = PB.etiquetaEj('Curl de bíceps en banco inclinado con mancuernas');
+    return { sinParentesis: conPar.length >= 8 && conPar.every(function(e){ return !/\(/.test(e.es); }), aliasViejo: !!viejo && viejo.es === 'Curl de bíceps en banco inclinado con mancuernas' && !!viejo2 && viejo2.es === 'Abducción caminando con banda',
+      etiquetaLimpia: etiqueta === 'Curl de bíceps en banco inclinado con mancuernas (Incline Dumbbell Curl)', version: win.eval('LIB_VERSION') >= 10 };
+  }
   function conAlumnoPrueba(datos, tplId, fn){
     var S = getS(), PB = win.__jpPB, id = 'ath_test_ficha', guardar = win.save, render = win.renderBuilder, act0 = S.activeId, dia0 = S.ui.day;
     var ath = Object.assign({ id: id, nombre: 'Prueba', apellido: 'Ficha', freq: 3, nivel: 'Intermedio', genero: 'F', tags: [], prohibidos: [], preferidos: [], ficha: { objetivo: ['Hipertrofia'] }, createdAt: Date.now() }, datos || {});
@@ -2311,21 +2396,23 @@
     }
     if(c.caso === 'lecturaMujer'){
       return conAlumnoPrueba({}, 'jp26_f3_i', function(ath, p){
-        var o = {}, r = LD.analizar(ath, p, 0), d = p.dias[0], prin = LD.principal(d), principalAntes = JSON.stringify(prin.items);
+        /* el día 1 ya trae abducción con banda (antes su nombre con paréntesis no se reconocía y la lectura creía que faltaba glúteo medio): se prueba en el día de pierna que de verdad no lo tiene */
+        var di = [0, 1, 2].filter(function(i){ var x = LD.analizar(ath, p, i); return x.esInferior && !x.gluteoMedioDia; })[0]; if(di == null) di = 0;
+        var o = { reconoceAbduccion: LD.analizar(ath, p, 0).gluteoMedioDia > 0 }, r = LD.analizar(ath, p, di), d = p.dias[di], prin = LD.principal(d), principalAntes = JSON.stringify(prin.items);
         o.prioridadAlta = r.prioridad.nivel === 'alta'; o.esInferior = r.esInferior === true;
         var est = r.sugerencias.filter(function(s){ return s.accion && s.accion.tipo === 'estacion'; })[0];
         o.sugiereEstacion = !!est && /glúteo medio|glúteo mayor|Abducción|Hip thrust|Puente|Patada/i.test(est.txt);
         o.nuncaElPrincipal = r.sugerencias.every(function(s){ return !s.accion || s.accion.bid !== prin.id; });
         if(est){
           var b = d.bloques.filter(function(x){ return x.id === est.accion.bid; })[0], antes = LD.estaciones(b).length;
-          o.aplica = LD.aplicar(est.accion, ath) === true;
+          getS().ui.day = di; o.aplica = LD.aplicar(est.accion, ath) === true;
           var es = LD.estaciones(b), ks = es.map(function(e){ return win.jpEstacion(e.ex); });
           o.sumaUnaEstacion = es.length === antes + 1 && es.length <= 3 && /^A\d/.test(es[es.length - 1].codigo);
           o.sinCrucesDeEstacion = ks.every(function(k1, i){ return ks.every(function(k2, j){ return i === j || win.jpEstacionCompat(k1, k2); }); });
           o.sinDosPoleas = ks.filter(function(k){ return win.jpEsPolea(k); }).length <= 1;
           o.tituloSigue = new RegExp('^(Hipertrofia|Accesorios)? ?–? ?(Biset|Triset) ').test(b.titulo.replace(/^(?:Hipertrofia|Accesorios)\s*–\s*/, '')) || /(Biset|Triset) /.test(b.titulo);
           o.pautasDeLaEstacion = new RegExp(es[es.length - 1].codigo + ' · SET-UP: ').test(b.tips) && !/pila de pesas/.test(b.tips.split('\n').filter(function(l){ return l.indexOf(es[es.length - 1].codigo + ' ·') === 0; }).join(' '));
-          var r2 = LD.analizar(ath, p, 0); o.semanaDentroDelMaximo = r2.gluteoSemana <= r2.meta[1];
+          var r2 = LD.analizar(ath, p, di); o.semanaDentroDelMaximo = r2.gluteoSemana <= r2.meta[1];
         }
         o.principalIntacto = JSON.stringify(prin.items) === principalAntes;
         return o;

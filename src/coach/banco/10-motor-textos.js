@@ -12,7 +12,7 @@
   /* ---------- base de conocimiento por patrón: objetivo + set-up + cue + cuidado + tempo ---------- */
   /* los textos de cada patrón (objetivo, set-up, cue, cuidado) viven en el diccionario: src/shared/i18n/es.motor.js, claves motor.kb.<patrón>.<o|s|c|x>; acá solo queda el tempo */
   function T(k, p){ return (typeof window.jpT === 'function') ? window.jpT(k, p) : k; }
-  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
+  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'triceps_oh':'3011', 'curl_mart':'2011', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
   var KB = {};
   Object.keys(KB_TEMPO).forEach(function(id){
     var e = { t: KB_TEMPO[id] };
@@ -53,7 +53,9 @@
     [/curl femoral|nordico/, 'curl_fem'],
     [/extension de cuadriceps/, 'ext_cuad'],
     [/gemelos|talones/, 'gemelo'],
-    [/triceps|press frances|press de banca agarre cerrado|patada de triceps/, 'triceps'],
+    [/(extension|extensiones) (de )?triceps.*(tras nuca|sobre la cabeza|overhead)/, 'triceps_oh'],
+    [/triceps|press frances|press de banca agarre cerrado|patada de triceps|flexiones diamante|flexiones cerradas/, 'triceps'],
+    [/curl martillo|curl con agarre neutro/, 'curl_mart'],
     [/curl/, 'curl'],
     [/rueda abdominal|plancha|pallof|dead bug|bird dog|hollow|woodchopper|copenhagen/, 'core_ant'],
     [/elevacion de piernas|crunch|v-ups|bicicleta abdominal/, 'core_flex']
@@ -244,15 +246,19 @@
 
   /* ---------- entrada en calor específica por tipo de día: movilidad + activación + potenciación (10 min) ---------- */
   /* los ejercicios de cada entrada en calor (nombre de la biblioteca + cantidad) quedan acá; el objetivo y las pautas viven en el diccionario (motor.wu.<tipo>.obj / tipN) */
+  /* 2026-11: las de Bodybuilding (push, pull, upper, legs, glute) pasan de 6 ejercicios y 10 minutos a 4 ejercicios y 7 minutos —uno de movilidad, dos de activación y uno de
+     potenciación—: las sesiones ya son largas y las series de aproximación del primer ejercicio terminan de preparar el patrón. La de carrera (run) y la de cuerpo completo (full) no cambian. */
   var WU_ITEMS = {
-    push: ['Rotación torácica en cuadrupedia x 8 por lado', 'Retracciones escapulares colgado x 10', 'Apertura de banda x 15', 'Rotación externa manguito rotador x 15 por lado', 'Face Pull con cuerda x 15', 'Flexiones de brazos x 10 con pausa de 1 segundo abajo'],
-    pull: ['Rotación torácica en cuadrupedia x 8 por lado', 'Retracciones escapulares colgado x 10', 'Apertura de banda x 15', 'Face Pull con cuerda x 15', 'Extensión lumbar tipo Superman x 10 con pausa de 2 segundos arriba', 'Remo invertido / Australian Pull-up x 8'],
-    upper: ['Rotación torácica en cuadrupedia x 8 por lado', 'Apertura de banda x 15', 'Rotación externa manguito rotador x 12 por lado', 'Face Pull con cuerda x 15', 'Retracciones escapulares colgado x 10', 'Flexiones de brazos x 8'],
-    legs: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Abducción con banda (monster walk) x 12 por lado', 'Sentadilla goblet x 10 con pausa de 2 segundos abajo', 'Dead bug x 8 por lado', 'Zancada inversa x 6 por lado'],
-    glute: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Patada de glúteo con banda x 12 por lado', 'Abducción con banda (monster walk) x 12 por lado', 'Peso muerto rumano a una pierna x 8 por lado', 'Bird dog x 8 por lado'],
-    run: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Abducción con banda (monster walk) x 12 por lado', 'Zancada inversa x 8 por lado', 'Dead bug x 8 por lado', 'Carrera suave x 6 min con 4 aceleraciones de 15 s al final'],
+    push: ['Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Rotación externa manguito rotador x 12 por lado', 'Flexiones de brazos x 8 con pausa de 1 segundo abajo'],
+    pull: ['Rotación torácica en cuadrupedia x 6 por lado', 'Retracciones escapulares colgado x 10', 'Face Pull con cuerda x 15', 'Remo invertido / Australian Pull-up x 8'],
+    upper: ['Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Face Pull con cuerda x 15', 'Flexiones de brazos x 8'],
+    legs: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 8 con pausa de 2 segundos abajo', 'Zancada inversa x 5 por lado'],
+    glute: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 10 por lado', 'Peso muerto rumano a una pierna x 6 por lado'],
+    run: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 12 por lado', 'Zancada inversa x 8 por lado', 'Dead bug x 8 por lado', 'Carrera suave x 6 min con 4 aceleraciones de 15 s al final'],
     full: ['Cambio de cadera 90/90 x 5 por lado', 'Rotación torácica en cuadrupedia x 8 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 10', 'Retracciones escapulares colgado x 10', 'Rotación externa manguito rotador x 12 por lado', 'Dead bug x 8 por lado']
   };
+  /* minutos de cada entrada en calor (los suma la duración estimada de la sesión) */
+  var WU_MIN = { push: 7, pull: 7, upper: 7, legs: 7, glute: 7, run: 10, full: 10 };
   var WU_NTIPS = {push:3,pull:3,upper:3,legs:3,glute:3,run:3,full:3};
   var WU = {};
   Object.keys(WU_ITEMS).forEach(function(k){
@@ -262,12 +268,12 @@
     WU[k] = w;
   });
   function textoWarmup(n, tipo, etiqueta){
-    var W = WU[tipo], L = ['[BLOQUE ' + n + '] [WARM-UP] Entrada en calor · ' + etiqueta + ' (10 MIN)'];
+    var W = WU[tipo], L = ['[BLOQUE ' + n + '] [WARM-UP] Entrada en calor · ' + etiqueta + ' (' + (WU_MIN[tipo] || 10) + ' MIN)'];
     W.items.forEach(function(x){ var m = /^(.*?)\s+x\s+(.+)$/.exec(x); L.push('- ' + (m ? etiquetaEj(m[1]) + ' x ' + m[2] : x)); });
     L.push('[OBJETIVO FISIOLÓGICO]'); L.push(W.obj);
     L.push('[COACHING TIPS & ESTRATEGIA]');
     W.tips.forEach(function(x){ L.push(x); });
-    L.push('SET-UP: hacé 2 rondas fluidas, sin fatigarte: el objetivo es entrar en calor, no entrenar. Tenés que arrancar la primera serie pesada con ganas, no cansado.');
+    L.push('SET-UP: hacé ' + ((WU_MIN[tipo] || 10) < 10 ? '1 o 2 rondas fluidas' : '2 rondas fluidas') + ', sin fatigarte: el objetivo es entrar en calor, no entrenar. Tenés que arrancar la primera serie pesada con ganas, no cansado.');
     L.push('CUIDADO / ERROR COMÚN: si una articulación molesta, regresioná el ejercicio o salteálo y avisale a tu coach. No se entrena sobre una molestia.');
     return L.join('\n');
   }
@@ -276,5 +282,5 @@
   var D = {}, ESTR = [];
 
   window.__jpPB = { tempoTxt: tempoTxt, KB: KB, kbDe: kbDe, R: R, textoBloque: textoBloque, textoWarmup: textoWarmup, exLib: exLib, etiquetaEj: etiquetaEj, partesDosis: partesDosis, TEC: TEC, nzz: nzz, D: D, ESTR: ESTR, WU: WU, N_ROL: N_ROL,
-    minBloque: minBloque, nombreCorto: nombreCorto, PREF: PREF, TAG: TAG, tempoFila: tempoFila, esUnilateral: esUnilateral, conLado: conLado };
+    minBloque: minBloque, WU_MIN: WU_MIN, nombreCorto: nombreCorto, PREF: PREF, TAG: TAG, tempoFila: tempoFila, esUnilateral: esUnilateral, conLado: conLado };
 })();

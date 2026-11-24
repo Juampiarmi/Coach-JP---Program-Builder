@@ -15,7 +15,7 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
   { id: 'bank.rope.01', area: 'Banco · Bodybuilding (12 plantillas)', fn: 'bancoSinRopes', input: '', expect: [],
     nota: 'Ningún battle rope en ninguna plantilla del Banco (Bodybuilding, Hyrox, recomposición, Banco Pro ni copias guardadas): se reemplazan por slam ball, SkiErg o remo' },
   { id: 'bank.rec.01', area: 'Banco · Recomposición femenina', fn: 'bancoRecFem', input: '', expect: [],
-    nota: 'Las 8 plantillas de recomposición femenina abren con cardio en cinta con inclinación (10 a 15 min), cierran con una máquina de cardio al fallo (Echo Bike, Concept2, SkiErg o ciclismo) y no llevan dominadas lastradas' },
+    nota: 'Las 8 plantillas de recomposición femenina abren con 8 a 12 minutos de cardio suave en una máquina que cambia según el día (cinta con pendiente, elíptico o bicicleta; el día de densidad no lleva) y cierran con una máquina de cardio cuyo formato también rota, con un solo cierre al fallo por semana y todo de bajo impacto' },
   { id: 'bank.edit.01', area: 'Banco · editor', fn: 'bancoEditor', input: '', expect: [],
     nota: 'Existe la API de edición y las plantillas del sistema están hidratadas' },
 

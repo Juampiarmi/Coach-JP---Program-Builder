@@ -21,7 +21,7 @@
   function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
   function esc(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   var MAYOR = ['Hip thrust con mancuerna', 'Puente de glúteo con banda', 'Patada de glúteo en cuadrupedia con mancuerna', 'Patada de glúteo con banda', 'Puente de glúteo a una pierna', 'Hip thrust en máquina', 'Puente de rana'];
-  var MEDIO = ['Abducción de cadera acostada con banda', 'Abducción con banda (monster walk)', 'Abducción de cadera en máquina', 'Zancada lateral'];
+  var MEDIO = ['Abducción de cadera acostada con banda', 'Abducción caminando con banda', 'Abducción de cadera en máquina', 'Zancada lateral'];
   var INFERIOR = ['Cuádriceps', 'Glúteo / Isquios', 'Glúteo medio', 'Isquios', 'Piernas', 'Gemelos'];
   var SUPERIOR = ['Pectoral', 'Espalda', 'Hombros', 'Bíceps', 'Tríceps', 'Brazos', 'Salud de hombro', 'Antebrazo'];
   var RANGOS = { 'Pectoral': [12, 22], 'Espalda': [12, 22], 'Glúteo / Isquios': [12, 22], 'Cuádriceps': [12, 22], 'Piernas': [12, 22], 'Hombros': [8, 16], 'Bíceps': [8, 16], 'Tríceps': [8, 16], 'Brazos': [8, 16], 'Gemelos': [8, 16], 'Isquios': [8, 16], 'Glúteo medio': [8, 16] };

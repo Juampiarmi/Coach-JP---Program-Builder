@@ -159,7 +159,7 @@
         R('H', 'Bulgarian split squat', '3x8-10|1|90', '4x8-10|0-1|90', { n: 'Unilateral: arrancá por la pierna más débil. El paso largo y el torso levemente inclinado cargan el glúteo, que es lo que más empuja el trineo.' }),
         R('H', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120'),
         R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-        R('B', ['Abducción con banda (monster walk)', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '4x15 por lado/10 por lado|0|45'),
+        R('B', ['Abducción caminando con banda', 'Puente de glúteo a una pierna'], '3x12 por lado/10 por lado|1|45', '4x15 por lado/10 por lado|0|45'),
         R('C', ['Hollow body', 'Bird dog'], '3x20s/8 por lado|1|45', '3x30s/10 por lado|0|45'),
         R('K', null, null, null, { fin: Fin('CARDIO', 'Tríset A · Wall balls, bolsa y burpees', 8 * rr,
           [w(rr).charAt(0).toUpperCase() + w(rr).slice(1) + ' rondas: sin pausa entre estaciones y 2 minutos de descanso al cerrar cada ronda',
