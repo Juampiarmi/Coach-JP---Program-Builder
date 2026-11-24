@@ -5130,6 +5130,34 @@ function jpListasDeDia(d){ return [d.bloques].concat(Array.isArray(d.bloquesPorS
 function jpIdDiaLibre(p, desde){
   const usados = new Set((p.dias || []).map(x => x && x.id)); let k = desde + 1; while(usados.has('dia' + k)) k++; return 'dia' + k;
 }
+/* lo PERSONAL del alumno de origen que viaja dentro de los bloques y no tiene que llegar al destino:
+     · los kilos que el sistema calculó con SUS 1RM al asignar (sufijo « | 62.5 kg» de las líneas de dosis, en la semana base y en las semanas proyectadas);
+     · la oración y la línea «TU FICHA» que la ficha rápida agregó con SU perfil (objetivo, nivel, restricciones: «cuidá rodilla en…») y su registro b.jpFicha.
+   El texto del coach, del Banco o de la IA queda igual (la marca de edición a mano b.jpMano también: protege ese texto en el destino). Devuelve cuánto limpió. */
+const JP_RX_KG_CALCULADO = /^(\s*\d+(?:\s*\/\s*\d+)*\s*[x×][^|]*(?:\|[^|]*)*?)\s*\|\s*\d+(?:[.,]\d+)?\s*kg\s*$/i;
+function jpLimpiarPersonalClonado(dias){
+  const r = { kilos: 0, ficha: 0 };
+  const sinKilos = arr => Array.isArray(arr) ? arr.map(l => { const m = typeof l === 'string' ? JP_RX_KG_CALCULADO.exec(l) : null; if(m){ r.kilos++; return m[1].replace(/\s+$/, ''); } return l; }) : arr;
+  (dias || []).forEach(d => {
+    const vistos = new Set();
+    jpListasDeDia(d).forEach(arr => {
+      if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr);
+      arr.forEach(b => {
+        if(!b || typeof b !== 'object') return;
+        if(Array.isArray(b.items)) b.items = sinKilos(b.items);
+        if(b.weekItems && typeof b.weekItems === 'object') Object.keys(b.weekItems).forEach(k => { if(Array.isArray(b.weekItems[k])) b.weekItems[k] = sinKilos(b.weekItems[k]); });
+        const f = b.jpFicha;
+        const tips = String(b.tips || '');
+        if(f || /(^|\n)\s*TU FICHA:/.test(tips)){
+          if(f && f.o && typeof b.objective === 'string' && b.objective.indexOf(f.o) >= 0) b.objective = b.objective.replace(f.o, '').replace(/\s{2,}/g, ' ').trim();
+          if(tips) b.tips = tips.split(/\r?\n/).filter(l => !(f && f.t && l.trim() === f.t) && !/^\s*TU FICHA:/.test(l)).join('\n');
+          delete b.jpFicha; r.ficha++;
+        }
+      });
+    });
+  });
+  return r;
+}
 const JP_COPIA_UNDO = {};      /* última copia de plan por alumno destino: permite deshacerla mientras el panel está abierto */
 /* NÚCLEO ÚNICO de "copiar el plan de un alumno a otro": lo usan "Copiar plan completo" (ejecutarCopiaPlan) y "Duplicar planificación / Clonar plan de otro atleta" (runDup).
    Antes eran dos implementaciones: la vieja (runDup) recortaba los días a la frecuencia del destino, no confirmaba la semana activa de CrossFit, dejaba al destino en la modalidad
@@ -5151,6 +5179,7 @@ function jpClonarPlanEntre(origenId, destinoId, opts){
   let reparados = jpRepararDiasClonados(dias);
   const mapa = {};
   dias.forEach(d => { jpRenovarIdsBloques(jpListasDeDia(d), mapa); });
+  const personal = jpLimpiarPersonalClonado(dias);
   dias.forEach(d => {
     if(cfO){ const ps = asegurarBloquesPorSemana(d); d.bloques = ps[0]; }      /* el puntero apunta a la semana 1, igual que un día recién abierto */
     else { delete d.bloquesPorSemana; if(!Array.isArray(d.bloques)) d.bloques = []; }
@@ -5182,11 +5211,23 @@ function jpClonarPlanEntre(origenId, destinoId, opts){
   });
   /* la cantidad de días del plan copiado manda: la base de frecuencia queda en la del alumno, así plan() nunca agrega días vacíos ni recorta los copiados */
   pDestino.freqBase = Math.max(3, Math.min(6, parseInt(athDestino.freq, 10) || 4));
+  /* los kilos se vuelven a calcular con las marcas (1RM) del DESTINO, con la misma progresión que al asignar una plantilla (S2 +2,5%, S3 +5%, S4 como S1) */
+  let kilosDestino = 0;
+  if(personal.kilos && (athDestino.marcas || []).length && window.CoachGenSesion && typeof CoachGenSesion.cargasBloques === 'function'){
+    try{ const bl = []; dias.forEach(d => { const vs = new Set(); jpListasDeDia(d).forEach(arr => { if(Array.isArray(arr) && !vs.has(arr)){ vs.add(arr); arr.forEach(b => bl.push(b)); } }); }); kilosDestino = CoachGenSesion.cargasBloques(bl, athDestino, [1, 1.025, 1.05, 1]) || 0; }catch(eK){ console.warn('[Copia de plan] kilos del destino', eK); }
+  }
   if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; _cfSemanaCargada = null; _cfAthCargado = null; }
   guardarAhora();
   const nBl = dias.reduce((s, d) => s + (cfO ? (asegurarBloquesPorSemana(d)[0] || []).length : (d.bloques || []).length), 0);
   const nTodas = cfO ? dias.reduce((s, d) => s + asegurarBloquesPorSemana(d).reduce((q, arr) => q + (arr || []).length, 0), 0) : nBl;
-  return { ok: true, dias: dias.length, nBl: nBl, nTodas: nTodas, cfO: cfO, reparados: reparados };
+  return { ok: true, dias: dias.length, nBl: nBl, nTodas: nTodas, cfO: cfO, reparados: reparados, kilosQuitados: personal.kilos, kilosDestino: kilosDestino, fichaQuitada: personal.ficha };
+}
+/* texto del aviso: qué datos personales del origen no viajaron */
+function jpAvisoPersonalCopia(r){
+  let t = '';
+  if(r.kilosQuitados) t += ' Los kilos calculados con las marcas del alumno/a de origen no se copiaron' + (r.kilosDestino ? ': se recalcularon ' + r.kilosDestino + ' con las marcas del destino.' : ' (cargá las marcas del destino para que se calculen).');
+  if(r.fichaQuitada) t += ' Se quitó la línea «TU FICHA» del origen en ' + r.fichaQuitada + ' bloque(s): usá «Alinear» para generarla con la ficha del destino.';
+  return t ? ' ' + esc(t.trim()) + ' ' : '';
 }
 function ejecutarCopiaPlan(origenId, destinoId){
   const r = jpClonarPlanEntre(origenId, destinoId);
@@ -5198,7 +5239,7 @@ function ejecutarCopiaPlan(origenId, destinoId){
     body.innerHTML =
       '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + r.dias + ' días' +
         (r.cfO ? ', 4 semanas independientes y ' + r.nTodas + ' bloques en total' : ' y ' + r.nBl + ' bloques') + '. La modalidad del plan pasó a ' + (r.cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.' +
-        (r.reparados ? ' Se repararon ' + r.reparados + ' identificador(es) del plan de origen que estaban dañados.' : '') + '</div></div>' +
+        (r.reparados ? ' Se repararon ' + r.reparados + ' identificador(es) del plan de origen que estaban dañados.' : '') + jpAvisoPersonalCopia(r) + '</div></div>' +
       '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn ghost" data-cpundo="' + esc(destinoId) + '" style="flex:1 1 100%">↩ Deshacer esta copia</button>' +
         '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
@@ -16341,7 +16382,7 @@ document.addEventListener('DOMContentLoaded', init);
         '<b>Plan copiado a ' + esc(fullName(to)) + ' · ' + r.dias + ' días' + (r.cfO ? ' · 4 semanas independientes (CrossFit &amp; Hyrox)' : '') + '</b>' +
         (cambios ? cambios + ' ejercicio(s) reemplazado(s) por variantes seguras. ' : '') +
         (quitados ? quitados + ' quitado(s) sin alternativa. ' : '') +
-        (r.reparados ? 'Se repararon ' + r.reparados + ' identificador(es) dañados del plan de origen. ' : '') +
+        (r.reparados ? 'Se repararon ' + r.reparados + ' identificador(es) dañados del plan de origen. ' : '') + jpAvisoPersonalCopia(r) +
         (!notas.length ? 'Sin conflictos biomecánicos para el destino.' : '') +
         notas.slice(0, 8).map(n => '<div style="margin-top:3px">• ' + esc(n) + '</div>').join('') +
         (notas.length > 8 ? '<div style="margin-top:3px;opacity:.75">…y ' + (notas.length - 8) + ' más.</div>' : '') +

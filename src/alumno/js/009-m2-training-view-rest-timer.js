@@ -3913,7 +3913,7 @@
       var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\u2013</i>');
       var rb0 = restBadgeSB(en.restSeconds, en.restLabel);
       return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
-        ((rb0 || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb0 + (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '') + '</div>';
+        (rb0 ? '<div class="jp-db-row jp-db-r2">' + rb0 + '</div>' : '') + filaUnilateralSB(en.unilateral) + '</div>';
     }
     var t0 = en.tramos[0].tempo, tempoComun = en.tempo || ((t0 && en.tramos.every(function(t){ return t.tempo === t0; })) ? t0 : '');
     var chips = en.tramos.map(function(t){
@@ -3926,9 +3926,8 @@
     /* el tempo ya no se imprime en la línea principal: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
     var tmpT = '';
     var rirT = (en.rir && !en.tramos.some(function(t){ return t.rir; })) ? '<span class="jp-db-seg jp-db-rir jp-rir-' + tierRirSB(en.rir) + '">' + ICONO_RIR_SB[tierRirSB(en.rir)] + ' RIR ' + escSB(en.rir) + '</span>' : '';
-    var r2 = (rb || en.unilateral || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb +
-      (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
+    var r2 = (rb || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb + '</div>' : '';
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + filaUnilateralSB(en.unilateral) + '</div>';
   }
   function tempoLimpioSB(tempo){
     var s = String(tempo == null ? '' : tempo).replace(/^\s*tempo\s*[:\-]?\s*/i, '').trim();
@@ -3958,15 +3957,20 @@
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
     var tp = tempoLimpioSB(tempo);
     if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    /* sin tempo pautado: en lugar de dejar la celda vacía (la fila quedaba despareja) va una indicación de ritmo útil; con repeticiones, «control» (bajada de 2 a 3 s y subida firme),
+       con tiempo o distancia, «parejo». Solo cuando la fila técnica ya tiene el RIR (ahí quedaba el hueco): sin tempo ni RIR no se inventa la fila (ver est.dos.02). */
+    else if(rir){
+      var porReps = !unidad || /^reps?$/i.test(String(unidad));
+      r3.unshift('<span class="jp-db-seg jp-db-tempo jp-db-ritmo" title="' + (porReps ? 'Sin tempo pautado: bajá en 2 a 3 segundos y subí firme, sin rebote' : 'Sin tempo pautado: mantené un ritmo parejo de principio a fin') + '"><small>RITMO</small> <b>' + (porReps ? 'CONTROL' : 'PAREJO') + '</b></span>');
+    }
     if(rir){
       var tier = tierRirSB(rir);
       r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
     }
     if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\s*/, '')) + '</b></span>');
-    if(uni) r3.push(chipUnilateralSB(uni));
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
       (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
-      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + filaUnilateralSB(uni) + '</div>';
   }
   window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
   window.jpPizarraSports = pizarraSports;    /* idem: el runner arma un bloque y mira el DOM real de la tarjeta */
@@ -3978,8 +3982,10 @@
      parsearPizarraSB, más abajo). */
   function chipUnilateralSB(valor){
     if(!valor) return '';
-    return '<span class="jp-sb-unilateral">\u26a1 UNILATERAL \u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
+    /* 2026-11: ícono ⇄ (lado a lado) en lugar del ⚡, que se confundía con «⚡ SIN DESCANSO»; el badge va en su propia fila (filaUnilateralSB), no como una celda más de la técnica */
+    return '<span class="jp-sb-unilateral"><i class="jp-uni-ic" aria-hidden="true">\u21c4</i> UNILATERAL \u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
   }
+  function filaUnilateralSB(valor){ return valor ? '<div class="jp-db-row jp-db-uni">' + chipUnilateralSB(valor) + '</div>' : ''; }
   /* directiva maestra ("Estilización de Listados de Activación") -- el
      glifo táctico (▸, cian, ver .jp-sb-plain-warmup::before en CSS) ya
      comunica el bullet visualmente -- un guión común "-" que el coach
@@ -4191,7 +4197,8 @@
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
         });
         const cabeceras = subsInfo.map(function(o){
-          return '<div class="jp-sb-subex-resumen">' +
+          const trans = o.si > 0 ? '<div class="jp-sb-trans" role="note"><span class="jp-sb-trans-pill"><i aria-hidden="true">\u2193</i> SIN PAUSA \u00b7 PAS\u00c1 AL ' + (entry.letra || 'A') + (o.si + 1) + '</span></div>' : '';
+          return trans + '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1, undefined, true) +

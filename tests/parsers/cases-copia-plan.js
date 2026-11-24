@@ -20,5 +20,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { reemplazo: true, sinVetado: true, mismosBloques: true, origenIntacto: true, soloAviso: true, problemas: [] }, modo: 'subset',
     nota: 'Ejercicio vetado para el destino en un bloque de pizarra: con «reemplazar» se cambia por una variante segura (el bloque se regenera) sin perder bloques; sin eso solo se avisa; el origen no cambia' },
   { id: 'cp.dup.05', area: 'Copia · Duplicar planificación', fn: 'copiaPlan', input: { caso: 'deshacer' }, expect: { cambio: true, vuelve: true, botonSeVa: true }, modo: 'subset',
-    nota: 'La copia hecha con Duplicar planificación se puede deshacer: el destino vuelve a sus días, su base de frecuencia y su modalidad de antes' }
+    nota: 'La copia hecha con Duplicar planificación se puede deshacer: el destino vuelve a sus días, su base de frecuencia y su modalidad de antes' },
+  { id: 'cp.dup.06', area: 'Copia · plan completo y limpio', fn: 'copiaPlan', input: { caso: 'personal' },
+    expect: { ok: true, fichaEnOrigen: true, kilosOrigenFuera: true, kilosConMarcasDestino: true, sinTuFicha: true, completo: true, cooldown: true, mismoVolumen: true, origenIntacto: true, referencias: 0, problemas: [] }, modo: 'subset',
+    nota: 'Copiar un plan a otro alumno lo copia completo (días, bloques, ejercicios, dosis, pautas, cool-down y Body Maintenance, mismo volumen) sin datos personales del origen: los kilos calculados con SUS 1RM no viajan y se recalculan con las marcas del destino (un ejercicio sin marca en el destino queda sin kilos), la línea «TU FICHA» de su perfil se quita y el origen no cambia ni comparte referencias con el destino' }
 ]);

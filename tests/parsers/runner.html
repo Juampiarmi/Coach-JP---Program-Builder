@@ -481,6 +481,29 @@
         return { reemplazo: /→/.test(log3), sinVetado: conFix.indexOf('Peso muerto rumano con déficit') < 0, mismosBloques: bl0 === bl1, origenIntacto: txt(pO) === origen && origen.indexOf('Peso muerto rumano con déficit') >= 0,
           soloAviso: /queda marcado como vetado/.test(log4) && txt(p6).indexOf('Peso muerto rumano con déficit') >= 0, problemas: win.jpValidarEstructuraPlan(p5) };
       }
+      if(c.caso === 'personal'){
+        /* plan con lo personal del origen (kilos de SUS 1RM y la línea «TU FICHA» de SU perfil) más un Body Maintenance en el cool-down: se copia completo y limpio */
+        aO.marcas = [{ nombre: 'Hip thrust con barra', kg: '120', reps: '5' }, { nombre: 'Hack squat', kg: '140', reps: '6' }]; aO.ficha = { objetivo: ['Hipertrofia'] };
+        aD.marcas = [{ nombre: 'Hip thrust con barra', kg: '60', reps: '5' }];
+        pO.dias = plantilla('jp26_f5_i'); pO.freqBase = 5; pO.meta.mesoDisc = 'hiper';
+        var blO = []; pO.dias.forEach(function(d){ d.bloques.forEach(function(b){ blO.push(b); }); });
+        win.CoachGenSesion.cargasBloques(blO, aO, [1, 1.025, 1.05, 1]);
+        win.CoachFichaRapida.alinearLocal(aO, pO, {});
+        win.CoachMantenimiento.insertar(pO.dias[0], 'cadera', 'sumar');
+        var antesO = JSON.stringify(pO.dias), txtO = antesO;
+        var kgDe = function(p, nombre){ var out = []; p.dias.forEach(function(d){ d.bloques.forEach(function(b){ var en = false; (b.items || []).forEach(function(l){ if(/^A\d\.|^[A-ZÁÉÍÓÚ]/.test(l)) en = l.indexOf(nombre) >= 0; else if(en){ var m = /\|\s*(\d+(?:\.\d+)?)\s*kg\s*$/.exec(l); if(m) out.push(+m[1]); } }); }); }); return out; };
+        var r6 = win.jpClonarPlanEntre(ids[0], ids[1]), p6 = win.plan(ids[1]);
+        var sinKg = function(l){ return String(l).replace(/\s*\|\s*\d+(?:\.\d+)?\s*kg\s*$/, ''); };
+        var sinFicha = function(t){ return String(t || '').split('\n').filter(function(l){ return !/^TU FICHA:/.test(l.trim()); }).join('\n'); };
+        var mismosItems = pO.dias.every(function(d, i){ return d.bloques.every(function(b, j){ var b2 = p6.dias[i].bloques[j]; return !!b2 && b.titulo === b2.titulo && JSON.stringify((b.items || []).map(sinKg)) === JSON.stringify((b2.items || []).map(sinKg)) && sinFicha(b.tips) === b2.tips; }); });
+        var htO = kgDe(pO, 'Hip thrust con barra'), htD = kgDe(p6, 'Hip thrust con barra'), hackD = kgDe(p6, 'Hack squat');
+        var vO = win.jpCalcVolumen(pO).total, vD = win.jpCalcVolumen(p6).total;
+        p6.dias[0].bloques[1].items.push('cambio solo en el destino');
+        return { ok: r6.ok === true, fichaEnOrigen: /TU FICHA:/.test(txtO), kilosOrigenFuera: r6.kilosQuitados > 0 && htO.length > 0 && htD.length > 0 && Math.max.apply(null, htD) < Math.min.apply(null, htO),
+          kilosConMarcasDestino: r6.kilosDestino > 0 && hackD.length === 0, sinTuFicha: !/TU FICHA:/.test(JSON.stringify(p6.dias)) && !/jpFicha/.test(JSON.stringify(p6.dias)) && r6.fichaQuitada > 0,
+          completo: mismosItems && p6.dias.length === 5, cooldown: JSON.stringify(p6.dias[0].cooldown) === JSON.stringify(pO.dias[0].cooldown) && p6.dias[0].cooldownNota === pO.dias[0].cooldownNota && (p6.dias[0].mantenimiento || []).join() === 'cadera',
+          mismoVolumen: JSON.stringify(vO) === JSON.stringify(vD), origenIntacto: JSON.stringify(pO.dias) === antesO, referencias: sinRefs(), problemas: win.jpValidarEstructuraPlan(p6) };
+      }
       if(c.caso === 'deshacer'){
         pO.dias = plantilla('jp26_m5_a'); pO.meta.mesoDisc = 'hiper';
         var prev = JSON.stringify([pD.dias, pD.freqBase, pD.meta.mesoDisc]), estado = function(){ var q = win.plan(ids[1]); return JSON.stringify([q.dias, q.freqBase, q.meta.mesoDisc]); };
@@ -2328,20 +2351,32 @@
   /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
   /* biset / triset de la app del alumno en naranja de la marca (#EE5A12): recuadro, pastilla, línea guía, letras A1/A2, conector «sin pausa» y aviso de transición; nada en ámbar */
   function bisetNaranja(){
-    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('no hay app del alumno');
     var doc = w.document, caja = doc.createElement('div');
-    caja.innerHTML = '<div class="jp-sb-board"><div class="jp-sb-biset"><div class="jp-sb-biset-title"><span class="jp-sb-biset-pill">BISET</span><span class="jp-sb-biset-sub">SIN PAUSA ENTRE ESTACIONES</span></div>' +
-      '<div class="jp-sb-bracket"><div class="jp-sb-subex-resumen"><span class="jp-sb-letra">A1</span> Press</div><div class="jp-sb-subex-resumen"><span class="jp-sb-letra">A2</span> Remo</div></div>' +
-      '<div class="jp-tip-ex jp-tip-trans"><b class="jp-tip-lb">TRANSICIÓN</b> pasá sin pausa</div></div></div>';
+    /* un biset REAL dibujado por la app: A1 sin tempo pautado y A2 unilateral («por lado») */
+    caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
     doc.body.appendChild(caja);
     try{
+      w.jpPizarraSports(caja.querySelector('.block'), { id: 'tbisnar', title: 'Hipertrofia – Biset Prensa 45° + Elevación de talones a una pierna (13 MIN)', category: 'strength',
+        items: ['A1. Prensa 45° (Leg Press)', '3x10-12 | RIR 1', 'A2. Elevación de talones a una pierna (Single-Leg Calf Raise)', '3x12-15 por lado | Tempo 2211 | RIR 1', 'Rest 90s'],
+        objective: 'Prueba', tips: 'TRANSICIÓN: pasá de una estación a la otra sin descanso.' }, 0, 'dia1');
       var q = function(sel){ return caja.querySelector(sel); }, cs = function(el, ps){ return w.getComputedStyle(el, ps || null); };
-      var bis = q('.jp-sb-biset'), pill = q('.jp-sb-biset-pill'), sub = q('.jp-sb-biset-sub'), br = q('.jp-sb-bracket'), le = caja.querySelectorAll('.jp-sb-letra'), con = cs(caja.querySelectorAll('.jp-sb-subex-resumen')[1], '::before'), tr = q('.jp-tip-trans .jp-tip-lb');
+      var bis = q('.jp-sb-biset'), pill = q('.jp-sb-biset-pill'), sub = q('.jp-sb-biset-sub'), br = q('.jp-sb-bracket'), le = caja.querySelectorAll('.jp-sb-subex-resumen .jp-sb-letra');
+      var trans = caja.querySelectorAll('.jp-sb-trans'), tp = q('.jp-sb-trans-pill'), viejo = cs(caja.querySelectorAll('.jp-sb-subex-resumen')[1], '::before');
+      var barras = caja.querySelectorAll('.jp-dose-bar'), r3a1 = barras[0] && barras[0].querySelector('.jp-db-r3'), ritmo = r3a1 && r3a1.querySelector('.jp-db-ritmo');
+      var uni = q('.jp-db-uni .jp-sb-unilateral'), uniEnTecnica = !!caja.querySelector('.jp-db-r3 .jp-sb-unilateral');
       var NAR = 'rgb(238, 90, 18)', TXT = 'rgb(255, 138, 76)';
-      var todos = [cs(bis).borderTopColor, cs(bis).backgroundImage, cs(pill).backgroundColor, cs(sub).color, cs(br).borderLeftColor, cs(le[0]).backgroundColor, con.color, con.borderTopColor, cs(tr).color].join(' ');
+      var todos = [cs(bis).borderTopColor, cs(bis).backgroundImage, cs(pill).backgroundColor, cs(sub).color, cs(br).borderLeftColor, cs(le[0]).backgroundColor, tp ? cs(tp).color + ' ' + cs(tp).borderTopColor : ''].join(' ');
       return { recuadro: /238, 90, 18/.test(cs(bis).borderTopColor) && /238, 90, 18/.test(cs(bis).backgroundImage), pastilla: cs(pill).backgroundColor === NAR && cs(pill).color === 'rgb(11, 19, 43)',
-        lineaGuia: cs(br).borderLeftColor === NAR, letras: [].every.call(le, function(x){ return cs(x).backgroundColor === NAR && cs(x).color === 'rgb(11, 19, 43)'; }),
-        textosLegibles: cs(sub).color === TXT && con.color === TXT && /SIN PAUSA/.test(con.content), transicion: cs(tr).color === TXT, sinAmbar: !/255, 194, 75/.test(todos) };
+        lineaGuia: cs(br).borderLeftColor === NAR, letras: le.length === 2 && [].every.call(le, function(x){ return cs(x).backgroundColor === NAR && cs(x).color === 'rgb(11, 19, 43)'; }),
+        textosLegibles: cs(sub).color === TXT,
+        /* transición: un solo elemento entre A1 y A2, pastilla de borde sólido que nombra la estación siguiente, sin el recuadro punteado viejo */
+        transicion: trans.length === 1 && !!tp && /SIN PAUSA · PASÁ AL A2/.test(tp.textContent) && cs(tp).color === TXT && cs(tp).borderTopStyle === 'solid' && /238, 90, 18/.test(cs(tp).borderTopColor) && (viejo.content === 'none' || viejo.display === 'none'),
+        /* A1 sin tempo: la fila de técnica no queda despareja (celda de ritmo, que entra en su celda) */
+        sinHuecoDeTempo: !!ritmo && /RITMO/.test(ritmo.textContent) && /CONTROL/.test(ritmo.textContent) && r3a1.children.length === 2 && ritmo.scrollWidth <= ritmo.clientWidth + 1,
+        /* unilateral: badge propio en su fila, con ⇄ y sin el ⚡ de «sin descanso» */
+        unilateral: !!uni && !uniEnTecnica && /⇄/.test(uni.textContent) && !/⚡/.test(uni.textContent) && /UNILATERAL · POR LADO/.test(uni.textContent) && parseFloat(cs(uni).borderTopLeftRadius) > 10 && !/238, 90, 18|255, 194, 75/.test(cs(uni).color),
+        sinAmbar: !/255, 194, 75/.test(todos) };
     } finally { caja.remove(); }
   }
   /* biblioteca v10: nombres sin paréntesis; el nombre viejo queda como alias (un plan guardado con el viejo sigue encontrando el ejercicio y su video) */
