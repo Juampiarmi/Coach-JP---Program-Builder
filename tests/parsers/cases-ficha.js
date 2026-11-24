@@ -18,8 +18,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     expect: { tarjeta: true, encabezadoComoFase: true, items: true, nota: true }, modo: 'subset',
     nota: 'En la app del alumno la rutina sale en la tarjeta «Cool-Down y Recuperación» con su encabezado como fase, un ítem por movimiento y el objetivo de la rutina abajo' },
   { id: 'lectura.01', area: 'Lectura del día · glúteo', fn: 'fichaPlan', input: { caso: 'lecturaMujer' },
-    expect: { prioridadAlta: true, esInferior: true, sugiereEstacion: true, nuncaElPrincipal: true, aplica: true, sumaUnaEstacion: true, sinCrucesDeEstacion: true, sinDosPoleas: true, tituloSigue: true, pautasDeLaEstacion: true, semanaDentroDelMaximo: true, principalIntacto: true }, modo: 'subset',
-    nota: 'Alumna con hipertrofia, día de pierna: el glúteo es prioridad alta, la lectura propone una estación concreta de glúteo (medio o mayor) y al aplicarla entra como A2/A3 de un bloque compatible (nunca el básico, sin cruces ni dos poleas), el título y las pautas acompañan y la semana no pasa el máximo' },
+    expect: { reconoceAbduccion: true, prioridadAlta: true, esInferior: true, sugiereEstacion: true, nuncaElPrincipal: true, aplica: true, sumaUnaEstacion: true, sinCrucesDeEstacion: true, sinDosPoleas: true, tituloSigue: true, pautasDeLaEstacion: true, semanaDentroDelMaximo: true, principalIntacto: true }, modo: 'subset',
+    nota: 'Alumna con hipertrofia, día de pierna: la abducción caminando con banda cuenta como glúteo medio (con el nombre viejo, entre paréntesis, no se reconocía); en el día de pierna que no tiene glúteo medio el glúteo es prioridad alta, la lectura propone una estación concreta de glúteo (medio o mayor) y al aplicarla entra como A2/A3 de un bloque compatible (nunca el básico, sin cruces ni dos poleas), el título y las pautas acompañan y la semana no pasa el máximo' },
   { id: 'lectura.02', area: 'Lectura del día · glúteo', fn: 'fichaPlan', input: { caso: 'lecturaVaron' },
     expect: { prioridadBase: true, sinAgregarGluteo: true, conLectura: true }, modo: 'subset',
     nota: 'Alumno varón con objetivo de fuerza: el glúteo queda en volumen de base y la lectura no le agrega estaciones de glúteo (igual informa la distribución del día)' },
@@ -34,5 +34,14 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Alinear con el motor local suma UNA oración al objetivo (manda el objetivo más específico: readaptación) y UNA línea «TU FICHA» a los tips (con el cuidado de la rodilla en los ejercicios que la comprometen) sin tocar el resto del texto ni el calentamiento; respeta lo escrito a mano; al cambiar la ficha reemplaza lo suyo sin duplicar; con el tilde incluye los textos propios' },
   { id: 'ficha.03', area: 'Ficha rápida · IA', fn: 'iaMotor', input: {},
     expect: { fichaIAsoloAutomaticos: true, fichaIAunAviso: true, fichaIAdetiene: true }, modo: 'subset',
-    nota: '«Regenerar este día con IA» reescribe objetivo y tips de los bloques del día sin texto propio (el editado a mano queda), da un solo aviso al final y se detiene con ⏹ sin seguir pidiendo bloques' }
+    nota: '«Regenerar este día con IA» reescribe objetivo y tips de los bloques del día sin texto propio (el editado a mano queda), da un solo aviso al final y se detiene con ⏹ sin seguir pidiendo bloques' },
+  { id: 'bank.bb.03', area: 'Banco · plantillas revisadas', fn: 'revisadas', input: {},
+    expect: [],
+    nota: 'Bodybuilding 3 y 5 días (masculino intermedio y élite, femenino intermedio y élite) y Recomposición 5 días mujer avanzada: volumen semanal dentro de los rangos del panel (core incluido), sin fatiga axial doble, sin dos poleas ni cruces de estación, el core es un ejercicio que no se repite 3 días, entrada en calor de 4 ejercicios y 7 minutos, sesiones de 90 minutos o menos, sin paréntesis dobles, los bisets quedan como los escribió la plantilla, la búlgara fuera del core y el Día 1 de recomposición con 21 series de tren inferior o menos (antes 26)' },
+  { id: 'vista.biset.01', area: 'Vista · biset en naranja', fn: 'bisetNaranja', input: {},
+    expect: { recuadro: true, pastilla: true, lineaGuia: true, letras: true, textosLegibles: true, transicion: true, sinAmbar: true }, modo: 'subset',
+    nota: 'El biset / triset de la app del alumno usa el naranja de la marca (#EE5A12) en el recuadro, la pastilla, la línea guía y las letras A1/A2 (con texto azul noche encima), y un naranja claro (#FF8A4C) en los textos sobre el fondo oscuro (conector «sin pausa» y transición); nada queda en ámbar' },
+  { id: 'lib.v10.01', area: 'Biblioteca · nombres sin paréntesis', fn: 'renombres', input: {},
+    expect: { sinParentesis: true, aliasViejo: true, etiquetaLimpia: true, version: true }, modo: 'subset',
+    nota: 'Los 8 ejercicios que tenían paréntesis en el nombre se renombran (curl inclinado con mancuernas, abducción caminando con banda, etc.); el nombre viejo queda como alias y la etiqueta del Banco ya no muestra dos paréntesis seguidos' }
 ]);

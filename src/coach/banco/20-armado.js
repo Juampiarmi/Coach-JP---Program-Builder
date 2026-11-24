@@ -10,11 +10,11 @@
 
   var NIVELES = [
     { k: 'intermedio', lb: 'Desarrollo-Intermedio',
-      res: 'Trabajás a RIR 1-2 en los básicos y RIR 1 en los aislamientos, con progresión de carga: S1 base, S2 y S3 con más kilos y S4 descarga. Sesiones completas de 75 a 90 minutos: entrada en calor, básico pesado, volumen, cierre y finisher.',
+      res: 'Trabajás a RIR 1-2 en los básicos y RIR 1 en los aislamientos, con progresión de carga: S1 base, S2 y S3 con más kilos y S4 descarga. Sesiones completas de 60 a 90 minutos: entrada en calor de 7 minutos, básico pesado, bisets de volumen, core y finisher.',
       suf: ' Trabajás a RIR 1-2 en los básicos y RIR 1 en los aislamientos: subí la carga solo cuando completes todas las series en el techo del rango de repeticiones.',
       meso: 'Mesociclo de 4 semanas: S1 a S3 siempre a RIR 1-2 (nunca al fallo) con sobrecarga progresiva de kilos (S1 base, S2 +2,5%, S3 +5%) y S4 descarga activa (una serie menos, RIR 3-4). Los ejercicios se repiten las 4 semanas: progresan la carga y las repeticiones.' },
     { k: 'avanzado', lb: 'Avanzado / Élite',
-      res: 'Volumen de élite con todas las series efectivas a RIR 0-1, básicos con descansos largos, trisets de cierre y técnicas de intensidad (drop-set) solo en los aislamientos. Sesiones de 85 a 100 minutos.',
+      res: 'Volumen de élite con todas las series efectivas a RIR 0-1, básicos con descansos largos, trisets de cierre y técnicas de intensidad (drop-set) solo en los aislamientos. Sesiones de 75 a 105 minutos con entrada en calor de 7 minutos.',
       suf: ' Nivel avanzado / élite: todas las series efectivas van a RIR 0-1 (las de aproximación no cuentan), con técnica de intensidad solo en aislamientos y descansos largos en los básicos para sostener la carga.',
       meso: 'Mesociclo de 4 semanas para atleta avanzado: S1 a S3 a RIR 0-1 con sobrecarga progresiva de kilos (+2,5 a 5%) y técnica de intensidad en los aislamientos; S4 descarga activa (una serie menos por ejercicio, RIR 3-4).' }
   ];
@@ -199,7 +199,7 @@
     var D0 = D[tpl.dias[i]], av = tpl.niv === 'avanzado';
     var T = ['=== DÍA ' + (i + 1) + ': ' + D0.title + ' ===', '[NOMBRE DEL DÍA] ' + D0.title, '[FOCO DEL COACH] ' + D0.foco + tpl.suf];
     T.push(PB.textoWarmup(1, D0.wu, D0.label));
-    var n = 2, primero = true, sets = 0, mins = 10;
+    var n = 2, primero = true, sets = 0, mins = (PB.WU_MIN && PB.WU_MIN[D0.wu]) || 10;
     filasDe(tpl, i).forEach(function(r){
       var b = PB.textoBloque(n, r, tpl.niv, primero && r.rol === 'F');
       if(r.rol === 'F') primero = false;
