@@ -1053,6 +1053,7 @@
     unidades.forEach(function(u){
       var ya = u.querySelector(':scope > .jp-ex-cajas');
       if(ya && ya.querySelector('.jp-ex-box')) return;
+      if(u.hasAttribute('data-notas-k')){ objetivoPendiente = false; return; }      /* sus notas (y el objetivo del bloque) ya están en las pautas del bloque (jpNotasAgrupar) */
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
@@ -1069,47 +1070,66 @@
     }
     try{ jpNotasAgrupar(board); }catch(eN){}
   }
-  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
-     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
-     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  /* NOTAS DEL EJERCICIO DENTRO DE LAS PAUTAS DEL BLOQUE (2026-11, v27): debajo de "Registrar carga" había una fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO en cada
+     tarjeta: un control más por ejercicio que se repetía en todo el día (y el tempo ya está en la barra de dosis). Ahora la tarjeta termina en "Registrar carga" y las notas de cada
+     ejercicio pasan, con su número y nombre, al desplegable "PAUTAS TÉCNICAS & TIPS DEL BLOQUE": un solo control por bloque y nada se pierde (se mueven los mismos <details>).
+     Idempotente: se llama cada vez que se arma o se acomoda un tablero; una unidad ya procesada queda marcada (data-notas-k) y su sección no se duplica. */
   var NOTAS_DEF = [
-    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
-    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
-    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+    { k: 'tips',  sel: '.jp-ex-tips',      lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', lb: 'app.notas.tempo' }
   ];
+  var _notasK = 0;
+  function jpPautasDelBloqueSB(board){
+    var det = board.querySelector(':scope > .jp-block-details');
+    if(!det){
+      det = document.createElement('details'); det.className = 'jp-block-details';
+      det.innerHTML = '<summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary><div class="jp-details-content"></div>';
+      var pie = board.querySelector(':scope > .jp-done-btn');
+      if(pie) board.insertBefore(det, pie); else board.appendChild(det);
+    }
+    var cont = det.querySelector(':scope > .jp-details-content');
+    if(!cont){ cont = document.createElement('div'); cont.className = 'jp-details-content'; det.appendChild(cont); }
+    return cont;
+  }
   function jpNotasAgrupar(root){
     if(!root || !root.querySelectorAll) return;
     var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     unidades.forEach(function(u){
-      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
-      if(!caj){
-        if(!tips) return;
-        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      var propio = function(el){ return el && el.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; };
+      var caj = u.querySelector(':scope > .jp-ex-cajas');
+      var piezas = [];
+      NOTAS_DEF.forEach(function(d){ var el = Array.prototype.filter.call(u.querySelectorAll(d.sel), propio)[0]; if(el) piezas.push({ d: d, el: el }); });
+      if(caj){ var fila0 = caj.querySelector(':scope > .jp-notas-chips'); if(fila0) caj.removeChild(fila0); }
+      if(!piezas.length){ if(caj && !caj.children.length) caj.parentNode.removeChild(caj); return; }
+      /* el tablero del bloque (el desplegable de pautas es hijo directo suyo); en un biset la unidad está anidada dentro del recuadro */
+      var board = u.parentNode;
+      while(board && board.nodeType === 1 && !(board.classList.contains('jp-sb-board') || board.hasAttribute('data-sportsboard'))) board = board.parentNode;
+      if(!board || board.nodeType !== 1) board = u.parentNode;
+      var cont = jpPautasDelBloqueSB(board);
+      var key = u.getAttribute('data-notas-k'); if(!key){ key = 'n' + (++_notasK); u.setAttribute('data-notas-k', key); }
+      var sec = cont.querySelector(':scope > .jp-pauta-ex[data-notas-k="' + key + '"]');
+      if(!sec){
+        var idEl = u.querySelector('.jp-sb-ex-id, .jp-sb-letra'), nmEl = u.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit'), nm = '';
+        if(nmEl){ var cl = nmEl.cloneNode(true); Array.prototype.forEach.call(cl.querySelectorAll('.jp-nom-en'), function(x){ x.parentNode.removeChild(x); }); nm = String(cl.textContent || '').replace(/\s+/g, ' ').trim(); }
+        var idTx = idEl ? String(idEl.textContent || '').replace(/[^0-9A-Za-z]/g, '') : '';
+        sec = document.createElement('div'); sec.className = 'jp-pauta-ex'; sec.setAttribute('data-notas-k', key);
+        sec.innerHTML = '<div class="jp-pauta-ex-tit">' + (idTx ? '<span class="jp-pauta-ex-id">' + escSB(idTx) + '</span>' : '') + '<span>' + escSB(nm || jpT('app.notas.lb')) + '</span></div>';
+        cont.appendChild(sec);
       }
-      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
-      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
-      if(!hay.length) return;
-      caj.classList.add('jp-notas');
-      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
-      var fila = caj.querySelector(':scope > .jp-notas-chips');
-      if(fila) fila.parentNode.removeChild(fila);
-      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
-      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
-      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
-        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
-        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
-      }).join('');
-      caj.insertBefore(fila, caj.firstChild);
+      piezas.forEach(function(p){
+        var viejo = sec.querySelector(':scope > [data-nota="' + p.d.k + '"]'); if(viejo && viejo !== p.el) sec.removeChild(viejo);
+        var lbViejo = sec.querySelector(':scope > .jp-pauta-ex-lb[data-lb="' + p.d.k + '"]'); if(lbViejo) sec.removeChild(lbViejo);
+        var tp = p.d.k === 'tempo' ? p.el.querySelector('.jp-ex-box-s') : null;
+        var lb = document.createElement('div'); lb.className = 'jp-pauta-ex-lb'; lb.setAttribute('data-lb', p.d.k);
+        lb.innerHTML = escSB(jpT(p.d.lb)) + (tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '');
+        p.el.open = true; p.el.setAttribute('data-nota', p.d.k); p.el.classList.add('jp-pauta-ex-nota');
+        sec.appendChild(lb); sec.appendChild(p.el);
+      });
+      if(caj && !caj.children.length) caj.parentNode.removeChild(caj);
     });
   }
   window.jpNotasAgrupar = jpNotasAgrupar;
-  document.addEventListener('click', function(ev){
-    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
-    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
-    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
-    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
-    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
-  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s*[x\u00d7]\s*$/i, '').trim();
@@ -1160,10 +1180,32 @@
           box.parentNode.removeChild(box);
         }
       }
+      jpRegistroAlFinalDelBisetSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
+  /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
+     (cortaban la lectura de la ronda): se juntan al cierre del recuadro del biset, en el mismo orden y con su letra. Antes de moverlas, las notas de cada
+     estación pasan a las pautas del bloque (jpNotasAgrupar), así nada se pierde. Idempotente: una tarjeta ya movida no se vuelve a tocar. */
+  function jpRegistroAlFinalDelBisetSB(board){
+    if(!board || !board.querySelectorAll) return;
+    Array.prototype.forEach.call(board.querySelectorAll('.jp-sb-biset'), function(bis){
+      var subs = Array.prototype.slice.call(bis.querySelectorAll('.jp-sb-subex-resumen')), cards = [];
+      subs.forEach(function(sx){ var cd = sx.querySelector(':scope > .jp-qc'); if(cd){ try{ jpNotasAgrupar(sx); }catch(eN){} cards.push(cd); } });
+      if(!cards.length) return;
+      var reg = bis.querySelector(':scope > .jp-sb-biset-reg');
+      if(!reg){
+        var letras = subs.map(function(sx){ var l = sx.querySelector('.jp-sb-letra'); return l ? String(l.textContent || '').trim() : ''; }).filter(Boolean);
+        reg = document.createElement('div'); reg.className = 'jp-sb-biset-reg';
+        reg.innerHTML = '<div class="jp-sb-biset-reg-t"><span>' + (subs.length === 2 ? 'REGISTRO DEL BISET' : (subs.length === 3 ? 'REGISTRO DEL TRISET' : 'REGISTRO DEL BLOQUE')) + '</span>' + (letras.length ? '<em>' + escSB(letras.join(' · ')) + '</em>' : '') + '</div>';
+        bis.appendChild(reg);
+      }
+      cards.forEach(function(cd){ reg.appendChild(cd); });
+    });
+  }
+  window.jpRegistroAlFinalDelBiset = jpRegistroAlFinalDelBisetSB;
+
   function qrCtx(card){
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
     return (cfg && e) ? { c: cfg, e: e } : null;
@@ -3913,7 +3955,7 @@
       var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\u2013</i>');
       var rb0 = restBadgeSB(en.restSeconds, en.restLabel);
       return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
-        ((rb0 || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb0 + (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '') + '</div>';
+        (rb0 ? '<div class="jp-db-row jp-db-r2">' + rb0 + '</div>' : '') + filaUnilateralSB(en.unilateral) + '</div>';
     }
     var t0 = en.tramos[0].tempo, tempoComun = en.tempo || ((t0 && en.tramos.every(function(t){ return t.tempo === t0; })) ? t0 : '');
     var chips = en.tramos.map(function(t){
@@ -3926,9 +3968,8 @@
     /* el tempo ya no se imprime en la línea principal: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
     var tmpT = '';
     var rirT = (en.rir && !en.tramos.some(function(t){ return t.rir; })) ? '<span class="jp-db-seg jp-db-rir jp-rir-' + tierRirSB(en.rir) + '">' + ICONO_RIR_SB[tierRirSB(en.rir)] + ' RIR ' + escSB(en.rir) + '</span>' : '';
-    var r2 = (rb || en.unilateral || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb +
-      (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
+    var r2 = (rb || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb + '</div>' : '';
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + filaUnilateralSB(en.unilateral) + '</div>';
   }
   function tempoLimpioSB(tempo){
     var s = String(tempo == null ? '' : tempo).replace(/^\s*tempo\s*[:\-]?\s*/i, '').trim();
@@ -3958,15 +3999,16 @@
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
     var tp = tempoLimpioSB(tempo);
     if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    /* 2026-11 (v27): sin tempo pautado no se agrega nada. La celda «RITMO · CONTROL» por defecto aparecía en ejercicios donde no corresponde (olímpicos como el hang power clean,
+       trabajos con banda, isométricos): la técnica muestra solo lo que el coach pautó y el estilo compacto reparte el ancho entre las celdas que hay (tarjeta-ejercicio.css). */
     if(rir){
       var tier = tierRirSB(rir);
       r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
     }
     if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\s*/, '')) + '</b></span>');
-    if(uni) r3.push(chipUnilateralSB(uni));
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
       (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
-      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + filaUnilateralSB(uni) + '</div>';
   }
   window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
   window.jpPizarraSports = pizarraSports;    /* idem: el runner arma un bloque y mira el DOM real de la tarjeta */
@@ -3978,8 +4020,10 @@
      parsearPizarraSB, más abajo). */
   function chipUnilateralSB(valor){
     if(!valor) return '';
-    return '<span class="jp-sb-unilateral">\u26a1 UNILATERAL \u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
+    /* 2026-11: ícono ⇄ (lado a lado) en lugar del ⚡, que se confundía con «⚡ SIN DESCANSO»; el badge va en su propia fila (filaUnilateralSB), no como una celda más de la técnica */
+    return '<span class="jp-sb-unilateral"><i class="jp-uni-ic" aria-hidden="true">\u21c4</i> UNILATERAL \u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
   }
+  function filaUnilateralSB(valor){ return valor ? '<div class="jp-db-row jp-db-uni">' + chipUnilateralSB(valor) + '</div>' : ''; }
   /* directiva maestra ("Estilización de Listados de Activación") -- el
      glifo táctico (▸, cian, ver .jp-sb-plain-warmup::before en CSS) ya
      comunica el bullet visualmente -- un guión común "-" que el coach
@@ -4103,6 +4147,31 @@
      un identificador estable. Se degrada a '' con cualquier desajuste
      (plan viejo, texto editado a mano de forma irregular) -- nunca
      rompe el render por un dato ausente. */
+  /* BISET POR TÍTULO (v28): un bloque de la Pizarra titulado «Biset», «Triset» o «Superserie» cuyos ejercicios vienen sin letra de estación (A1 / A2)
+     se dibuja igual como biset: recuadro naranja, pastilla, transición y registro al final. Solo si TODOS los ejercicios del bloque tienen dosis (2 a 4)
+     y ninguno es de intervalo o técnica especial. El arreglo conserva su largo (las entradas absorbidas quedan como «agrupada») para que cada estación
+     mantenga su clave de registro de siempre (e<idx>): las cargas que el alumno ya anotó siguen apareciendo. El plan guardado no se toca. */
+  function jpAgruparBisetPorTituloSB(entries, titulo){
+    if(!Array.isArray(entries) || !/\b(?:bi-?sets?|tri-?sets?|super-?series?|super-?sets?)\b/i.test(String(titulo || ''))) return entries;
+    if(entries.some(function(e){ return e && e.tipo === 'biserie'; })) return entries;
+    var simples = entries.filter(function(e){ return e && e.tipo === 'simple'; });
+    if(simples.length < 2 || simples.length > 4) return entries;
+    if(!simples.every(function(e){ return e.dosisAsignada && (e.reps || e.sets) && !e.int && !e.tecnica; })) return entries;
+    var subs = simples.map(function(e){
+      return { nombre: e.titulo, reps: e.reps || '', tempo: e.tempo || '', tecnica: '', nota: (e.notas || []).join(' · '), unilateral: e.unilateral || '', unidad: e.unidad || 'reps',
+               rir: e.rir || '', restSeconds: 0, sets: e.sets, carga: e.carga || '', idxOrig: entries.indexOf(e) };
+    });
+    var rest = +simples[simples.length - 1].restSeconds || Math.max.apply(null, simples.map(function(e){ return +e.restSeconds || 0; })) || 0;
+    subs[subs.length - 1].restSeconds = rest;
+    var bis = { tipo: 'biserie', titulo: 'Biset / Triset', subs: subs, rondas: simples[0].sets || 3, restSeconds: rest, letra: 'A', rondasAuto: simples[0].sets || 3, porTitulo: true };
+    var puesto = false;
+    return entries.map(function(e){
+      if(simples.indexOf(e) < 0) return e;
+      if(!puesto){ puesto = true; return bis; }
+      return { tipo: 'agrupada' };
+    });
+  }
+  window.jpAgruparBisetPorTitulo = jpAgruparBisetPorTituloSB;
   function rirSemanaAnteriorSB(block, weekIdx, idx, si){
     if(!(weekIdx > 0)) return '';
     try{
@@ -4130,9 +4199,10 @@
       }
       return;
     }
-    const entries = parsearPizarraSB(lineas, { titulo: block.title });
+    let entries = parsearPizarraSB(lineas, { titulo: block.title });
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    if(!esCalentamiento) entries = jpAgruparBisetPorTituloSB(entries, block.title);      /* «Biset · Espalda» sin A1/A2 también se dibuja como biset */
     const contS = esCalentamiento ? null : jpContinuoInfo(block, lineas, true);
     /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
        dosis real de cada bloque es el "ancla" (el movimiento pesado
@@ -4181,17 +4251,18 @@
         }
         const rondasN = entry.rondas || 3;
         const subsInfo = entry.subs.map(function(sub, si){
-          const exIdx = 'b' + idx + 's' + si;
+          const exIdx = sub.idxOrig != null ? 'e' + sub.idxOrig : 'b' + idx + 's' + si;      /* agrupado por título: conserva la clave de registro que ya tenía */
           /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           const tmp = document.createElement('div');
-          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, (sub.idxOrig != null ? rirSemanaAnteriorSB(block, weekIdx, sub.idxOrig) : rirSemanaAnteriorSB(block, weekIdx, idx, si)), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
           const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
           const myo = tmp.querySelector('.jp-myo-mod');
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
         });
         const cabeceras = subsInfo.map(function(o){
-          return '<div class="jp-sb-subex-resumen">' +
+          const trans = o.si > 0 ? '<div class="jp-sb-trans" role="note"><span class="jp-sb-trans-pill"><i aria-hidden="true">\u2193</i> SIN PAUSA \u00b7 PAS\u00c1 AL ' + (entry.letra || 'A') + (o.si + 1) + '</span></div>' : '';
+          return trans + '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1, undefined, true) +
@@ -4200,7 +4271,7 @@
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: o.sub.idxOrig != null ? 'e' + o.sub.idxOrig : 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;

@@ -21,6 +21,41 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <style id="jpYFix">/* Chakra Petch dibuja la "y" minúscula casi como una "u" ("Espalda u Bíceps", "Fullbodu"): el texto es literal, el glifo es el que confunde. Solo la "y" (U+0079) sale de una fuente de sistema con la cola clara. */@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:500;unicode-range:U+0079;src:local('Segoe UI'),local('Roboto Medium'),local('Roboto-Medium'),local('Helvetica Neue'),local('Helvetica'),local('Arial'),local('Liberation Sans');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:600;unicode-range:U+0079;src:local('Segoe UI Semibold'),local('SegoeUI-Semibold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;unicode-range:U+0079;src:local('Segoe UI Bold'),local('SegoeUI-Bold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}</style>
 <script>
+/* ---- AISLAMIENTO DE PRUEBAS (2026-11) ----
+   tests/parsers/runner.html carga el Builder en un iframe del MISMO origen (index.html?jpSandbox=1). Antes ese iframe leía y escribía el localStorage real:
+   los alumnos de prueba que el runner suma un instante podían quedar guardados (el volcado de seguridad al cambiar de pestaña escribe todo lo que hay en memoria),
+   las otras pestañas los recibían por el evento 'storage' y la nube los podía subir. Con ?jpSandbox=1 (o window.name = 'jp-sandbox') la app usa un almacenamiento
+   EN MEMORIA que arranca como copia de lo guardado (sin credenciales de nube ni de Telegram): las pruebas ven datos reales pero nunca los modifican, y nada sale
+   del iframe (sin nube, sin service worker, sin descargas). Si el navegador no deja reemplazar localStorage, el guardado queda bloqueado (jpGuardaEscritura). */
+(function(){
+  var sb = false;
+  try{ sb = /(?:^|[?&])jpSandbox=1(?:&|$)/.test(location.search) || window.name === 'jp-sandbox'; }catch(e){}
+  if(!sb) return;
+  window.JP_SANDBOX = true;
+  var real = null; try{ real = window.localStorage; }catch(e){}
+  var datos = Object.create(null), OMITIR = /^(?:coachjp_cloud_v1|coachjp_telegram_v1|coachjp_device)$/;
+  try{ if(real) for(var i = 0; i < real.length; i++){ var k = real.key(i); if(k != null && !OMITIR.test(k)) datos[k] = real.getItem(k); } }catch(e){}
+  var api = {
+    getItem: function(k){ k = String(k); return (k in datos) ? datos[k] : null; },
+    setItem: function(k, v){ datos[String(k)] = String(v); },
+    removeItem: function(k){ delete datos[String(k)]; },
+    clear: function(){ datos = Object.create(null); },
+    key: function(i){ var ks = Object.keys(datos); return (i >= 0 && i < ks.length) ? ks[i] : null; }
+  };
+  var mem = (typeof Proxy === 'function') ? new Proxy({}, {
+    get: function(t, p){ if(p === 'length') return Object.keys(datos).length; if(p === '__jpSandbox') return true; if(Object.prototype.hasOwnProperty.call(api, p)) return api[p]; return (typeof p === 'string' && p in datos) ? datos[p] : undefined; },
+    set: function(t, p, v){ datos[String(p)] = String(v); return true; },
+    deleteProperty: function(t, p){ delete datos[String(p)]; return true; },
+    has: function(t, p){ return (p in datos) || Object.prototype.hasOwnProperty.call(api, p); },
+    ownKeys: function(){ return Object.keys(datos); },
+    getOwnPropertyDescriptor: function(t, p){ return (typeof p === 'string' && p in datos) ? { value: datos[p], writable: true, enumerable: true, configurable: true } : undefined; }
+  }) : api;
+  try{ Object.defineProperty(window, 'localStorage', { configurable: true, enumerable: true, get: function(){ return mem; } }); }catch(e){}
+  try{ window.JP_SANDBOX_OK = !!(window.localStorage && window.localStorage.__jpSandbox) || window.localStorage === mem; }catch(e){ window.JP_SANDBOX_OK = false; }
+  try{ console.info('[Pruebas] almacenamiento aislado en memoria: ' + (window.JP_SANDBOX_OK ? 'activo' : 'NO disponible (el guardado queda bloqueado)')); }catch(e){}
+})();
+</script>
+<script>
 /* ---- blindaje de consola: algunos visores embebidos recortan console.* ---- */
 (function(){
   var noop = function(){};
@@ -2066,6 +2101,7 @@ const jpCoachSonido = (function(){
 })();
 window.jpCoachSonido = jpCoachSonido;
 function download(name, content, mime){
+  if(window.JP_SANDBOX){ try{ console.info('[Pruebas] descarga omitida: ' + name); }catch(e){} return; }      /* el iframe de pruebas nunca baja archivos (backup automático, exportaciones) */
   const b = new Blob([content], {type: mime || 'text/plain;charset=utf-8'});
   const u = URL.createObjectURL(b), a = document.createElement('a');
   a.href = u; a.download = name; document.body.appendChild(a); a.click();
@@ -2160,7 +2196,7 @@ function syncLibrary(){
       if(!cur.en && se.en) cur.en = se.en;
       if(!(cur.riesgo||[]).length && se.riesgo.length) cur.riesgo = se.riesgo.slice();
       if(se.oficial) cur.oficial = true;
-    } else { S.exercises.push(se); added++; }
+    } else if(!jpMuerto('ex', se, 'n:' + norm(se.es))){ S.exercises.push(se); added++; }      /* borrado a propósito por el coach: no se vuelve a sumar */
   });
   S.libV = LIB_VERSION;
   return added;
@@ -2181,6 +2217,8 @@ function load(){
       S.athletes  = lib.athletes  || [];
       S.exercises = lib.exercises || [];
       S.libV      = lib.libV;
+      S.borrados  = jpNormBorrados(lib.borrados);
+      S.guardadoEn = +lib.t || 0;
       _libLeida = true;
     }
     const rawPlanes = localStorage.getItem(PLANS_KEY);
@@ -2192,6 +2230,7 @@ function load(){
       if(Array.isArray(pl.banco)) S.banco = pl.banco;
       if(Array.isArray(pl.sedes)) S.sedes = pl.sedes;
       if(pl.exportLog && typeof pl.exportLog === 'object') S.exportLog = pl.exportLog;
+      if(pl.planesBorrados && typeof pl.planesBorrados === 'object') S.planesBorrados = pl.planesBorrados;
     }
     /* rescate (una sola vez): banco de rutinas, sedes y exportaciones solo estaban en la copia heredada (coachjp_console_v2), que nunca se leía */
     try{
@@ -2250,6 +2289,9 @@ function load(){
   }
   /* diagnostico de almacenamiento + rescate de emergencia si no hay alumnos (nunca pisa datos: solo actua con 0 alumnos) */
   try{ jpRescateAlmacen(false); }catch(eR){ console.warn('rescate de almacenamiento', eR); }
+  try{ jpOrdenarAlumnos(); }catch(eO){}
+  S.borrados = jpNormBorrados(S.borrados);
+  jpSembrarHuellas(true);      /* lo leído es la base: solo lo que cambie desde acá recibe sello de tiempo */
 }
 /* ESCRITURA TRANSACCIONAL DEL ESTADO (Paso 1 · seguridad de datos)
    - un solo punto de escritura para save(), guardarAhora(), el guardado blindado y el volcado de salida;
@@ -2259,27 +2301,203 @@ function load(){
      guardaban en la copia heredada coachjp_console_v2, que load() nunca leía, y se perdían al recargar;
    - ya no se reescribe la copia completa heredada (duplicaba TODO el estado y ocupaba más de la mitad del cupo);
    - si el contenido no cambió desde la última escritura se omite (antes se escribía dos veces por cada edición). */
+/* ============================================================
+   BLINDAJE DE PERSISTENCIA (2026-11): borrados que no vuelven, sellos de tiempo por registro y fusión segura
+   Por qué se perdían o volvían datos reales:
+   1) la fusión con la nube SUMABA todo alumno remoto que no estuviera acá: un alumno borrado en la PC volvía desde el celular (y viceversa), porque nadie
+      recordaba que se había borrado;
+   2) la fusión pisaba el alumno entero (cuotas, historial de pagos, estado) y el plan entero con la versión de la nube aunque fuera MÁS VIEJA que la local;
+   3) «Reemplazar» dejaba la biblioteca de la nube tal cual: los videos cargados en este equipo y todavía no subidos se perdían;
+   4) una nueva versión de la biblioteca oficial (LIB_VERSION) volvía a sumar los ejercicios oficiales que el coach había borrado;
+   5) una pestaña vieja (otra versión de la app abierta desde antes del cambio) guardaba SUS planes en memoria encima de los de la pestaña nueva;
+   6) los tests (tests/parsers/runner.html) cargan el Builder en un iframe del mismo origen: sus alumnos de prueba podían terminar en el almacenamiento real
+      (volcado de seguridad al cambiar de pestaña) y subir a la nube. Eso se resuelve con el aislamiento de pruebas (JP_SANDBOX, al principio del <head>).
+   Cómo queda:
+   · S.borrados = { ath: {id: ts}, ex: {id | 'n:'+nombre: ts} } viaja en la biblioteca (compartida por las dos ramas), en la nube y en el backup. Un registro
+     borrado no se vuelve a sumar desde la nube, otra pestaña, la copia de rescate ni la biblioteca oficial, salvo que se haya vuelto a editar DESPUÉS de borrarlo
+     (restaurar un backup, por ejemplo, lo revive a propósito).
+   · S.planesBorrados = { id: ts } (planes de esta rama) hace lo mismo con «Borrar todos los planes».
+   · Cada alumno, ejercicio y plan lleva _ts = última vez que cambió en este equipo (se sella solo al guardar, comparando una huella del contenido). Al fusionar
+     gana el más reciente; si ninguno tiene sello (datos de antes de este cambio), gana el más reciente de los dos guardados completos y lo que falta se completa.
+   · Los vínculos de video nunca se pierden por una fusión: si el registro que gana no tiene video y el otro sí, el video se conserva. */
+function jpNormBorrados(b){
+  const o = (b && typeof b === 'object' && !Array.isArray(b)) ? b : {};
+  return { ath: (o.ath && typeof o.ath === 'object') ? o.ath : {}, ex: (o.ex && typeof o.ex === 'object') ? o.ex : {} };
+}
+function jpPodarBorrados(){
+  const B = S.borrados = jpNormBorrados(S.borrados);
+  ['ath', 'ex'].forEach(t => { const m = B[t], ks = Object.keys(m); if(ks.length > 1500) ks.sort((a, b) => m[a] - m[b]).slice(0, ks.length - 1500).forEach(k => { delete m[k]; }); });
+}
+function jpMarcarBorrado(tipo, clave){
+  if(!clave) return;
+  S.borrados = jpNormBorrados(S.borrados);
+  S.borrados[tipo][String(clave)] = Date.now();
+  jpPodarBorrados();
+}
+/* un registro está «muerto» si se borró DESPUÉS de su última edición (o de su alta) */
+function jpMuerto(tipo, rec, clave){
+  const B = jpNormBorrados(S.borrados)[tipo], k = String(clave || (rec && rec.id) || '');
+  let t = k ? +B[k] || 0 : 0;
+  if(tipo === 'ex' && rec && rec.es){ t = Math.max(t, +B['n:' + norm(rec.es)] || 0); }
+  if(!t) return false;
+  return t >= Math.max(+(rec && rec._ts) || 0, +(rec && rec.createdAt) || 0);
+}
+function jpUnirBorrados(otro){
+  const o = jpNormBorrados(otro);
+  S.borrados = jpNormBorrados(S.borrados);
+  ['ath', 'ex'].forEach(t => Object.keys(o[t]).forEach(k => { const v = +o[t][k] || 0; if(v > (+S.borrados[t][k] || 0)) S.borrados[t][k] = v; }));
+  jpPodarBorrados();
+  return S.borrados;
+}
+/* sellos de tiempo por registro: huella del contenido (sin el propio _ts) del último guardado de este equipo */
+const _jpHuella = { ath: new Map(), ex: new Map(), plan: new Map() };
+const _jpSinTs = (k, v) => k === '_ts' ? undefined : v;
+function jpHuellaDe(o){ try{ return JSON.stringify(o, _jpSinTs); }catch(e){ return ''; } }
+let _jpHuellasListas = false;
+/* ids que esta pestaña ya tiene guardados (lectura inicial o último guardado propio): una fusión «autoritativa» con otra pestaña solo quita esos, nunca lo creado acá y todavía no guardado */
+const _jpPersistidos = { ath: new Set(), ex: new Set() };
+function jpMarcarPersistidos(){
+  _jpPersistidos.ath = new Set((S.athletes || []).filter(a => a && a.id).map(a => a.id));
+  _jpPersistidos.ex = new Set((S.exercises || []).filter(e => e && e.id).map(e => e.id));
+}
+function jpSembrarHuellas(marcar){
+  _jpHuellasListas = true;
+  if(marcar) jpMarcarPersistidos();
+  _jpHuella.ath.clear(); _jpHuella.ex.clear(); _jpHuella.plan.clear();
+  (S.athletes || []).forEach(a => { if(a && a.id) _jpHuella.ath.set(a.id, jpHuellaDe(a)); });
+  (S.exercises || []).forEach(e => { if(e && e.id) _jpHuella.ex.set(e.id, jpHuellaDe(e)); });
+  Object.keys(S.plans || {}).forEach(id => { if(S.plans[id]) _jpHuella.plan.set(id, jpHuellaDe(S.plans[id])); });
+}
+function jpSellarCambios(){
+  if(!_jpHuellasListas){ jpSembrarHuellas(true); return 0; }      /* antes de terminar la lectura inicial no hay base contra qué comparar: lo leído no se sella */
+  const ahora = Date.now(); let n = 0;
+  const sellar = (mapa, id, o) => {
+    if(!o || typeof o !== 'object' || !id) return;
+    const h = jpHuellaDe(o), prev = mapa.get(id);
+    if(prev !== h){ o._ts = ahora; n++; mapa.set(id, h); }      /* nuevo o cambiado ACÁ (un plan copiado de otro alumno incluido: no hereda el sello del origen); lo que llega de afuera se siembra sin sellar */
+  };
+  (S.athletes || []).forEach(a => sellar(_jpHuella.ath, a && a.id, a));
+  (S.exercises || []).forEach(e => sellar(_jpHuella.ex, e && e.id, e));
+  Object.keys(S.plans || {}).forEach(id => sellar(_jpHuella.plan, id, S.plans[id]));
+  return n;
+}
+const _jpClon = o => JSON.parse(JSON.stringify(o));
+/* FUSIÓN SEGURA de un estado externo (nube u otra pestaña) sobre el de este equipo. o = { tRemoto, empateRemoto, autoritativo, conPlanes }
+   · tRemoto: cuándo se guardó el estado externo (decide los empates entre registros sin sello);
+   · empateRemoto: en empate gana el externo (otra pestaña del mismo navegador: es la última escritura real);
+   · autoritativo: el externo es la lista completa (otra pestaña): un registro que esta pestaña ya había guardado y que el externo no tiene, se fue (otra pestaña lo
+     borró o restauró un backup); los que esta pestaña creó y todavía no guardó se conservan;
+   · conPlanes: además fusiona planes, sedes y registro de exportaciones (la nube; otra pestaña de la misma rama manda su clave de planes aparte). */
+function jpFusionarRemoto(r, o){
+  r = r || {}; o = o || {};
+  const res = { athNuevos: 0, athActualizados: 0, athQuitados: 0, athIgnorados: 0, exNuevos: 0, exQuitados: 0, videos: 0, planes: 0, planesIgnorados: 0 };
+  try{ jpSellarCambios(); }catch(e){}      /* lo editado acá y todavía no guardado queda sellado antes de comparar */
+  jpUnirBorrados(r.borrados);
+  const tR = +o.tRemoto || 0, tL = +S.guardadoEn || 0;
+  const ganaRemoto = (loc, rem) => {
+    const a = +(loc && loc._ts) || 0, b = +(rem && rem._ts) || 0;
+    if(a !== b) return b > a;
+    return !!o.empateRemoto || (!a && tR > tL);
+  };
+  const completar = (dst, src) => { Object.keys(src || {}).forEach(k => { if(dst[k] === undefined && src[k] !== undefined) dst[k] = _jpClon(src[k]); }); };
+  /* ---- alumnos ---- */
+  const remAth = Array.isArray(r.athletes) ? r.athletes.filter(a => a && a.id) : null;
+  if(remAth){
+    const idsRem = new Set(remAth.map(a => a.id));
+    const antes = S.athletes.length;
+    S.athletes = S.athletes.filter(a => {
+      if(!a || !a.id) return false;
+      if(jpMuerto('ath', a)) return false;                                                        /* borrado en el otro lado después de su última edición */
+      if(o.autoritativo && !idsRem.has(a.id) && _jpPersistidos.ath.has(a.id)) return false;           /* la otra pestaña ya no lo tiene y acá ya estaba guardado */
+      return true;
+    });
+    res.athQuitados = antes - S.athletes.length;
+    remAth.forEach(ra => {
+      if(jpMuerto('ath', ra)){ res.athIgnorados++; return; }
+      const cur = S.athletes.find(x => x.id === ra.id);
+      if(!cur){ S.athletes.push(_jpClon(ra)); res.athNuevos++; return; }
+      if(ganaRemoto(cur, ra)){
+        const c = _jpClon(ra);
+        Object.keys(cur).forEach(k => { if(!(k in c)) delete cur[k]; });
+        Object.assign(cur, c); res.athActualizados++;
+      } else completar(cur, ra);
+    });
+  }
+  /* ---- biblioteca: los videos nunca se pierden por una fusión ---- */
+  const remEx = Array.isArray(r.exercises) ? r.exercises.filter(e => e && e.id) : null;
+  if(remEx){
+    const idsRem = new Set(remEx.map(e => e.id));
+    const antes = S.exercises.length;
+    S.exercises = S.exercises.filter(e => e && !jpMuerto('ex', e) && !(o.autoritativo && !idsRem.has(e.id) && _jpPersistidos.ex.has(e.id) && !(e.videoId || e.video)));
+    res.exQuitados = antes - S.exercises.length;
+    remEx.forEach(re => {
+      if(jpMuerto('ex', re)) return;
+      const cur = S.exercises.find(x => x.id === re.id) || S.exercises.find(x => norm(x.es) === norm(re.es || ''));
+      if(!cur){ S.exercises.push(_jpClon(re)); res.exNuevos++; return; }
+      const vL = { video: cur.video || '', videoId: cur.videoId || '' };
+      if(ganaRemoto(cur, re)){
+        const id0 = cur.id; Object.assign(cur, _jpClon(re)); cur.id = id0;
+        if(!(cur.videoId || cur.video) && (vL.videoId || vL.video)){ cur.video = vL.video; cur.videoId = vL.videoId; }
+      } else {
+        if(!(cur.videoId || cur.video) && (re.videoId || re.video)){ cur.video = re.video || ''; cur.videoId = re.videoId || ''; res.videos++; }
+        if(!cur.aviso && re.aviso) cur.aviso = re.aviso;
+        if(!cur.en && re.en) cur.en = re.en;
+      }
+    });
+  }
+  /* ---- planes, sedes y exportaciones ---- */
+  if(o.conPlanes){
+    S.planesBorrados = S.planesBorrados || {};
+    Object.keys(r.planesBorrados || {}).forEach(id => { const v = +r.planesBorrados[id] || 0; if(v > (+S.planesBorrados[id] || 0)) S.planesBorrados[id] = v; });
+    const rp = (r.plans && typeof r.plans === 'object') ? r.plans : {};
+    Object.keys(rp).forEach(id => {
+      const p = rp[id]; if(!p || typeof p !== 'object') return;
+      if(!S.athletes.some(a => a.id === id)){ res.planesIgnorados++; return; }                     /* plan de un alumno borrado o inexistente */
+      const pb = +S.planesBorrados[id] || 0;
+      if(pb && pb >= (+p._ts || 0)){ res.planesIgnorados++; return; }                               /* «Borrar todos los planes» posterior a ese plan */
+      const cur = S.plans[id];
+      if(!cur || ganaRemoto(cur, p)){ S.plans[id] = _jpClon(p); res.planes++; }
+    });
+    if(Array.isArray(r.sedes)){
+      S.sedes = S.sedes || [];
+      r.sedes.forEach(sd => { if(!sd || !sd.id) return; const cur = S.sedes.find(x => x.id === sd.id); if(!cur) S.sedes.push(_jpClon(sd)); else if(o.empateRemoto || tR > tL) Object.assign(cur, _jpClon(sd)); });
+    }
+    if(r.exportLog && typeof r.exportLog === 'object'){ S.exportLog = S.exportLog || {}; Object.keys(r.exportLog).forEach(k => { if(S.exportLog[k] === undefined) S.exportLog[k] = r.exportLog[k]; }); }
+  }
+  /* los planes de los alumnos que ya no están se van con ellos */
+  Object.keys(S.plans || {}).forEach(id => { if(!S.athletes.some(a => a.id === id) && jpMuerto('ath', { id: id })) delete S.plans[id]; });
+  if(S.activeId && !S.athletes.some(a => a.id === S.activeId)) S.activeId = S.athletes.length ? S.athletes[0].id : null;
+  try{ jpOrdenarAlumnos(); }catch(e){}
+  jpSembrarHuellas();      /* lo que llegó de afuera conserva SU sello: el próximo guardado no lo marca como editado acá */
+  return res;
+}
+window.jpFusionarRemoto = jpFusionarRemoto; window.jpMarcarBorrado = jpMarcarBorrado; window.jpMuerto = jpMuerto; window.jpSellarCambios = jpSellarCambios; window.jpSembrarHuellas = jpSembrarHuellas;
 let _ultLib = null, _ultPlans = null;
 function jpPersistirEstado(){
-  const libStr = JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV });
+  try{ jpSellarCambios(); }catch(eS){ console.warn('[Almacenamiento] sellos', eS); }
+  const libCore = JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV, borrados: jpNormBorrados(S.borrados) });
   const plObj = { plans: S.plans, activeId: S.activeId, ui: S.ui };
+  if(S.planesBorrados && Object.keys(S.planesBorrados).length) plObj.planesBorrados = S.planesBorrados;
   if(Array.isArray(S.banco)) plObj.banco = S.banco.map(r => (r && (r.std || r.cfMesSys || r.sbSys) && !r.editada) ? Object.assign({}, r, { dias: [] }) : r);      /* plantillas del sistema (std): sus dias se regeneran desde el codigo, no se guardan (cada una pesa ~35 KB) */
   if(Array.isArray(S.sedes)) plObj.sedes = S.sedes;
   if(S.exportLog && typeof S.exportLog === 'object') plObj.exportLog = S.exportLog;
   const plStr = JSON.stringify(plObj);
-  if(libStr === _ultLib && plStr === _ultPlans) return { ok: true, omitido: true };
+  if(libCore === _ultLib && plStr === _ultPlans) return { ok: true, omitido: true };
+  const tGuardado = Date.now(), libStr = libCore.slice(0, -1) + ',"t":' + tGuardado + '}';      /* momento del guardado: decide los empates de una fusión con datos sin sello */
   const _guarda = jpGuardaEscritura();
   if(_guarda) return _guarda;
   let prevLib = null;
   try{ prevLib = localStorage.getItem(LIB_KEY); }catch(e){}
   try{
-    if(libStr !== _ultLib) localStorage.setItem(LIB_KEY, libStr);
+    if(libCore !== _ultLib) localStorage.setItem(LIB_KEY, libStr);
     if(plStr !== _ultPlans) localStorage.setItem(PLANS_KEY, plStr);
   }catch(e){
     try{ if(prevLib != null) localStorage.setItem(LIB_KEY, prevLib); }catch(e2){}
     return { ok: false, error: e, cuota: /quota|exceed|full/i.test(String(e && (e.name + ' ' + e.message))) };
   }
-  _ultLib = libStr; _ultPlans = plStr;
+  if(libCore !== _ultLib) S.guardadoEn = tGuardado;
+  jpMarcarPersistidos();
+  _ultLib = libCore; _ultPlans = plStr;
   try{ localStorage.removeItem(KEY); }catch(e){}
   try{ jpTrasEscritura(); }catch(e){}
   return { ok: true };
@@ -2306,6 +2524,7 @@ function jpAvisoProtegido(motivo){
   try{ if(typeof window.jpAlarma === 'function') window.jpAlarma('🛟 Guardado pausado para proteger tus alumnos', cuerpo, acciones); else toast('🛟 Guardado pausado para proteger tus alumnos (ver consola)', 'warn'); }catch(e){}
 }
 function jpGuardaEscritura(){
+  if(window.JP_SANDBOX && !window.JP_SANDBOX_OK) return { ok: true, omitido: true, protegido: true };      /* pruebas sin almacenamiento aislado: jamás tocan el real */
   if(window.__jpForzarEscritura) return null;
   if(window.__jpLoadFallo){ jpAvisoProtegido('la lectura inicial del almacenamiento falló'); return { ok: true, omitido: true, protegido: true }; }
   if(S.athletes && S.athletes.length === 0 && !window.__jpBorradoOk){
@@ -2419,8 +2638,10 @@ function jpRescateAlmacen(forzar){
     }
     return res;
   }
+  cands.forEach(c0 => { c0.ath = c0.ath.filter(a => a && a.id && !jpMuerto('ath', a)); });
   cands.sort((a, b) => (b.ath.length - a.ath.length) || (b.t - a.t));
   const c = cands[0];
+  if(!c.ath.length) return res;
   S.athletes = JSON.parse(JSON.stringify(c.ath));
   res.alumnos = S.athletes.length; res.fuente = c.fuente;
   if(c.plans && typeof c.plans === 'object'){
@@ -2591,6 +2812,10 @@ function restaurarBackupDesdeTexto(txt){
   delete nuevo._meta; delete nuevo.otrasRamas;
   /* un archivo editado a mano nunca puede traer credenciales: se descartan */
   ['ai', 'aiCfg', 'apiKey', 'apiKeys', 'keys', 'credenciales'].forEach(k => { delete nuevo[k]; });
+  const tRest = Date.now();
+  (nuevo.athletes || []).forEach(a => { if(a && typeof a === 'object') a._ts = tRest; });
+  Object.keys(nuevo.plans || {}).forEach(id => { if(nuevo.plans[id] && typeof nuevo.plans[id] === 'object') nuevo.plans[id]._ts = tRest; });
+  nuevo.borrados = jpNormBorrados(nuevo.borrados); (nuevo.athletes || []).forEach(a => { if(a && a.id) delete nuevo.borrados.ath[a.id]; });
   S = nuevo;
   try{
     const rRb = jpPersistirEstado();
@@ -2642,15 +2867,23 @@ document.addEventListener('click', e => {
    pestaña que hizo el cambio -- sólo en las demás abiertas, que es
    exactamente el comportamiento nativo del evento 'storage'. */
 window.addEventListener('storage', function(e){
-  if(e.key !== LIB_KEY || !e.newValue) return;
+  if(!e.newValue || (e.key !== LIB_KEY && e.key !== PLANS_KEY)) return;
+  /* 2026-11: antes se copiaba la lista entera de la otra pestaña (y los planes ni se miraban: una pestaña vieja pisaba los planes de la nueva al guardar).
+     Ahora se fusiona registro por registro con los sellos de tiempo: gana la última edición, los borrados no vuelven y lo creado acá sin guardar se conserva. */
   try{
-    const lib = JSON.parse(e.newValue);
-    /* otra pestaña guardó una biblioteca SIN alumnos mientras esta los tiene: se ignora (no se vacia esta pestaña) y queda registrado */
-    if(!(lib.athletes || []).length && S.athletes.length && !window.__jpBorradoOk){ console.error('[Almacenamiento] otra pestaña escribió una biblioteca sin alumnos: se ignoró para proteger los ' + S.athletes.length + ' de esta pestaña'); return; }
-    S.athletes  = lib.athletes  || [];
-    S.exercises = lib.exercises || [];
-    S.libV      = lib.libV;
+    const o = JSON.parse(e.newValue);
+    if(e.key === LIB_KEY){
+      /* otra pestaña guardó una biblioteca SIN alumnos mientras esta los tiene: se ignora (no se vacia esta pestaña) y queda registrado */
+      if(!(o.athletes || []).length && S.athletes.length && !Object.keys(jpNormBorrados(o.borrados).ath).length){ console.error('[Almacenamiento] otra pestaña escribió una biblioteca sin alumnos y sin borrados: se ignoró para proteger los ' + S.athletes.length + ' de esta pestaña'); return; }
+      jpFusionarRemoto({ athletes: o.athletes || [], exercises: o.exercises || [], borrados: o.borrados }, { tRemoto: +o.t || Date.now(), empateRemoto: true, autoritativo: true });
+      if(o.libV) S.libV = o.libV;
+      _ultLib = null;
+    } else {
+      jpFusionarRemoto({ plans: o.plans || {}, planesBorrados: o.planesBorrados, sedes: o.sedes, exportLog: o.exportLog }, { tRemoto: Date.now(), empateRemoto: true, conPlanes: true });
+      _ultPlans = null;
+    }
   }catch(err){ return; }
+  try{ if(typeof renderAthletes === 'function' && S.ui && S.ui.view === 'alumnos') renderAthletes(); }catch(eR){}
   if(typeof renderBuilder === 'function') renderBuilder();
 });
 
@@ -2659,8 +2892,21 @@ const getAth = id => S.athletes.find(a => a.id === id) || null;
 const getEx  = id => S.exercises.find(e => e.id === id) || null;
 const active = () => getAth(S.activeId);
 const fullName = a => a ? ((a.nombre||'') + ' ' + (a.apellido||'')).trim() : '';
-/* orden A–Z (por nombre y apellido, sin distinguir tildes ni mayúsculas) para todo desplegable de alumnos */
-const jpAthAZ = list => (list || []).slice().sort((x, y) => fullName(x).localeCompare(fullName(y), 'es', { sensitivity: 'base' }));
+/* ORDEN A–Z ÚNICO DE ALUMNOS (2026-11): un solo criterio para TODOS los listados, desplegables, búsquedas y vistas de gestión (Builder, Pizarra, cobros, copia de planes):
+   nombre y apellido con comparación en español que no distingue mayúsculas ni tildes («álvarez» = «Alvarez», la ñ va después de la n); a igual nombre desempata el id,
+   así el orden nunca «salta» entre una vista y otra. S.athletes además se mantiene ordenado en memoria (jpOrdenarAlumnos: al cargar, al registrar o editar, al fusionar
+   con la nube o con otra pestaña), así cualquier lista que recorra S.athletes sin ordenar ya sale A–Z. */
+const JP_COLL_AZ = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator('es', { sensitivity: 'base', ignorePunctuation: true, numeric: true }) : null;
+const jpCmpNombre = (x, y) => JP_COLL_AZ ? JP_COLL_AZ.compare(String(x || ''), String(y || '')) : String(x || '').localeCompare(String(y || ''), 'es', { sensitivity: 'base' });
+const JP_COLL_FINO = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator('es', { numeric: true }) : null;      /* desempate: a igual nombre sin tildes, primero el que no lleva tilde */
+const jpCmpAth = (x, y) => jpCmpNombre(fullName(x), fullName(y)) || (JP_COLL_FINO ? JP_COLL_FINO.compare(fullName(x), fullName(y)) : 0) || String((x && x.id) || '').localeCompare(String((y && y.id) || ''));
+const jpAthAZ = list => (list || []).slice().sort(jpCmpAth);
+function jpOrdenarAlumnos(){
+  if(!Array.isArray(S.athletes) || S.athletes.length < 2) return false;
+  for(let i = 1; i < S.athletes.length; i++){ if(jpCmpAth(S.athletes[i - 1], S.athletes[i]) > 0){ S.athletes.sort(jpCmpAth); return true; } }
+  return false;
+}
+window.jpCmpAth = jpCmpAth; window.jpCmpNombre = jpCmpNombre; window.jpAthAZ = jpAthAZ; window.jpOrdenarAlumnos = jpOrdenarAlumnos;
 /* ---------- AUDITORÍA Y AUTORREPARACIÓN DE PLANES (consola) ----------
    Directiva crítica (auditoría de 33 atletas / fix Karina Dantur, Día 4):
    un exId que ya no matchea contra la biblioteca (ejercicio borrado o
@@ -2879,10 +3125,13 @@ function plan(athId){
   if(!S.plans[athId]) { S.plans[athId] = newPlan(a); save(); }
   const p = S.plans[athId];
   if(!p.meta) p.meta = defaultMeta(a);
-  if(!p.meso || !p.meso.length || p.meso[0].phase === undefined) p.meso = defaultWeeks();
+  /* v28: el mesociclo guardado nunca se reemplaza entero. Antes, si a la Semana 1 le faltaba «phase» (plan copiado, importado o armado por otro módulo),
+     se pisaban las 4 semanas con las de fábrica (nombres, notas, objetivos y AMRAP de cada semana). Ahora solo se completan los campos que faltan. */
+  if(!Array.isArray(p.meso) || !p.meso.length) p.meso = defaultWeeks();
+  else { const dw = defaultWeeks(); p.meso.forEach((w, i) => { if(!w || typeof w !== 'object') { p.meso[i] = dw[i] || dw[dw.length - 1]; return; } const base = dw[i] || dw[dw.length - 1]; Object.keys(base).forEach(k => { if(w[k] === undefined) w[k] = base[k]; }); }); }
   /* plan preexistente (de antes de esta directiva) sin el campo: se
      completa con el default sin tocar nada más del objeto */
-  if(p.estado !== 'borrador' && p.estado !== 'listo') p.estado = 'borrador';
+  if(p.estado == null || p.estado === '') p.estado = 'borrador';      /* v28: solo si falta; un estado guardado no se reinicia */
   if(p.vigenciaDesde == null) p.vigenciaDesde = '';
   if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
@@ -2898,7 +3147,7 @@ function plan(athId){
      al eliminar un día se volvía a crear uno vacío ("día fantasma") que además viajaba al export. p.freqBase recuerda la frecuencia ya aplicada. */
   const idLibre = () => { const usados = new Set(p.dias.map(x => x && x.id)); let k = p.dias.length + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
   if(typeof p.freqBase !== 'number'){
-    while(p.dias.length < need){ const nd = newDay(p.dias.length); nd.id = idLibre(); p.dias.push(nd); }
+    /* v28: un plan guardado sin freqBase (de antes) conserva sus días tal cual: no se le agregan días vacíos al recargar */
     p.freqBase = need;
   } else if(need !== p.freqBase){
     let falta = need - p.freqBase;
@@ -4059,6 +4308,7 @@ function planStatusChipHTML(a){
 }
 
 function renderAthletes(){
+  try{ jpOrdenarAlumnos(); }catch(eO){}
   const q = norm($('#athSearch').value);
   const list = S.athletes.filter(a =>
     !q || norm(fullName(a) + ' ' + (a.foco||'') + ' ' + (a.deportes||'') + ' ' + (a.tags||[]).join(' ')).indexOf(q) >= 0
@@ -4105,7 +4355,7 @@ function renderAthletes(){
   }
 
   const opts = '<option value="">— Ninguno —</option>' +
-    S.athletes.slice().sort((x, y) => fullName(x).localeCompare(fullName(y), 'es', { sensitivity: 'base' }))
+    jpAthAZ(S.athletes)
       .map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
   $('#selActive').innerHTML = opts; $('#selActive').value = S.activeId || '';
   $('#expAth').innerHTML   = opts; $('#expAth').value   = S.activeId || '';
@@ -4235,6 +4485,7 @@ function saveAth(){
     if(typeof finAplicarCondicionComercial === 'function') finAplicarCondicionComercial(a);
     toast('Alumno/a registrado/a ✔');
   }
+  jpOrdenarAlumnos();
   save(); closeModal('mAth'); renderAthletes();
 }
 function delAth(){
@@ -4242,6 +4493,7 @@ function delAth(){
   if(!confirm('¿Eliminar a ' + fullName(a) + ' y toda su planificación? Esta acción no se puede deshacer.')) return;
   S.athletes = S.athletes.filter(x => x.id !== a.id);
   delete S.plans[a.id];
+  jpMarcarBorrado('ath', a.id);      /* no vuelve desde la nube, otra pestaña ni una copia de rescate */
   window.__jpBorradoOk = true;      /* borrado deliberado: se permite guardar aunque quede sin alumnos */
   if(S.activeId === a.id) S.activeId = S.athletes.length ? S.athletes[0].id : null;
   save(); closeModal('mAth'); renderAthletes(); toast('Alumno/a eliminado/a', 'warn');
@@ -4358,6 +4610,7 @@ function delEx(){
   const e = getEx(editExId); if(!e) return;
   if(!confirm('¿Eliminar "' + e.es + '" de la biblioteca? Los planes que lo usen mostrarán el ejercicio como no disponible.')) return;
   S.exercises = S.exercises.filter(x => x.id !== e.id);
+  jpMarcarBorrado('ex', e.id); if(!e.custom) jpMarcarBorrado('ex', 'n:' + norm(e.es));      /* un oficial borrado no vuelve con la próxima versión de la biblioteca */
   save(); closeModal('mEx'); renderLibrary(); toast('Ejercicio eliminado', 'warn');
 }
 /* ---------- 8b. FEEDER RÁPIDO (22do pedido, 29/08) ----------
@@ -5130,6 +5383,34 @@ function jpListasDeDia(d){ return [d.bloques].concat(Array.isArray(d.bloquesPorS
 function jpIdDiaLibre(p, desde){
   const usados = new Set((p.dias || []).map(x => x && x.id)); let k = desde + 1; while(usados.has('dia' + k)) k++; return 'dia' + k;
 }
+/* lo PERSONAL del alumno de origen que viaja dentro de los bloques y no tiene que llegar al destino:
+     · los kilos que el sistema calculó con SUS 1RM al asignar (sufijo « | 62.5 kg» de las líneas de dosis, en la semana base y en las semanas proyectadas);
+     · la oración y la línea «TU FICHA» que la ficha rápida agregó con SU perfil (objetivo, nivel, restricciones: «cuidá rodilla en…») y su registro b.jpFicha.
+   El texto del coach, del Banco o de la IA queda igual (la marca de edición a mano b.jpMano también: protege ese texto en el destino). Devuelve cuánto limpió. */
+const JP_RX_KG_CALCULADO = /^(\s*\d+(?:\s*\/\s*\d+)*\s*[x×][^|]*(?:\|[^|]*)*?)\s*\|\s*\d+(?:[.,]\d+)?\s*kg\s*$/i;
+function jpLimpiarPersonalClonado(dias){
+  const r = { kilos: 0, ficha: 0 };
+  const sinKilos = arr => Array.isArray(arr) ? arr.map(l => { const m = typeof l === 'string' ? JP_RX_KG_CALCULADO.exec(l) : null; if(m){ r.kilos++; return m[1].replace(/\s+$/, ''); } return l; }) : arr;
+  (dias || []).forEach(d => {
+    const vistos = new Set();
+    jpListasDeDia(d).forEach(arr => {
+      if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr);
+      arr.forEach(b => {
+        if(!b || typeof b !== 'object') return;
+        if(Array.isArray(b.items)) b.items = sinKilos(b.items);
+        if(b.weekItems && typeof b.weekItems === 'object') Object.keys(b.weekItems).forEach(k => { if(Array.isArray(b.weekItems[k])) b.weekItems[k] = sinKilos(b.weekItems[k]); });
+        const f = b.jpFicha;
+        const tips = String(b.tips || '');
+        if(f || /(^|\n)\s*TU FICHA:/.test(tips)){
+          if(f && f.o && typeof b.objective === 'string' && b.objective.indexOf(f.o) >= 0) b.objective = b.objective.replace(f.o, '').replace(/\s{2,}/g, ' ').trim();
+          if(tips) b.tips = tips.split(/\r?\n/).filter(l => !(f && f.t && l.trim() === f.t) && !/^\s*TU FICHA:/.test(l)).join('\n');
+          delete b.jpFicha; r.ficha++;
+        }
+      });
+    });
+  });
+  return r;
+}
 const JP_COPIA_UNDO = {};      /* última copia de plan por alumno destino: permite deshacerla mientras el panel está abierto */
 /* NÚCLEO ÚNICO de "copiar el plan de un alumno a otro": lo usan "Copiar plan completo" (ejecutarCopiaPlan) y "Duplicar planificación / Clonar plan de otro atleta" (runDup).
    Antes eran dos implementaciones: la vieja (runDup) recortaba los días a la frecuencia del destino, no confirmaba la semana activa de CrossFit, dejaba al destino en la modalidad
@@ -5151,6 +5432,7 @@ function jpClonarPlanEntre(origenId, destinoId, opts){
   let reparados = jpRepararDiasClonados(dias);
   const mapa = {};
   dias.forEach(d => { jpRenovarIdsBloques(jpListasDeDia(d), mapa); });
+  const personal = jpLimpiarPersonalClonado(dias);
   dias.forEach(d => {
     if(cfO){ const ps = asegurarBloquesPorSemana(d); d.bloques = ps[0]; }      /* el puntero apunta a la semana 1, igual que un día recién abierto */
     else { delete d.bloquesPorSemana; if(!Array.isArray(d.bloques)) d.bloques = []; }
@@ -5182,11 +5464,23 @@ function jpClonarPlanEntre(origenId, destinoId, opts){
   });
   /* la cantidad de días del plan copiado manda: la base de frecuencia queda en la del alumno, así plan() nunca agrega días vacíos ni recorta los copiados */
   pDestino.freqBase = Math.max(3, Math.min(6, parseInt(athDestino.freq, 10) || 4));
+  /* los kilos se vuelven a calcular con las marcas (1RM) del DESTINO, con la misma progresión que al asignar una plantilla (S2 +2,5%, S3 +5%, S4 como S1) */
+  let kilosDestino = 0;
+  if(personal.kilos && (athDestino.marcas || []).length && window.CoachGenSesion && typeof CoachGenSesion.cargasBloques === 'function'){
+    try{ const bl = []; dias.forEach(d => { const vs = new Set(); jpListasDeDia(d).forEach(arr => { if(Array.isArray(arr) && !vs.has(arr)){ vs.add(arr); arr.forEach(b => bl.push(b)); } }); }); kilosDestino = CoachGenSesion.cargasBloques(bl, athDestino, [1, 1.025, 1.05, 1]) || 0; }catch(eK){ console.warn('[Copia de plan] kilos del destino', eK); }
+  }
   if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; _cfSemanaCargada = null; _cfAthCargado = null; }
   guardarAhora();
   const nBl = dias.reduce((s, d) => s + (cfO ? (asegurarBloquesPorSemana(d)[0] || []).length : (d.bloques || []).length), 0);
   const nTodas = cfO ? dias.reduce((s, d) => s + asegurarBloquesPorSemana(d).reduce((q, arr) => q + (arr || []).length, 0), 0) : nBl;
-  return { ok: true, dias: dias.length, nBl: nBl, nTodas: nTodas, cfO: cfO, reparados: reparados };
+  return { ok: true, dias: dias.length, nBl: nBl, nTodas: nTodas, cfO: cfO, reparados: reparados, kilosQuitados: personal.kilos, kilosDestino: kilosDestino, fichaQuitada: personal.ficha };
+}
+/* texto del aviso: qué datos personales del origen no viajaron */
+function jpAvisoPersonalCopia(r){
+  let t = '';
+  if(r.kilosQuitados) t += ' Los kilos calculados con las marcas del alumno/a de origen no se copiaron' + (r.kilosDestino ? ': se recalcularon ' + r.kilosDestino + ' con las marcas del destino.' : ' (cargá las marcas del destino para que se calculen).');
+  if(r.fichaQuitada) t += ' Se quitó la línea «TU FICHA» del origen en ' + r.fichaQuitada + ' bloque(s): usá «Alinear» para generarla con la ficha del destino.';
+  return t ? ' ' + esc(t.trim()) + ' ' : '';
 }
 function ejecutarCopiaPlan(origenId, destinoId){
   const r = jpClonarPlanEntre(origenId, destinoId);
@@ -5198,7 +5492,7 @@ function ejecutarCopiaPlan(origenId, destinoId){
     body.innerHTML =
       '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + r.dias + ' días' +
         (r.cfO ? ', 4 semanas independientes y ' + r.nTodas + ' bloques en total' : ' y ' + r.nBl + ' bloques') + '. La modalidad del plan pasó a ' + (r.cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.' +
-        (r.reparados ? ' Se repararon ' + r.reparados + ' identificador(es) del plan de origen que estaban dañados.' : '') + '</div></div>' +
+        (r.reparados ? ' Se repararon ' + r.reparados + ' identificador(es) del plan de origen que estaban dañados.' : '') + jpAvisoPersonalCopia(r) + '</div></div>' +
       '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn ghost" data-cpundo="' + esc(destinoId) + '" style="flex:1 1 100%">↩ Deshacer esta copia</button>' +
         '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
@@ -5250,7 +5544,7 @@ function abrirModalCopiarDia(){
   const athO = active(), pO = plan(S.activeId), dO = curDay();
   if(!athO || !pO || !dO){ toast('Seleccioná un alumno/a y un día primero', 'err'); return; }
   /* destinos: el MISMO alumno/a primero (copiar un día a otra semana u otro día de su plan) y después los demás */
-  const otros = S.athletes.filter(a => a.id !== athO.id).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  const otros = jpAthAZ(S.athletes.filter(a => a.id !== athO.id));
   cerrarModalCopiarDia();
   const diaIdx = S.ui.day;
   const cfO = esPlanCFActivo(pO), semO = cfO ? activeCfWeek() : 0;
@@ -5456,7 +5750,7 @@ function abrirModalCopiarSemana(){
   }
   jpSincronizarCF(pO, S.activeId);
   cerrarModalCopiarSemana();
-  const otros = S.athletes.filter(a => a.id !== athO.id).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  const otros = jpAthAZ(S.athletes.filter(a => a.id !== athO.id));
   const semAct = activeCfWeek();
   const bg = document.createElement('div');
   bg.className = 'modal-bg on'; bg.id = 'mCopiarSemBg';
@@ -18400,6 +18694,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     unidades.forEach(function(u){
       var ya = u.querySelector(':scope > .jp-ex-cajas');
       if(ya && ya.querySelector('.jp-ex-box')) return;
+      if(u.hasAttribute('data-notas-k')){ objetivoPendiente = false; return; }      /* sus notas (y el objetivo del bloque) ya están en las pautas del bloque (jpNotasAgrupar) */
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
@@ -18416,47 +18711,66 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     try{ jpNotasAgrupar(board); }catch(eN){}
   }
-  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
-     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
-     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  /* NOTAS DEL EJERCICIO DENTRO DE LAS PAUTAS DEL BLOQUE (2026-11, v27): debajo de "Registrar carga" había una fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO en cada
+     tarjeta: un control más por ejercicio que se repetía en todo el día (y el tempo ya está en la barra de dosis). Ahora la tarjeta termina en "Registrar carga" y las notas de cada
+     ejercicio pasan, con su número y nombre, al desplegable "PAUTAS TÉCNICAS & TIPS DEL BLOQUE": un solo control por bloque y nada se pierde (se mueven los mismos <details>).
+     Idempotente: se llama cada vez que se arma o se acomoda un tablero; una unidad ya procesada queda marcada (data-notas-k) y su sección no se duplica. */
   var NOTAS_DEF = [
-    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
-    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
-    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+    { k: 'tips',  sel: '.jp-ex-tips',      lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', lb: 'app.notas.tempo' }
   ];
+  var _notasK = 0;
+  function jpPautasDelBloqueSB(board){
+    var det = board.querySelector(':scope > .jp-block-details');
+    if(!det){
+      det = document.createElement('details'); det.className = 'jp-block-details';
+      det.innerHTML = '<summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary><div class="jp-details-content"></div>';
+      var pie = board.querySelector(':scope > .jp-done-btn');
+      if(pie) board.insertBefore(det, pie); else board.appendChild(det);
+    }
+    var cont = det.querySelector(':scope > .jp-details-content');
+    if(!cont){ cont = document.createElement('div'); cont.className = 'jp-details-content'; det.appendChild(cont); }
+    return cont;
+  }
   function jpNotasAgrupar(root){
     if(!root || !root.querySelectorAll) return;
     var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     unidades.forEach(function(u){
-      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
-      if(!caj){
-        if(!tips) return;
-        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      var propio = function(el){ return el && el.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; };
+      var caj = u.querySelector(':scope > .jp-ex-cajas');
+      var piezas = [];
+      NOTAS_DEF.forEach(function(d){ var el = Array.prototype.filter.call(u.querySelectorAll(d.sel), propio)[0]; if(el) piezas.push({ d: d, el: el }); });
+      if(caj){ var fila0 = caj.querySelector(':scope > .jp-notas-chips'); if(fila0) caj.removeChild(fila0); }
+      if(!piezas.length){ if(caj && !caj.children.length) caj.parentNode.removeChild(caj); return; }
+      /* el tablero del bloque (el desplegable de pautas es hijo directo suyo); en un biset la unidad está anidada dentro del recuadro */
+      var board = u.parentNode;
+      while(board && board.nodeType === 1 && !(board.classList.contains('jp-sb-board') || board.hasAttribute('data-sportsboard'))) board = board.parentNode;
+      if(!board || board.nodeType !== 1) board = u.parentNode;
+      var cont = jpPautasDelBloqueSB(board);
+      var key = u.getAttribute('data-notas-k'); if(!key){ key = 'n' + (++_notasK); u.setAttribute('data-notas-k', key); }
+      var sec = cont.querySelector(':scope > .jp-pauta-ex[data-notas-k="' + key + '"]');
+      if(!sec){
+        var idEl = u.querySelector('.jp-sb-ex-id, .jp-sb-letra'), nmEl = u.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit'), nm = '';
+        if(nmEl){ var cl = nmEl.cloneNode(true); Array.prototype.forEach.call(cl.querySelectorAll('.jp-nom-en'), function(x){ x.parentNode.removeChild(x); }); nm = String(cl.textContent || '').replace(/\\s+/g, ' ').trim(); }
+        var idTx = idEl ? String(idEl.textContent || '').replace(/[^0-9A-Za-z]/g, '') : '';
+        sec = document.createElement('div'); sec.className = 'jp-pauta-ex'; sec.setAttribute('data-notas-k', key);
+        sec.innerHTML = '<div class="jp-pauta-ex-tit">' + (idTx ? '<span class="jp-pauta-ex-id">' + escSB(idTx) + '</span>' : '') + '<span>' + escSB(nm || jpT('app.notas.lb')) + '</span></div>';
+        cont.appendChild(sec);
       }
-      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
-      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
-      if(!hay.length) return;
-      caj.classList.add('jp-notas');
-      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
-      var fila = caj.querySelector(':scope > .jp-notas-chips');
-      if(fila) fila.parentNode.removeChild(fila);
-      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
-      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
-      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
-        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
-        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
-      }).join('');
-      caj.insertBefore(fila, caj.firstChild);
+      piezas.forEach(function(p){
+        var viejo = sec.querySelector(':scope > [data-nota="' + p.d.k + '"]'); if(viejo && viejo !== p.el) sec.removeChild(viejo);
+        var lbViejo = sec.querySelector(':scope > .jp-pauta-ex-lb[data-lb="' + p.d.k + '"]'); if(lbViejo) sec.removeChild(lbViejo);
+        var tp = p.d.k === 'tempo' ? p.el.querySelector('.jp-ex-box-s') : null;
+        var lb = document.createElement('div'); lb.className = 'jp-pauta-ex-lb'; lb.setAttribute('data-lb', p.d.k);
+        lb.innerHTML = escSB(jpT(p.d.lb)) + (tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '');
+        p.el.open = true; p.el.setAttribute('data-nota', p.d.k); p.el.classList.add('jp-pauta-ex-nota');
+        sec.appendChild(lb); sec.appendChild(p.el);
+      });
+      if(caj && !caj.children.length) caj.parentNode.removeChild(caj);
     });
   }
   window.jpNotasAgrupar = jpNotasAgrupar;
-  document.addEventListener('click', function(ev){
-    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
-    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
-    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
-    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
-    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
-  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s*[x\\u00d7]\\s*$/i, '').trim();
@@ -18507,10 +18821,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           box.parentNode.removeChild(box);
         }
       }
+      jpRegistroAlFinalDelBisetSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
+  /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
+     (cortaban la lectura de la ronda): se juntan al cierre del recuadro del biset, en el mismo orden y con su letra. Antes de moverlas, las notas de cada
+     estación pasan a las pautas del bloque (jpNotasAgrupar), así nada se pierde. Idempotente: una tarjeta ya movida no se vuelve a tocar. */
+  function jpRegistroAlFinalDelBisetSB(board){
+    if(!board || !board.querySelectorAll) return;
+    Array.prototype.forEach.call(board.querySelectorAll('.jp-sb-biset'), function(bis){
+      var subs = Array.prototype.slice.call(bis.querySelectorAll('.jp-sb-subex-resumen')), cards = [];
+      subs.forEach(function(sx){ var cd = sx.querySelector(':scope > .jp-qc'); if(cd){ try{ jpNotasAgrupar(sx); }catch(eN){} cards.push(cd); } });
+      if(!cards.length) return;
+      var reg = bis.querySelector(':scope > .jp-sb-biset-reg');
+      if(!reg){
+        var letras = subs.map(function(sx){ var l = sx.querySelector('.jp-sb-letra'); return l ? String(l.textContent || '').trim() : ''; }).filter(Boolean);
+        reg = document.createElement('div'); reg.className = 'jp-sb-biset-reg';
+        reg.innerHTML = '<div class="jp-sb-biset-reg-t"><span>' + (subs.length === 2 ? 'REGISTRO DEL BISET' : (subs.length === 3 ? 'REGISTRO DEL TRISET' : 'REGISTRO DEL BLOQUE')) + '</span>' + (letras.length ? '<em>' + escSB(letras.join(' · ')) + '</em>' : '') + '</div>';
+        bis.appendChild(reg);
+      }
+      cards.forEach(function(cd){ reg.appendChild(cd); });
+    });
+  }
+  window.jpRegistroAlFinalDelBiset = jpRegistroAlFinalDelBisetSB;
+
   function qrCtx(card){
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
     return (cfg && e) ? { c: cfg, e: e } : null;
@@ -21260,7 +21596,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\\u2013</i>');
       var rb0 = restBadgeSB(en.restSeconds, en.restLabel);
       return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \\u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
-        ((rb0 || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb0 + (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '') + '</div>';
+        (rb0 ? '<div class="jp-db-row jp-db-r2">' + rb0 + '</div>' : '') + filaUnilateralSB(en.unilateral) + '</div>';
     }
     var t0 = en.tramos[0].tempo, tempoComun = en.tempo || ((t0 && en.tramos.every(function(t){ return t.tempo === t0; })) ? t0 : '');
     var chips = en.tramos.map(function(t){
@@ -21273,9 +21609,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     /* el tempo ya no se imprime en la línea principal: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
     var tmpT = '';
     var rirT = (en.rir && !en.tramos.some(function(t){ return t.rir; })) ? '<span class="jp-db-seg jp-db-rir jp-rir-' + tierRirSB(en.rir) + '">' + ICONO_RIR_SB[tierRirSB(en.rir)] + ' RIR ' + escSB(en.rir) + '</span>' : '';
-    var r2 = (rb || en.unilateral || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb +
-      (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
+    var r2 = (rb || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb + '</div>' : '';
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + filaUnilateralSB(en.unilateral) + '</div>';
   }
   function tempoLimpioSB(tempo){
     var s = String(tempo == null ? '' : tempo).replace(/^\\s*tempo\\s*[:\\-]?\\s*/i, '').trim();
@@ -21305,15 +21640,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\\u26a1 SIN DESCANSO</span>');
     var tp = tempoLimpioSB(tempo);
     if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    /* 2026-11 (v27): sin tempo pautado no se agrega nada. La celda «RITMO · CONTROL» por defecto aparecía en ejercicios donde no corresponde (olímpicos como el hang power clean,
+       trabajos con banda, isométricos): la técnica muestra solo lo que el coach pautó y el estilo compacto reparte el ancho entre las celdas que hay (tarjeta-ejercicio.css). */
     if(rir){
       var tier = tierRirSB(rir);
       r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
     }
     if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\\s*/, '')) + '</b></span>');
-    if(uni) r3.push(chipUnilateralSB(uni));
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
       (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
-      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + filaUnilateralSB(uni) + '</div>';
   }
   window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
   window.jpPizarraSports = pizarraSports;    /* idem: el runner arma un bloque y mira el DOM real de la tarjeta */
@@ -21325,8 +21661,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      parsearPizarraSB, más abajo). */
   function chipUnilateralSB(valor){
     if(!valor) return '';
-    return '<span class="jp-sb-unilateral">\\u26a1 UNILATERAL \\u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
+    /* 2026-11: ícono ⇄ (lado a lado) en lugar del ⚡, que se confundía con «⚡ SIN DESCANSO»; el badge va en su propia fila (filaUnilateralSB), no como una celda más de la técnica */
+    return '<span class="jp-sb-unilateral"><i class="jp-uni-ic" aria-hidden="true">\\u21c4</i> UNILATERAL \\u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
   }
+  function filaUnilateralSB(valor){ return valor ? '<div class="jp-db-row jp-db-uni">' + chipUnilateralSB(valor) + '</div>' : ''; }
   /* directiva maestra ("Estilización de Listados de Activación") -- el
      glifo táctico (▸, cian, ver .jp-sb-plain-warmup::before en CSS) ya
      comunica el bullet visualmente -- un guión común "-" que el coach
@@ -21450,6 +21788,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      un identificador estable. Se degrada a '' con cualquier desajuste
      (plan viejo, texto editado a mano de forma irregular) -- nunca
      rompe el render por un dato ausente. */
+  /* BISET POR TÍTULO (v28): un bloque de la Pizarra titulado «Biset», «Triset» o «Superserie» cuyos ejercicios vienen sin letra de estación (A1 / A2)
+     se dibuja igual como biset: recuadro naranja, pastilla, transición y registro al final. Solo si TODOS los ejercicios del bloque tienen dosis (2 a 4)
+     y ninguno es de intervalo o técnica especial. El arreglo conserva su largo (las entradas absorbidas quedan como «agrupada») para que cada estación
+     mantenga su clave de registro de siempre (e<idx>): las cargas que el alumno ya anotó siguen apareciendo. El plan guardado no se toca. */
+  function jpAgruparBisetPorTituloSB(entries, titulo){
+    if(!Array.isArray(entries) || !/\\b(?:bi-?sets?|tri-?sets?|super-?series?|super-?sets?)\\b/i.test(String(titulo || ''))) return entries;
+    if(entries.some(function(e){ return e && e.tipo === 'biserie'; })) return entries;
+    var simples = entries.filter(function(e){ return e && e.tipo === 'simple'; });
+    if(simples.length < 2 || simples.length > 4) return entries;
+    if(!simples.every(function(e){ return e.dosisAsignada && (e.reps || e.sets) && !e.int && !e.tecnica; })) return entries;
+    var subs = simples.map(function(e){
+      return { nombre: e.titulo, reps: e.reps || '', tempo: e.tempo || '', tecnica: '', nota: (e.notas || []).join(' · '), unilateral: e.unilateral || '', unidad: e.unidad || 'reps',
+               rir: e.rir || '', restSeconds: 0, sets: e.sets, carga: e.carga || '', idxOrig: entries.indexOf(e) };
+    });
+    var rest = +simples[simples.length - 1].restSeconds || Math.max.apply(null, simples.map(function(e){ return +e.restSeconds || 0; })) || 0;
+    subs[subs.length - 1].restSeconds = rest;
+    var bis = { tipo: 'biserie', titulo: 'Biset / Triset', subs: subs, rondas: simples[0].sets || 3, restSeconds: rest, letra: 'A', rondasAuto: simples[0].sets || 3, porTitulo: true };
+    var puesto = false;
+    return entries.map(function(e){
+      if(simples.indexOf(e) < 0) return e;
+      if(!puesto){ puesto = true; return bis; }
+      return { tipo: 'agrupada' };
+    });
+  }
+  window.jpAgruparBisetPorTitulo = jpAgruparBisetPorTituloSB;
   function rirSemanaAnteriorSB(block, weekIdx, idx, si){
     if(!(weekIdx > 0)) return '';
     try{
@@ -21477,9 +21840,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       return;
     }
-    const entries = parsearPizarraSB(lineas, { titulo: block.title });
+    let entries = parsearPizarraSB(lineas, { titulo: block.title });
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    if(!esCalentamiento) entries = jpAgruparBisetPorTituloSB(entries, block.title);      /* «Biset · Espalda» sin A1/A2 también se dibuja como biset */
     const contS = esCalentamiento ? null : jpContinuoInfo(block, lineas, true);
     /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
        dosis real de cada bloque es el "ancla" (el movimiento pesado
@@ -21528,17 +21892,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const rondasN = entry.rondas || 3;
         const subsInfo = entry.subs.map(function(sub, si){
-          const exIdx = 'b' + idx + 's' + si;
+          const exIdx = sub.idxOrig != null ? 'e' + sub.idxOrig : 'b' + idx + 's' + si;      /* agrupado por título: conserva la clave de registro que ya tenía */
           /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           const tmp = document.createElement('div');
-          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, (sub.idxOrig != null ? rirSemanaAnteriorSB(block, weekIdx, sub.idxOrig) : rirSemanaAnteriorSB(block, weekIdx, idx, si)), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
           const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
           const myo = tmp.querySelector('.jp-myo-mod');
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
         });
         const cabeceras = subsInfo.map(function(o){
-          return '<div class="jp-sb-subex-resumen">' +
+          const trans = o.si > 0 ? '<div class="jp-sb-trans" role="note"><span class="jp-sb-trans-pill"><i aria-hidden="true">\\u2193</i> SIN PAUSA \\u00b7 PAS\\u00c1 AL ' + (entry.letra || 'A') + (o.si + 1) + '</span></div>' : '';
+          return trans + '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1, undefined, true) +
@@ -21547,7 +21912,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: o.sub.idxOrig != null ? 'e' + o.sub.idxOrig : 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
@@ -32381,6 +32746,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     }
     if(b && b.isHyrox){
       return { kind:'Engine', main:'<b>TRABAJO CONTINUO</b>', vol:'Bloque de motor' };
+    }
+    if(b && b.sportsPizarra && typeof window.parsearPizarraSB === 'function' && b.category !== 'warmup' && b.modalidad !== 'calentamiento' && !RX_WARM.test(((b.weekName && b.weekName[wi]) || b.title || '') + ' ' + (b.subtitle || ''))){
+      try{
+        var enB = window.parsearPizarraSB(itemsDeSemana(b, wi).filter(function(l){ return l != null && String(l).trim(); }), { titulo: b.title });
+        if(typeof window.jpAgruparBisetPorTitulo === 'function') enB = window.jpAgruparBisetPorTitulo(enB, b.title);
+        var grupos = enB.filter(function(x){ return x && x.tipo === 'biserie' && (x.subs || []).length >= 2; }), sueltos = enB.filter(function(x){ return x && x.tipo === 'simple'; });
+        if(grupos.length && !sueltos.length){
+          var g0 = grupos[0], nS = g0.subs.length, rB = g0.rondas || 3, lbB = nS === 2 ? 'BISET' : (nS === 3 ? 'TRISET' : 'SUPERSERIE');
+          return { kind:'⚡ ' + (nS === 2 ? 'Biset' : (nS === 3 ? 'Triset' : 'Superserie')), main:'<b>' + lbB + '</b> &bull; ' + rB + ' RONDA' + (rB === 1 ? '' : 'S') + ' &bull; ' + nS + ' EJERCICIOS SIN PAUSA', vol: rB + ' rondas · ' + nS + ' ejercicios' };
+        }
+        /* bloque de fuerza de la Pizarra con ejercicios sueltos: se cuentan EJERCICIOS reales (antes «Circuito · N ESTACIONES» contaba también las líneas de dosis) */
+        var nEj = sueltos.length + grupos.reduce(function(t, g){ return t + g.subs.length; }, 0);
+        if(nEj && b.category === 'strength' && !b.coreBlock && !/core|abdomen|estabilidad/i.test(String((b.weekName && b.weekName[wi]) || b.title || '')))
+          return { kind:'Trabajo principal', main:'<b>' + nEj + (nEj === 1 ? ' EJERCICIO' : ' EJERCICIOS') + '</b>' + (grupos.length ? ' &bull; ' + grupos.length + (grupos.length === 1 ? ' BISET' : ' BISETS') : ''), vol: nEj + (nEj === 1 ? ' ejercicio' : ' ejercicios') };
+      }catch(eB){}
     }
     if(b){
       var items = itemsDeSemana(b, wi);
@@ -47120,31 +47500,50 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     if(!a.length) return 0; var set = {}; b.forEach(function(w){ set[w] = 1; });
     var n = 0; a.forEach(function(w){ if(set[w]) n++; }); return n / a.length;
   }
+  /* VIDEO SIEMPRE JUNTO AL NOMBRE (v28): cada video de «Videos técnicos del bloque» se lleva a la cabecera de su ejercicio (arriba a la derecha de la tarjeta).
+     Antes solo se emparejaba con un 60 % de palabras en común y nunca con un ejercicio que ya tenía la lupa de búsqueda: el video quedaba abajo, en el
+     cajón del bloque. Ahora, en tres pasadas: 1) coincidencia fuerte (≥ 60 %), 2) cualquier palabra en común, la mejor primero, 3) si quedan tantos videos como
+     ejercicios sin video, por orden. Un video real reemplaza la lupa; una búsqueda repetida simplemente no se muestra. El cajón queda solo para un video
+     que no corresponde a ningún ejercicio del bloque. */
   function videosEnLinea(root){
     $$('.jp-sb-board', root).forEach(function(bd){
-      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); });
+      /* un video que ya está en línea (en la cabecera de su ejercicio) no se vuelve a pegar en otro */
+      var enLinea = {};
+      $$('[data-yt]', bd).forEach(function(x){ if(!x.closest('.jp-sb-vid-cards, .jp-ux-gone')) enLinea[x.getAttribute('data-yt')] = 1; });
+      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone') && !enLinea[c.getAttribute('data-yt')]; });
       if(!cards.length) return;
-      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){ return !n.parentNode.querySelector('.jp-ux-vid'); });
-      if(!nombres.length) return;
-      var pares = [];
-      cards.forEach(function(c, ci){
-        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
-        nombres.forEach(function(n, ni){ var s = cobertura(a, toks(n.textContent)); if(s >= 0.6) pares.push({ s: s, ci: ci, ni: ni }); });
+      var btnDe = function(n){ return n.parentNode ? n.parentNode.querySelector(':scope > .jp-ux-vid') : null; };
+      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){
+        var v = btnDe(n); return !v || (!v.getAttribute('data-yt') && v.classList.contains('jp-ver-busca'));
       });
-      pares.sort(function(x, y){ return y.s - x.s; });
+      if(!nombres.length) return;
       var usadoC = {}, usadoN = {};
-      pares.forEach(function(p){
-        if(usadoC[p.ci] || usadoN[p.ni]) return; usadoC[p.ci] = 1; usadoN[p.ni] = 1;
-        var c = cards[p.ci], n = nombres[p.ni], head = n.parentNode;
+      var pegar = function(ci, ni){
+        usadoC[ci] = 1; usadoN[ni] = 1;
+        var c = cards[ci], n = nombres[ni], head = n.parentNode, previo = btnDe(n);
         var yt = c.getAttribute('data-yt'), q = c.getAttribute('data-vsearch');
+        if(!yt && previo){ c.classList.add('jp-ux-gone'); return; }      /* otra búsqueda igual a la lupa que ya está: sobra */
         var nm = $('.jp-sb-vid-nombre', c), etq = nm ? nm.textContent.trim() : 'ejercicio';
         var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid' + (yt ? '' : ' jp-ver-busca');
         if(yt) bt.setAttribute('data-yt', yt); else bt.setAttribute('data-vsearch', q || etq);
         bt.setAttribute('aria-label', 'Ver técnica de ' + etq.replace(/"/g, ''));
         bt.innerHTML = (yt ? '<span class="jp-ux-vth" style="background-image:url(https://img.youtube.com/vi/' + yt + '/mqdefault.jpg)"></span>' : '') + '<span class="jp-ux-vp">&#9654;&#65038;</span>';
-        head.classList.add('jp-ux-has-vid'); head.appendChild(bt);
+        if(previo) head.replaceChild(bt, previo); else head.appendChild(bt);
+        head.classList.add('jp-ux-has-vid');
         c.classList.add('jp-ux-gone');
+      };
+      var pares = [];
+      cards.forEach(function(c, ci){
+        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
+        nombres.forEach(function(n, ni){ var s = Math.max(cobertura(a, toks(n.textContent)), cobertura(toks(n.textContent), a)); pares.push({ s: s, ci: ci, ni: ni }); });
       });
+      pares.sort(function(x, y){ return y.s - x.s || x.ci - y.ci || x.ni - y.ni; });
+      [0.6, 0.0001].forEach(function(umbral){
+        pares.forEach(function(p){ if(p.s >= umbral && !usadoC[p.ci] && !usadoN[p.ni]) pegar(p.ci, p.ni); });
+      });
+      var cR = cards.map(function(c, i){ return i; }).filter(function(i){ return !usadoC[i] && cards[i].getAttribute('data-yt'); });
+      var nR = nombres.map(function(n, i){ return i; }).filter(function(i){ return !usadoN[i]; });
+      if(cR.length && cR.length === nR.length) cR.forEach(function(ci, k){ pegar(ci, nR[k]); });
       var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
     });
@@ -48271,14 +48670,19 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest, html body:n
   color:var(--xc-rest-c) !important; border-radius:calc(var(--xc-r) * .7) !important; padding:7px 12px !important; font-family:var(--xc-font) !important;
   font-weight:700 !important; font-size:.78rem !important; letter-spacing:.08em !important; box-shadow:none !important; cursor:pointer;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause{cursor:default;}
-html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
   border-radius:calc(var(--xc-r) * .6) !important; padding:5px 10px !important; color:var(--xc-chip-n) !important; font-family:var(--xc-font) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga small{font-size:.58rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga b{font-size:1.05rem !important; font-weight:800 !important; letter-spacing:.04em !important; color:var(--xc-chip-n) !important; font-variant-numeric:tabular-nums;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b{color:var(--xc-tempo-c) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b{color:var(--xc-rir-c) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo{display:none !important;}
-html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{font-size:.66rem !important; font-weight:700 !important; letter-spacing:.1em !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-uni, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-uni{display:flex !important; grid-column:1 / -1; padding:6px 0 4px !important; border:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-uni::before, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-uni::before{content:none !important; display:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:center !important; gap:6px !important; padding:3px 11px 3px 8px !important; border-radius:999px !important;
+  border:1px solid rgba(169,196,255,.5) !important; background:rgba(169,196,255,.1) !important; color:#DCE6FF !important;
+  font-family:var(--xc-font) !important; font-size:.64rem !important; font-weight:800 !important; letter-spacing:.12em !important; line-height:1.4 !important; white-space:nowrap;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral .jp-uni-ic, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral .jp-uni-ic{font-style:normal; font-size:.92rem; line-height:1; color:#A9C4FF;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg{background:var(--xc-surface-2) !important; border:1px solid var(--xc-bd) !important; border-radius:calc(var(--xc-r) * .8) !important; box-shadow:none !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-l, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-l{color:var(--xc-txt) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-r, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-r{color:var(--xc-acc) !important;}
@@ -48344,8 +48748,10 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_)
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r3, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r3{display:contents !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)){grid-template-columns:minmax(0,1.3fr) minmax(0,1.7fr) !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rest)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rest)), html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rir)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rir)){grid-template-columns:minmax(0,1fr) !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{padding:7px 6px !important; border:0 !important; border-top:2px solid #5CE1FF !important; border-radius:0 !important; justify-content:flex-start; font-weight:900 !important; font-size:.82rem !important;}
-html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo{border-top:2px solid #5BF0B5 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir{border-top:2px solid #FF9466 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b{font-weight:900 !important; font-size:1.1rem !important;}
@@ -48570,11 +48976,19 @@ html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen .jp-sb-letra, html 
   background:var(--pn-bis) !important; color:#0B132B !important; border:0 !important; border-radius:99px !important; font-weight:900 !important; min-width:30px; text-align:center;
   box-shadow:0 0 0 3px #0B132B,0 0 0 4px rgba(238,90,18,.65) !important;
 }
-/* el conector entre ejercicios: "sin pausa" */
-html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen + .jp-sb-subex-resumen::before{
-  content:"\\2193  SIN PAUSA \\00B7 PASA AL SIGUIENTE"; display:block; margin:2px 0 8px; padding:3px 0; text-align:center; font-size:.62rem; font-weight:800; letter-spacing:.14em; color:var(--pn-bis-tx);
-  border-top:1px dashed rgba(238,90,18,.55); border-bottom:1px dashed rgba(238,90,18,.55); background:rgba(238,90,18,.07); border-radius:4px;
+/* transición entre estaciones (elemento .jp-sb-trans que pinta el renderer con la letra de la estación siguiente): pastilla naranja nítida con dos líneas finas a los lados.
+   Antes era un recuadro punteado hecho con ::before; ese pseudo-elemento queda apagado. */
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-subex-resumen + .jp-sb-subex-resumen::before{ content:none !important; display:none !important; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans{ display:flex !important; align-items:center; gap:8px; margin:4px 0 10px; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::before, html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::after{ content:""; flex:1 1 0; height:1px; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::before{ background:linear-gradient(90deg,rgba(238,90,18,0),rgba(238,90,18,.65)); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::after{ background:linear-gradient(90deg,rgba(238,90,18,.65),rgba(238,90,18,0)); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans-pill{
+  display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; border:1px solid rgba(238,90,18,.7); background:rgba(238,90,18,.14);
+  box-shadow:0 0 0 3px rgba(11,19,43,.9),0 6px 16px -10px rgba(238,90,18,.9); color:var(--pn-bis-tx) !important;
+  font-family:'Chakra Petch','Barlow Condensed',system-ui,sans-serif; font-size:.64rem; font-weight:800; letter-spacing:.14em; white-space:nowrap;
 }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans-pill i{ font-style:normal; font-size:.8rem; line-height:1; }
 /* aviso de transición dentro del biset (pauta «TRANSICIÓN»): mismo naranja */
 html body:not(#_):not(#__) .jp-sb-biset .jp-tip-trans{ border-color:rgba(238,90,18,.55) !important; }
 html body:not(#_):not(#__) .jp-sb-biset .jp-tip-trans .jp-tip-lb{ color:var(--pn-bis-tx) !important; }
@@ -49101,27 +49515,7 @@ html body:not(#_):not(#__) .cwt-round, html body:not(#_):not(#__) .cwt-mini-roun
 /* Notas del ejercicio compactas · selector de versión de la sesión (Sports) · plan de cargas por semana
    Va después de 094 con el mismo prefijo de especificidad (html body:not(#_):not(#__)) y un atributo más en las notas para ganarle a los estilos de tarjeta del coach. */
 
-/* ---------- 1 · notas del ejercicio: una sola fila de botones chicos en vez de tres desplegables apilados ----------
-   "Registrar carga" sigue siendo la fila principal de la tarjeta; "Tips · Objetivo · Tempo" quedan en una fila discreta y muestran de a una nota por vez. */
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 0; align-items:flex-start; }
-html body:not(#_):not(#__) .jp-notas-chips{ display:flex; flex:1 1 100%; flex-wrap:wrap; gap:6px; }
-html body:not(#_):not(#__) .jp-nota-chip{
-  appearance:none; -webkit-appearance:none; cursor:pointer; display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:0 11px; border-radius:999px;
-  background:transparent; border:1px solid rgba(150,178,240,.24); color:#9FB0D8; font:700 .66rem/1 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase;
-  -webkit-tap-highlight-color:transparent; transition:background .15s ease, color .15s ease, border-color .15s ease;
-}
-html body:not(#_):not(#__) .jp-nota-chip b{ font-weight:800; letter-spacing:.06em; color:#C9D6F5; font-variant-numeric:tabular-nums; }
-html body:not(#_):not(#__) .jp-nota-ic{ font-size:.78rem; line-height:1; filter:saturate(.7); }
-html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"]{ color:#FFFFFF; background:rgba(255,194,75,.14); border-color:rgba(255,194,75,.7); }
-html body:not(#_):not(#__) .jp-nota-chip[aria-pressed="true"] b{ color:#FFC24B; }
-/* solo se ve la nota elegida; el resumen del desplegable original se oculta (el botón ya lo nombra) */
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details{ display:none; flex:1 1 100%; margin:0; }
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tips"] > details.jp-ex-tips,
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="obj"] > details.jp-ex-box-obj,
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas[data-nota="tempo"] > details.jp-ex-box-tempo{ display:block; }
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details > summary{ display:none !important; }
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-box-b{ border-top:0; padding-top:10px; }
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas > details .jp-ex-tips-b{ padding-top:10px; }
+/* ---------- 1 · notas del ejercicio: desde v27 van dentro de «Pautas técnicas & tips del bloque» (ver 097); la fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO ya no existe ---------- */
 
 /* ---------- 2 · selector de versión de la sesión (Sports): ESTÁNDAR · 60 MIN / EXTENDIDA · 90 MIN ---------- */
 html body:not(#_):not(#__) .jp-ver{ margin:2px 0 14px; }
@@ -49160,9 +49554,7 @@ html body:not(#_):not(#__) details.jp-block-details{ border:0 !important; border
 html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia{ border-radius:12px !important; overflow:hidden !important; }
 html body:not(#_):not(#__) details.jp-criterio.jp-criterio-dia > summary{ border-radius:0 !important; border-width:0 !important; box-shadow:none !important; }
 
-/* ---------- 5 · notas del ejercicio: la fila se lee como parte de la tarjeta y no como un botón suelto ---------- */
-html body:not(#_):not(#__) .jp-notas-lb{ flex:0 0 auto; align-self:center; font:800 .58rem/1 'Chakra Petch',sans-serif; letter-spacing:.16em; text-transform:uppercase; color:#7F93C4; margin-right:2px; }
-html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-cajas.jp-notas{ margin:10px 0 2px; }
+/* ---------- 5 · aire entre la tarjeta y el título de video ---------- */
 html body:not(#_):not(#__) .jp-sb-ex + .jp-sb-vid-title, html body:not(#_):not(#__) .jp-sb-bracket + .jp-sb-vid-title{ margin-top:12px; }
 
 /* ---------- 6 · firma de la programación: nombre una sola vez, un solo acento y un ritmo vertical parejo ---------- */
@@ -49177,11 +49569,6 @@ html body:not(#_):not(#__) .site-footer .jp-firma-n{ margin:0 0 6px; }
 html body:not(#_):not(#__) .site-footer .jp-firma-n::after, html body:not(#_):not(#__) .site-footer .jp-firma-r::after{ content:none !important; display:none !important; }
 html body:not(#_):not(#__) .site-footer .jp-firma .jp-firma-n{ color:#FFFFFF !important; }
 html body:not(#_):not(#__) .site-footer .jp-build{ margin:16px 0 0 !important; }
-/* la fila de notas cabe en una línea también a 360 px: botones y rótulo más compactos */
-html body:not(#_):not(#__) .jp-notas-chips{ flex-wrap:nowrap; gap:5px; align-items:center; }
-html body:not(#_):not(#__) .jp-nota-chip{ min-height:28px; padding:0 8px; gap:4px; font-size:.6rem; letter-spacing:.06em; white-space:nowrap; flex:0 1 auto; min-width:0; }
-html body:not(#_):not(#__) .jp-nota-chip b{ letter-spacing:.04em; }
-html body:not(#_):not(#__) .jp-notas-lb{ font-size:.54rem; letter-spacing:.12em; margin-right:0; }
 /* Header del atleta refinado · escudo con aire y centro óptico, "ACTIVO" sobrio, nombre estilo ficha con dato de contexto y controles (…, SEM, DÍA) con el mismo contorno y los mismos márgenes.
    Va después de 095 con el mismo prefijo de especificidad (html body:not(#_):not(#__)). Paleta: naranja de la marca #EE5A12 solo en «JP»; el resto, blanco y azules apagados. */
 
@@ -49222,6 +49609,81 @@ html body:not(#_):not(#__) #hdCompact .jp-wk-btn{
 html body:not(#_):not(#__) #hdCompact .jp-ux-menu-btn, html body:not(#_):not(#__) #hdCompact .hdc-info{ width:40px !important; min-width:40px !important; margin:0 !important; }
 html body:not(#_):not(#__) #hdCompact .jp-wk-btn, html body:not(#_):not(#__) #hdCompact .jp-wk-btn b{ font-variant-numeric:tabular-nums; }
 html body:not(#_):not(#__) #hdCompact .hdc-days-row{ padding:6px 16px 10px !important; gap:8px !important; height:auto !important; min-height:0 !important; box-sizing:border-box !important; }
+/* Notas del ejercicio dentro de «Pautas técnicas & tips del bloque» (v27)
+   La tarjeta del ejercicio termina en «Registrar carga»: sin la fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO. Las notas de cada ejercicio (coaching,
+   objetivo y explicación del tempo) se leen en el desplegable del bloque, una sección por ejercicio con su número y nombre (jpNotasAgrupar, 009). */
+html body:not(#_):not(#__) .jp-pauta-ex{ margin:14px 0 0; padding:12px 0 0; border-top:1px solid rgba(150,178,240,.16); }
+html body:not(#_):not(#__) .jp-pauta-ex-tit{ display:flex; align-items:center; gap:8px; margin:0 0 4px; font:800 .74rem/1.25 'Chakra Petch','Barlow Condensed',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:#FFFFFF; }
+html body:not(#_):not(#__) .jp-pauta-ex-id{ display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:20px; padding:0 6px; border-radius:6px; background:rgba(255,194,75,.14); color:#FFC24B; font-size:.66rem; letter-spacing:.04em; }
+html body:not(#_):not(#__) .jp-pauta-ex-lb{ margin:10px 0 2px; font:800 .58rem/1 'Chakra Petch',sans-serif; letter-spacing:.16em; text-transform:uppercase; color:#7F93C4; }
+html body:not(#_):not(#__) .jp-pauta-ex-lb b{ color:#C9D6F5; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota{ display:block !important; margin:0 !important; padding:0 !important; border:0 !important; background:none !important; box-shadow:none !important; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota > summary{ display:none !important; }
+html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota .jp-ex-box-b, html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota .jp-ex-tips-b{ border:0 !important; padding:2px 0 0 !important; margin:0 !important; background:none !important; }
+/* v28 · bisets siempre en naranja, registro de carga al final del biset, casilleros neutros hasta completarlos, video junto al nombre y pulido de líneas y esquinas
+   Va después de 097 con el mismo prefijo de especificidad (html body:not(#_):not(#__)).
+   Escala de esquinas única: 16px tarjeta del bloque · 12px tarjeta interna · 10px controles · 999px pastillas. Líneas divisorias: 1px, rgba(150,178,240,.14). */
+html body:not(#_):not(#__){ --jp-r-card:16px; --jp-r-in:12px; --jp-r-ctl:10px; --jp-linea:rgba(150,178,240,.14); --jp-nar:#EE5A12; --jp-nar-tx:#FF8A4C; }
+
+/* ---------- 1 · bisets / trisets heredados (bloque «superset» del Builder): misma estética naranja que los de la Pizarra ---------- */
+html body:not(#_):not(#__) .block .bs-wrap{ border-left:2px solid rgba(238,90,18,.75) !important; padding-left:12px !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-l, html body:not(#_):not(#__) .block .bs-r .bs-l{
+  background:var(--jp-nar) !important; border:0 !important; color:#0B132B !important; border-radius:7px !important; font-weight:900 !important;
+}
+html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-kind, html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-main b{ color:var(--jp-nar-tx) !important; }
+html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-dot{ background:var(--jp-nar) !important; }
+html body:not(#_):not(#__) .block .bs-r .bs-rtitle{ color:var(--jp-nar-tx) !important; }
+/* fila del ejercicio: letra · nombre con el video arriba a la derecha · dosis debajo del nombre (igual en A, B y C) */
+html body:not(#_):not(#__) .block .bs-ex .bs-e{ display:grid !important; grid-template-columns:auto minmax(0,1fr) !important; column-gap:10px !important; row-gap:4px !important; align-items:start !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-n{ display:flex !important; align-items:flex-start !important; justify-content:space-between !important; gap:10px !important; min-width:0; }
+html body:not(#_):not(#__) .block .bs-ex .bs-n > .video-link{ order:2; flex:0 0 auto !important; margin:0 0 0 auto !important; position:static !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-d{ grid-column:2 !important; justify-self:start !important; margin:0 !important; }
+
+/* ---------- 2 · registro de carga al final del biset / triset ---------- */
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg{ display:grid; gap:8px; margin:14px 0 2px; padding:12px 0 0; border-top:1px solid rgba(238,90,18,.32); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg-t{ display:flex; align-items:center; justify-content:space-between; gap:10px; font:800 .62rem/1.2 'Chakra Petch','Barlow Condensed',sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--jp-nar-tx); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg-t em{ font-style:normal; letter-spacing:.08em; color:#9FB0D8; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg > .jp-qc{ margin:0 !important; }
+
+/* ---------- 3 · casilleros de serie: neutros mientras están vacíos, naranja de la marca al completarlos ---------- */
+html body:not(#_):not(#__) .jp-qc-ok, html body:not(#_):not(#__) .jp-qc-r.jp-qc-rf .jp-qc-ok{
+  background:rgba(220,230,255,.06) !important; border:1px solid rgba(220,230,255,.26) !important; color:rgba(220,230,255,.5) !important; box-shadow:none !important;
+  border-radius:var(--jp-r-ctl) !important; transition:background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+html body:not(#_):not(#__) .jp-qc-ok.on, html body:not(#_):not(#__) .jp-qc-ok[aria-pressed="true"], html body:not(#_):not(#__) .jp-qc.ok .jp-qc-ok,
+html body:not(#_):not(#__) .jp-qc-r.jp-qc-rf .jp-qc-ok.on{
+  background:var(--jp-nar) !important; border-color:var(--jp-nar) !important; color:#0B132B !important; box-shadow:0 6px 16px -10px rgba(238,90,18,.9) !important;
+}
+html body:not(#_):not(#__) .set-check{ background:rgba(220,230,255,.06) !important; border:1px solid rgba(220,230,255,.26) !important; box-shadow:none !important; border-radius:var(--jp-r-ctl) !important; }
+html body:not(#_):not(#__) .set-check::after{ color:rgba(220,230,255,.42) !important; }
+html body:not(#_):not(#__) .set-check:checked{ background:var(--jp-nar) !important; border-color:var(--jp-nar) !important; box-shadow:0 6px 16px -10px rgba(238,90,18,.9) !important; }
+html body:not(#_):not(#__) .set-check:checked::after{ color:#0B132B !important; }
+html body:not(#_):not(#__) .block-done-cb, html body:not(#_):not(#__) .block-check input{ accent-color:var(--jp-nar) !important; }
+
+/* ---------- 4 · video siempre arriba a la derecha, junto al nombre del ejercicio ---------- */
+html body:not(#_):not(#__) .jp-sb-ex-head, html body:not(#_):not(#__) .jp-sb-subex-head{ display:flex !important; align-items:flex-start !important; gap:10px !important; }
+html body:not(#_):not(#__) .jp-sb-ex-head > .jp-sb-ex-nombre, html body:not(#_):not(#__) .jp-sb-subex-head > .jp-sb-subex-tit{ flex:1 1 auto !important; min-width:0 !important; }
+html body:not(#_):not(#__) .jp-sb-ex-head > .jp-ux-vid, html body:not(#_):not(#__) .jp-sb-subex-head > .jp-ux-vid{ order:9; flex:0 0 auto !important; margin:0 0 0 auto !important; align-self:flex-start !important; position:static !important; }
+
+/* ---------- 5 · líneas, conectores y esquinas: una sola escala y sin cajas dentro de cajas ---------- */
+html body:not(#_):not(#__) .blocks-stack > .block{ border-radius:var(--jp-r-card) !important; }
+/* la tarjeta del ejercicio dentro del bloque no dibuja un segundo marco completo: se separa con una línea fina */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board > .jp-sb-ex + .jp-sb-ex{ border-top:1px solid var(--jp-linea) !important; }
+html body:not(#_):not(#__) .jp-qc{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-qc .jp-qc-tg{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-qc-r input{ border-radius:var(--jp-r-ctl) !important; }
+html body:not(#_):not(#__) .jp-block-details > summary.jp-summary-btn{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-sb-biset{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::before, html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::after{ height:1px; opacity:.8; }
+html body:not(#_):not(#__) .block .bs-r{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .block .bs-ex{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-pauta-ex{ border-top-color:var(--jp-linea) !important; }
+/* la barra de dosis no es una caja dentro de la tarjeta: solo dos líneas finas arriba y abajo */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-dose-bar, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-subex-resumen .jp-dose-bar{
+  border-left:0 !important; border-right:0 !important; border-radius:0 !important; border-top-color:var(--jp-linea) !important; border-bottom-color:var(--jp-linea) !important;
+}
+/* «Registrar carga»: un botón tenue, sin un tercer marco fuerte dentro de la tarjeta */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc .jp-qc-tg{ border-color:rgba(150,178,240,.2) !important; background:rgba(150,178,240,.05) !important; box-shadow:none !important; }
 </style>
 
 </body>
@@ -50501,6 +50963,7 @@ function init(){
     if(!confirm('¿Borrar TODOS los planes de esta rama (' + disc + ')? Los atletas y la biblioteca de ejercicios son compartidos entre Sports y CrossFit y NO se tocan.')) return;
     if(!confirm('Última confirmación: esta acción es irreversible.')) return;
     localStorage.removeItem(PLANS_KEY);
+    const tBorrado = Date.now(); S.planesBorrados = S.planesBorrados || {}; Object.keys(S.plans || {}).forEach(id => { S.planesBorrados[id] = tBorrado; });      /* no vuelven desde la nube ni otra pestaña */
     S.plans = {}; S.activeId = null; S.ui = {day:0, view:'alumnos'};
     save(); go('alumnos'); toast('Planes de ' + disc + ' borrados', 'warn');
   });
@@ -54973,7 +55436,7 @@ document.addEventListener('DOMContentLoaded', init);
         '<b>Plan copiado a ' + esc(fullName(to)) + ' · ' + r.dias + ' días' + (r.cfO ? ' · 4 semanas independientes (CrossFit &amp; Hyrox)' : '') + '</b>' +
         (cambios ? cambios + ' ejercicio(s) reemplazado(s) por variantes seguras. ' : '') +
         (quitados ? quitados + ' quitado(s) sin alternativa. ' : '') +
-        (r.reparados ? 'Se repararon ' + r.reparados + ' identificador(es) dañados del plan de origen. ' : '') +
+        (r.reparados ? 'Se repararon ' + r.reparados + ' identificador(es) dañados del plan de origen. ' : '') + jpAvisoPersonalCopia(r) +
         (!notas.length ? 'Sin conflictos biomecánicos para el destino.' : '') +
         notas.slice(0, 8).map(n => '<div style="margin-top:3px">• ' + esc(n) + '</div>').join('') +
         (notas.length > 8 ? '<div style="margin-top:3px;opacity:.75">…y ' + (notas.length - 8) + ' más.</div>' : '') +
@@ -58672,7 +59135,7 @@ body{overflow-x:hidden}
       ACCIONES.forEach(x => out.push({ k:'Acción', ic:x.ic, n:x.lb, m:'Atajo rápido', go:() => accion(x.a) }));
       return out;
     }
-    S.athletes.filter(a => norm(fullName(a) + ' ' + (a.foco||'') + ' ' + (a.tags||[]).join(' ')).indexOf(n) >= 0)
+    jpAthAZ(S.athletes.filter(a => norm(fullName(a) + ' ' + (a.foco||'') + ' ' + (a.tags||[]).join(' ')).indexOf(n) >= 0))
       .slice(0,6).forEach(a => out.push({
         k:'Alumno/a', ic:'👤', n: fullName(a),
         m: a.freq + ' días/sem · ' + (a.nivel || 'Intermedio') + ((a.sede && G().sedeDe) ? ' · ' + G().sedeDe(a.sede).lb : ''),
@@ -59088,8 +59551,10 @@ body{overflow-x:hidden}
 
   /* ---------- payload ---------- */
   function snapshot(){
+    try{ jpSellarCambios(); }catch(e){}
     return { athletes:S.athletes, exercises:S.exercises, plans:S.plans, activeId:S.activeId,
-             sedes:S.sedes || [], exportLog:S.exportLog || {}, libV:S.libV, rev: Date.now() };
+             sedes:S.sedes || [], exportLog:S.exportLog || {}, libV:S.libV, rev: Date.now(),
+             borrados: jpNormBorrados(S.borrados), planesBorrados: S.planesBorrados || {} };
   }
   function contar(o){
     return (o.athletes||[]).length + ' alumnos · ' + (o.exercises||[]).length + ' ejercicios · ' +
@@ -59119,7 +59584,7 @@ body{overflow-x:hidden}
     try{
       const payload = { data: JSON.stringify(snapshot()), updatedAt: Date.now(), device: DEV };
       await PROV[C.prov].put(cfgRed(), payload);
-      C.lastSync = payload.updatedAt; pendiente = false; saveCfg(); pintarEstado();
+      C.lastSync = payload.updatedAt; C.pend = 0; pendiente = false; saveCfg(); pintarEstado();
       anotar('⬆️ Subido desde ' + DEV + ' · ' + contar(S));
       if(!silencioso) toast('☁️ Datos subidos a la nube');
       return true;
@@ -59156,14 +59621,14 @@ body{overflow-x:hidden}
   function mostrarMerge(){
     if(!remotoTmp) return;
     const r = remotoTmp.obj;
-    const nuevosAth = (r.athletes||[]).filter(a => !S.athletes.some(x => x.id === a.id)).length;
+    const nuevosAth = (r.athletes||[]).filter(a => a && !S.athletes.some(x => x.id === a.id) && !jpMuerto('ath', a)).length;
     const nuevosEx  = (r.exercises||[]).filter(e => !S.exercises.some(x => x.id === e.id)).length;
     $('#mergeBody').innerHTML =
       '<div class="alert info" style="padding:10px 12px"><span class="ic">☁️</span><div><b>Versión de ' + esc(remotoTmp.device || 'otro dispositivo') + '</b>' +
         'Guardada el ' + new Date(remotoTmp.updatedAt).toLocaleString('es-AR') + '</div></div>' +
       '<div class="dev-row"><span class="di">☁️</span><div><b>En la nube</b><div class="hint" style="margin:0">' + esc(contar(r)) + '</div></div></div>' +
       '<div class="dev-row"><span class="di">💻</span><div><b>En este equipo (' + esc(DEV) + ')</b><div class="hint" style="margin:0">' + esc(contar(S)) + '</div></div></div>' +
-      '<div class="hint" style="margin-top:10px"><b>Fusionar</b> suma lo que falta y actualiza lo que existe en ambos, sin borrar nada de este equipo (' +
+      '<div class="hint" style="margin-top:10px"><b>Fusionar</b> suma lo que falta y, en lo que existe en los dos, se queda con la edición más reciente; los alumnos borrados no vuelven y los videos nunca se pierden (' +
         nuevosAth + ' alumno/s y ' + nuevosEx + ' ejercicio/s nuevos). <b>Reemplazar</b> deja este equipo exactamente igual a la nube.</div>';
     openModal('mMerge');
   }
@@ -59171,30 +59636,23 @@ body{overflow-x:hidden}
     if(!remotoTmp) return;
     const r = remotoTmp.obj;
     if(modo === 'replace'){
+      try{ if(typeof exportarBackup === 'function') exportarBackup('antes-de-reemplazar-con-la-nube'); }catch(eB){}      /* seguro: copia del estado de este equipo */
       window.__jpBorradoOk = true;      /* reemplazo deliberado por la version de la nube */
+      const vidLoc = {}; (S.exercises || []).forEach(e => { if(e && (e.videoId || e.video)){ vidLoc[e.id] = e; vidLoc['n:' + norm(e.es || '')] = e; } });
       S.athletes  = r.athletes || [];
       S.exercises = r.exercises || [];
+      S.exercises.forEach(e => { if(!e || e.videoId || e.video) return; const v = vidLoc[e.id] || vidLoc['n:' + norm(e.es || '')]; if(v){ e.video = v.video || ''; e.videoId = v.videoId || ''; } });      /* los videos de este equipo no se pierden */
+      S.borrados  = jpNormBorrados(r.borrados);      /* igual que la nube: lo que la nube tiene vivo no queda marcado como borrado acá */
+      S.planesBorrados = r.planesBorrados || {};
       S.plans     = r.plans || {};
       S.sedes     = r.sedes || S.sedes;
       S.activeId  = r.activeId || S.activeId;
       S.exportLog = r.exportLog || {};
+      try{ jpOrdenarAlumnos(); jpSembrarHuellas(); }catch(eO){}
     } else {
-      /* fusión no destructiva: se suma lo que falta y se actualiza lo compartido */
-      (r.athletes||[]).forEach(a => {
-        const cur = S.athletes.find(x => x.id === a.id);
-        if(cur) Object.assign(cur, a); else S.athletes.push(a);
-      });
-      (r.exercises||[]).forEach(e => {
-        const cur = S.exercises.find(x => x.id === e.id) || S.exercises.find(x => norm(x.es) === norm(e.es));
-        if(cur){ if(!cur.videoId && e.videoId){ cur.videoId = e.videoId; cur.video = e.video; } if(!cur.aviso && e.aviso) cur.aviso = e.aviso; }
-        else S.exercises.push(e);
-      });
-      Object.keys(r.plans || {}).forEach(k => { S.plans[k] = r.plans[k]; });
-      (r.sedes||[]).forEach(sd => {
-        const cur = (S.sedes||[]).find(x => x.id === sd.id);
-        if(cur) Object.assign(cur, sd); else (S.sedes = S.sedes || []).push(sd);
-      });
-      Object.assign(S.exportLog = S.exportLog || {}, r.exportLog || {});
+      /* fusión segura (jpFusionarRemoto): registro por registro gana la edición más reciente, los borrados no vuelven y los videos no se pierden */
+      const rf = jpFusionarRemoto(r, { tRemoto: remotoTmp.updatedAt, conPlanes: true });
+      anotar('Fusión: +' + rf.athNuevos + ' alumno(s), ' + rf.athActualizados + ' actualizado(s) desde la nube, ' + rf.athQuitados + ' quitado(s) por estar borrados, ' + rf.athIgnorados + ' borrado(s) que no vuelven · ' + rf.planes + ' plan(es) · ' + rf.videos + ' video(s)');
     }
     C.lastSync = remotoTmp.updatedAt; saveCfg();
     save();
@@ -59212,6 +59670,7 @@ body{overflow-x:hidden}
   window.save = function(){
     const r = _save.apply(this, arguments);
     if(activo() && C.auto){
+      if(!C.pend){ C.pend = Date.now(); saveCfg(); }      /* la subida pendiente sobrevive a una recarga: al volver a abrir se sube antes de pedir nada a la nube */
       pendiente = true; pintarEstado();
       clearTimeout(pushT);
       pushT = setTimeout(() => subir(true), 4000);   /* debounce: no satura la API */
@@ -59319,8 +59778,12 @@ body{overflow-x:hidden}
     document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeModal('mCloud'); closeModal('mMerge'); } });
 
     pintarEstado();
-    /* bajada automática al abrir la app */
-    if(activo() && C.pull !== false) setTimeout(() => bajar(true), 900);
+    /* bajada automática al abrir la app; si quedó una subida pendiente de la sesión anterior (se recargó antes del debounce) y la nube no trae nada más nuevo,
+       se sube enseguida: así el otro equipo nunca vuelve a fusionar una versión vieja (con un alumno ya borrado, por ejemplo) */
+    if(activo() && !window.JP_SANDBOX) setTimeout(async () => {
+      const r0 = C.pull !== false ? await bajar(true) : null;
+      if(!r0 && C.pend){ pendiente = true; subir(true); }
+    }, 900);
 
     window.CoachCloud = { cfg: () => C, subir: subir, bajar: bajar, aplicar: aplicar, abrir: abrirCloud,
                           snapshot: snapshot, activo: activo, device: DEV, proveedores: PROV };
@@ -65897,7 +66360,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     icon.setAttribute('sizes', '180x180'); icon.href = ICON(180);
   }
   function registrarSW(){
-    if(!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    if(!('serviceWorker' in navigator) || location.protocol === 'file:' || window.JP_SANDBOX) return;
     /* 09/09 -- mismo cambio que en la app del alumno: de cache-first a
        network-first, con limpieza de cachés viejas al activarse, para que
        una actualización del coach.html no se quede pegada en una versión
@@ -83323,6 +83786,26 @@ JP_I18N.add('es', {
   "motor.kb.gemelo.s": "Puntas de pie en el borde, rodillas casi extendidas y tronco firme.",
   "motor.kb.gemelo.c": "Bajá hasta estirar bien el talón, pausa de 1-2 segundos abajo y subí al máximo.",
   "motor.kb.gemelo.x": "No rebotes ni acortes el rango: el estiramiento abajo es el estímulo.",
+  "motor.kb.olim_clean.o": "Desarrollás potencia: la extensión explosiva de cadera, rodillas y tobillos (triple extensión) lleva la barra hasta los hombros y le enseña a todo el cuerpo a producir fuerza rápido, la misma cualidad que después rinde en el salto, la sentadilla y el hip thrust.",
+  "motor.kb.olim_clean.s": "Barra colgada a mitad del muslo, pies al ancho de cadera, agarre apenas más ancho que los hombros, brazos largos y hombros por delante de la barra.",
+  "motor.kb.olim_clean.c": "Empujá el piso y extendé la cadera de golpe; la barra sube pegada al cuerpo y vos bajás rápido a recibirla en el rack con los codos altos.",
+  "motor.kb.olim_clean.x": "No tires con los brazos ni dejes que la barra se aleje del cuerpo: los brazos solo guían. Si la recepción es blanda o con los codos bajos, bajá el peso.",
+  "motor.kb.olim_snatch.o": "Entrenás la potencia de todo el cuerpo y la estabilidad por encima de la cabeza: la triple extensión lleva la barra de la cadera a brazos estirados en un solo movimiento, con mucha demanda de coordinación, velocidad y control de las escápulas.",
+  "motor.kb.olim_snatch.s": "Agarre ancho (con los brazos estirados la barra queda en el pliegue de la cadera), barra colgada a mitad del muslo, pecho arriba y hombros por delante de la barra.",
+  "motor.kb.olim_snatch.c": "Extendé la cadera de forma explosiva con la barra pegada, llevá los codos hacia arriba y afuera y recibí con los brazos bloqueados y el abdomen firme.",
+  "motor.kb.olim_snatch.x": "No la recibas con los codos flojos ni con la barra por delante de la cabeza: bloqueá los brazos y empujá hacia el techo. Peso liviano y técnica primero.",
+  "motor.kb.olim_cj.o": "Combinás los dos gestos del levantamiento olímpico: la cargada lleva la barra del piso a los hombros con la potencia de la cadera y el envión la sube arriba de la cabeza con el impulso de las piernas, una cadena completa de fuerza y velocidad.",
+  "motor.kb.olim_cj.s": "Cargada: barra sobre la mitad del pie, espalda neutra y hombros por delante. Envión: barra en el rack con los codos al frente y los pies al ancho de cadera.",
+  "motor.kb.olim_cj.c": "Cargada: despegá controlada y acelerá al pasar la rodilla. Envión: flexión corta de rodillas con el torso vertical y empuje explosivo; recibí con los brazos bloqueados.",
+  "motor.kb.olim_cj.x": "No inclines el torso en la flexión del envión ni empujes solo con los brazos: el envión es de piernas. Si la barra se va hacia adelante, bajá el peso.",
+  "motor.rol.O.pq.i": "El levantamiento olímpico va justo después de la entrada en calor porque es lo más técnico y explosivo del día: necesita el sistema nervioso fresco. Entrenás potencia (producir fuerza rápido) y coordinación de todo el cuerpo, que después se trasladan al salto, la sentadilla y la bisagra.",
+  "motor.rol.O.pq.a": "El olímpico abre la sesión con el sistema nervioso fresco: es potencia y técnica, no volumen. Cada repetición rápida y limpia mejora la producción de fuerza que después aprovechan los básicos.",
+  "motor.rol.O.pr.i": "Subí entre 1 y 2,5 kg por semana solo si todas las series salieron rápidas, con la barra pegada al cuerpo y una recepción firme. En la S4 de descarga bajá un 10% el peso y trabajá la técnica.",
+  "motor.rol.O.pr.a": "Subí entre 1 y 2,5 kg cuando todas las series salgan rápidas y estables; si una repetición se frena o se ensucia, repetí la carga la semana siguiente. En la S4, 10% menos y técnica.",
+  "motor.rol.O.se.i": "Barra rápida y liviana en las manos y recepción estable, sin perder la postura. Si sentís que tirás con los brazos o que la barra te arrastra, el peso es alto.",
+  "motor.rol.O.se.a": "Velocidad de barra alta y recepciones firmes de la primera a la última serie. Si la velocidad cae, la serie terminó.",
+  "motor.olim.series": "SERIES: {sets} series cortas de {reps} repeticiones con descanso completo: cada repetición tiene que ser de calidad. Si te ayuda, hacé las repeticiones de a una, volviendo a ubicar la barra entre cada una. Antes de la primera serie, 2 o 3 series con la barra sola o muy liviana.",
+  "motor.olim.carga": "CARGA: un peso con el que las repeticiones salgan rápidas y con la misma técnica de la primera ({rir}). En el olímpico la serie termina cuando la técnica se ensucia, nunca al fallo.",
   "motor.kb.curl.o": "Aislás el bíceps y el braquial con el codo fijo: tensión limpia sobre el músculo.",
   "motor.kb.curl.s": "Codos pegados al costado, hombros atrás y torso quieto.",
   "motor.kb.curl.c": "Subí sin mover los codos y bajá en 3 segundos sintiendo el estiramiento.",
@@ -83430,6 +83913,10 @@ JP_I18N.add('es', {
   "motor.wu.glute.tip0": "MOVILIDAD (primeros 2 minutos): cambio de cadera 90/90 para soltar la cadera antes de cargarla.",
   "motor.wu.glute.tip1": "ACTIVACIÓN (siguientes 3 minutos): puente y abducción caminando con la banda. Tenés que sentir el glúteo trabajando, no la espalda baja ni el cuádriceps.",
   "motor.wu.glute.tip2": "POTENCIACIÓN (últimos 2 minutos): peso muerto rumano a una pierna para estabilizar la pelvis y, enseguida, las series de aproximación del primer ejercicio.",
+  "motor.wu.olim.obj": "Preparás todo lo que pide el levantamiento olímpico: cadera móvil para la recepción, espalda alta y hombros sueltos para el rack y la posición por encima de la cabeza, y el patrón de sentadilla profunda. Llegás a la barra con las articulaciones listas y sin fatiga.",
+  "motor.wu.olim.tip0": "MOVILIDAD (primeros 2 minutos): cambio de cadera 90/90 y rotación torácica, lentas y completas. La espalda alta suelta es la que te deja recibir la barra con los codos altos.",
+  "motor.wu.olim.tip1": "ACTIVACIÓN (siguientes 3 minutos): apertura de banda para las escápulas y sentadilla goblet con pausa abajo, con el pecho arriba y los talones clavados.",
+  "motor.wu.olim.tip2": "POTENCIACIÓN (últimos 2 minutos): con la barra sola, 2 rondas de la técnica del día (posición colgada, extensión de cadera y recepción) antes de las series de aproximación del olímpico.",
   "motor.wu.run.obj": "Subís la temperatura y las pulsaciones de forma progresiva y activás glúteo medio, glúteo mayor y core antes de correr y cargar: las caderas y los tobillos sueltos y el glúteo despierto hacen que cada zancada sea más eficiente y menos lesiva.",
   "motor.wu.run.tip0": "MOVILIDAD (primeros 3 minutos): cambio de cadera 90/90 y zancadas inversas lentas. Soltá la cadera y el tobillo antes de correr.",
   "motor.wu.run.tip1": "ACTIVACIÓN (siguientes 3 minutos): puente, monster walk y dead bug. El glúteo tiene que prender antes de la primera zancada, o la espalda baja y los isquios hacen el trabajo.",
@@ -83447,6 +83934,14 @@ JP_I18N.add('en', {
   "motor.tec.drop": "TECHNIQUE · DROP SET: on the last set, when you reach technical failure, cut the load by 20-25% and keep going with no rest until a new failure.",
   "motor.tec.myo": "TECHNIQUE · MYO-REPS: one activation set 1-2 reps short of failure; then 3-4 mini-sets of 4-5 reps with 15 seconds of rest and deep breaths.",
   "motor.tec.rp": "TECHNIQUE · REST-PAUSE: one set to technical failure, rest 15-20 seconds and squeeze out 2-4 more reps; repeat once.",
+  "motor.rol.O.pq.i": "The Olympic lift comes right after the warm-up because it is the most technical and explosive work of the day: it needs a fresh nervous system. You train power (producing force fast) and whole-body coordination, which carry over to jumping, squatting and hinging.",
+  "motor.rol.O.pq.a": "The Olympic lift opens the session with a fresh nervous system: it is power and technique, not volume. Every fast, clean rep improves the force production the main lifts use afterwards.",
+  "motor.rol.O.pr.i": "Add 1 to 2.5 kg per week only if every set was fast, with the bar close to the body and a solid catch. In the S4 deload, drop the weight 10% and work on technique.",
+  "motor.rol.O.pr.a": "Add 1 to 2.5 kg when every set is fast and stable; if a rep slows down or gets sloppy, repeat the load next week. In S4, 10% less and technique.",
+  "motor.rol.O.se.i": "A fast, light bar in your hands and a stable catch without losing posture. If you feel you are pulling with your arms or the bar drags you, the weight is too heavy.",
+  "motor.rol.O.se.a": "High bar speed and solid catches from the first to the last set. If the speed drops, the set is over.",
+  "motor.olim.series": "SETS: {sets} short sets of {reps} reps with full rest: every rep has to be high quality. If it helps, do the reps one at a time, resetting the bar between them. Before the first set, 2 or 3 sets with the empty bar or very light.",
+  "motor.olim.carga": "LOAD: a weight that lets the reps stay fast and with the same technique as the first one ({rir}). In Olympic lifting the set ends when technique gets sloppy, never at failure.",
   "motor.rol.F.pq.i": "This is the lift that organizes the whole session: it goes first because it needs a fresh nervous system and it's where you move the most weight. If you add load here with clean technique, everything that follows pays off more.",
   "motor.rol.F.pq.a": "This is the lift that defines the day: first in the order, with a fresh nervous system and the highest load of the session. Strength is built here and later turns into quality volume in the other blocks.",
   "motor.rol.F.pr.i": "Double progression: keep the load until you complete every set at the top of the rep range with the prescribed RIR, and only then add 2.5 kg (1 or 2 kg for the upper body). If a set breaks down, that wasn't your load: drop one step and push again.",
@@ -83595,7 +84090,7 @@ JP_I18N.add('en', {
   /* ---------- base de conocimiento por patrón: objetivo + set-up + cue + cuidado + tempo ---------- */
   /* los textos de cada patrón (objetivo, set-up, cue, cuidado) viven en el diccionario: src/shared/i18n/es.motor.js, claves motor.kb.<patrón>.<o|s|c|x>; acá solo queda el tempo */
   function T(k, p){ return (typeof window.jpT === 'function') ? window.jpT(k, p) : k; }
-  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'triceps_oh':'3011', 'curl_mart':'2011', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
+  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'triceps_oh':'3011', 'curl_mart':'2011', 'olim_clean':'10X0', 'olim_snatch':'10X0', 'olim_cj':'10X0', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
   var KB = {};
   Object.keys(KB_TEMPO).forEach(function(id){
     var e = { t: KB_TEMPO[id] };
@@ -83604,6 +84099,11 @@ JP_I18N.add('en', {
   });
   /* ejercicio -> patrón del KB (el primero que coincide) */
   var RX_KB = [
+    /* levantamiento olímpico (rol O): técnica de cada gesto */
+    [/clean (&|and|y) jerk|cargada y envion/, 'olim_cj'],
+    [/snatch|arranque/, 'olim_snatch'],
+    [/clean|cargada/, 'olim_clean'],
+    [/jerk|envion/, 'olim_cj'],
     [/cruce de cables deltoides|pec deck inverso/, 'delt_post'],
     [/hiperextensiones en banco a 45/, 'hiper45'],
     [/sentadilla en multipower/, 'hack'],
@@ -83678,7 +84178,7 @@ JP_I18N.add('en', {
   }
 
   /* ---------- una fila de sesión: rol, ejercicio(s), dosis intermedio / avanzado ---------- */
-  /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
+  /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles O levantamiento olímpico (series rectas, justo después de la entrada en calor) · F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
   function R(rol, ej, i, a, o){ var r = { rol: rol, ej: ej, i: i, a: a }; if(o){ for(var k in o) r[k] = o[k]; } return r; }
   function partesDosis(s){
     /* "4/3x8/12": cada estación de un biset conserva SUS series (el volumen semanal no cambia al agrupar); sets = la primera, setsL = una por estación */
@@ -83688,13 +84188,13 @@ JP_I18N.add('en', {
   }
   function nombreCorto(n){ return String(n).replace(/\s*\(.*\)\s*$/, ''); }
   function minBloque(sets, estaciones, rest){ return Math.max(4, Math.round(sets * (estaciones * 45 + rest) / 60 + 2)); }
-  var TAG = { F: 'FUERZA', H: 'HIPERTROFIA', B: 'HIPERTROFIA', T: 'HIPERTROFIA', A: 'ACCESORIO', M: 'FINISHER', K: 'CARDIO', C: 'CORE' };
-  var PREF = { F: 'Fuerza principal', H: 'Hipertrofia', A: 'Accesorios', M: 'Finisher', K: 'Cardio', C: 'Core' };
+  var TAG = { O: 'FUERZA', F: 'FUERZA', H: 'HIPERTROFIA', B: 'HIPERTROFIA', T: 'HIPERTROFIA', A: 'ACCESORIO', M: 'FINISHER', K: 'CARDIO', C: 'CORE' };
+  var PREF = { O: 'Olímpico', F: 'Fuerza principal', H: 'Hipertrofia', A: 'Accesorios', M: 'Finisher', K: 'Cardio', C: 'Core' };
 
   /* ---------- notas por rol: por qué está en la sesión, cómo se progresa y qué se tiene que sentir ----------
      cada rol trae [intermedio, avanzado]. Las líneas empiezan con una etiqueta en mayúsculas (el importador las toma como pautas del bloque). */
   var N_ROL = {};
-  ['F', 'H', 'A', 'B', 'T', 'C'].forEach(function(r){
+  ['O', 'F', 'H', 'A', 'B', 'T', 'C'].forEach(function(r){
     var o = {};
     ['pq', 'pr', 'se'].forEach(function(f){ Object.defineProperty(o, f, { enumerable: true, get: function(){ return [T('motor.rol.' + r + '.' + f + '.i'), T('motor.rol.' + r + '.' + f + '.a')]; } }); });
     N_ROL[r] = o;
@@ -83805,7 +84305,9 @@ JP_I18N.add('en', {
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
       var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
-      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
+      /* olímpico: series cortas con descanso completo y la serie termina cuando se ensucia la técnica (sin doble progresión por repeticiones) */
+      if(fila.rol === 'O'){ L.push(T('motor.olim.series', { sets: d.sets, reps: d.reps[0] })); L.push(T('motor.olim.carga', { rir: rirTexto(d.rir[0]) })); }
+      else lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
@@ -83837,12 +84339,13 @@ JP_I18N.add('en', {
     upper: ['Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Face Pull con cuerda x 15', 'Flexiones de brazos x 8'],
     legs: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 8 con pausa de 2 segundos abajo', 'Zancada inversa x 5 por lado'],
     glute: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 10 por lado', 'Peso muerto rumano a una pierna x 6 por lado'],
+    olim: ['Cambio de cadera 90/90 x 5 por lado', 'Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Sentadilla goblet x 8 con pausa de 2 segundos abajo'],
     run: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 12 por lado', 'Zancada inversa x 8 por lado', 'Dead bug x 8 por lado', 'Carrera suave x 6 min con 4 aceleraciones de 15 s al final'],
     full: ['Cambio de cadera 90/90 x 5 por lado', 'Rotación torácica en cuadrupedia x 8 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 10', 'Retracciones escapulares colgado x 10', 'Rotación externa manguito rotador x 12 por lado', 'Dead bug x 8 por lado']
   };
   /* minutos de cada entrada en calor (los suma la duración estimada de la sesión) */
-  var WU_MIN = { push: 7, pull: 7, upper: 7, legs: 7, glute: 7, run: 10, full: 10 };
-  var WU_NTIPS = {push:3,pull:3,upper:3,legs:3,glute:3,run:3,full:3};
+  var WU_MIN = { push: 7, pull: 7, upper: 7, legs: 7, glute: 7, olim: 7, run: 10, full: 10 };
+  var WU_NTIPS = {push:3,pull:3,upper:3,legs:3,glute:3,olim:3,run:3,full:3};
   var WU = {};
   Object.keys(WU_ITEMS).forEach(function(k){
     var w = { items: WU_ITEMS[k] };
@@ -85617,6 +86120,134 @@ JP_I18N.add('en', {
   PB.EST = { parsearBloque: parsearBloque, parsearDosis: parsearDosis, lineas: lineas, aplicarModelo: aplicarModelo, cambiarEjercicio: cambiarEjercicio, quitarEjercicio: quitarEjercicio, agregarBloque: agregarBloque,
     alternativas: alternativas, catalogoAgregable: catalogoAgregable, alertasDia: alertasDia, alertasPlan: alertasPlan, volumen: volumen, infoEj: infoEj, resolver: resolver, rirMin: rirMin, esAvanzado: esAvanzado,
     aplica: aplica, ctxDe: ctxDe, htmlBloque: htmlBloque, htmlAlertasDia: htmlAlertasDia, htmlAgregar: htmlAgregar, htmlPanel: htmlPanel, repintar: repintar, pintarBuilder: pintarBuilder };
+})();
+</script>
+<script>
+/* =========================================================
+   PLANTILLA DEL BANCO · BOX FEMENINO · GLÚTEO, PIERNAS Y CORE + OLÍMPICO · 5 DÍAS · DESARROLLO-INTERMEDIO
+   Entorno: gimnasio de CrossFit / box (cajones, barras y discos, mancuernas, kettlebells, bandas y rig con barra y anillas).
+   Restricción estricta de equipo: CERO máquinas guiadas y CERO poleas (ni prensa, hack, extensiones o curls en máquina, poleas ni máquinas de abducción).
+   Estructura: lunes, miércoles y viernes llevan una entrada en calor propia del olímpico (cadera, espalda alta, hombros y sentadilla) y abren con levantamiento olímpico (rol O, series rectas) justo después de la entrada en calor; después,
+   un básico en series rectas cuando corresponde, bisets armados con el material del box en una misma zona (barra + cajón, rig + piso, mancuernas + banda)
+   y el cierre de core, con un ejercicio distinto cada día. Foco: glúteo (el grupo con más volumen), piernas y core, con una espalda tonificada
+   (postura, espalda alta y media y dorsal) en volumen controlado.
+   Se arma con el mismo motor que las plantillas de Bodybuilding (10-motor-textos.js + 20-armado.js: objetivo, pautas, tempo, RIR y pedagogía por bloque)
+   y, como el resto de las del sistema, sus días no se guardan en el navegador: se regeneran desde este código (bandera sbSys).
+   ========================================================= */
+(function(){
+  'use strict';
+  var PB = window.__jpPB; if(!PB || !PB.construirDias) return;
+  var R = PB.R, D = PB.D;
+  var VER = 1, ID = 'bk_box_f5_i', NOMBRE = 'Box · Glúteo, Piernas y Core + Olímpico · Femenino · 5 días · Desarrollo-Intermedio';
+
+  D.BX_1 = { short: 'LUN', label: 'Olímpico + Cuádriceps y Glúteo', title: 'Lunes · Hang Power Clean, Sentadilla Frontal y Glúteo', wu: 'olim', chips: ['🥇 Olímpico · Hang Power Clean', '🍑 Glúteo + cuádriceps', '🧱 Core'],
+    foco: 'Primer día olímpico de la semana: el hang power clean abre la sesión justo después de la entrada en calor, con el sistema nervioso fresco, para entrenar potencia de cadera. Después, la sentadilla frontal es el único patrón axial pesado del día y el trabajo de glúteo y pierna va en dos bisets armados en la misma zona: hip thrust con la espalda en un cajón junto a la abducción caminando con banda, y zancada inversa con mancuernas junto al gemelo a una pierna. El hollow body cierra el core.',
+    filas: [
+      R('O', 'Hang Power Clean', '5x3|3|120', null, { n: 'Técnica antes que kilos: barra pegada al cuerpo, extensión explosiva de cadera y recepción en el rack con los codos altos.' }),
+      R('F', 'Sentadilla frontal', '4x5-7|2|150', null, { n: 'Único patrón axial pesado del día: codos altos, torso erguido y bajada controlada. La barra apoyada adelante obliga al core a trabajar en cada repetición.' }),
+      R('B', ['Hip thrust con barra', 'Abducción caminando con banda'], '3x8-10/12 por lado|1|90', null, { tp: ['2012', ''], n: 'Hip thrust con la espalda alta apoyada en un cajón firme y pausa de 2 segundos arriba; la abducción caminando con banda va al lado, para el glúteo medio.' }),
+      R('B', ['Zancada inversa', 'Elevación de talones a una pierna'], '3x8-10/12-15|1|75', null, { tp: ['2110', '2211'], n: 'Zancada hacia atrás con mancuernas, arrancando por la pierna más débil; el gemelo a una pierna sobre un disco o el borde de un cajón, con pausa abajo.' }),
+      R('C', 'Hollow body', '2x30s|1|45')
+    ] };
+
+  D.BX_2 = { short: 'MAR', label: 'Bisagra, Glúteo y Espalda', title: 'Martes · Peso Muerto Rumano, Glúteo y Espalda', wu: 'glute', chips: ['🍑 Glúteo', '🔗 Bisagra e isquios', '💪 Espalda tonificada'],
+    foco: 'Día de bisagra y glúteo con la espalda como complemento: el peso muerto rumano es el básico (y el único patrón axial pesado) y después vienen dos bisets que juntan glúteo y tracción en la misma estación: hip thrust a una pierna con la espalda en un cajón junto al remo invertido en el rig, y sentadilla búlgara con el torso inclinado junto al remo a una mano con mancuerna, usando el mismo cajón. El dead bug cierra el core.',
+    filas: [
+      R('F', 'Peso muerto rumano', '4x6-8|2|150', null, { tp: ['3110'], n: 'Cadera atrás, barra pegada a las piernas y bajada de 3 segundos hasta donde la espalda se mantiene neutra: ahí termina el rango.' }),
+      R('B', ['Hip thrust a una pierna', 'Remo invertido / Australian Pull-up'], '3x10/8-12|1|75', null, { tp: ['2012', ''], n: 'Glúteo de a una pierna con la espalda en un cajón y remo invertido en las anillas o la barra del rig: cuanto más horizontal el cuerpo, más difícil.' }),
+      R('B', ['Sentadilla búlgara con torso inclinado', 'Remo unilateral a una mano'], '3x8-10/10-12|1|90', null, { tp: ['3110', ''], n: 'Búlgara con el pie de atrás en un cajón bajo y el torso inclinado unos 30° para cargar el glúteo; el remo con una mancuerna, apoyando la mano libre en el mismo cajón.' }),
+      R('C', 'Dead bug', '2x8|1|45')
+    ] };
+
+  D.BX_3 = { short: 'MIÉ', label: 'Olímpico + Unilateral y Espalda', title: 'Miércoles · Hang Power Snatch, Step Up y Dominadas', wu: 'olim', chips: ['🥇 Olímpico · Hang Power Snatch', '🦵 Unilateral', '💪 Dorsal'],
+    foco: 'Segundo día olímpico: el hang power snatch abre la sesión con peso liviano y foco en la técnica y la estabilidad por encima de la cabeza. Después, el step up al cajón junto al gemelo a una pierna (en el mismo cajón) y las dominadas supinas en el rig junto a la abducción acostada con banda, en el piso al lado. La Copenhagen plank cierra el core con trabajo de aductores y oblicuos.',
+    filas: [
+      R('O', 'Hang Power Snatch', '5x3|3|120', null, { n: 'Peso liviano y técnica: agarre ancho, barra pegada al cuerpo y recepción con los brazos bloqueados y el abdomen firme. Si la barra se va hacia adelante, bajá el peso.' }),
+      R('B', ['Step up al cajón', 'Elevación de talones a una pierna'], '3x8-10/12-15|1|75', null, { tp: ['2110', '2211'], n: 'Cajón a la altura de la rodilla: empujá con el talón de la pierna de arriba, sin impulsarte con la de abajo. El gemelo, en el borde del mismo cajón.' }),
+      R('B', ['Dominadas supinas', 'Abducción de cadera acostada con banda'], '3x5-8/15-20|1|90', null, { n: 'Dominadas con el pecho hacia la barra; si todavía no salen 5 limpias, usá una banda de asistencia colgada del rig. La abducción con banda va en el piso, al lado.' }),
+      R('C', 'Copenhagen plank', '2x20s|1|45')
+    ] };
+
+  D.BX_4 = { short: 'JUE', label: 'Glúteo Pesado y Core', title: 'Jueves · Hip Thrust Pesado, Isquios y Postura', wu: 'glute', chips: ['🍑 Hip thrust pesado', '🔗 Isquios', '🧱 Core y postura'],
+    foco: 'Día de glúteo pesado sin olímpico: el hip thrust con la espalda en un cajón es el ejercicio de glúteo más pesado de la semana. Después, el curl nórdico (los talones trabados en la barra baja del rig) junto a la abducción caminando con banda, y un biset de postura con el pájaro y las elevaciones laterales con mancuernas, para una espalda alta y unos hombros firmes. La plancha lateral cierra el core.',
+    filas: [
+      R('F', 'Hip thrust con barra', '4x6-8|1|150', null, { tp: ['2012'], n: 'Espalda alta en un cajón firme, mentón al pecho, pies bajo las rodillas y pausa de 2 segundos arriba. Anotá los kilos: es tu marcador de progreso de glúteo.' }),
+      R('B', ['Curl nórdico', 'Abducción caminando con banda'], '3/2x4-6/12 por lado|1|90', null, { n: 'Nórdico con los talones trabados en la barra baja del rig o sostenidos por una compañera: bajá lo más lento que puedas y ayudate con las manos para subir. En la ronda que sobra hacés solo el nórdico.' }),
+      R('B', ['Pájaro / Elevaciones posteriores inclinado', 'Elevaciones laterales con mancuernas'], '3x15/12-15|1|60', null, { n: 'Postura y hombro: el pájaro con el torso inclinado lleva las escápulas atrás y las laterales dan forma al hombro. Cargas livianas y rango completo.' }),
+      R('C', 'Plancha lateral', '3x30s|1|45')
+    ] };
+
+  D.BX_5 = { short: 'VIE', label: 'Olímpico + Cadena Posterior', title: 'Viernes · Clean & Jerk, Bisagra a una Pierna y Postura', wu: 'olim', chips: ['🥇 Olímpico · Clean & Jerk', '🔗 Cadena posterior', '🧱 Core'],
+    foco: 'Tercer día olímpico: el clean & jerk abre la sesión con series cortas de 2 repeticiones (cargada desde el piso y envión con impulso de piernas). Después, el peso muerto rumano a una pierna con kettlebell junto al remo invertido en el rig, y un cierre de glúteo y postura con el puente con banda junto al pájaro. El transporte de maleta cierra el core con trabajo anti-inclinación.',
+    filas: [
+      R('O', 'Clean & Jerk', '6x2|3|120', null, { n: 'Cargada desde el piso y envión con impulso de piernas: cada repetición rápida y limpia. Calentá los hombros con la barra sola antes de la primera serie.' }),
+      R('B', ['Peso muerto rumano a una pierna', 'Remo invertido / Australian Pull-up'], '3/2x8-10/8-12|1|75', null, { n: 'Bisagra de a una pierna con una kettlebell en la mano contraria y remo invertido en el rig. En la ronda que sobra hacés solo el rumano.' }),
+      R('B', ['Puente de glúteo con banda', 'Pájaro / Elevaciones posteriores inclinado'], '3x15/15|1|60', null, { n: 'Cierre de glúteo y postura: puente con la banda arriba de las rodillas y pájaro con mancuernas livianas. Sin pausa entre los dos.' }),
+      R('C', 'Transporte de maleta', '2x20 m por lado|1|60')
+    ] };
+
+  var NIV = (PB.NIVELES || [])[0] || {};
+  var TPL = { id: ID, g: 'f', f: 5, niv: 'intermedio', nivLb: NIV.lb || 'Desarrollo-Intermedio', suf: NIV.suf || '', dias: ['BX_1', 'BX_2', 'BX_3', 'BX_4', 'BX_5'] };
+  /* material del box: todo libre (barra, mancuernas, kettlebell, banda, peso corporal, cajón o rig); ni máquinas ni poleas */
+  var PROHIBIDO = /^(Máquina|Multipower|Polea)$/;
+
+  function armarDias(){ return PB.construirDias(TPL); }
+  function ficha(dias){
+    return {
+      id: ID, ic: '🏋️‍♀️', tipo: 'base', sbSys: true, sbSysVer: VER, boxSys: true,
+      nombre: NOMBRE, disc: 'hiper', niv: 'intermedio', genero: 'f', freq: 5, tab: 'bb', carpeta: 'base',
+      notas: 'Cinco días para una alumna de nivel intermedio que entrena en un box (cajones, barras y discos, mancuernas, kettlebells, bandas y rig con barra y anillas), sin máquinas guiadas ni poleas. Lunes, miércoles y viernes abren con levantamiento olímpico justo después de la entrada en calor (hang power clean, hang power snatch y clean & jerk, en series rectas cortas); martes y jueves son de bisagra y glúteo pesado. Después vienen los bisets de musculación, armados con el material del box en una misma zona, y cada día cierra con un ejercicio de core distinto. Foco en glúteo, piernas y core, con una espalda tonificada en volumen controlado. Volumen semanal en series efectivas: glúteo 24 (el grupo con más volumen), cuádriceps 10, isquiotibiales 10, gemelo 6, espalda 11, hombro posterior 6, hombro lateral 3 y core 11; los brazos y el pecho trabajan solo de forma indirecta. RIR 1-2 en los básicos y RIR 3 en el olímpico (la técnica manda).',
+      creado: 'Plantilla del sistema', usos: 0, dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []),
+      meta: { mesoDisc: 'hiper', mesoNivel: 'intermedio', mesoName: NOMBRE, mesoObjetivo: 'Glúteo, piernas y core con levantamiento olímpico · box sin máquinas · 5 días',
+              mesoTexto: 'Mesociclo de 4 semanas: S1 base, S2 y S3 con más kilos manteniendo el RIR (en el olímpico solo si todas las repeticiones salen rápidas y limpias) y S4 descarga activa (una serie menos y RIR 3-4).' }
+    };
+  }
+  function hidratar(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || !r.boxSys || r.id !== ID || (r.dias && r.dias.length)) return;
+      try{ r.dias = armarDias(); n++; }catch(e){ console.warn('box hidratar', e); }
+    });
+    return n;
+  }
+  function sembrar(forzar){
+    if(typeof S === 'undefined' || !S) return 0;
+    if(!Array.isArray(S.banco)) S.banco = [];
+    S.ui = S.ui || {};
+    var ya = S.banco.filter(function(x){ return x.id === ID; })[0], n = 0;
+    if(ya){
+      if(!ya.editada && (ya.sbSysVer || 0) < VER){ var u = ficha(armarDias()); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+    } else if((S.ui.boxSeed || 0) < VER || forzar){
+      S.banco.unshift(ficha(armarDias())); n++;
+    }
+    S.ui.boxSeed = VER;
+    if(n){ try{ save(); }catch(e){} }
+    return n;
+  }
+  /* control de la plantilla: nombres contra la biblioteca, material permitido, olímpico después de la entrada en calor y core al cierre */
+  function validar(){
+    var out = { dias: 0, sinResolver: [], prohibidos: [], olimpico: [], core: [] }, dias = armarDias(), EST = PB.EST;
+    out.dias = dias.length;
+    dias.forEach(function(d, di){
+      (d.bloques || []).forEach(function(b){
+        var m = EST && EST.parsearBloque(b); if(!m) return;
+        m.ex.forEach(function(e){
+          if(!e.lib) out.sinResolver.push('D' + (di + 1) + ': ' + e.nombre);
+          else if(PROHIBIDO.test(String(e.lib.equipo || '')) || e.t !== 'L') out.prohibidos.push('D' + (di + 1) + ': ' + e.nombre + ' (' + e.lib.equipo + ')');
+        });
+      });
+      if(/^Olímpico/.test((d.bloques[1] || {}).titulo || '')) out.olimpico.push(di + 1);
+      if(((d.bloques[d.bloques.length - 1] || {}).modalidad) === 'core') out.core.push(di + 1);
+    });
+    return out;
+  }
+  function arranque(){
+    try{ hidratar(); sembrar(false); }catch(e){ console.warn('banco box', e); }
+    try{ if(typeof renderBanco === 'function' && S.ui && S.ui.view === 'banco') renderBanco(); }catch(e){}
+  }
+  window.CoachBox = { sembrar: sembrar, hidratar: hidratar, armarDias: armarDias, validar: validar, tpl: TPL, id: ID, nombre: NOMBRE, version: VER };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 600); });
+  else setTimeout(arranque, 600);
 })();
 </script>
 <script>
@@ -92729,6 +93360,10 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 #v-pizarra .pz-empty h4{font-family:var(--ffh);font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:6px}
 #v-pizarra .pz-empty .pz-btn{margin-top:14px}
 #v-pizarra .pz-note{padding:16px 12px;color:var(--muted);font-size:13.5px}
+/* biset / triset en la pizarra: el mismo naranja de la marca que ve el alumno */
+#v-pizarra .pz-blq.pz-bis{border-color:rgba(238,90,18,.5);box-shadow:inset 3px 0 0 #EE5A12}
+#v-pizarra .pz-blq.pz-bis .pz-bh{color:#FF8A4C;background:rgba(238,90,18,.08)}
+#v-pizarra .pz-blq.pz-bis .pz-k{color:#FF8A4C}
 /* hoja de grupo */
 .pz-sheet-bg{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.66);display:none;align-items:flex-end;justify-content:center}
 .pz-sheet-bg.on{display:flex}
@@ -92818,7 +93453,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   function presenciales(){
     /* selección individual: el orden es por nombre; el horario es un dato opcional y no agrupa ni condiciona a nadie */
     return atletas().filter(function(a){ return a.presencial; }).sort(function(x, y){
-      return nombreDe(x).localeCompare(nombreDe(y), 'es');
+      return (window.jpCmpNombre ? window.jpCmpNombre(nombreDe(x), nombreDe(y)) : nombreDe(x).localeCompare(nombreDe(y), 'es', { sensitivity: 'base' })) || String(x.id).localeCompare(String(y.id));
     });
   }
 
@@ -92933,7 +93568,98 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     return '<div class="pz-blq">' + h + '</div>';
   }
 
+  /* ---------- MISMA FUENTE QUE LA APP DEL ALUMNO (v28) ----------
+     Antes la pizarra leía S.plans con un lector propio y simplificado: en la Pizarra Sports mostraba siempre la dosis de la semana 1 (el alumno ve la
+     proyección de S2-S4, weekItems), mostraba bloques vacíos que no se exportan, usaba el nombre largo de la biblioteca y el título del día sin la
+     corrección de rótulos que recibe el alumno. Ahora arma el plan con buildProgramConfig(), la MISMA función que compila la app del alumno, sobre una
+     COPIA del plan (la planificación guardada nunca se toca) y dibuja esos datos. Se cachea por contenido del plan: si el coach edita, se recalcula. */
+  var _cfgCache = {};
+  function datosAlumno(a){
+    if(typeof buildProgramConfig !== 'function' || typeof S === 'undefined' || !S.plans || !S.plans[a.id]) return null;
+    var orig = S.plans[a.id], firma = '';
+    try{ firma = JSON.stringify(orig) + '|' + JSON.stringify(a); }catch(e){ return null; }
+    var c = _cfgCache[a.id]; if(c && c.firma === firma) return c.cfg;
+    var exV = document.getElementById('expVideos'), exW = document.getElementById('expWarn'), v0 = exV ? exV.checked : null, w0 = exW ? exW.checked : null, cfg = null;
+    S.plans[a.id] = JSON.parse(JSON.stringify(orig));
+    try{ if(exV) exV.checked = true; if(exW) exW.checked = false; cfg = buildProgramConfig(a); }
+    catch(e){ console.warn('[Pizarra] no se pudo armar el plan de ' + nombreDe(a) + ' como lo ve el alumno', e); cfg = null; }
+    finally{ S.plans[a.id] = orig; if(exV) exV.checked = v0; if(exW) exW.checked = w0; }
+    _cfgCache[a.id] = { firma: firma, cfg: cfg };
+    return cfg;
+  }
+  function diasDe(cfg){ return (cfg && Array.isArray(cfg.days)) ? cfg.days : []; }
+  function bloquesCfg(cfg, dd, wi){
+    if(cfg.modoSemanal && Array.isArray(dd.blocksPorSemana) && Array.isArray(dd.blocksPorSemana[wi])) return dd.blocksPorSemana[wi];
+    return dd.blocks || [];
+  }
+  /* video: el mismo que recibe el alumno (videoMap por nombre); si no hay, la biblioteca por nombre; si no, búsqueda */
+  function vbtnCfg(cfg, nombre){
+    var yt = (cfg && cfg.videoMap && cfg.videoMap[nombre]) || '', ex = porNombre(nombre);
+    if(yt && ex && ex.videoId === yt) return vbtn(ex, nombre);
+    if(yt) return '<a class="pz-vid" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + E(yt) + '" aria-label="Ver video de ' + E(nombre) + '"><i>▶</i>VIDEO</a>';
+    return vbtn(ex, nombre);
+  }
+  function filaCfg(cfg, k, nombre, chips){
+    return '<div class="pz-ex"><span class="pz-k">' + E(k) + '</span><div class="pz-exm"><div class="pz-n">' + E(nombre) + '</div>' +
+      (chips ? '<div class="pz-ds">' + chips + '</div>' : '') + '</div>' + vbtnCfg(cfg, nombre) + '</div>';
+  }
+  function bloqueCfg(cfg, b, wi){
+    var h = '';
+    if(b.isBlock){
+      var ch1 = ch((b.efSets ? b.efSets + '×' : '') + (b.reps || '—'), true) + ((b.hasApprox && b.approxSets) ? ch('+' + b.approxSets + ' aclim.') : '') +
+        (b.tempo ? ch('T ' + b.tempo) : '') + (b.restSeconds ? ch('⏱ ' + mmss(b.restSeconds)) : '') + (b.metodologia ? ch(tecTxt(b.metodologia, b.tecParam)) : '');
+      h = cab(b.title && b.title !== b.exerciseName ? b.title : (b.category || 'Bloque'), b.optional ? 'opcional' : '') + filaCfg(cfg, '', b.exerciseName || 'Ejercicio', ch1);
+    } else if(b.isSuperset){
+      var nS = (b.exercises || []).length;
+      h = cab(b.title || (nS === 3 ? 'Triset' : 'Biset'), [b.efSets ? b.efSets + ' rondas' : '', b.restSeconds ? 'pausa ' + mmss(b.restSeconds) : ''].filter(Boolean).join(' · '));
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.reps), true) + (e.tempo ? ch('T ' + e.tempo) : '') + (e.metodologia ? ch(tecTxt(e.metodologia, e.tecParam)) : '')); });
+      return '<div class="pz-blq pz-bis">' + h + (b.tips ? '<div class="pz-tip">' + E(b.tips) + '</div>' : '') + (b.altNote ? '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>' : '') + '</div>';
+    } else if(b.isFinisher){
+      var rondas = (b.roundsByWeek && b.roundsByWeek[wi]) || '';
+      h = cab(b.title || 'Finisher', 'opcional');
+      if(rondas) h += '<div class="pz-tip" style="border-top:0;color:var(--txt-2)">' + E(rondas) + '</div>';
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.repsRange), true)); });
+    } else if(b.isHyrox){
+      h = cab(b.title || 'Hyrox');
+      (b.movements || []).forEach(function(m){ h += fila('', String(m), null, '', true); });
+    } else if(Array.isArray(b.items)){
+      /* Pizarra: la semana activa sale de weekItems (igual que itemsDeSemana() del alumno) */
+      var it = (wi > 0 && Array.isArray(b.weekItems) && Array.isArray(b.weekItems[wi]) && b.weekItems[wi].length) ? b.weekItems[wi] : b.items;
+      var ps = { tipo: 'list', items: it, sportsPizarra: !!b.sportsPizarra, modalidad: b.modalidad, titulo: b.title, category: b.category, optional: b.optional, tips: b.tips, altNote: b.altNote };
+      var html = bloque(ps, wi);
+      return /biset|triset|superserie|super-?set/i.test(b.title || '') || /(^|\n)\s*[A-F][2-9][.)]/.test(it.join('\n')) ? html.replace('<div class="pz-blq">', '<div class="pz-blq pz-bis">') : html;
+    } else return '';
+    if(b.tips) h += '<div class="pz-tip">' + E(b.tips) + '</div>';
+    if(b.altNote) h += '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>';
+    return '<div class="pz-blq">' + h + '</div>';
+  }
+  function semanaBase(a){ var p = S.plans && S.plans[a.id]; return Math.max(0, Math.min(3, ((p && p.agenda && parseInt(p.agenda.semana, 10)) || 1) - 1)); }
+  function cuerpoCfg(a, cfg){
+    var dias = diasDe(cfg);
+    var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
+      '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
+    if(!dias.length) return '<div class="pz-body"><div class="pz-meta">' + edit + '</div><div class="pz-note">Sin planificación cargada. Armala en el Builder y aparece acá sola.</div></div>';
+    var di = parseInt(ui.dia[a.id], 10); if(!(di >= 0 && di < dias.length)) di = 0;
+    var base = semanaBase(a), nW = Math.max(1, (cfg.weeks || []).length || 4);
+    var wi = ui.sem[a.id] != null ? Math.max(0, Math.min(nW - 1, parseInt(ui.sem[a.id], 10) || 0)) : Math.min(base, nW - 1);
+    var dd = dias[di] || {}, blq = bloquesCfg(cfg, dd, wi);
+    var h = '<div class="pz-body" data-fuente="alumno"><div class="pz-meta">' +
+      '<div class="pz-wk"><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="-1" aria-label="Semana anterior">‹</button><span>SEM ' + (wi + 1) + (wi === base ? ' · ACTUAL' : '') + '</span><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="1" aria-label="Semana siguiente">›</button></div>' +
+      edit + '</div>';
+    h += '<div class="pz-days">' + dias.map(function(x, i){
+      return '<button type="button" class="pz-day' + (i === di ? ' on' : '') + '" data-pz="dia" data-id="' + E(a.id) + '" data-n="' + i + '">' + E(x.short || ('DÍA ' + (i + 1))) + '</button>';
+    }).join('') + '</div>';
+    h += '<div class="pz-dt">' + E(dd.title || dd.label || ('Día ' + (di + 1))) + '</div>';
+    if(dd.focusText) h += '<div class="pz-foco">' + E(dd.focusText) + '</div>';
+    var cont = blq.map(function(b){ return bloqueCfg(cfg, b, wi); }).join('');
+    var cd = (dd.cooldown || []).map(function(x){ return typeof x === 'string' ? x : (x && (x.texto || x.nombre || x.titulo)) || ''; }).filter(function(x){ return String(x).trim(); });
+    if(cd.length) cont += '<div class="pz-blq">' + cab('Cool-down') + cd.map(function(x){ return fila('', String(x), null, '', true); }).join('') + '</div>';
+    h += cont || '<div class="pz-note">Este día todavía no tiene bloques cargados.</div>';
+    return h + '</div>';
+  }
+
   function cuerpo(a){
+    var cfgA = datosAlumno(a); if(cfgA) return cuerpoCfg(a, cfgA);      /* lo mismo que ve el alumno; el lector viejo queda solo como respaldo */
     var p = (typeof S !== 'undefined' && S.plans) ? S.plans[a.id] : null;
     var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
       '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
@@ -92988,8 +93714,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     }
     host.innerHTML = lista.map(function(a){
       var abierto = !!ui.open[a.id], c = colorDe(a);
-      var p = S.plans ? S.plans[a.id] : null;
-      var di = parseInt(ui.dia[a.id], 10) || 0, dd = p && p.dias && p.dias[di];
+      var p = S.plans ? S.plans[a.id] : null, cfgH = datosAlumno(a);
+      var di = parseInt(ui.dia[a.id], 10) || 0, dd = cfgH ? diasDe(cfgH)[di] : (p && p.dias && p.dias[di]);
       var tt = dd ? (dd.title || dd.label || '') : '';
       var det = [sedeLb(a), dd ? (dd.short || '') + (tt && nz(tt) !== nz(dd.short) ? ' · ' + tt : '') : ''].filter(Boolean).join('  ·  ') || (a.foco || a.nivel || '');
       return '<article class="pz-card' + (abierto ? ' open' : '') + '"' + (c ? ' style="--ac:' + E(c) + '"' : '') + '>' +
@@ -93007,7 +93733,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       if(FLT === 'pres' && !a.presencial) return false;
       if(FLT === 'onl' && a.presencial) return false;
       return !q || nz(nombreDe(a)).indexOf(q) >= 0;
-    }).sort(function(x, y){ return nombreDe(x).localeCompare(nombreDe(y), 'es'); });
+    }).sort(function(x, y){ return (window.jpCmpNombre ? window.jpCmpNombre(nombreDe(x), nombreDe(y)) : nombreDe(x).localeCompare(nombreDe(y), 'es', { sensitivity: 'base' })) || String(x.id).localeCompare(String(y.id)); });
   }
   function pintarHoja(){
     var l = document.getElementById('pzShL'); if(!l) return;
@@ -93451,14 +94177,19 @@ html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest, html body:n
   color:var(--xc-rest-c) !important; border-radius:calc(var(--xc-r) * .7) !important; padding:7px 12px !important; font-family:var(--xc-font) !important;
   font-weight:700 !important; font-size:.78rem !important; letter-spacing:.08em !important; box-shadow:none !important; cursor:pointer;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause{cursor:default;}
-html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
   border-radius:calc(var(--xc-r) * .6) !important; padding:5px 10px !important; color:var(--xc-chip-n) !important; font-family:var(--xc-font) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga small{font-size:.58rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga b{font-size:1.05rem !important; font-weight:800 !important; letter-spacing:.04em !important; color:var(--xc-chip-n) !important; font-variant-numeric:tabular-nums;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b{color:var(--xc-tempo-c) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b{color:var(--xc-rir-c) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo{display:none !important;}
-html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{font-size:.66rem !important; font-weight:700 !important; letter-spacing:.1em !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-uni, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-uni{display:flex !important; grid-column:1 / -1; padding:6px 0 4px !important; border:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-uni::before, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-uni::before{content:none !important; display:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:center !important; gap:6px !important; padding:3px 11px 3px 8px !important; border-radius:999px !important;
+  border:1px solid rgba(169,196,255,.5) !important; background:rgba(169,196,255,.1) !important; color:#DCE6FF !important;
+  font-family:var(--xc-font) !important; font-size:.64rem !important; font-weight:800 !important; letter-spacing:.12em !important; line-height:1.4 !important; white-space:nowrap;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral .jp-uni-ic, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral .jp-uni-ic{font-style:normal; font-size:.92rem; line-height:1; color:#A9C4FF;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg{background:var(--xc-surface-2) !important; border:1px solid var(--xc-bd) !important; border-radius:calc(var(--xc-r) * .8) !important; box-shadow:none !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-l, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-l{color:var(--xc-txt) !important;}
 html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-r, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-r{color:var(--xc-acc) !important;}
@@ -93524,8 +94255,10 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_)
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r3, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r3{display:contents !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)){grid-template-columns:minmax(0,1.3fr) minmax(0,1.7fr) !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rest)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rest)), html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rir)), html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar:not(:has(.jp-db-tempo)):not(:has(.jp-db-rir)){grid-template-columns:minmax(0,1fr) !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{padding:7px 6px !important; border:0 !important; border-top:2px solid #5CE1FF !important; border-radius:0 !important; justify-content:flex-start; font-weight:900 !important; font-size:.82rem !important;}
-html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo{border-top:2px solid #5BF0B5 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir{border-top:2px solid #FF9466 !important;}
 html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b{font-weight:900 !important; font-size:1.1rem !important;}

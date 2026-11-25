@@ -12,7 +12,7 @@
   /* ---------- base de conocimiento por patrón: objetivo + set-up + cue + cuidado + tempo ---------- */
   /* los textos de cada patrón (objetivo, set-up, cue, cuidado) viven en el diccionario: src/shared/i18n/es.motor.js, claves motor.kb.<patrón>.<o|s|c|x>; acá solo queda el tempo */
   function T(k, p){ return (typeof window.jpT === 'function') ? window.jpT(k, p) : k; }
-  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'triceps_oh':'3011', 'curl_mart':'2011', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
+  var KB_TEMPO = {'press_h':'3010', 'press_inc':'3110', 'aper':'3011', 'fondos':'3010', 'pullover':'3011', 'press_v':'2011', 'lateral':'2011', 'delt_post':'2011', 'trap':'1012', 'tracc_v':'2011', 'remo':'2011', 'lumbar':'2012', 'rdl':'3110', 'pmuerto':'2010', 'hip':'2011', 'glute_iso':'2011', 'abduccion':'2011', 'aduccion':'3011', 'sentadilla':'3010', 'prensa':'3110', 'hack':'3110', 'unilat':'2110', 'curl_fem':'3110', 'ext_cuad':'3011', 'gemelo':'2211', 'curl':'3011', 'triceps':'2011', 'triceps_oh':'3011', 'curl_mart':'2011', 'olim_clean':'10X0', 'olim_snatch':'10X0', 'olim_cj':'10X0', 'core_ant':'3011', 'core_flex':'3011', 'rdl_def':'3210', 'bulg_incl':'3110', 'patada_cruz':'3011', 'puente_uni':'3012', 'hiper45':'3110', 'gen':'2011'};
   var KB = {};
   Object.keys(KB_TEMPO).forEach(function(id){
     var e = { t: KB_TEMPO[id] };
@@ -21,6 +21,11 @@
   });
   /* ejercicio -> patrón del KB (el primero que coincide) */
   var RX_KB = [
+    /* levantamiento olímpico (rol O): técnica de cada gesto */
+    [/clean (&|and|y) jerk|cargada y envion/, 'olim_cj'],
+    [/snatch|arranque/, 'olim_snatch'],
+    [/clean|cargada/, 'olim_clean'],
+    [/jerk|envion/, 'olim_cj'],
     [/cruce de cables deltoides|pec deck inverso/, 'delt_post'],
     [/hiperextensiones en banco a 45/, 'hiper45'],
     [/sentadilla en multipower/, 'hack'],
@@ -95,7 +100,7 @@
   }
 
   /* ---------- una fila de sesión: rol, ejercicio(s), dosis intermedio / avanzado ---------- */
-  /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
+  /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles O levantamiento olímpico (series rectas, justo después de la entrada en calor) · F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
   function R(rol, ej, i, a, o){ var r = { rol: rol, ej: ej, i: i, a: a }; if(o){ for(var k in o) r[k] = o[k]; } return r; }
   function partesDosis(s){
     /* "4/3x8/12": cada estación de un biset conserva SUS series (el volumen semanal no cambia al agrupar); sets = la primera, setsL = una por estación */
@@ -105,13 +110,13 @@
   }
   function nombreCorto(n){ return String(n).replace(/\s*\(.*\)\s*$/, ''); }
   function minBloque(sets, estaciones, rest){ return Math.max(4, Math.round(sets * (estaciones * 45 + rest) / 60 + 2)); }
-  var TAG = { F: 'FUERZA', H: 'HIPERTROFIA', B: 'HIPERTROFIA', T: 'HIPERTROFIA', A: 'ACCESORIO', M: 'FINISHER', K: 'CARDIO', C: 'CORE' };
-  var PREF = { F: 'Fuerza principal', H: 'Hipertrofia', A: 'Accesorios', M: 'Finisher', K: 'Cardio', C: 'Core' };
+  var TAG = { O: 'FUERZA', F: 'FUERZA', H: 'HIPERTROFIA', B: 'HIPERTROFIA', T: 'HIPERTROFIA', A: 'ACCESORIO', M: 'FINISHER', K: 'CARDIO', C: 'CORE' };
+  var PREF = { O: 'Olímpico', F: 'Fuerza principal', H: 'Hipertrofia', A: 'Accesorios', M: 'Finisher', K: 'Cardio', C: 'Core' };
 
   /* ---------- notas por rol: por qué está en la sesión, cómo se progresa y qué se tiene que sentir ----------
      cada rol trae [intermedio, avanzado]. Las líneas empiezan con una etiqueta en mayúsculas (el importador las toma como pautas del bloque). */
   var N_ROL = {};
-  ['F', 'H', 'A', 'B', 'T', 'C'].forEach(function(r){
+  ['O', 'F', 'H', 'A', 'B', 'T', 'C'].forEach(function(r){
     var o = {};
     ['pq', 'pr', 'se'].forEach(function(f){ Object.defineProperty(o, f, { enumerable: true, get: function(){ return [T('motor.rol.' + r + '.' + f + '.i'), T('motor.rol.' + r + '.' + f + '.a')]; } }); });
     N_ROL[r] = o;
@@ -222,7 +227,9 @@
     if(!multi){
       L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
       var tp0 = tempoFila(fila, 0, ejs[0]); L.push('TEMPO: Tempo ' + tp0 + ' (' + tempoTxt(tp0) + ')');
-      lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
+      /* olímpico: series cortas con descanso completo y la serie termina cuando se ensucia la técnica (sin doble progresión por repeticiones) */
+      if(fila.rol === 'O'){ L.push(T('motor.olim.series', { sets: d.sets, reps: d.reps[0] })); L.push(T('motor.olim.carga', { rir: rirTexto(d.rir[0]) })); }
+      else lineasPedagogia(fila, d, ejs, av).forEach(function(x){ L.push(x); });
       if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
     } else {
       ejs.forEach(function(e, k){
@@ -254,12 +261,13 @@
     upper: ['Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Face Pull con cuerda x 15', 'Flexiones de brazos x 8'],
     legs: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 8 con pausa de 2 segundos abajo', 'Zancada inversa x 5 por lado'],
     glute: ['Cambio de cadera 90/90 x 5 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 10 por lado', 'Peso muerto rumano a una pierna x 6 por lado'],
+    olim: ['Cambio de cadera 90/90 x 5 por lado', 'Rotación torácica en cuadrupedia x 6 por lado', 'Apertura de banda x 15', 'Sentadilla goblet x 8 con pausa de 2 segundos abajo'],
     run: ['Cambio de cadera 90/90 x 6 por lado', 'Puente de glúteo con banda x 15', 'Abducción caminando con banda x 12 por lado', 'Zancada inversa x 8 por lado', 'Dead bug x 8 por lado', 'Carrera suave x 6 min con 4 aceleraciones de 15 s al final'],
     full: ['Cambio de cadera 90/90 x 5 por lado', 'Rotación torácica en cuadrupedia x 8 por lado', 'Puente de glúteo con banda x 12', 'Sentadilla goblet x 10', 'Retracciones escapulares colgado x 10', 'Rotación externa manguito rotador x 12 por lado', 'Dead bug x 8 por lado']
   };
   /* minutos de cada entrada en calor (los suma la duración estimada de la sesión) */
-  var WU_MIN = { push: 7, pull: 7, upper: 7, legs: 7, glute: 7, run: 10, full: 10 };
-  var WU_NTIPS = {push:3,pull:3,upper:3,legs:3,glute:3,run:3,full:3};
+  var WU_MIN = { push: 7, pull: 7, upper: 7, legs: 7, glute: 7, olim: 7, run: 10, full: 10 };
+  var WU_NTIPS = {push:3,pull:3,upper:3,legs:3,glute:3,olim:3,run:3,full:3};
   var WU = {};
   Object.keys(WU_ITEMS).forEach(function(k){
     var w = { items: WU_ITEMS[k] };

@@ -125,31 +125,50 @@
     if(!a.length) return 0; var set = {}; b.forEach(function(w){ set[w] = 1; });
     var n = 0; a.forEach(function(w){ if(set[w]) n++; }); return n / a.length;
   }
+  /* VIDEO SIEMPRE JUNTO AL NOMBRE (v28): cada video de «Videos técnicos del bloque» se lleva a la cabecera de su ejercicio (arriba a la derecha de la tarjeta).
+     Antes solo se emparejaba con un 60 % de palabras en común y nunca con un ejercicio que ya tenía la lupa de búsqueda: el video quedaba abajo, en el
+     cajón del bloque. Ahora, en tres pasadas: 1) coincidencia fuerte (≥ 60 %), 2) cualquier palabra en común, la mejor primero, 3) si quedan tantos videos como
+     ejercicios sin video, por orden. Un video real reemplaza la lupa; una búsqueda repetida simplemente no se muestra. El cajón queda solo para un video
+     que no corresponde a ningún ejercicio del bloque. */
   function videosEnLinea(root){
     $$('.jp-sb-board', root).forEach(function(bd){
-      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); });
+      /* un video que ya está en línea (en la cabecera de su ejercicio) no se vuelve a pegar en otro */
+      var enLinea = {};
+      $$('[data-yt]', bd).forEach(function(x){ if(!x.closest('.jp-sb-vid-cards, .jp-ux-gone')) enLinea[x.getAttribute('data-yt')] = 1; });
+      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone') && !enLinea[c.getAttribute('data-yt')]; });
       if(!cards.length) return;
-      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){ return !n.parentNode.querySelector('.jp-ux-vid'); });
-      if(!nombres.length) return;
-      var pares = [];
-      cards.forEach(function(c, ci){
-        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
-        nombres.forEach(function(n, ni){ var s = cobertura(a, toks(n.textContent)); if(s >= 0.6) pares.push({ s: s, ci: ci, ni: ni }); });
+      var btnDe = function(n){ return n.parentNode ? n.parentNode.querySelector(':scope > .jp-ux-vid') : null; };
+      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){
+        var v = btnDe(n); return !v || (!v.getAttribute('data-yt') && v.classList.contains('jp-ver-busca'));
       });
-      pares.sort(function(x, y){ return y.s - x.s; });
+      if(!nombres.length) return;
       var usadoC = {}, usadoN = {};
-      pares.forEach(function(p){
-        if(usadoC[p.ci] || usadoN[p.ni]) return; usadoC[p.ci] = 1; usadoN[p.ni] = 1;
-        var c = cards[p.ci], n = nombres[p.ni], head = n.parentNode;
+      var pegar = function(ci, ni){
+        usadoC[ci] = 1; usadoN[ni] = 1;
+        var c = cards[ci], n = nombres[ni], head = n.parentNode, previo = btnDe(n);
         var yt = c.getAttribute('data-yt'), q = c.getAttribute('data-vsearch');
+        if(!yt && previo){ c.classList.add('jp-ux-gone'); return; }      /* otra búsqueda igual a la lupa que ya está: sobra */
         var nm = $('.jp-sb-vid-nombre', c), etq = nm ? nm.textContent.trim() : 'ejercicio';
         var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid' + (yt ? '' : ' jp-ver-busca');
         if(yt) bt.setAttribute('data-yt', yt); else bt.setAttribute('data-vsearch', q || etq);
         bt.setAttribute('aria-label', 'Ver técnica de ' + etq.replace(/"/g, ''));
         bt.innerHTML = (yt ? '<span class="jp-ux-vth" style="background-image:url(https://img.youtube.com/vi/' + yt + '/mqdefault.jpg)"></span>' : '') + '<span class="jp-ux-vp">&#9654;&#65038;</span>';
-        head.classList.add('jp-ux-has-vid'); head.appendChild(bt);
+        if(previo) head.replaceChild(bt, previo); else head.appendChild(bt);
+        head.classList.add('jp-ux-has-vid');
         c.classList.add('jp-ux-gone');
+      };
+      var pares = [];
+      cards.forEach(function(c, ci){
+        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
+        nombres.forEach(function(n, ni){ var s = Math.max(cobertura(a, toks(n.textContent)), cobertura(toks(n.textContent), a)); pares.push({ s: s, ci: ci, ni: ni }); });
       });
+      pares.sort(function(x, y){ return y.s - x.s || x.ci - y.ci || x.ni - y.ni; });
+      [0.6, 0.0001].forEach(function(umbral){
+        pares.forEach(function(p){ if(p.s >= umbral && !usadoC[p.ci] && !usadoN[p.ni]) pegar(p.ci, p.ni); });
+      });
+      var cR = cards.map(function(c, i){ return i; }).filter(function(i){ return !usadoC[i] && cards[i].getAttribute('data-yt'); });
+      var nR = nombres.map(function(n, i){ return i; }).filter(function(i){ return !usadoN[i]; });
+      if(cR.length && cR.length === nR.length) cR.forEach(function(ci, k){ pegar(ci, nR[k]); });
       var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
     });
