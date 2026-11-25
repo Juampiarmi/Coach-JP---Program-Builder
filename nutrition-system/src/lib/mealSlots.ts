@@ -56,6 +56,13 @@ const FOOD_SLOTS: Record<string, FoodSlot[]> = {
   'soja-texturizada': ['main'],
   polenta: ['main'],
   calabaza: ['main'],
+  almendras: ['am', 'peri', 'main'],
+  hummus: ['am', 'main'],
+  pasas: ['am', 'peri'],
+  quinoa: ['main'],
+  'tapa-tarta': ['main'],
+  'tapa-tarta-sin-tacc': ['main'],
+  'tortillas-maiz': ['main'],
 };
 
 export function foodSlots(ref: Pick<FoodRef, 'id' | 'group' | 'slots'>): FoodSlot[] {

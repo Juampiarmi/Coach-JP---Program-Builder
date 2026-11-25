@@ -1,4 +1,4 @@
-import { portionCap } from './portionCaps';
+import { MAIN_MEATS, portionCap } from './portionCaps';
 import { FOOD_BY_ID, FOODS, macrosFor, round1, round2, snapUnit, type FoodRef } from './foods';
 import { uid } from './seed';
 import { dishTitleCase } from './foodBrandDb';
@@ -492,8 +492,8 @@ export const COMBOS: Combo[] = [
   {
     title: 'Fideos con Ricota, Espinaca y Nueces',
     roles: MAIN,
-    parts: [{ id: 'ricota', r: 'p', max: 350, min: 100 }, { id: 'fideos', r: 'c', max: 350 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'vegetales', r: 'x', g: 100 }],
-    steps: ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Salteá {vegetales} de espinaca 1-2 min en sartén antiadherente.', 'Mezclá los fideos con {ricota} de ricota magra, la espinaca, sal, pimienta y nuez moscada.', 'Terminá con {nueces} de nueces picadas.'],
+    parts: [{ id: 'ricota', r: 'p', max: 350, min: 100 }, { id: 'fideos', r: 'c', max: 350 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'espinaca', r: 'x', g: 100 }],
+    steps: ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Salteá {espinaca} de espinaca 1-2 min en sartén antiadherente.', 'Mezclá los fideos con {ricota} de ricota magra, la espinaca, sal, pimienta y nuez moscada.', 'Terminá con {nueces} de nueces picadas.'],
   },
   {
     title: 'Tofu Grillado con Batata al Horno y Ensalada',
@@ -624,7 +624,9 @@ function portionRange(it: FoodItem, role: MealRole): [number, number] {
   const main = MAIN.includes(role);
   const { max } = portionCap(id, { role });
   const g = FOOD_BY_ID[id]?.group;
-  const lo = g === 'lean-protein' || g === 'starch' ? (main ? 100 : 60) : g === 'veg' ? (main ? 100 : 30) : g === 'plato' ? 40 : g === 'eggs' ? 33 : 5;
+  const lo0 = g === 'lean-protein' || g === 'starch' ? (main ? 100 : 60) : g === 'veg' ? (main ? 100 : 30) : g === 'plato' ? 40 : g === 'eggs' ? 33 : 5;
+  // Piso visible de carne en almuerzo y cena (≥ 120 g mujer / ≥ 150 g hombre).
+  const lo = main && MAIN_MEATS.has(id) ? Math.max(lo0, portionCap(id, { role }).min) : lo0;
   return [Math.min(lo, max), max];
 }
 const snapG = (i: FoodItem, g: number) => {

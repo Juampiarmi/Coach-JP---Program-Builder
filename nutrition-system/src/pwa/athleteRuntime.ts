@@ -731,7 +731,12 @@ const runtime = String.raw`
         });
       });
     };
-    addMeals(D.meals, mult, resolveItem);
+    // Cada comida suma el plato que el alumno eligió (opción 1 a 5); si cambia de plato, la lista se rearma sola.
+    var pref = store.get('optPref', {});
+    addMeals(D.meals.map(function (m) {
+      var n = +pref[m.id] || 1, alt = n > 1 ? mealAlts(m)[n - 2] : null;
+      return alt && alt.items && alt.items.length ? { day: m.day, items: alt.items } : m;
+    }), mult, resolveItem);
     // Modo Parejas: lista combinada (lo de los dos, cada uno con sus gramos y sus días de entreno).
     if (S.shopCouple && D.partner) {
       var pOn = Math.max(0, Math.min(7, D.partner.trainingDays || onDays));
@@ -842,7 +847,7 @@ const runtime = String.raw`
     if (S.panel === 'checkin') return open(bg, sh, checkinPanel());
     if (S.panel === 'shop') {
       var list = shoppingList();
-      var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco. Pan, galletas, carnes, leche, arroz, fideos, avena, frutas y verduras: <b>marca a elección</b>' + (D.glutenSeal && D.glutenSeal.length ? ' (siempre con el logo oficial Sin TACC en los envasados)' : '') + '.</p>';
+      var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días de entreno + ' + (7 - D.trainingDays) + ' de descanso · con los platos que elegiste en cada comida (si cambiás de opción, la lista se actualiza sola). Carnes en peso crudo, arroz y fideos en seco. Pan, galletas, carnes, leche, arroz, fideos, avena, frutas y verduras: <b>marca a elección</b>' + (D.glutenSeal && D.glutenSeal.length ? ' (siempre con el logo oficial Sin TACC en los envasados)' : '') + '.</p>';
       if (D.partner) h2 += '<div class="tabs shop-couple"><button data-shopcouple="0" class="' + (S.shopCouple ? '' : 'on') + '">SÓLO MI LISTA</button><button data-shopcouple="1" class="' + (S.shopCouple ? 'on' : '') + '">PAREJA · YO + ' + esc(D.partner.name.toUpperCase()) + '</button></div>' + (S.shopCouple ? '<p class="muted" style="font-size:12px">Suma lo de los dos (cada uno con sus porciones): una sola compra para la semana.</p>' : '');
       h2 += '<button class="wa-btn" data-washop="1">[ 📲 Mandar lista por WhatsApp ]</button>';
       h2 += '<button class="batch-btn" data-panel="batch">[ 🍳 GUÍA DE BATCH COOKING DEL FIN DE SEMANA ]</button>';
@@ -2119,6 +2124,11 @@ const runtime = String.raw`
       if (+po[1] > 1) S.opt[po[0]] = +po[1];
       else delete S.opt[po[0]];
       store.set('opt:' + S.date, S.opt);
+      // Lista de compras: recuerda el plato que el alumno elige para cada comida (se recalcula con esa opción).
+      var pref = store.get('optPref', {});
+      if (+po[1] > 1) pref[po[0]] = +po[1];
+      else delete pref[po[0]];
+      store.set('optPref', pref);
       haptic();
       return render();
     }

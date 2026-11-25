@@ -1,4 +1,4 @@
-import { portionCap, withCapSex } from './portionCaps';
+import { MAIN_MEATS, portionCap, withCapSex } from './portionCaps';
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
 import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2, snapUnit, unitStep } from './foods';
 import { fitAltsToMain } from './menuOptions';
@@ -14,6 +14,9 @@ export const KCAL_TOLERANCE = 0.01;
 // Topes: la Tabla Única de Topes por Toma (portionCaps.ts), según el tipo de comida y el sexo del atleta.
 const foodCap = (foodId: string | undefined, role?: Meal['role']) => (foodId ? portionCap(foodId, { role }).max : Infinity);
 const capOf = (i: FoodItem, m: Meal) => (i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : foodCap(i.foodId, m.role));
+
+/** Piso visible de carne en almuerzo y cena (≥ 120 g mujer / ≥ 150 g hombre): el cierre nunca la baja de ahí. */
+const floorOf = (i: FoodItem, m: Meal) => (i.foodId && MAIN_MEATS.has(i.foodId) && (m.role === 'lunch' || m.role === 'dinner') ? portionCap(i.foodId, { role: m.role }).min : 0);
 
 type Anchor = 'p' | 'c' | 'f';
 type DayTotals = Macros & { kcal: number };
@@ -78,7 +81,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
       meals
         .flatMap((m) =>
           days.includes(m.day)
-            ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && unitStep(i.foodId) === 5 && i.grams > 0 && (gap < 0 || i.grams < capOf(i, m))).map((i) => ({ ...i, cap: capOf(i, m) }))
+            ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && unitStep(i.foodId) === 5 && i.grams > 0 && (gap < 0 ? i.grams > floorOf(i, m) : i.grams < capOf(i, m))).map((i) => ({ ...i, cap: capOf(i, m), floor: floorOf(i, m) }))
             : [],
         )
         .sort((a, b) => b[macro] - a[macro])[0];
@@ -86,7 +89,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
     const got = dayTotals(meals, day);
     const dev = (k: Anchor) => (target[k] > 0 ? got[k] / target[k] - 1 : 0);
     const order = (['c', 'f', 'p'] as Anchor[]).sort((a, b) => (gap < 0 ? dev(b) - dev(a) : dev(a) - dev(b)));
-    let host: (FoodItem & { cap: number }) | undefined;
+    let host: (FoodItem & { cap: number; floor: number }) | undefined;
     for (const k of order) {
       host = pick(k, [day]) ?? pick(k, [day, 'both']);
       if (host) break;
@@ -94,7 +97,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
     if (!host) break;
     const kcalPerG = (host.p * 4 + host.c * 4 + host.f * 9) / host.grams;
     if (!(kcalPerG > 0)) break;
-    const grams = Math.min(host.cap, Math.max(5, Math.round(host.grams + gap / kcalPerG)));
+    const grams = Math.min(host.cap, Math.max(5, host.floor, Math.round(host.grams + gap / kcalPerG)));
     if (grams === host.grams) break;
     meals = meals.map((m) => ({ ...m, items: m.items.map((i) => (i.id === host.id ? rescale(i, grams) : i)) }));
     changed++;
@@ -117,7 +120,7 @@ function balanceMacro(meals: Meal[], day: DayMode, macro: Anchor, target: number
 
     const pick = (days: Meal['day'][]) =>
       meals.flatMap((m) =>
-        days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !(gap > 0 && i.grams >= capOf(i, m))).map((i) => ({ m, i })) : [],
+        days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !(gap > 0 && i.grams >= capOf(i, m)) && !(gap < 0 && i.grams <= floorOf(i, m))).map((i) => ({ m, i })) : [],
       );
     let pool = pick([day]);
     if (pool.reduce((a, x) => a + x.i[macro], 0) < 1) pool = pick([day, 'both']);
@@ -139,7 +142,7 @@ function balanceMacro(meals: Meal[], day: DayMode, macro: Anchor, target: number
       items: m.items.map((i) => {
         if (!ids.has(i.id)) return i;
         let g = snap(i.grams * k);
-        g = Math.min(capOf(i, m), g);
+        g = Math.max(floorOf(i, m), Math.min(capOf(i, m), g));
         if (g === i.grams) return i;
         changed++;
         return rescale(i, g);

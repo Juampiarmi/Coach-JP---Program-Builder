@@ -22,7 +22,7 @@ import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
 
 /** Secciones de la lista de compras, en el orden del recorrido: verdulería → carnicería → almacén. */
-const SHOP_CATEGORY: Record<SwapGroup, string> = {
+export const SHOP_CATEGORY: Record<SwapGroup, string> = {
   fruit: 'Verdulería',
   veg: 'Verdulería',
   'lean-protein': 'Carnicería / Pescadería',
@@ -36,7 +36,7 @@ const SHOP_CATEGORY: Record<SwapGroup, string> = {
   whey: 'Suplementos',
   plato: 'Platos preparados',
 };
-const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Platos preparados', 'Suplementos', 'Otros'];
+export const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Platos preparados', 'Suplementos', 'Otros'];
 
 
 /**
@@ -44,7 +44,7 @@ const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Alm
  *  · carnes ×1,3 (crudo) · arroz / fideos / legumbres ÷2,5 (seco, en paquetes de 500 g);
  *  · variedades idénticas unificadas (avena) · mínimos comerciales (frutos secos: bolsita de 100 g).
  */
-const SHOP_RULES: Record<string, { name?: string; key?: string; factor?: number; state?: 'raw' | 'dry'; pack?: number; min?: number; minLabel?: string; section?: string; byUnit?: number; unitLabel?: string }> = {
+export const SHOP_RULES: Record<string, { name?: string; key?: string; factor?: number; state?: 'raw' | 'dry'; pack?: number; min?: number; minLabel?: string; section?: string; byUnit?: number; unitLabel?: string }> = {
   pollo: { name: 'Pechuga de pollo (cruda)', factor: 1.3, state: 'raw' },
   cuadril: { name: 'Cuadril magro (crudo)', factor: 1.3, state: 'raw' },
   lomo: { name: 'Lomo vacuno (crudo)', factor: 1.3, state: 'raw' },
@@ -64,6 +64,19 @@ const SHOP_RULES: Record<string, { name?: string; key?: string; factor?: number;
   avena: { key: 'avena', name: 'Avena (entera o instantánea)' },
   'avena-instantanea': { key: 'avena', name: 'Avena (entera o instantánea)' },
   nueces: { name: 'Nueces / frutos secos', min: 100, minLabel: '1 bolsita (100 g)' },
+  // Recetario Coach JP: secos en paquete, verdulería y tapas.
+  'fideos-integrales': { name: 'Fideos integrales secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  'fideos-legumbres': { name: 'Fideos de legumbres sin TACC secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 250 },
+  'fideos-sin-tacc': { name: 'Fideos de arroz o maíz sin TACC secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  quinoa: { name: 'Quinoa (paquete)', factor: 1 / 2.7, state: 'dry', pack: 250 },
+  garbanzos: { name: 'Garbanzos secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  porotos: { name: 'Porotos secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  polenta: { name: 'Polenta (paquete)', factor: 1 / 4, state: 'dry', pack: 500 },
+  calabaza: { section: 'Verdulería', name: 'Calabaza / zapallo' },
+  choclo: { section: 'Verdulería' },
+  'tapa-tarta': { name: 'Tapas de tarta integrales', byUnit: 200, unitLabel: 'tapas' },
+  'tapa-tarta-sin-tacc': { name: 'Tapas de tarta sin TACC', byUnit: 200, unitLabel: 'tapas' },
+  almendras: { name: 'Almendras', min: 100, minLabel: '1 bolsita (100 g)' },
 };
 const SHOP_ORDER_FALLBACK = 'Otros';
 

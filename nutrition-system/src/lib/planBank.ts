@@ -1,6 +1,7 @@
 import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
 import { allergiesOf, FOOD_ALLERGENS, safeRecipes, type Allergen } from './allergens';
 import { CITES } from './evidence';
+import { CATALOG, catalogRecipe, type CatCategory } from './catalog';
 import { FOOD_BY_ID, unitStep } from './foods';
 import { comboSteps, type Combo, type ComboPart } from './menuOptions';
 import { isLiquid, mealVolumeCap, portionCap, solidGrams, type CapCtx } from './portionCaps';
@@ -129,7 +130,7 @@ export const sexOf = (id: BankPlanId) => id.split('-')[0] as Sex;
 // ---------------------------------------------------------------------------------------------------------
 
 type SlotKind = 'breakfast' | 'mid' | 'lunch' | 'pre' | 'merienda' | 'dinner' | 'dessert' | 'extra';
-type R = Omit<Combo, 'roles'>;
+type R = Omit<Combo, 'roles'> & { female?: R; catId?: string };
 const P = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'p', ...extra });
 const C = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'c', ...extra });
 const F = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'f', ...extra });
@@ -299,6 +300,26 @@ const VEG: Record<SlotKind, R[]> = {
 
 export const RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = { std: STD, stacc: STACC, veg: VEG };
 
+/**
+ * RECETARIO COACH JP en el banco: cada plato del catálogo entra en las comidas de su categoría y sólo en las
+ * variantes que admite (Sin TACC con sus ingredientes aptos, Vegetariana sin carnes).
+ *  · desayuno → Desayuno · plato principal → Almuerzo y Cena · merienda → Merienda
+ *  · colación → Colación de media mañana / de tarde (y antes de entrenar si es de fácil digestión)
+ */
+const KINDS_OF: Record<CatCategory, SlotKind[]> = { desayuno: ['breakfast'], plato_principal: ['lunch', 'dinner'], merienda: ['merienda'], colacion: ['mid', 'extra'] };
+export const CATALOG_RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = Object.fromEntries(
+  (['std', 'stacc', 'veg'] as BankVariant[]).map((v) => {
+    const out = Object.fromEntries((Object.keys(STD) as SlotKind[]).map((k) => [k, [] as R[]])) as Record<SlotKind, R[]>;
+    for (const d of CATALOG) {
+      const r = catalogRecipe(d, v);
+      if (!r) continue;
+      const kinds = [...KINDS_OF[d.category], ...(d.category === 'colacion' && d.peri ? (['pre'] as SlotKind[]) : [])];
+      for (const k of kinds) out[k].push({ ...r, catId: d.id });
+    }
+    return [v, out];
+  }),
+) as Record<BankVariant, Record<SlotKind, R[]>>;
+
 // ---------------------------------------------------------------------------------------------------------
 // Estructura de cada día: comidas según escalón y reparto de macros por comida.
 // ---------------------------------------------------------------------------------------------------------
@@ -417,7 +438,8 @@ export function dayTargets(goal: GoalDef, sex: Sex, weightKg: number) {
 const stepOf = (id: string) => {
   const u = FOOD_BY_ID[id]?.unit;
   if (id === 'huevo' || id === 'claras' || FOOD_BY_ID[id]?.group === 'protein-snack') return unitStep(id);
-  if (u && u.grams <= 60 && FOOD_BY_ID[id].group !== 'dairy-protein') return u.grams;
+  // Las tapas de tarta se porcionan con cuchillo (de a 5 g), no por unidad.
+  if (u && u.grams <= 60 && FOOD_BY_ID[id].group !== 'dairy-protein' && !/^tapa-tarta/.test(id)) return u.grams;
   return 5;
 };
 
@@ -805,12 +827,26 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
   const veg = sel.variant === 'veg';
   const ctx: Ctx = { sex, veg, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
   const goalId = goalOf(sel.plan).id;
-  const lightF = sex === 'F' && weightKg < 60;
-  const base = sex === 'F' ? (Object.fromEntries(Object.entries(RECIPES[sel.variant]).map(([k, list]) => [k, list.map(femaleNoMilk)])) as Record<SlotKind, R[]>) : RECIPES[sel.variant];
+  const lightF = sex === 'F' && weightKg <= 62;
+  const forSex = (lists: Record<SlotKind, R[]>) => (sex === 'F' ? (Object.fromEntries(Object.entries(lists).map(([k, list]) => [k, list.map((r) => r.female ?? femaleNoMilk(r))])) as Record<SlotKind, R[]>) : lists);
+  const base = forSex(RECIPES[sel.variant]);
+  const cat = forSex(CATALOG_RECIPES[sel.variant]);
   // Alergias: recetas aptas primero; si no alcanzan, las otras con el ingrediente sustituido por un equivalente seguro.
+  // Como mucho 5 opciones por comida (la sugerida + 4 alternativas): 3 clásicas del banco + 2 del Recetario Coach JP,
+  // que rotan entre el día de entreno y el de descanso y entre almuerzo y cena (más variedad en la semana).
   const recipes = Object.fromEntries(
-    // Como mucho 5 opciones por comida (la sugerida + 4 alternativas), igual que en el Builder.
-    (Object.keys(base) as SlotKind[]).map((k) => [k, ordered(goalId, k, safeRecipes(base[k], allergies, { veg, role: SLOT[k].role, sex }), lightF).slice(0, 5)]),
+    (Object.keys(base) as SlotKind[]).map((k) => {
+      const opt = { veg, role: SLOT[k].role, sex };
+      const orig = ordered(goalId, k, safeRecipes(base[k], allergies, opt), lightF);
+      const fromCat = ordered(goalId, k, safeRecipes(cat[k] ?? [], allergies, opt), lightF);
+      // Cada plan maestro (objetivo × sexo) arranca en otro punto del recetario: entre los 24 planes se usa completo.
+      const seed = BANK_GOALS.findIndex((g) => g.id === goalId) * 2 + (sex === 'F' ? 0 : 1);
+      const off = fromCat.length ? (seed * 4 + (day === 'off' ? 2 : 0) + (k === 'dinner' ? 2 * 8 + 4 : 0) + (k === 'extra' ? 3 : 0)) % fromCat.length : 0;
+      const rot = [...fromCat.slice(off), ...fromCat.slice(0, off)];
+      const pick = [...orig.slice(0, 3), ...rot.slice(0, 2)];
+      const rest = [...orig.slice(3), ...rot.slice(2)];
+      return [k, [...pick, ...rest].slice(0, 5)];
+    }),
   ) as Record<SlotKind, R[]>;
   const slots = daySlots(mealCount(sex, tierB, day, tr), day, tr, fixed);
   const wsum = slots.reduce((a, k) => [a[0] + k.w[0], a[1] + k.w[1], a[2] + k.w[2]], [0, 0, 0]);
@@ -855,7 +891,7 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
   // Techo fisiológico de proteína en la mujer (2,3 g/kg): si las porciones mínimas de las principales y del desayuno
   // la pasan, el desayuno y las colaciones rotan a su opción con menos proteína y el día se vuelve a cerrar.
   if (sex === 'F') {
-    const pMax = PROTEIN_MAX_F * weightKg;
+    const pMax = PROTEIN_MAX_F * weightKg * 0.99;
     const pOf = (g: Record<string, number>) => totals(toItems(g)).p;
     for (let round = 0; round < 8 && dayMacros(ws).p > pMax; round++) {
       let best: { w: Work; i: number; save: number } | null = null;
@@ -948,7 +984,7 @@ export function buildBankPlan(sel: BankSelection, weightKg: number, tr: BankTrai
 }
 
 /** Alimentos con gluten (prohibidos en la variante Sin TACC) y carnes (prohibidas en la vegetariana). */
-export const GLUTEN_FOODS = new Set(['harina-avena', 'pan', 'pan-lactal', 'pan-arabe', 'pan-rallado', 'fideos', 'noquis', 'avena', 'avena-instantanea', 'granola', 'galletitas-agua', 'alfajor-proteico', 'barra-proteica', 'barrita-cereal', 'copos-maiz']);
+export const GLUTEN_FOODS = new Set(['fideos-integrales', 'tapa-tarta', 'harina-avena', 'pan', 'pan-lactal', 'pan-arabe', 'pan-rallado', 'fideos', 'noquis', 'avena', 'avena-instantanea', 'granola', 'galletitas-agua', 'alfajor-proteico', 'barra-proteica', 'barrita-cereal', 'copos-maiz']);
 export const MEAT_FOODS = new Set(['pollo', 'cuadril', 'lomo', 'nalga', 'picada', 'merluza', 'atun', 'cerdo', 'jamon']);
 
 export const planLabel = (sel: BankSelection) => `${goalOf(sel.plan).label} · ${SEX_LABEL[sexOf(sel.plan)]} · ${BANK_VARIANTS.find((v) => v.id === sel.variant)!.label}`;
@@ -986,4 +1022,56 @@ export function planSummary(sel: BankSelection, weightKg: number, tr: BankTraini
   const on = daySlots(mealCount(sex, tierB, 'on', tr), 'on', tr).map((x) => x.kind);
   const off = daySlots(mealCount(sex, tierB, 'off', tr), 'off', tr).map((x) => x.kind);
   return { gkg: t.gkg, kcal: { on: Math.round(t.on.kcal), off: Math.round(t.off.kcal) }, tier: tierB ? 'B' : 'A', meals: { on: on.length, off: off.length }, optionsPerMeal: Math.round(Math.min(opts(on), opts(off))) };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Recetario Coach JP en el Builder: un plato del catálogo adaptado a una comida concreta del alumno.
+// ---------------------------------------------------------------------------------------------------------
+
+/** Variante estricta del alumno: celíaco → Sin TACC; vegetariano → Vegetariana; si no, Estándar. */
+export function variantFor(plan: Pick<AthletePlan, 'anamnesis'>): BankVariant {
+  const a = allergiesOf(plan);
+  return a.includes('veg') ? 'veg' : a.includes('gluten') ? 'stacc' : 'std';
+}
+
+/** Comidas del día donde va cada categoría del recetario. */
+export const ROLES_OF_CATEGORY: Record<CatCategory, MealRole[]> = { desayuno: ['breakfast'], plato_principal: ['lunch', 'dinner'], merienda: ['snack'], colacion: ['snack', 'peri', 'post'] };
+
+/**
+ * El plato del recetario para esa comida: variante del alumno, alérgenos sustituidos, versión sin leche fluida en la
+ * mujer y gramos escalados a lo que aporta hoy la comida (mismas calorías y macros, dentro de los topes por toma).
+ * null si el plato no admite la variante del alumno o no tiene sustituto seguro.
+ */
+export function catalogDishForMeal(dishId: string, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[] } | null {
+  const d = CATALOG.find((x) => x.id === dishId);
+  if (!d) return null;
+  const variant = variantFor(plan);
+  const base = catalogRecipe(d, variant);
+  if (!base) return null;
+  const sex = plan.profile.sex;
+  const allergies = allergiesOf(plan);
+  const veg = variant === 'veg';
+  const own: R = sex === 'F' ? (base.female ?? femaleNoMilk(base)) : base;
+  const [rec] = safeRecipes([own], allergies, { veg, role: meal.role, sex });
+  if (!rec || rec.parts.some((p) => (FOOD_ALLERGENS[p.id] ?? []).some((a) => allergies.includes(a)))) return null;
+  const ctx: Ctx = { sex, veg, role: meal.role, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
+  // Objetivo: lo que aporta hoy la comida (si está vacía, una toma promedio de su tipo).
+  const t = totals(meal.items);
+  const T: Tot = t.kcal > 50 ? t : meal.role === 'lunch' || meal.role === 'dinner' ? { p: 40, c: 55, f: 15, kcal: 515 } : meal.role === 'breakfast' ? { p: 25, c: 45, f: 12, kcal: 388 } : { p: 12, c: 30, f: 6, kcal: 222 };
+  const g = solve(rec, T, ctx);
+  const slot: SlotDef = { kind: meal.role === 'lunch' ? 'lunch' : meal.role === 'dinner' ? 'dinner' : meal.role === 'breakfast' ? 'breakfast' : 'merienda', name: meal.name, role: meal.role, time: meal.time, w: [1, 1, 1] };
+  fitAlt(rec, g, T.kcal, slot, ctx);
+  // Si con sus topes el plato queda corto, se suma densidad limpia como en el cierre del banco (fruta, miel,
+  // frutos secos, aceite o palta), nunca agrandando un lácteo o una verdura.
+  const w: Work = { slot, T, recipes: [rec], grams: [g], added: new Set() };
+  const mods = [...MODULES[slot.kind].c, ...MODULES[slot.kind].f].map((id) => (ctx.ok && !ctx.ok(id) ? (MODULE_SAFE[id] ?? '') : id)).filter((id) => id && !rec.parts.some((p) => p.id === id));
+  for (const id of mods) {
+    const gap = T.kcal - totals(toItems(g)).kcal;
+    if (gap <= T.kcal * 0.05) break;
+    nudge(w, id, gap, ctx, { allowNew: true, max: MODULE_MAX[id] });
+  }
+  const items = toItems(g);
+  const recItems = items.filter((i) => !w.added.has(i.foodId ?? ''));
+  const extra = items.filter((i) => w.added.has(i.foodId ?? '')).map((i) => `Sumá ${i.grams} g de ${FOOD_BY_ID[i.foodId!].name.split(' (')[0].toLowerCase()} para completar la comida.`);
+  return { title: titleFor(rec.title, g) + [...w.added].map((id) => moduleTitle(id, slot.kind)).join(''), items, steps: [...comboSteps({ ...rec, roles: [meal.role] }, recItems), ...extra] };
 }

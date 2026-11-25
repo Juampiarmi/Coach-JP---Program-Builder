@@ -19,6 +19,8 @@ import { acceptForPlan, ALLERGEN_INFO, allergiesOf, allowedFor, conflictOf, food
 import { baseOptions, bases, kindOf } from '@/lib/baseSwap';
 import { MacroSplitPanel } from './MacroSplit';
 import { CouplePanel } from './CouplePanel';
+import { RecipeCatalog } from './RecipeCatalog';
+import { ShoppingPanel } from './ShoppingPanel';
 import { StickySummary } from './StickySummary';
 import { timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
@@ -794,6 +796,8 @@ export function MealsTab() {
       <StickySummary />
       <MacroSplitPanel />
       <CouplePanel />
+      <RecipeCatalog />
+      <ShoppingPanel />
       <BlockHeader block="estructura" />
       <Panel title="ESTRUCTURA DEL DÍA · COMIDAS Y HORARIOS" block="estructura" tone="fire" right={<Utensils className="h-4 w-4 text-fire/80" />}>
         <p className="-mt-1 mb-3 text-[13px] text-steel">Armá las comidas del día de entreno y de descanso. Cada comida puede tener hasta 5 opciones con los mismos macros; tu alumno elige la que quiera. La línea de proteína te avisa si desayuno, almuerzo y cena llegan al mínimo para el músculo.</p>

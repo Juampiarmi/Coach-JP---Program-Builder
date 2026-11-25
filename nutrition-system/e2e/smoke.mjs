@@ -243,6 +243,24 @@ try {
   await page.locator('[data-couple-shop]').click();
   check((await page.locator('[data-couple-shoplist] tr').count()) > 3, 'Modo Parejas: lista de compras combinada (A + B)');
 
+  // Recetario Coach JP: plato aplicado a una comida y lista de compras que se recalcula sola.
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  await page.locator('[data-shop-toggle]').click();
+  const shopBefore = await page.locator('[data-shop-list]').innerText();
+  check(/VERDULERÍA|CARNICERÍA|ALMACÉN/.test(shopBefore), 'Lista de compras del Builder agrupada por rubro');
+  await page.locator('[data-catalog-toggle]').click();
+  const counts = await page.locator('[data-catalog-cat]').allInnerTexts();
+  check(/Desayuno \((1[3-9]|[2-9]\d)\)/.test(counts.join(' ')) && /Plato principal \((1[89]|[2-9]\d)\)/.test(counts.join(' ')) && /Merienda \(1[2-9]\)/.test(counts.join(' ')) && /Colación \(1[2-9]\)/.test(counts.join(' ')), `Recetario: 13+ desayunos, 18+ principales, 12+ meriendas y 12+ colaciones (${counts.join(' · ')})`);
+  await page.locator('[data-catalog-cat="plato_principal"]').click();
+  const wok = page.locator('[data-catalog-dish="pp-wok-pollo-fideos-arroz"]');
+  await wok.locator('summary').click();
+  check(/\d+ g (pechuga de )?pollo/.test(await wok.locator('[data-catalog-preview]').innerText()), 'Recetario: vista previa con los gramos escalados para esa comida');
+  await wok.locator('[data-catalog-replace]').click();
+  await page.waitForTimeout(200);
+  check((await page.getByText(/Wok de pollo con fideos de arroz/).count()) > 0, 'Recetario: el plato queda como opción 1 de la comida');
+  const shopAfter = await page.locator('[data-shop-list]').innerText();
+  check(shopAfter !== shopBefore && /Fideos de arroz/.test(shopAfter), 'Lista de compras: se recalcula sola al cambiar el plato');
+
   // Nuevos platos: carga rápida (nombre + ingredientes + tip), categoría propia y guardado.
   await page.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();
   await page.getByRole('button', { name: /AGREGAR NUEVO PLATO/ }).first().click();
@@ -305,6 +323,20 @@ try {
   await pwa.locator('.toolgrid [data-panel="shop"]').click();
   await pwa.waitForTimeout(200);
   check((await pwa.locator('.shop-item').count()) > 0, 'PWA: lista de compras');
+  const shopOpt1 = await pwa.locator('.sheet').innerText();
+  await pwa.locator('.sheet .xclose').click();
+  const optBtn = pwa.locator('[data-opt$="|2"]').first();
+  if (await optBtn.count()) {
+    await optBtn.evaluate((el) => el.click());
+    await pwa.waitForTimeout(150);
+    await pwa.locator('.toolgrid [data-panel="shop"]').click();
+    await pwa.waitForTimeout(150);
+    const shopOpt2 = await pwa.locator('.sheet').innerText();
+    check(shopOpt2 !== shopOpt1, 'PWA: la lista de compras usa el plato elegido en cada comida');
+  } else {
+    await pwa.locator('.toolgrid [data-panel="shop"]').click();
+    await pwa.waitForTimeout(150);
+  }
   const shopTxt = await pwa.locator('.sheet').innerText();
   check(/Tomate/.test(shopTxt) && /≈ \d+ tomates?/.test(shopTxt), 'PWA: verdulería detallada (tomates con unidades)');
   check(/marca a elección/i.test(shopTxt), 'PWA: «marca a elección» en genéricos');

@@ -3,14 +3,15 @@
 // Uso: npm run test:unit
 import { FOOD_BY_ID } from './foods';
 import { COMBOS, type ComboPart } from './menuOptions';
-import { RECIPES } from './planBank';
+import { GLUTEN_FOODS, MEAT_FOODS, RECIPES } from './planBank';
+import { CATALOG } from './catalog';
 
 /** Palabras del título → alimentos que las justifican. */
 const TITLE_WORDS: [RegExp, string[]][] = [
   [/\b(pollo|pechuga)\b/i, ['pollo']],
   [/\bhuevos?\b|omelette|revuelto/i, ['huevo', 'claras']],
   [/\bclaras\b/i, ['claras']],
-  [/\bavena\b/i, ['avena', 'avena-instantanea', 'harina-avena']],
+  [/\bavena\b/i, ['avena', 'avena-instantanea', 'harina-avena', 'avena-sin-tacc']],
   [/\byogur\b/i, ['yogur', 'yogur-proteico', 'yogur-deslactosado', 'yogur-vegetal']],
   [/\bbanana\b/i, ['banana']],
   [/\bfrutillas\b/i, ['frutillas']],
@@ -25,7 +26,7 @@ const TITLE_WORDS: [RegExp, string[]][] = [
   [/\bjam[oó]n\b/i, ['jamon']],
   [/\bbatatas?\b/i, ['batata']],
   [/\bpolenta\b/i, ['polenta']],
-  [/\bfideos\b/i, ['fideos', 'fideos-sin-tacc']],
+  [/\bfideos\b/i, ['fideos', 'fideos-sin-tacc', 'fideos-integrales', 'fideos-legumbres']],
   [/\bñoquis\b/i, ['noquis']],
   [/\bcalabaza\b/i, ['calabaza']],
   [/\bmiel\b/i, ['miel']],
@@ -33,7 +34,13 @@ const TITLE_WORDS: [RegExp, string[]][] = [
   [/\bmandarina\b/i, ['naranja']],
   [/\bnueces|frutos secos\b/i, ['nueces', 'semillas']],
   [/\bman[ií]\b/i, ['mani']],
-  [/\bgranola\b/i, ['granola']],
+  [/\bgranola\b/i, ['granola', 'granola-sin-tacc']],
+  [/\bquinoa\b/i, ['quinoa']],
+  [/\bpera\b/i, ['pera']],
+  [/\bar[aá]ndanos\b/i, ['arandanos']],
+  [/\bhummus\b/i, ['hummus']],
+  [/\bchampi[ñn]ones\b/i, ['champinones']],
+  [/\bespinaca\b/i, ['espinaca']],
   [/\bmembrillo\b/i, ['dulce-membrillo']],
   [/\bqueso untable\b/i, ['untable', 'untable-deslactosado']],
   [/\bwhey|proteína en polvo\b/i, ['whey', 'whey-isolate', 'proteina-vegetal']],
@@ -43,11 +50,10 @@ const NAMED: Record<string, RegExp> = {
   pollo: /pollo|pechuga/i,
   cuadril: /cuadril|bife/i,
   lomo: /lomo/i,
-  nalga: /peceto|nalga|milanesa/i,
-  picada: /picada|bolognesa|hamburguesa|carne/i,
+  nalga: /peceto|nalga|milanesa|carne|bife/i,
+  picada: /picada|bolognesa|hamburguesa|carne|alb[oó]ndiga/i,
   merluza: /merluza|pescado/i,
   atun: /at[uú]n/i,
-  cerdo: /cerdo|bondiola|carr[eé]/i,
   huevo: /huevo|omelette|revuelt|tortilla|panqueque/i,
   claras: /clara|omelette|panqueque|huevo/i,
   tofu: /tofu/i,
@@ -70,6 +76,14 @@ const NAMED: Record<string, RegExp> = {
   'galletas-arroz': /galletas/i,
   'tostadas-arroz': /tostadas/i,
   'harina-arroz': /harina de arroz|panqueque/i,
+  'avena-sin-tacc': /avena/i,
+  quinoa: /quinoa/i,
+  'fideos-integrales': /fideos/i,
+  'fideos-legumbres': /fideos/i,
+  'tapa-tarta': /tarta/i,
+  'tortillas-maiz': /tortillas/i,
+  leche: /leche|licuado/i,
+  cerdo: /cerdo|solomillo|bondiola|carr[eé]/i,
   yogur: /yogur/i,
   ricota: /ricota/i,
   jamon: /jam[oó]n/i,
@@ -90,7 +104,9 @@ function audit(where: string, r: Rec) {
   // 2 · Todo ingrediente se usa en la preparación.
   for (const p of r.parts) if (!text.includes(`{${p.id}}`)) fails.push(`${where} · ${r.title}: «${FOOD_BY_ID[p.id]?.name ?? p.id}» no aparece en los pasos`);
   // 3 · Lo que dice el título está en el plato.
-  for (const [re, foods] of TITLE_WORDS) if (re.test(title) && !foods.some((f) => ids.has(f))) fails.push(`${where} · ${r.title}: el título nombra ${re.source} pero no lleva ${foods.join(' / ')}`);
+  // Las alternativas entre paréntesis («(o pera)», «(o manzana)») son sugerencias, no ingredientes.
+  const named = title.replace(/\(o [^)]*\)/g, '');
+  for (const [re, foods] of TITLE_WORDS) if (re.test(named) && !foods.some((f) => ids.has(f))) fails.push(`${where} · ${r.title}: el título nombra ${re.source} pero no lleva ${foods.join(' / ')}`);
   // 4 · La proteína y el carbo que definen el plato están en el título.
   for (const p of r.parts.filter((x) => (x.r === 'p' || x.r === 'c') && (x.min ?? 1) > 0)) {
     const re = NAMED[p.id];
@@ -99,6 +115,16 @@ function audit(where: string, r: Rec) {
 }
 for (const [variant, slots] of Object.entries(RECIPES)) for (const [slot, list] of Object.entries(slots)) for (const r of list) audit(`banco ${variant}/${slot}`, r);
 for (const c of COMBOS) audit('opciones', c);
+for (const d of CATALOG) {
+  for (const [v, r] of [['estándar', d.std], ['sin TACC', d.stacc], ['vegetariana', d.veg]] as const) {
+    if (!r) continue;
+    audit(`recetario ${v} · ${d.id}`, r);
+    if (r.female) audit(`recetario ${v} (mujer) · ${d.id}`, r.female);
+  }
+  if (d.variants.includes('Sin TACC')) for (const p of (d.stacc ?? d.std).parts) if (GLUTEN_FOODS.has(p.id)) fails.push(`recetario sin TACC · ${d.id}: lleva ${p.id}`);
+  if (d.variants.includes('Vegetariana')) for (const p of (d.veg ?? d.std).parts) if (MEAT_FOODS.has(p.id)) fails.push(`recetario vegetariano · ${d.id}: lleva ${p.id}`);
+  if (!d.prep || !d.adjust || !d.base.length) fails.push(`recetario · ${d.id}: faltan preparación, guía de ajuste o ingredientes base`);
+}
 
 const uniq = [...new Set(fails)];
 if (uniq.length) {
