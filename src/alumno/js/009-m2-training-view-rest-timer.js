@@ -1053,6 +1053,7 @@
     unidades.forEach(function(u){
       var ya = u.querySelector(':scope > .jp-ex-cajas');
       if(ya && ya.querySelector('.jp-ex-box')) return;
+      if(u.hasAttribute('data-notas-k')){ objetivoPendiente = false; return; }      /* sus notas (y el objetivo del bloque) ya están en las pautas del bloque (jpNotasAgrupar) */
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
       var chip = Array.prototype.filter.call(u.querySelectorAll('.jp-db-tempo b'), function(b){ return b.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; })[0];
@@ -1069,47 +1070,66 @@
     }
     try{ jpNotasAgrupar(board); }catch(eN){}
   }
-  /* NOTAS DEL EJERCICIO COMPACTAS: "Coaching tips", "Objetivo fisiológico" y "Tempo" eran tres filas desplegables apiladas debajo de "Registrar carga". Ahora conviven en UNA sola
-     fila de botones chicos (Tips · Objetivo · Tempo) que muestra de a una nota por vez; "Registrar carga" sigue siendo la fila principal. Se reutilizan los mismos <details> (nada se
-     reescribe ni se pierde): quedan dentro de .jp-ex-cajas y el CSS (095) muestra solo el elegido. Idempotente: se llama cada vez que se arma o se acomoda un tablero. */
+  /* NOTAS DEL EJERCICIO DENTRO DE LAS PAUTAS DEL BLOQUE (2026-11, v27): debajo de "Registrar carga" había una fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO en cada
+     tarjeta: un control más por ejercicio que se repetía en todo el día (y el tempo ya está en la barra de dosis). Ahora la tarjeta termina en "Registrar carga" y las notas de cada
+     ejercicio pasan, con su número y nombre, al desplegable "PAUTAS TÉCNICAS & TIPS DEL BLOQUE": un solo control por bloque y nada se pierde (se mueven los mismos <details>).
+     Idempotente: se llama cada vez que se arma o se acomoda un tablero; una unidad ya procesada queda marcada (data-notas-k) y su sección no se duplica. */
   var NOTAS_DEF = [
-    { k: 'tips',  sel: '.jp-ex-tips',      ic: '💡', lb: 'app.notas.tips' },
-    { k: 'obj',   sel: '.jp-ex-box-obj',   ic: '🎯', lb: 'app.notas.obj' },
-    { k: 'tempo', sel: '.jp-ex-box-tempo', ic: '⏱',       lb: 'app.notas.tempo' }
+    { k: 'tips',  sel: '.jp-ex-tips',      lb: 'app.notas.tips' },
+    { k: 'obj',   sel: '.jp-ex-box-obj',   lb: 'app.notas.obj' },
+    { k: 'tempo', sel: '.jp-ex-box-tempo', lb: 'app.notas.tempo' }
   ];
+  var _notasK = 0;
+  function jpPautasDelBloqueSB(board){
+    var det = board.querySelector(':scope > .jp-block-details');
+    if(!det){
+      det = document.createElement('details'); det.className = 'jp-block-details';
+      det.innerHTML = '<summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>' + escSB(jpT('app.card.tips')) + '</span></summary><div class="jp-details-content"></div>';
+      var pie = board.querySelector(':scope > .jp-done-btn');
+      if(pie) board.insertBefore(det, pie); else board.appendChild(det);
+    }
+    var cont = det.querySelector(':scope > .jp-details-content');
+    if(!cont){ cont = document.createElement('div'); cont.className = 'jp-details-content'; det.appendChild(cont); }
+    return cont;
+  }
   function jpNotasAgrupar(root){
     if(!root || !root.querySelectorAll) return;
     var unidades = root.matches && root.matches('.jp-sb-ex, .jp-sb-subex-resumen') ? [root] : Array.prototype.slice.call(root.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
     unidades.forEach(function(u){
-      var caj = u.querySelector(':scope > .jp-ex-cajas'), tips = u.querySelector('.jp-ex-tips');
-      if(!caj){
-        if(!tips) return;
-        caj = document.createElement('div'); caj.className = 'jp-ex-cajas'; u.appendChild(caj);
+      var propio = function(el){ return el && el.closest('.jp-sb-ex, .jp-sb-subex-resumen') === u; };
+      var caj = u.querySelector(':scope > .jp-ex-cajas');
+      var piezas = [];
+      NOTAS_DEF.forEach(function(d){ var el = Array.prototype.filter.call(u.querySelectorAll(d.sel), propio)[0]; if(el) piezas.push({ d: d, el: el }); });
+      if(caj){ var fila0 = caj.querySelector(':scope > .jp-notas-chips'); if(fila0) caj.removeChild(fila0); }
+      if(!piezas.length){ if(caj && !caj.children.length) caj.parentNode.removeChild(caj); return; }
+      /* el tablero del bloque (el desplegable de pautas es hijo directo suyo); en un biset la unidad está anidada dentro del recuadro */
+      var board = u.parentNode;
+      while(board && board.nodeType === 1 && !(board.classList.contains('jp-sb-board') || board.hasAttribute('data-sportsboard'))) board = board.parentNode;
+      if(!board || board.nodeType !== 1) board = u.parentNode;
+      var cont = jpPautasDelBloqueSB(board);
+      var key = u.getAttribute('data-notas-k'); if(!key){ key = 'n' + (++_notasK); u.setAttribute('data-notas-k', key); }
+      var sec = cont.querySelector(':scope > .jp-pauta-ex[data-notas-k="' + key + '"]');
+      if(!sec){
+        var idEl = u.querySelector('.jp-sb-ex-id, .jp-sb-letra'), nmEl = u.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit'), nm = '';
+        if(nmEl){ var cl = nmEl.cloneNode(true); Array.prototype.forEach.call(cl.querySelectorAll('.jp-nom-en'), function(x){ x.parentNode.removeChild(x); }); nm = String(cl.textContent || '').replace(/\s+/g, ' ').trim(); }
+        var idTx = idEl ? String(idEl.textContent || '').replace(/[^0-9A-Za-z]/g, '') : '';
+        sec = document.createElement('div'); sec.className = 'jp-pauta-ex'; sec.setAttribute('data-notas-k', key);
+        sec.innerHTML = '<div class="jp-pauta-ex-tit">' + (idTx ? '<span class="jp-pauta-ex-id">' + escSB(idTx) + '</span>' : '') + '<span>' + escSB(nm || jpT('app.notas.lb')) + '</span></div>';
+        cont.appendChild(sec);
       }
-      if(tips && tips.parentNode !== caj){ caj.insertBefore(tips, caj.firstChild); }
-      var hay = NOTAS_DEF.filter(function(d){ return caj.querySelector(':scope > ' + d.sel); });
-      if(!hay.length) return;
-      caj.classList.add('jp-notas');
-      hay.forEach(function(d){ caj.querySelector(':scope > ' + d.sel).open = true; });
-      var fila = caj.querySelector(':scope > .jp-notas-chips');
-      if(fila) fila.parentNode.removeChild(fila);
-      var tp = caj.querySelector(':scope > .jp-ex-box-tempo .jp-ex-box-s');
-      fila = document.createElement('div'); fila.className = 'jp-notas-chips'; fila.setAttribute('role', 'group');
-      fila.innerHTML = '<span class="jp-notas-lb">' + escSB(jpT('app.notas.lb')) + '</span>' + hay.map(function(d){
-        var extra = d.k === 'tempo' && tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '';
-        return '<button type="button" class="jp-nota-chip" data-nota="' + d.k + '" aria-pressed="' + (caj.getAttribute('data-nota') === d.k ? 'true' : 'false') + '">' + escSB(jpT(d.lb)) + extra + '</button>';
-      }).join('');
-      caj.insertBefore(fila, caj.firstChild);
+      piezas.forEach(function(p){
+        var viejo = sec.querySelector(':scope > [data-nota="' + p.d.k + '"]'); if(viejo && viejo !== p.el) sec.removeChild(viejo);
+        var lbViejo = sec.querySelector(':scope > .jp-pauta-ex-lb[data-lb="' + p.d.k + '"]'); if(lbViejo) sec.removeChild(lbViejo);
+        var tp = p.d.k === 'tempo' ? p.el.querySelector('.jp-ex-box-s') : null;
+        var lb = document.createElement('div'); lb.className = 'jp-pauta-ex-lb'; lb.setAttribute('data-lb', p.d.k);
+        lb.innerHTML = escSB(jpT(p.d.lb)) + (tp ? ' <b>' + escSB(String(tp.textContent || '').trim()) + '</b>' : '');
+        p.el.open = true; p.el.setAttribute('data-nota', p.d.k); p.el.classList.add('jp-pauta-ex-nota');
+        sec.appendChild(lb); sec.appendChild(p.el);
+      });
+      if(caj && !caj.children.length) caj.parentNode.removeChild(caj);
     });
   }
   window.jpNotasAgrupar = jpNotasAgrupar;
-  document.addEventListener('click', function(ev){
-    var b = ev.target && ev.target.closest ? ev.target.closest('.jp-nota-chip') : null; if(!b) return;
-    var caj = b.closest('.jp-ex-cajas'); if(!caj) return;
-    var k = b.getAttribute('data-nota'), abre = caj.getAttribute('data-nota') !== k;
-    if(abre) caj.setAttribute('data-nota', k); else caj.removeAttribute('data-nota');
-    Array.prototype.forEach.call(caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), function(x){ x.setAttribute('aria-pressed', abre && x === b ? 'true' : 'false'); });
-  });
   /* estaciones de cardio / finisher (filas simples): nombre limpio y consigna de formato */
   function jpLimpiarNombreEstacionSB(nm){
     return String(nm || '').replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s*[x\u00d7]\s*$/i, '').trim();
@@ -3957,12 +3977,8 @@
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
     var tp = tempoLimpioSB(tempo);
     if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
-    /* sin tempo pautado: en lugar de dejar la celda vacía (la fila quedaba despareja) va una indicación de ritmo útil; con repeticiones, «control» (bajada de 2 a 3 s y subida firme),
-       con tiempo o distancia, «parejo». Solo cuando la fila técnica ya tiene el RIR (ahí quedaba el hueco): sin tempo ni RIR no se inventa la fila (ver est.dos.02). */
-    else if(rir){
-      var porReps = !unidad || /^reps?$/i.test(String(unidad));
-      r3.unshift('<span class="jp-db-seg jp-db-tempo jp-db-ritmo" title="' + (porReps ? 'Sin tempo pautado: bajá en 2 a 3 segundos y subí firme, sin rebote' : 'Sin tempo pautado: mantené un ritmo parejo de principio a fin') + '"><small>RITMO</small> <b>' + (porReps ? 'CONTROL' : 'PAREJO') + '</b></span>');
-    }
+    /* 2026-11 (v27): sin tempo pautado no se agrega nada. La celda «RITMO · CONTROL» por defecto aparecía en ejercicios donde no corresponde (olímpicos como el hang power clean,
+       trabajos con banda, isométricos): la técnica muestra solo lo que el coach pautó y el estilo compacto reparte el ancho entre las celdas que hay (tarjeta-ejercicio.css). */
     if(rir){
       var tier = tierRirSB(rir);
       r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');

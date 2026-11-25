@@ -41,8 +41,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     input: { caso: 'quitar', nEj: 2, texto: 'A1 · SET-UP: a\nA2 · SET-UP: b\nSET-UP: general del biset\nTRANSICIÓN: pasá sin descanso' },
     expect: ['SET-UP: general del biset', 'TRANSICIÓN: pasá sin descanso'], nota: 'En un biset solo se quitan las líneas con letra de estación (A1 · ...), que son las que muestra cada tarjeta; las generales se conservan' },
   { id: 'pau.cajas.01', area: 'App del alumno · pautas', fn: 'alumnoPautas', input: { caso: 'cajas', tempo: '3110', objetivo: '<p>Objetivo</p>', dos: true },
-    expect: { objetivoEnPrimera: 1, objetivoEnSegunda: 0, tempoEnPrimera: 1, explica: true, tempoEnSegunda: 1 }, modo: 'subset',
-    nota: 'El objetivo fisiológico va una vez, al pie de la primera tarjeta, y el tempo (cadencia) al pie de cada ejercicio, explicado con el de su propia ficha' },
+    expect: { objetivoEnPrimera: 1, objetivoEnSegunda: 0, tempoEnPrimera: 1, explica: true, tempoEnSegunda: 1, tarjetasLimpias: true }, modo: 'subset',
+    nota: 'El objetivo fisiológico va una vez (con el primer ejercicio) y el tempo (cadencia) de cada ejercicio explicado con el de su propia ficha; desde v27 los dos se leen dentro de «Pautas técnicas & tips del bloque», no al pie de la tarjeta' },
   /* ---- banco femenino: Constructor de Glúteos ---- */
   { id: 'bank.glu.01', area: 'Banco · Bodybuilding femenino', fn: 'bancoGluteos', input: '', expect: [],
     nota: 'Las 6 plantillas femeninas de bodybuilding: sin dominadas lastradas ni core avanzado ni sentadilla con barra; con hip thrust pesado con pausa de 2 s, peso muerto rumano con déficit, búlgara con el torso inclinado, patada en polea cruzada y trabajo unilateral de cadera' },

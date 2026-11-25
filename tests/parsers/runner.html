@@ -36,7 +36,7 @@
   <button id="bReload">Volver a correr</button>
 </header>
 <main id="out"><p>Cargando la app en un iframe…</p></main>
-<iframe id="app" src="../../index.html" style="position:absolute; left:-9999px; width:420px; height:800px; border:0" aria-hidden="true"></iframe>
+<iframe id="app" src="../../index.html?jpSandbox=1" style="position:absolute; left:-9999px; width:420px; height:800px; border:0" aria-hidden="true"></iframe>
 <script src="cases.js"></script>
 <script src="cases-banco.js"></script>
 <script src="cases-alumno.js"></script>
@@ -58,6 +58,7 @@
 <script src="cases-tips-bordes.js"></script>
 <script src="cases-femenino.js"></script>
 <script src="cases-ficha.js"></script>
+<script src="cases-persistencia.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -118,6 +119,7 @@
     boxFem:       { run: function(){ return auditarBox(); }, valor: function(r){ return r; } },
     bisetNaranja: { run: function(i){ return bisetNaranja(i); }, valor: function(r){ return r; } },
     renombres:    { run: function(i){ return renombresBiblioteca(i); }, valor: function(r){ return r; } },
+    persistencia: { run: function(i){ return persistenciaCaso(i); }, valor: function(r){ return r; } },
     generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
@@ -409,6 +411,112 @@
     }
   }
   /* ---------- copia de plan entre alumnos: "Copiar plan completo" y "Duplicar planificación / Clonar plan de otro atleta" (mismo núcleo) ---------- */
+  /* ---------- persistencia blindada y orden A–Z de alumnos (v27) ----------
+     Cada caso arma su propio estado de prueba en memoria y al final repone el de la app tal cual estaba (alumnos, biblioteca, planes, borrados y huellas).
+     El iframe corre con ?jpSandbox=1: aunque algo se guardara, va al almacenamiento en memoria, nunca al real. */
+  function persistenciaCaso(c){
+    var S = getS(), w = win, clon = function(o){ return JSON.parse(JSON.stringify(o)); };
+    var snap = { ath: S.athletes, ex: S.exercises, pl: S.plans, b: S.borrados, pb: S.planesBorrados, g: S.guardadoEn, act: S.activeId, libV: S.libV, sedes: S.sedes, el: S.exportLog };
+    var orig = { save: w.save, ga: w.guardarAhora, ra: w.renderAthletes, rb: w.renderBuilder, toast: w.toast };
+    w.save = w.guardarAhora = w.renderAthletes = w.renderBuilder = function(){}; w.toast = function(){};
+    var nom = function(a){ return ((a.nombre || '') + ' ' + (a.apellido || '')).trim(); };
+    try{
+      if(c.caso === 'aislado'){
+        var LS = w.localStorage, real = window.localStorage, K = 'coachjp_lib_v1', antes = real.getItem(K), antesMem = LS.getItem(K), k2 = 'jp_prueba_aislada_' + Date.now();
+        LS.setItem(k2, 'x');
+        var r = { sandbox: w.JP_SANDBOX === true && w.JP_SANDBOX_OK === true, noLlegaAlReal: real.getItem(k2) === null && LS.getItem(k2) === 'x' };
+        LS.removeItem(k2);
+        S.athletes = S.athletes.concat([{ id: 'ath_test_aislado', nombre: 'Aislado', apellido: 'Test' }]);
+        var rr = w.eval('jpPersistirEstado()');
+        r.escribeEnMemoria = !!rr.ok && (LS.getItem(K) || '').indexOf('ath_test_aislado') >= 0;
+        r.realIntacto = real.getItem(K) === antes;
+        r.sinNube = !(w.CoachCloud && w.CoachCloud.activo()) && LS.getItem('coachjp_cloud_v1') === null; if(antesMem == null) LS.removeItem(K); else LS.setItem(K, antesMem); w.eval('_ultLib = null');      /* la memoria aislada vuelve a como estaba */
+        return r;
+      }
+      if(c.caso === 'fusion'){
+        var t0 = 1700000000000;
+        S.athletes = [ { id: 'p_a', nombre: 'Ana', apellido: 'Z', createdAt: t0, finanzas: { arancel: 100, historial: [{ id: 'h1', monto: 100 }] }, _ts: t0 + 5000 },
+                       { id: 'p_c', nombre: 'Carla', apellido: 'Z', createdAt: t0 },
+                       { id: 'p_e', nombre: 'Eva', apellido: 'Z', createdAt: t0, notas: 'local' } ];
+        S.exercises = [ { id: 'e1', es: 'Remo X', grupo: 'Espalda', video: 'https://youtu.be/abc', videoId: 'abc' }, { id: 'e2', es: 'Curl Y', grupo: 'Bíceps', video: '', videoId: '' } ];
+        S.plans = { p_a: { dias: [{ id: 'd1', nombre: 'LOCAL' }], _ts: t0 + 5000 } };
+        S.borrados = { ath: { p_b: t0 + 1000 }, ex: {} }; S.planesBorrados = {}; S.guardadoEn = t0 + 6000;
+        w.jpSembrarHuellas();
+        var rem = { athletes: [
+            { id: 'p_a', nombre: 'Ana', apellido: 'Z', createdAt: t0, finanzas: { arancel: 50, historial: [] }, _ts: t0 + 2000 },
+            { id: 'p_b', nombre: 'Beto', apellido: 'Z', createdAt: t0 },
+            { id: 'p_e', nombre: 'Eva', apellido: 'Z', createdAt: t0, notas: 'remota', _ts: t0 + 9000 },
+            { id: 'p_n', nombre: 'Nico', apellido: 'Z', createdAt: t0 + 100 } ],
+          exercises: [ { id: 'e1', es: 'Remo X', grupo: 'Espalda', video: '', videoId: '', _ts: t0 + 9000 }, { id: 'e2', es: 'Curl Y', grupo: 'Bíceps', video: 'https://youtu.be/zzz', videoId: 'zzz' } ],
+          plans: { p_a: { dias: [{ id: 'd1', nombre: 'VIEJO' }], _ts: t0 + 1000 }, p_b: { dias: [] }, p_n: { dias: [{ id: 'd1' }], _ts: t0 + 100 } },
+          borrados: { ath: { p_c: t0 + 3000 }, ex: {} } };
+        var rf = w.jpFusionarRemoto(rem, { tRemoto: t0 + 8000, conPlanes: true });
+        var get = function(id){ return S.athletes.filter(function(a){ return a.id === id; })[0]; }, ex = function(id){ return S.exercises.filter(function(e){ return e.id === id; })[0]; };
+        return { borradoNoVuelve: !get('p_b') && !S.plans.p_b, borradoEnOtroEquipoSeVa: !get('p_c'), localMasNuevoGana: get('p_a').finanzas.arancel === 100 && get('p_a').finanzas.historial.length === 1,
+          remotoMasNuevoGana: get('p_e').notas === 'remota', nuevoSeSuma: !!get('p_n') && !!S.plans.p_n, planLocalNoSePisa: S.plans.p_a.dias[0].nombre === 'LOCAL',
+          videoNoSePierde: ex('e1').videoId === 'abc', videoSeCompleta: ex('e2').videoId === 'zzz', ordenAZ: S.athletes.map(function(a){ return a.nombre; }).join(',') === 'Ana,Eva,Nico',
+          borradosUnidos: !!(S.borrados.ath.p_b && S.borrados.ath.p_c), cuenta: rf.athNuevos === 1 && rf.athQuitados === 1 && rf.athIgnorados === 1 };
+      }
+      if(c.caso === 'legado'){
+        /* datos sin sello (de antes de este cambio): decide el guardado completo más reciente; lo que falta se completa sin pisar */
+        S.athletes = [{ id: 'l_a', nombre: 'Lía', apellido: 'Z', notas: 'local' }]; S.exercises = []; S.plans = {}; S.borrados = { ath: {}, ex: {} }; S.guardadoEn = 5000;
+        w.jpSembrarHuellas();
+        w.jpFusionarRemoto({ athletes: [{ id: 'l_a', nombre: 'Lía', apellido: 'Z', notas: 'remota-vieja', tel: '123' }] }, { tRemoto: 4000 });
+        var viejaNoPisa = S.athletes[0].notas === 'local' && S.athletes[0].tel === '123';
+        w.jpFusionarRemoto({ athletes: [{ id: 'l_a', nombre: 'Lía', apellido: 'Z', notas: 'remota-nueva' }] }, { tRemoto: 9000 });
+        return { remotaViejaNoPisa: viejaNoPisa, remotaNuevaGana: S.athletes[0].notas === 'remota-nueva' };
+      }
+      if(c.caso === 'sellos'){
+        S.athletes = [{ id: 's1', nombre: 'Sol', apellido: 'T' }]; S.exercises = []; S.plans = { s1: { dias: [] } };
+        w.jpSembrarHuellas();
+        var n0 = w.jpSellarCambios(), sinCambio = n0 === 0 && !S.athletes[0]._ts && !S.plans.s1._ts;
+        S.athletes[0].nombre = 'Sole'; S.plans.s1.dias.push({ id: 'd1' });
+        var n1 = w.jpSellarCambios();
+        return { sinCambioNoSella: sinCambio, cambioSella: n1 === 2 && S.athletes[0]._ts > 0 && S.plans.s1._ts > 0, elSelloNoEsUnCambio: w.jpSellarCambios() === 0 };
+      }
+      if(c.caso === 'pestana'){
+        S.athletes = [{ id: 'x1', nombre: 'Uno', apellido: 'T' }]; S.exercises = [{ id: 'ex1', es: 'Ejercicio A', video: 'v', videoId: 'v' }]; S.plans = {}; S.borrados = { ath: {}, ex: {} };
+        w.jpSembrarHuellas(true);
+        S.athletes.push({ id: 'x2', nombre: 'Dos', apellido: 'T' });      /* creado en esta pestaña, todavía sin guardar */
+        var ev = function(k, o){ w.dispatchEvent(new w.StorageEvent('storage', { key: k, newValue: JSON.stringify(o) })); };
+        ev('coachjp_lib_v1', { athletes: [], exercises: [], libV: S.libV, borrados: { ath: {}, ex: {} }, t: Date.now() });
+        var vaciaIgnorada = S.athletes.length === 2;
+        ev('coachjp_lib_v1', { athletes: [{ id: 'x3', nombre: 'Tres', apellido: 'T', _ts: Date.now() }], exercises: [{ id: 'ex1', es: 'Ejercicio A', video: 'v', videoId: 'v' }], libV: S.libV, borrados: { ath: { x1: Date.now() }, ex: {} }, t: Date.now() });
+        var ids = S.athletes.map(function(a){ return a.id; }).join(',');
+        ev('coachjp_plans_sports_v1', { plans: { x2: { dias: [{ id: 'd1', nombre: 'DE LA OTRA' }], _ts: Date.now() } }, activeId: null, ui: {} });
+        return { bibliotecaVaciaIgnorada: vaciaIgnorada, borradoEnLaOtraSeVa: ids.indexOf('x1') < 0, loCreadoAcaSeQueda: ids.indexOf('x2') >= 0, loNuevoLlega: ids.indexOf('x3') >= 0,
+          planesDeLaOtraLlegan: !!(S.plans.x2 && S.plans.x2.dias[0].nombre === 'DE LA OTRA') };
+      }
+      if(c.caso === 'biblioteca'){
+        var nm = w.eval('norm'), lv = w.eval('LIB_VERSION'), se = w.eval('seedExercises()')[0], base = clon(S.exercises).filter(function(e){ return nm(e.es) !== nm(se.es); });
+        S.exercises = clon(base); S.borrados = { ath: {}, ex: {} }; S.borrados.ex['n:' + nm(se.es)] = Date.now(); S.libV = lv - 1;
+        w.eval('syncLibrary()');
+        var vuelve = S.exercises.some(function(e){ return nm(e.es) === nm(se.es); });
+        S.exercises = clon(base); S.borrados = { ath: {}, ex: {} }; S.libV = lv - 1;
+        w.eval('syncLibrary()');
+        return { oficialBorradoNoVuelve: !vuelve, sinBorradoSeIncorpora: S.exercises.some(function(e){ return nm(e.es) === nm(se.es); }) };
+      }
+      if(c.caso === 'orden'){
+        var N = [['zoe', 'Álvarez'], ['Ángela', 'Pérez'], ['beto', 'Núñez'], ['Ñandú', 'Ruiz'], ['Alvaro', 'Gómez'], ['nadia', 'Sosa'], ['álvaro', 'Gómez']];
+        var ESPERADO = 'Alvaro Gómez|álvaro Gómez|Ángela Pérez|beto Núñez|nadia Sosa|Ñandú Ruiz|zoe Álvarez';
+        S.athletes = N.map(function(n, i){ return { id: 'ord' + (N.length - i), nombre: n[0], apellido: n[1], freq: 3 }; });
+        var az = w.jpAthAZ(S.athletes).map(nom).join('|');
+        S.athletes.reverse(); w.jpOrdenarAlumnos();
+        var memoria = S.athletes.map(nom).join('|');
+        S.athletes.reverse(); S.activeId = null;
+        orig.ra.call(w);
+        var grilla = [].map.call(w.document.querySelectorAll('#athGrid .ath-card[data-ath]'), function(el){ var a = S.athletes.filter(function(x){ return x.id === el.getAttribute('data-ath'); })[0]; return a ? nom(a) : '?'; }).join('|');
+        var selector = [].slice.call(w.document.querySelectorAll('#selActive option')).filter(function(o){ return o.value; }).map(function(o){ return o.textContent.trim(); }).join('|');
+        return { comparador: az === ESPERADO, memoria: memoria === ESPERADO, grilla: grilla === ESPERADO, selector: selector === ESPERADO };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      S.athletes = snap.ath; S.exercises = snap.ex; S.plans = snap.pl; S.borrados = snap.b; S.planesBorrados = snap.pb; S.guardadoEn = snap.g; S.activeId = snap.act; S.libV = snap.libV; S.sedes = snap.sedes; S.exportLog = snap.el;
+      try{ w.jpSembrarHuellas(true); }catch(e){}
+      w.save = orig.save; w.guardarAhora = orig.ga; w.renderAthletes = orig.ra; w.renderBuilder = orig.rb; w.toast = orig.toast;
+      try{ orig.ra.call(w); }catch(e){}
+    }
+  }
   function copiaPlanCaso(c){
     var S = getS(), A = [], ids = ['ath_test_dp_o', 'ath_test_dp_d'], PB = win.__jpPB;
     var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, confirm: win.confirm, act: S.activeId, ui: S.ui ? JSON.parse(JSON.stringify({ cfWeek: S.ui.cfWeek, day: S.ui.day })) : {} };
@@ -1776,11 +1884,20 @@
         var u2 = d.createElement('div'); u2.className = 'jp-sb-ex';
         u2.innerHTML = '<div class="jp-qc"><details class="jp-ex-tips"><summary>T</summary><div class="jp-ex-tips-b">x</div></details></div><div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>O</summary><div class="jp-ex-box-b">o</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>T</summary><div class="jp-ex-box-s">2011</div><div class="jp-ex-box-b">t</div></details></div>';
         (d.getElementById('mainContent') || d.body).appendChild(u2);
+        var tab2 = d.createElement('div'); tab2.className = 'wod-board jp-sb-board'; tab2.setAttribute('data-sportsboard', 'n2');
+        u2.querySelector('.jp-qc').insertAdjacentHTML('afterbegin', '<button type="button" class="jp-qc-tg">Registrar carga</button>');
+        u2.insertAdjacentHTML('afterbegin', '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">02</span><span class="jp-sb-ex-nombre">Sentadilla frontal <span class="jp-nom-en">(Front Squat)</span></span></div>');
+        tab2.appendChild(u2); tab2.insertAdjacentHTML('beforeend', '<button type="button" class="jp-done-btn jp-done-foot">Completar bloque</button>');
+        (d.getElementById('mainContent') || d.body).appendChild(tab2);
         try{
-          w.jpNotasAgrupar(u2);
-          var fl = u2.querySelector('.jp-notas-chips'), tx = [].slice.call(fl.querySelectorAll('.jp-nota-chip')).map(function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim().toUpperCase(); });
-          return { conRotuloNotas: /^NOTAS$/i.test(String(fl.querySelector('.jp-notas-lb').textContent).trim()), sinBotonTipsSuelto: tx.indexOf('TIPS') < 0 && tx[0] === 'COACHING', botones: tx.join('|') === 'COACHING|OBJETIVO|TEMPO 2011', sinIconos: !fl.querySelector('.jp-nota-ic'), enUnaLinea: fl.getBoundingClientRect().height <= 34, aireAntesDeLasPautas: parseFloat(cs(u2.querySelector('.jp-ex-cajas')).marginTop) >= 8 };
-        } finally { if(u2.parentNode) u2.parentNode.removeChild(u2); }
+          w.jpNotasAgrupar(tab2);
+          var det2 = tab2.querySelector(':scope > .jp-block-details'), sec2 = det2 && det2.querySelector('.jp-pauta-ex'), lbs = sec2 ? [].slice.call(sec2.querySelectorAll('.jp-pauta-ex-lb')).map(function(b){ return String(b.textContent).replace(/\s+/g, ' ').trim().toUpperCase(); }) : [];
+          det2.open = true;
+          return { sinFilaDeNotas: !tab2.querySelector('.jp-notas-chips, .jp-nota-chip'), tarjetaTerminaEnRegistrar: u2.lastElementChild && u2.lastElementChild.classList.contains('jp-qc') && !u2.querySelector('.jp-ex-cajas, .jp-ex-tips'),
+            pautasAntesDelCierre: !!det2 && det2.nextElementSibling && det2.nextElementSibling.classList.contains('jp-done-btn'),
+            seccionConNombre: !!sec2 && /^02\s*SENTADILLA FRONTAL$/i.test(String(sec2.querySelector('.jp-pauta-ex-tit').textContent).replace(/\s+/g, ' ').trim()),
+            rotulos: lbs.join('|') === 'COACHING|OBJETIVO|TEMPO 2011', contenidoVisible: !!sec2 && [].every.call(sec2.querySelectorAll('details.jp-pauta-ex-nota'), function(x){ return x.open && cs(x).display !== 'none' && cs(x.querySelector('summary')).display === 'none'; }) };
+        } finally { if(tab2.parentNode) tab2.parentNode.removeChild(tab2); }
       }
       if(c.caso === 'headerAtleta'){
         var rc = function(e){ return e.getBoundingClientRect(); }, q1 = function(s){ return d.querySelector(s); }, fs = function(e){ return parseFloat(cs(e).fontSize); };
@@ -1862,18 +1979,23 @@
         var unidad = d.createElement('div'); unidad.className = 'jp-sb-ex';
         unidad.innerHTML = '<div class="jp-qc"><button type="button" class="jp-qc-tg">Registrar carga</button><details class="jp-ex-tips"><summary>COACHING TIPS</summary><div class="jp-ex-tips-b">SET-UP texto</div></details></div>' +
           '<div class="jp-ex-cajas"><details class="jp-ex-box jp-ex-box-obj"><summary>OBJETIVO</summary><div class="jp-ex-box-b">obj</div></details><details class="jp-ex-box jp-ex-box-tempo"><summary>TEMPO</summary><div class="jp-ex-box-s">3010</div><div class="jp-ex-box-b">t</div></details></div>';
-        var host = d.getElementById('mainContent') || d.body; host.appendChild(unidad);
+        /* un biset (dos estaciones) dentro de un tablero con sus pautas: cada estación con sus notas */
+        var tab = d.createElement('div'); tab.className = 'wod-board jp-sb-board'; tab.setAttribute('data-sportsboard', 'n1');
+        var bis1 = d.createElement('div'); bis1.className = 'jp-sb-biset';
+        unidad.className = 'jp-sb-subex-resumen'; unidad.insertAdjacentHTML('afterbegin', '<div class="jp-sb-subex-head"><span class="jp-sb-letra">A1</span><span class="jp-sb-subex-tit">Hip thrust</span></div>');
+        var otra = d.createElement('div'); otra.className = 'jp-sb-subex-resumen'; otra.innerHTML = '<div class="jp-sb-subex-head"><span class="jp-sb-letra">A2</span><span class="jp-sb-subex-tit">Abducción</span></div><div class="jp-qc"><button type="button" class="jp-qc-tg">Registrar carga</button><details class="jp-ex-tips"><summary>COACHING TIPS</summary><div class="jp-ex-tips-b">CUIDADO texto</div></details></div>';
+        bis1.appendChild(unidad); bis1.appendChild(otra); tab.appendChild(bis1);
+        tab.insertAdjacentHTML('beforeend', '<details class="jp-block-details"><summary class="jp-summary-btn"><span>PAUTAS</span></summary><div class="jp-details-content"><div class="jp-sb-pauta">estrategia</div></div></details><button type="button" class="jp-done-btn">Completar</button>');
+        var envol = d.createElement('div'); envol.appendChild(tab); var host = d.getElementById('mainContent') || d.body; host.appendChild(envol);
         try{
-          w.jpNotasAgrupar(unidad); w.jpNotasAgrupar(unidad);
-          var caj = unidad.querySelector(':scope > .jp-ex-cajas'), chips = caj.querySelectorAll(':scope > .jp-notas-chips .jp-nota-chip'), vis = function(sel){ return cs(caj.querySelector(sel)).display !== 'none'; };
-          var r2 = { unaFila: caj.querySelectorAll('.jp-notas-chips').length === 1, tresBotones: chips.length === 3, tipsAdentro: !!caj.querySelector(':scope > .jp-ex-tips'), tempoEnElBoton: /3010/.test(chips[2].textContent), registrarSigueArriba: !!unidad.querySelector('.jp-qc > .jp-qc-tg') && cs(unidad.querySelector('.jp-qc-tg')).display !== 'none',
-            cerradasAlInicio: !vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo'), compacta: caj.getBoundingClientRect().height <= 46 };
-          chips[0].click(); r2.muestraSoloTips = vis('.jp-ex-tips') && !vis('.jp-ex-box-obj') && !vis('.jp-ex-box-tempo') && chips[0].getAttribute('aria-pressed') === 'true';
-          chips[1].click(); r2.cambiaAObjetivo = !vis('.jp-ex-tips') && vis('.jp-ex-box-obj') && chips[0].getAttribute('aria-pressed') === 'false';
-          chips[1].click(); r2.tocarOtraVezCierra = !vis('.jp-ex-box-obj') && !vis('.jp-ex-tips') && !caj.hasAttribute('data-nota');
-          r2.sinResumenesApilados = [].slice.call(caj.querySelectorAll(':scope > details > summary')).every(function(s){ return cs(s).display === 'none'; });
-          return r2;
-        } finally { if(unidad.parentNode) unidad.parentNode.removeChild(unidad); }
+          w.jpNotasAgrupar(tab); w.jpNotasAgrupar(tab); w.jpNotasAgrupar(unidad);
+          var dets = tab.querySelectorAll(':scope > .jp-block-details'), cont = dets[0] && dets[0].querySelector('.jp-details-content'), secs = cont ? cont.querySelectorAll(':scope > .jp-pauta-ex') : [];
+          var tit = function(x){ return String(x.querySelector('.jp-pauta-ex-tit').textContent).replace(/\s+/g, ' ').trim(); };
+          return { unSoloDesplegable: dets.length === 1, unaSeccionPorEstacion: secs.length === 2 && /^A1\s*Hip thrust$/i.test(tit(secs[0])) && /^A2\s*Abducción$/i.test(tit(secs[1])),
+            estrategiaPrimero: cont.firstElementChild.classList.contains('jp-sb-pauta'), todoAdentro: secs.length === 2 && secs[0].querySelectorAll('[data-nota]').length === 3 && secs[1].querySelectorAll('[data-nota]').length === 1,
+            nadaEnLaTarjeta: !tab.querySelector('.jp-sb-subex-resumen .jp-ex-cajas, .jp-sb-subex-resumen .jp-ex-tips, .jp-notas-chips'), registrarSigueEnLaTarjeta: !!unidad.querySelector('.jp-qc > .jp-qc-tg') && cs(unidad.querySelector('.jp-qc-tg')).display !== 'none',
+            idempotente: tab.querySelectorAll('.jp-pauta-ex').length === 2 && tab.querySelectorAll('.jp-pauta-ex-lb').length === 4, cajasNoVuelven: (function(){ w.jpCajasTarjeta(envol, '<p>obj</p>'); return !tab.querySelector('.jp-sb-subex-resumen > .jp-ex-cajas') && !tab.querySelector(':scope > .jp-ex-cajas'); })() };
+        } finally { if(envol.parentNode) envol.parentNode.removeChild(envol); }
       }
       if(c.caso === 'plan'){
         var E = { idx: 'e0', nombre: 'Press de banca plano con barra', reps: '5-7', rir: '2' }, cc = { w: 1, d: 'dia1', b: 'bk1' }, loads0 = st.loads, rir0 = st.rirEx;
@@ -1960,9 +2082,10 @@
       cont.innerHTML = '<div data-sportsboard="x"><div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + i.tempo + '</b></span></div></div>' +
         (i.dos ? '<div class="jp-sb-ex"><div class="jp-dose-bar"><span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>2011</b></span></div></div>' : '') + '</div>';
       w.jpCajasTarjeta(cont, i.objetivo);
-      var ex = cont.querySelectorAll('.jp-sb-ex'), q = function(u, s){ return u ? u.querySelectorAll(s).length : 0; };
-      return { objetivoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-obj'), objetivoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-obj'),
-        tempoEnPrimera: q(ex[0], ':scope > .jp-ex-cajas .jp-ex-box-tempo'), explica: /3 s bajada/.test(ex[0].textContent) && /1 s pausa abajo/.test(ex[0].textContent), tempoEnSegunda: q(ex[1], ':scope > .jp-ex-cajas .jp-ex-box-tempo') };
+      var ex = cont.querySelectorAll('.jp-block-details .jp-pauta-ex'), q = function(u, s){ return u ? u.querySelectorAll(s).length : 0; };
+      return { objetivoEnPrimera: q(ex[0], '.jp-ex-box-obj'), objetivoEnSegunda: q(ex[1], '.jp-ex-box-obj'),
+        tempoEnPrimera: q(ex[0], '.jp-ex-box-tempo'), explica: !!ex[0] && /3 s bajada/.test(ex[0].textContent) && /1 s pausa abajo/.test(ex[0].textContent), tempoEnSegunda: q(ex[1], '.jp-ex-box-tempo'),
+        tarjetasLimpias: !cont.querySelector('.jp-sb-ex .jp-ex-cajas') };
     }
     throw new Error('caso desconocido: ' + i.caso);
   }
@@ -2363,7 +2486,7 @@
       var q = function(sel){ return caja.querySelector(sel); }, cs = function(el, ps){ return w.getComputedStyle(el, ps || null); };
       var bis = q('.jp-sb-biset'), pill = q('.jp-sb-biset-pill'), sub = q('.jp-sb-biset-sub'), br = q('.jp-sb-bracket'), le = caja.querySelectorAll('.jp-sb-subex-resumen .jp-sb-letra');
       var trans = caja.querySelectorAll('.jp-sb-trans'), tp = q('.jp-sb-trans-pill'), viejo = cs(caja.querySelectorAll('.jp-sb-subex-resumen')[1], '::before');
-      var barras = caja.querySelectorAll('.jp-dose-bar'), r3a1 = barras[0] && barras[0].querySelector('.jp-db-r3'), ritmo = r3a1 && r3a1.querySelector('.jp-db-ritmo');
+      var barras = caja.querySelectorAll('.jp-dose-bar'), r3a1 = barras[0] && barras[0].querySelector('.jp-db-r3'), ritmo = caja.querySelector('.jp-db-ritmo');
       var uni = q('.jp-db-uni .jp-sb-unilateral'), uniEnTecnica = !!caja.querySelector('.jp-db-r3 .jp-sb-unilateral');
       var NAR = 'rgb(238, 90, 18)', TXT = 'rgb(255, 138, 76)';
       var todos = [cs(bis).borderTopColor, cs(bis).backgroundImage, cs(pill).backgroundColor, cs(sub).color, cs(br).borderLeftColor, cs(le[0]).backgroundColor, tp ? cs(tp).color + ' ' + cs(tp).borderTopColor : ''].join(' ');
@@ -2372,8 +2495,8 @@
         textosLegibles: cs(sub).color === TXT,
         /* transición: un solo elemento entre A1 y A2, pastilla de borde sólido que nombra la estación siguiente, sin el recuadro punteado viejo */
         transicion: trans.length === 1 && !!tp && /SIN PAUSA · PASÁ AL A2/.test(tp.textContent) && cs(tp).color === TXT && cs(tp).borderTopStyle === 'solid' && /238, 90, 18/.test(cs(tp).borderTopColor) && (viejo.content === 'none' || viejo.display === 'none'),
-        /* A1 sin tempo: la fila de técnica no queda despareja (celda de ritmo, que entra en su celda) */
-        sinHuecoDeTempo: !!ritmo && /RITMO/.test(ritmo.textContent) && /CONTROL/.test(ritmo.textContent) && r3a1.children.length === 2 && ritmo.scrollWidth <= ritmo.clientWidth + 1,
+        /* A1 sin tempo: no se inventa una celda «RITMO · CONTROL»; la técnica muestra solo el RIR pautado */
+        sinRitmoInventado: !ritmo && !/RITMO/.test(caja.textContent) && !!r3a1 && r3a1.children.length === 1 && /RIR/.test(r3a1.textContent),
         /* unilateral: badge propio en su fila, con ⇄ y sin el ⚡ de «sin descanso» */
         unilateral: !!uni && !uniEnTecnica && /⇄/.test(uni.textContent) && !/⚡/.test(uni.textContent) && /UNILATERAL · POR LADO/.test(uni.textContent) && parseFloat(cs(uni).borderTopLeftRadius) > 10 && !/238, 90, 18|255, 194, 75/.test(cs(uni).color),
         sinAmbar: !/255, 194, 75/.test(todos) };
