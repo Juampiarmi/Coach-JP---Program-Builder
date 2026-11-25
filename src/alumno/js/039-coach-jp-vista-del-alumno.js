@@ -140,6 +140,21 @@
     if(b && b.isHyrox){
       return { kind:'Engine', main:'<b>TRABAJO CONTINUO</b>', vol:'Bloque de motor' };
     }
+    if(b && b.sportsPizarra && typeof window.parsearPizarraSB === 'function' && b.category !== 'warmup' && b.modalidad !== 'calentamiento' && !RX_WARM.test(((b.weekName && b.weekName[wi]) || b.title || '') + ' ' + (b.subtitle || ''))){
+      try{
+        var enB = window.parsearPizarraSB(itemsDeSemana(b, wi).filter(function(l){ return l != null && String(l).trim(); }), { titulo: b.title });
+        if(typeof window.jpAgruparBisetPorTitulo === 'function') enB = window.jpAgruparBisetPorTitulo(enB, b.title);
+        var grupos = enB.filter(function(x){ return x && x.tipo === 'biserie' && (x.subs || []).length >= 2; }), sueltos = enB.filter(function(x){ return x && x.tipo === 'simple'; });
+        if(grupos.length && !sueltos.length){
+          var g0 = grupos[0], nS = g0.subs.length, rB = g0.rondas || 3, lbB = nS === 2 ? 'BISET' : (nS === 3 ? 'TRISET' : 'SUPERSERIE');
+          return { kind:'⚡ ' + (nS === 2 ? 'Biset' : (nS === 3 ? 'Triset' : 'Superserie')), main:'<b>' + lbB + '</b> &bull; ' + rB + ' RONDA' + (rB === 1 ? '' : 'S') + ' &bull; ' + nS + ' EJERCICIOS SIN PAUSA', vol: rB + ' rondas · ' + nS + ' ejercicios' };
+        }
+        /* bloque de fuerza de la Pizarra con ejercicios sueltos: se cuentan EJERCICIOS reales (antes «Circuito · N ESTACIONES» contaba también las líneas de dosis) */
+        var nEj = sueltos.length + grupos.reduce(function(t, g){ return t + g.subs.length; }, 0);
+        if(nEj && b.category === 'strength' && !b.coreBlock && !/core|abdomen|estabilidad/i.test(String((b.weekName && b.weekName[wi]) || b.title || '')))
+          return { kind:'Trabajo principal', main:'<b>' + nEj + (nEj === 1 ? ' EJERCICIO' : ' EJERCICIOS') + '</b>' + (grupos.length ? ' &bull; ' + grupos.length + (grupos.length === 1 ? ' BISET' : ' BISETS') : ''), vol: nEj + (nEj === 1 ? ' ejercicio' : ' ejercicios') };
+      }catch(eB){}
+    }
     if(b){
       var items = itemsDeSemana(b, wi);
       var mov = items.filter(function(x){ return !/^\s*(-|\d+\s*sets?:|rest|descanso)/i.test(x); }).length;

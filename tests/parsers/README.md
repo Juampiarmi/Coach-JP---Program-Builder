@@ -18,6 +18,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-elite.js` | Bodybuilding avanzado / élite integrado al Builder: criterios de las 6 plantillas (3, 4 y 5 días · hombres y mujeres), editor estructurado del Banco (swap, series / RIR / descanso, agregar y quitar ejercicios), alertas automáticas, volumen semanal por grupo, asignación al alumno y barra de control del Builder |
 | `cases-pedagogia.js` | Bodybuilding 3, 4 y 5 días (hombres y mujeres, intermedio y avanzado): series de aproximación, por qué esa cantidad de series, objetivo de carga y criterios de selección de ejercicios (brazos estirados, remo apoyado, deltoide lateral en frecuencia 2, sin curl femoral sentado para ellas, core variado) |
 | `cases-persistencia.js` | Datos reales a salvo: aislamiento de pruebas, fusión segura con la nube y con otras pestañas (borrados, sellos de tiempo, videos), biblioteca oficial y orden A–Z de alumnos |
+| `cases-v28.js` | Bisets con registro al final y marcado por título, casilleros neutros hasta completarlos, video junto al nombre, Pizarra del Coach con la misma fuente que el alumno y plan() que completa sin pisar |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -121,3 +122,11 @@ Adaptador `fichaPlan` (runner.html) sobre el Builder real (`CoachMantenimiento`,
 - `datos.01-06` (adaptador `persistencia`): aislamiento de pruebas; fusión con la nube que respeta los borrados (`S.borrados`, un alumno borrado no vuelve y uno borrado en otro equipo se va), gana la edición más reciente por registro (`_ts`, sellado al guardar por huella de contenido), los planes locales más nuevos no se pisan y los videos nunca se pierden; datos sin sello (de antes) se deciden por el guardado completo más reciente; otra pestaña fusiona registro por registro (también los planes); un ejercicio oficial borrado no vuelve con una versión nueva de la biblioteca.
 - `orden.01`: un solo orden A–Z (`jpCmpAth`: español, sin distinguir mayúsculas ni tildes, desempate estable) en memoria (`S.athletes`), en la grilla de alumnos y en el selector del Builder.
 - Cambiaron con la tarjeta limpia: `vista.biset.01` exige que sin tempo pautado NO aparezca «RITMO · CONTROL» (`sinRitmoInventado`); `notas.01`, `notas.02` y `pau.cajas.01` exigen que Coaching, Objetivo y Tempo de cada ejercicio vayan dentro de «Pautas técnicas & tips del bloque» (una sección por ejercicio con su número y nombre) y que la tarjeta termine en «Registrar carga», sin la fila de pastillas.
+
+## v28: bisets, casilleros, videos, Pizarra del Coach y planes guardados (`cases-v28.js`)
+
+- `v28.bis.01-02` (adaptador `v28`): el registro de carga de un biset / triset va al final del recuadro (`.jp-sb-biset-reg`), con las tarjetas en orden y su letra; un bloque titulado «Biset» sin letras A1/A2 se dibuja como biset y conserva sus claves de registro (`e<idx>`).
+- `v28.cas.01`: el casillero ✓ de la serie es neutro vacío y #EE5A12 completo (`.jp-qc-ok` y `.set-check`).
+- `v28.vid.01`: el video va arriba a la derecha, junto al nombre; los bisets heredados (`.bs-wrap`) usan la misma estética naranja.
+- `v28.pz.01`: la Pizarra del Coach se arma con `buildProgramConfig()` sobre una copia del plan (misma semana proyectada que el alumno, sin bloques que no viajan, plan intacto).
+- `v28.plan.01`: `plan()` completa campos sin pisar el mesociclo, el estado ni agregar días vacíos a un plan guardado.

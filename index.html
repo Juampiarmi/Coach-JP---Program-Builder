@@ -3125,10 +3125,13 @@ function plan(athId){
   if(!S.plans[athId]) { S.plans[athId] = newPlan(a); save(); }
   const p = S.plans[athId];
   if(!p.meta) p.meta = defaultMeta(a);
-  if(!p.meso || !p.meso.length || p.meso[0].phase === undefined) p.meso = defaultWeeks();
+  /* v28: el mesociclo guardado nunca se reemplaza entero. Antes, si a la Semana 1 le faltaba «phase» (plan copiado, importado o armado por otro módulo),
+     se pisaban las 4 semanas con las de fábrica (nombres, notas, objetivos y AMRAP de cada semana). Ahora solo se completan los campos que faltan. */
+  if(!Array.isArray(p.meso) || !p.meso.length) p.meso = defaultWeeks();
+  else { const dw = defaultWeeks(); p.meso.forEach((w, i) => { if(!w || typeof w !== 'object') { p.meso[i] = dw[i] || dw[dw.length - 1]; return; } const base = dw[i] || dw[dw.length - 1]; Object.keys(base).forEach(k => { if(w[k] === undefined) w[k] = base[k]; }); }); }
   /* plan preexistente (de antes de esta directiva) sin el campo: se
      completa con el default sin tocar nada más del objeto */
-  if(p.estado !== 'borrador' && p.estado !== 'listo') p.estado = 'borrador';
+  if(p.estado == null || p.estado === '') p.estado = 'borrador';      /* v28: solo si falta; un estado guardado no se reinicia */
   if(p.vigenciaDesde == null) p.vigenciaDesde = '';
   if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
@@ -3144,7 +3147,7 @@ function plan(athId){
      al eliminar un día se volvía a crear uno vacío ("día fantasma") que además viajaba al export. p.freqBase recuerda la frecuencia ya aplicada. */
   const idLibre = () => { const usados = new Set(p.dias.map(x => x && x.id)); let k = p.dias.length + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
   if(typeof p.freqBase !== 'number'){
-    while(p.dias.length < need){ const nd = newDay(p.dias.length); nd.id = idLibre(); p.dias.push(nd); }
+    /* v28: un plan guardado sin freqBase (de antes) conserva sus días tal cual: no se le agregan días vacíos al recargar */
     p.freqBase = need;
   } else if(need !== p.freqBase){
     let falta = need - p.freqBase;
@@ -18818,10 +18821,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           box.parentNode.removeChild(box);
         }
       }
+      jpRegistroAlFinalDelBisetSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
+  /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
+     (cortaban la lectura de la ronda): se juntan al cierre del recuadro del biset, en el mismo orden y con su letra. Antes de moverlas, las notas de cada
+     estación pasan a las pautas del bloque (jpNotasAgrupar), así nada se pierde. Idempotente: una tarjeta ya movida no se vuelve a tocar. */
+  function jpRegistroAlFinalDelBisetSB(board){
+    if(!board || !board.querySelectorAll) return;
+    Array.prototype.forEach.call(board.querySelectorAll('.jp-sb-biset'), function(bis){
+      var subs = Array.prototype.slice.call(bis.querySelectorAll('.jp-sb-subex-resumen')), cards = [];
+      subs.forEach(function(sx){ var cd = sx.querySelector(':scope > .jp-qc'); if(cd){ try{ jpNotasAgrupar(sx); }catch(eN){} cards.push(cd); } });
+      if(!cards.length) return;
+      var reg = bis.querySelector(':scope > .jp-sb-biset-reg');
+      if(!reg){
+        var letras = subs.map(function(sx){ var l = sx.querySelector('.jp-sb-letra'); return l ? String(l.textContent || '').trim() : ''; }).filter(Boolean);
+        reg = document.createElement('div'); reg.className = 'jp-sb-biset-reg';
+        reg.innerHTML = '<div class="jp-sb-biset-reg-t"><span>' + (subs.length === 2 ? 'REGISTRO DEL BISET' : (subs.length === 3 ? 'REGISTRO DEL TRISET' : 'REGISTRO DEL BLOQUE')) + '</span>' + (letras.length ? '<em>' + escSB(letras.join(' · ')) + '</em>' : '') + '</div>';
+        bis.appendChild(reg);
+      }
+      cards.forEach(function(cd){ reg.appendChild(cd); });
+    });
+  }
+  window.jpRegistroAlFinalDelBiset = jpRegistroAlFinalDelBisetSB;
+
   function qrCtx(card){
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
     return (cfg && e) ? { c: cfg, e: e } : null;
@@ -21763,6 +21788,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      un identificador estable. Se degrada a '' con cualquier desajuste
      (plan viejo, texto editado a mano de forma irregular) -- nunca
      rompe el render por un dato ausente. */
+  /* BISET POR TÍTULO (v28): un bloque de la Pizarra titulado «Biset», «Triset» o «Superserie» cuyos ejercicios vienen sin letra de estación (A1 / A2)
+     se dibuja igual como biset: recuadro naranja, pastilla, transición y registro al final. Solo si TODOS los ejercicios del bloque tienen dosis (2 a 4)
+     y ninguno es de intervalo o técnica especial. El arreglo conserva su largo (las entradas absorbidas quedan como «agrupada») para que cada estación
+     mantenga su clave de registro de siempre (e<idx>): las cargas que el alumno ya anotó siguen apareciendo. El plan guardado no se toca. */
+  function jpAgruparBisetPorTituloSB(entries, titulo){
+    if(!Array.isArray(entries) || !/\\b(?:bi-?sets?|tri-?sets?|super-?series?|super-?sets?)\\b/i.test(String(titulo || ''))) return entries;
+    if(entries.some(function(e){ return e && e.tipo === 'biserie'; })) return entries;
+    var simples = entries.filter(function(e){ return e && e.tipo === 'simple'; });
+    if(simples.length < 2 || simples.length > 4) return entries;
+    if(!simples.every(function(e){ return e.dosisAsignada && (e.reps || e.sets) && !e.int && !e.tecnica; })) return entries;
+    var subs = simples.map(function(e){
+      return { nombre: e.titulo, reps: e.reps || '', tempo: e.tempo || '', tecnica: '', nota: (e.notas || []).join(' · '), unilateral: e.unilateral || '', unidad: e.unidad || 'reps',
+               rir: e.rir || '', restSeconds: 0, sets: e.sets, carga: e.carga || '', idxOrig: entries.indexOf(e) };
+    });
+    var rest = +simples[simples.length - 1].restSeconds || Math.max.apply(null, simples.map(function(e){ return +e.restSeconds || 0; })) || 0;
+    subs[subs.length - 1].restSeconds = rest;
+    var bis = { tipo: 'biserie', titulo: 'Biset / Triset', subs: subs, rondas: simples[0].sets || 3, restSeconds: rest, letra: 'A', rondasAuto: simples[0].sets || 3, porTitulo: true };
+    var puesto = false;
+    return entries.map(function(e){
+      if(simples.indexOf(e) < 0) return e;
+      if(!puesto){ puesto = true; return bis; }
+      return { tipo: 'agrupada' };
+    });
+  }
+  window.jpAgruparBisetPorTitulo = jpAgruparBisetPorTituloSB;
   function rirSemanaAnteriorSB(block, weekIdx, idx, si){
     if(!(weekIdx > 0)) return '';
     try{
@@ -21790,9 +21840,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       return;
     }
-    const entries = parsearPizarraSB(lineas, { titulo: block.title });
+    let entries = parsearPizarraSB(lineas, { titulo: block.title });
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    if(!esCalentamiento) entries = jpAgruparBisetPorTituloSB(entries, block.title);      /* «Biset · Espalda» sin A1/A2 también se dibuja como biset */
     const contS = esCalentamiento ? null : jpContinuoInfo(block, lineas, true);
     /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
        dosis real de cada bloque es el "ancla" (el movimiento pesado
@@ -21841,11 +21892,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const rondasN = entry.rondas || 3;
         const subsInfo = entry.subs.map(function(sub, si){
-          const exIdx = 'b' + idx + 's' + si;
+          const exIdx = sub.idxOrig != null ? 'e' + sub.idxOrig : 'b' + idx + 's' + si;      /* agrupado por título: conserva la clave de registro que ya tenía */
           /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           const tmp = document.createElement('div');
-          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, (sub.idxOrig != null ? rirSemanaAnteriorSB(block, weekIdx, sub.idxOrig) : rirSemanaAnteriorSB(block, weekIdx, idx, si)), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
           const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
           const myo = tmp.querySelector('.jp-myo-mod');
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
@@ -21861,7 +21912,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: o.sub.idxOrig != null ? 'e' + o.sub.idxOrig : 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
@@ -32695,6 +32746,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     }
     if(b && b.isHyrox){
       return { kind:'Engine', main:'<b>TRABAJO CONTINUO</b>', vol:'Bloque de motor' };
+    }
+    if(b && b.sportsPizarra && typeof window.parsearPizarraSB === 'function' && b.category !== 'warmup' && b.modalidad !== 'calentamiento' && !RX_WARM.test(((b.weekName && b.weekName[wi]) || b.title || '') + ' ' + (b.subtitle || ''))){
+      try{
+        var enB = window.parsearPizarraSB(itemsDeSemana(b, wi).filter(function(l){ return l != null && String(l).trim(); }), { titulo: b.title });
+        if(typeof window.jpAgruparBisetPorTitulo === 'function') enB = window.jpAgruparBisetPorTitulo(enB, b.title);
+        var grupos = enB.filter(function(x){ return x && x.tipo === 'biserie' && (x.subs || []).length >= 2; }), sueltos = enB.filter(function(x){ return x && x.tipo === 'simple'; });
+        if(grupos.length && !sueltos.length){
+          var g0 = grupos[0], nS = g0.subs.length, rB = g0.rondas || 3, lbB = nS === 2 ? 'BISET' : (nS === 3 ? 'TRISET' : 'SUPERSERIE');
+          return { kind:'⚡ ' + (nS === 2 ? 'Biset' : (nS === 3 ? 'Triset' : 'Superserie')), main:'<b>' + lbB + '</b> &bull; ' + rB + ' RONDA' + (rB === 1 ? '' : 'S') + ' &bull; ' + nS + ' EJERCICIOS SIN PAUSA', vol: rB + ' rondas · ' + nS + ' ejercicios' };
+        }
+        /* bloque de fuerza de la Pizarra con ejercicios sueltos: se cuentan EJERCICIOS reales (antes «Circuito · N ESTACIONES» contaba también las líneas de dosis) */
+        var nEj = sueltos.length + grupos.reduce(function(t, g){ return t + g.subs.length; }, 0);
+        if(nEj && b.category === 'strength' && !b.coreBlock && !/core|abdomen|estabilidad/i.test(String((b.weekName && b.weekName[wi]) || b.title || '')))
+          return { kind:'Trabajo principal', main:'<b>' + nEj + (nEj === 1 ? ' EJERCICIO' : ' EJERCICIOS') + '</b>' + (grupos.length ? ' &bull; ' + grupos.length + (grupos.length === 1 ? ' BISET' : ' BISETS') : ''), vol: nEj + (nEj === 1 ? ' ejercicio' : ' ejercicios') };
+      }catch(eB){}
     }
     if(b){
       var items = itemsDeSemana(b, wi);
@@ -47434,31 +47500,50 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     if(!a.length) return 0; var set = {}; b.forEach(function(w){ set[w] = 1; });
     var n = 0; a.forEach(function(w){ if(set[w]) n++; }); return n / a.length;
   }
+  /* VIDEO SIEMPRE JUNTO AL NOMBRE (v28): cada video de «Videos técnicos del bloque» se lleva a la cabecera de su ejercicio (arriba a la derecha de la tarjeta).
+     Antes solo se emparejaba con un 60 % de palabras en común y nunca con un ejercicio que ya tenía la lupa de búsqueda: el video quedaba abajo, en el
+     cajón del bloque. Ahora, en tres pasadas: 1) coincidencia fuerte (≥ 60 %), 2) cualquier palabra en común, la mejor primero, 3) si quedan tantos videos como
+     ejercicios sin video, por orden. Un video real reemplaza la lupa; una búsqueda repetida simplemente no se muestra. El cajón queda solo para un video
+     que no corresponde a ningún ejercicio del bloque. */
   function videosEnLinea(root){
     $$('.jp-sb-board', root).forEach(function(bd){
-      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); });
+      /* un video que ya está en línea (en la cabecera de su ejercicio) no se vuelve a pegar en otro */
+      var enLinea = {};
+      $$('[data-yt]', bd).forEach(function(x){ if(!x.closest('.jp-sb-vid-cards, .jp-ux-gone')) enLinea[x.getAttribute('data-yt')] = 1; });
+      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone') && !enLinea[c.getAttribute('data-yt')]; });
       if(!cards.length) return;
-      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){ return !n.parentNode.querySelector('.jp-ux-vid'); });
-      if(!nombres.length) return;
-      var pares = [];
-      cards.forEach(function(c, ci){
-        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
-        nombres.forEach(function(n, ni){ var s = cobertura(a, toks(n.textContent)); if(s >= 0.6) pares.push({ s: s, ci: ci, ni: ni }); });
+      var btnDe = function(n){ return n.parentNode ? n.parentNode.querySelector(':scope > .jp-ux-vid') : null; };
+      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){
+        var v = btnDe(n); return !v || (!v.getAttribute('data-yt') && v.classList.contains('jp-ver-busca'));
       });
-      pares.sort(function(x, y){ return y.s - x.s; });
+      if(!nombres.length) return;
       var usadoC = {}, usadoN = {};
-      pares.forEach(function(p){
-        if(usadoC[p.ci] || usadoN[p.ni]) return; usadoC[p.ci] = 1; usadoN[p.ni] = 1;
-        var c = cards[p.ci], n = nombres[p.ni], head = n.parentNode;
+      var pegar = function(ci, ni){
+        usadoC[ci] = 1; usadoN[ni] = 1;
+        var c = cards[ci], n = nombres[ni], head = n.parentNode, previo = btnDe(n);
         var yt = c.getAttribute('data-yt'), q = c.getAttribute('data-vsearch');
+        if(!yt && previo){ c.classList.add('jp-ux-gone'); return; }      /* otra búsqueda igual a la lupa que ya está: sobra */
         var nm = $('.jp-sb-vid-nombre', c), etq = nm ? nm.textContent.trim() : 'ejercicio';
         var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid' + (yt ? '' : ' jp-ver-busca');
         if(yt) bt.setAttribute('data-yt', yt); else bt.setAttribute('data-vsearch', q || etq);
         bt.setAttribute('aria-label', 'Ver técnica de ' + etq.replace(/"/g, ''));
         bt.innerHTML = (yt ? '<span class="jp-ux-vth" style="background-image:url(https://img.youtube.com/vi/' + yt + '/mqdefault.jpg)"></span>' : '') + '<span class="jp-ux-vp">&#9654;&#65038;</span>';
-        head.classList.add('jp-ux-has-vid'); head.appendChild(bt);
+        if(previo) head.replaceChild(bt, previo); else head.appendChild(bt);
+        head.classList.add('jp-ux-has-vid');
         c.classList.add('jp-ux-gone');
+      };
+      var pares = [];
+      cards.forEach(function(c, ci){
+        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
+        nombres.forEach(function(n, ni){ var s = Math.max(cobertura(a, toks(n.textContent)), cobertura(toks(n.textContent), a)); pares.push({ s: s, ci: ci, ni: ni }); });
       });
+      pares.sort(function(x, y){ return y.s - x.s || x.ci - y.ci || x.ni - y.ni; });
+      [0.6, 0.0001].forEach(function(umbral){
+        pares.forEach(function(p){ if(p.s >= umbral && !usadoC[p.ci] && !usadoN[p.ni]) pegar(p.ci, p.ni); });
+      });
+      var cR = cards.map(function(c, i){ return i; }).filter(function(i){ return !usadoC[i] && cards[i].getAttribute('data-yt'); });
+      var nR = nombres.map(function(n, i){ return i; }).filter(function(i){ return !usadoN[i]; });
+      if(cR.length && cR.length === nR.length) cR.forEach(function(ci, k){ pegar(ci, nR[k]); });
       var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
     });
@@ -49535,6 +49620,70 @@ html body:not(#_):not(#__) .jp-pauta-ex-lb b{ color:#C9D6F5; letter-spacing:.06e
 html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota{ display:block !important; margin:0 !important; padding:0 !important; border:0 !important; background:none !important; box-shadow:none !important; }
 html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota > summary{ display:none !important; }
 html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota .jp-ex-box-b, html body:not(#_):not(#__)[data-jp-estilo] .jp-pauta-ex > details.jp-pauta-ex-nota .jp-ex-tips-b{ border:0 !important; padding:2px 0 0 !important; margin:0 !important; background:none !important; }
+/* v28 · bisets siempre en naranja, registro de carga al final del biset, casilleros neutros hasta completarlos, video junto al nombre y pulido de líneas y esquinas
+   Va después de 097 con el mismo prefijo de especificidad (html body:not(#_):not(#__)).
+   Escala de esquinas única: 16px tarjeta del bloque · 12px tarjeta interna · 10px controles · 999px pastillas. Líneas divisorias: 1px, rgba(150,178,240,.14). */
+html body:not(#_):not(#__){ --jp-r-card:16px; --jp-r-in:12px; --jp-r-ctl:10px; --jp-linea:rgba(150,178,240,.14); --jp-nar:#EE5A12; --jp-nar-tx:#FF8A4C; }
+
+/* ---------- 1 · bisets / trisets heredados (bloque «superset» del Builder): misma estética naranja que los de la Pizarra ---------- */
+html body:not(#_):not(#__) .block .bs-wrap{ border-left:2px solid rgba(238,90,18,.75) !important; padding-left:12px !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-l, html body:not(#_):not(#__) .block .bs-r .bs-l{
+  background:var(--jp-nar) !important; border:0 !important; color:#0B132B !important; border-radius:7px !important; font-weight:900 !important;
+}
+html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-kind, html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-main b{ color:var(--jp-nar-tx) !important; }
+html body:not(#_):not(#__) .block.bs-uni .blk-tag .bt-dot{ background:var(--jp-nar) !important; }
+html body:not(#_):not(#__) .block .bs-r .bs-rtitle{ color:var(--jp-nar-tx) !important; }
+/* fila del ejercicio: letra · nombre con el video arriba a la derecha · dosis debajo del nombre (igual en A, B y C) */
+html body:not(#_):not(#__) .block .bs-ex .bs-e{ display:grid !important; grid-template-columns:auto minmax(0,1fr) !important; column-gap:10px !important; row-gap:4px !important; align-items:start !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-n{ display:flex !important; align-items:flex-start !important; justify-content:space-between !important; gap:10px !important; min-width:0; }
+html body:not(#_):not(#__) .block .bs-ex .bs-n > .video-link{ order:2; flex:0 0 auto !important; margin:0 0 0 auto !important; position:static !important; }
+html body:not(#_):not(#__) .block .bs-ex .bs-d{ grid-column:2 !important; justify-self:start !important; margin:0 !important; }
+
+/* ---------- 2 · registro de carga al final del biset / triset ---------- */
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg{ display:grid; gap:8px; margin:14px 0 2px; padding:12px 0 0; border-top:1px solid rgba(238,90,18,.32); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg-t{ display:flex; align-items:center; justify-content:space-between; gap:10px; font:800 .62rem/1.2 'Chakra Petch','Barlow Condensed',sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--jp-nar-tx); }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg-t em{ font-style:normal; letter-spacing:.08em; color:#9FB0D8; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-biset-reg > .jp-qc{ margin:0 !important; }
+
+/* ---------- 3 · casilleros de serie: neutros mientras están vacíos, naranja de la marca al completarlos ---------- */
+html body:not(#_):not(#__) .jp-qc-ok, html body:not(#_):not(#__) .jp-qc-r.jp-qc-rf .jp-qc-ok{
+  background:rgba(220,230,255,.06) !important; border:1px solid rgba(220,230,255,.26) !important; color:rgba(220,230,255,.5) !important; box-shadow:none !important;
+  border-radius:var(--jp-r-ctl) !important; transition:background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+html body:not(#_):not(#__) .jp-qc-ok.on, html body:not(#_):not(#__) .jp-qc-ok[aria-pressed="true"], html body:not(#_):not(#__) .jp-qc.ok .jp-qc-ok,
+html body:not(#_):not(#__) .jp-qc-r.jp-qc-rf .jp-qc-ok.on{
+  background:var(--jp-nar) !important; border-color:var(--jp-nar) !important; color:#0B132B !important; box-shadow:0 6px 16px -10px rgba(238,90,18,.9) !important;
+}
+html body:not(#_):not(#__) .set-check{ background:rgba(220,230,255,.06) !important; border:1px solid rgba(220,230,255,.26) !important; box-shadow:none !important; border-radius:var(--jp-r-ctl) !important; }
+html body:not(#_):not(#__) .set-check::after{ color:rgba(220,230,255,.42) !important; }
+html body:not(#_):not(#__) .set-check:checked{ background:var(--jp-nar) !important; border-color:var(--jp-nar) !important; box-shadow:0 6px 16px -10px rgba(238,90,18,.9) !important; }
+html body:not(#_):not(#__) .set-check:checked::after{ color:#0B132B !important; }
+html body:not(#_):not(#__) .block-done-cb, html body:not(#_):not(#__) .block-check input{ accent-color:var(--jp-nar) !important; }
+
+/* ---------- 4 · video siempre arriba a la derecha, junto al nombre del ejercicio ---------- */
+html body:not(#_):not(#__) .jp-sb-ex-head, html body:not(#_):not(#__) .jp-sb-subex-head{ display:flex !important; align-items:flex-start !important; gap:10px !important; }
+html body:not(#_):not(#__) .jp-sb-ex-head > .jp-sb-ex-nombre, html body:not(#_):not(#__) .jp-sb-subex-head > .jp-sb-subex-tit{ flex:1 1 auto !important; min-width:0 !important; }
+html body:not(#_):not(#__) .jp-sb-ex-head > .jp-ux-vid, html body:not(#_):not(#__) .jp-sb-subex-head > .jp-ux-vid{ order:9; flex:0 0 auto !important; margin:0 0 0 auto !important; align-self:flex-start !important; position:static !important; }
+
+/* ---------- 5 · líneas, conectores y esquinas: una sola escala y sin cajas dentro de cajas ---------- */
+html body:not(#_):not(#__) .blocks-stack > .block{ border-radius:var(--jp-r-card) !important; }
+/* la tarjeta del ejercicio dentro del bloque no dibuja un segundo marco completo: se separa con una línea fina */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-board > .jp-sb-ex + .jp-sb-ex{ border-top:1px solid var(--jp-linea) !important; }
+html body:not(#_):not(#__) .jp-qc{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-qc .jp-qc-tg{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-qc-r input{ border-radius:var(--jp-r-ctl) !important; }
+html body:not(#_):not(#__) .jp-block-details > summary.jp-summary-btn{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-sb-biset{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::before, html body:not(#_):not(#__) .jp-sb-biset .jp-sb-trans::after{ height:1px; opacity:.8; }
+html body:not(#_):not(#__) .block .bs-r{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .block .bs-ex{ border-radius:var(--jp-r-in) !important; }
+html body:not(#_):not(#__) .jp-pauta-ex{ border-top-color:var(--jp-linea) !important; }
+/* la barra de dosis no es una caja dentro de la tarjeta: solo dos líneas finas arriba y abajo */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-dose-bar, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-subex-resumen .jp-dose-bar{
+  border-left:0 !important; border-right:0 !important; border-radius:0 !important; border-top-color:var(--jp-linea) !important; border-bottom-color:var(--jp-linea) !important;
+}
+/* «Registrar carga»: un botón tenue, sin un tercer marco fuerte dentro de la tarjeta */
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc .jp-qc-tg{ border-color:rgba(150,178,240,.2) !important; background:rgba(150,178,240,.05) !important; box-shadow:none !important; }
 </style>
 
 </body>
@@ -93211,6 +93360,10 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 #v-pizarra .pz-empty h4{font-family:var(--ffh);font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:6px}
 #v-pizarra .pz-empty .pz-btn{margin-top:14px}
 #v-pizarra .pz-note{padding:16px 12px;color:var(--muted);font-size:13.5px}
+/* biset / triset en la pizarra: el mismo naranja de la marca que ve el alumno */
+#v-pizarra .pz-blq.pz-bis{border-color:rgba(238,90,18,.5);box-shadow:inset 3px 0 0 #EE5A12}
+#v-pizarra .pz-blq.pz-bis .pz-bh{color:#FF8A4C;background:rgba(238,90,18,.08)}
+#v-pizarra .pz-blq.pz-bis .pz-k{color:#FF8A4C}
 /* hoja de grupo */
 .pz-sheet-bg{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.66);display:none;align-items:flex-end;justify-content:center}
 .pz-sheet-bg.on{display:flex}
@@ -93415,7 +93568,98 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     return '<div class="pz-blq">' + h + '</div>';
   }
 
+  /* ---------- MISMA FUENTE QUE LA APP DEL ALUMNO (v28) ----------
+     Antes la pizarra leía S.plans con un lector propio y simplificado: en la Pizarra Sports mostraba siempre la dosis de la semana 1 (el alumno ve la
+     proyección de S2-S4, weekItems), mostraba bloques vacíos que no se exportan, usaba el nombre largo de la biblioteca y el título del día sin la
+     corrección de rótulos que recibe el alumno. Ahora arma el plan con buildProgramConfig(), la MISMA función que compila la app del alumno, sobre una
+     COPIA del plan (la planificación guardada nunca se toca) y dibuja esos datos. Se cachea por contenido del plan: si el coach edita, se recalcula. */
+  var _cfgCache = {};
+  function datosAlumno(a){
+    if(typeof buildProgramConfig !== 'function' || typeof S === 'undefined' || !S.plans || !S.plans[a.id]) return null;
+    var orig = S.plans[a.id], firma = '';
+    try{ firma = JSON.stringify(orig) + '|' + JSON.stringify(a); }catch(e){ return null; }
+    var c = _cfgCache[a.id]; if(c && c.firma === firma) return c.cfg;
+    var exV = document.getElementById('expVideos'), exW = document.getElementById('expWarn'), v0 = exV ? exV.checked : null, w0 = exW ? exW.checked : null, cfg = null;
+    S.plans[a.id] = JSON.parse(JSON.stringify(orig));
+    try{ if(exV) exV.checked = true; if(exW) exW.checked = false; cfg = buildProgramConfig(a); }
+    catch(e){ console.warn('[Pizarra] no se pudo armar el plan de ' + nombreDe(a) + ' como lo ve el alumno', e); cfg = null; }
+    finally{ S.plans[a.id] = orig; if(exV) exV.checked = v0; if(exW) exW.checked = w0; }
+    _cfgCache[a.id] = { firma: firma, cfg: cfg };
+    return cfg;
+  }
+  function diasDe(cfg){ return (cfg && Array.isArray(cfg.days)) ? cfg.days : []; }
+  function bloquesCfg(cfg, dd, wi){
+    if(cfg.modoSemanal && Array.isArray(dd.blocksPorSemana) && Array.isArray(dd.blocksPorSemana[wi])) return dd.blocksPorSemana[wi];
+    return dd.blocks || [];
+  }
+  /* video: el mismo que recibe el alumno (videoMap por nombre); si no hay, la biblioteca por nombre; si no, búsqueda */
+  function vbtnCfg(cfg, nombre){
+    var yt = (cfg && cfg.videoMap && cfg.videoMap[nombre]) || '', ex = porNombre(nombre);
+    if(yt && ex && ex.videoId === yt) return vbtn(ex, nombre);
+    if(yt) return '<a class="pz-vid" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + E(yt) + '" aria-label="Ver video de ' + E(nombre) + '"><i>▶</i>VIDEO</a>';
+    return vbtn(ex, nombre);
+  }
+  function filaCfg(cfg, k, nombre, chips){
+    return '<div class="pz-ex"><span class="pz-k">' + E(k) + '</span><div class="pz-exm"><div class="pz-n">' + E(nombre) + '</div>' +
+      (chips ? '<div class="pz-ds">' + chips + '</div>' : '') + '</div>' + vbtnCfg(cfg, nombre) + '</div>';
+  }
+  function bloqueCfg(cfg, b, wi){
+    var h = '';
+    if(b.isBlock){
+      var ch1 = ch((b.efSets ? b.efSets + '×' : '') + (b.reps || '—'), true) + ((b.hasApprox && b.approxSets) ? ch('+' + b.approxSets + ' aclim.') : '') +
+        (b.tempo ? ch('T ' + b.tempo) : '') + (b.restSeconds ? ch('⏱ ' + mmss(b.restSeconds)) : '') + (b.metodologia ? ch(tecTxt(b.metodologia, b.tecParam)) : '');
+      h = cab(b.title && b.title !== b.exerciseName ? b.title : (b.category || 'Bloque'), b.optional ? 'opcional' : '') + filaCfg(cfg, '', b.exerciseName || 'Ejercicio', ch1);
+    } else if(b.isSuperset){
+      var nS = (b.exercises || []).length;
+      h = cab(b.title || (nS === 3 ? 'Triset' : 'Biset'), [b.efSets ? b.efSets + ' rondas' : '', b.restSeconds ? 'pausa ' + mmss(b.restSeconds) : ''].filter(Boolean).join(' · '));
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.reps), true) + (e.tempo ? ch('T ' + e.tempo) : '') + (e.metodologia ? ch(tecTxt(e.metodologia, e.tecParam)) : '')); });
+      return '<div class="pz-blq pz-bis">' + h + (b.tips ? '<div class="pz-tip">' + E(b.tips) + '</div>' : '') + (b.altNote ? '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>' : '') + '</div>';
+    } else if(b.isFinisher){
+      var rondas = (b.roundsByWeek && b.roundsByWeek[wi]) || '';
+      h = cab(b.title || 'Finisher', 'opcional');
+      if(rondas) h += '<div class="pz-tip" style="border-top:0;color:var(--txt-2)">' + E(rondas) + '</div>';
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.repsRange), true)); });
+    } else if(b.isHyrox){
+      h = cab(b.title || 'Hyrox');
+      (b.movements || []).forEach(function(m){ h += fila('', String(m), null, '', true); });
+    } else if(Array.isArray(b.items)){
+      /* Pizarra: la semana activa sale de weekItems (igual que itemsDeSemana() del alumno) */
+      var it = (wi > 0 && Array.isArray(b.weekItems) && Array.isArray(b.weekItems[wi]) && b.weekItems[wi].length) ? b.weekItems[wi] : b.items;
+      var ps = { tipo: 'list', items: it, sportsPizarra: !!b.sportsPizarra, modalidad: b.modalidad, titulo: b.title, category: b.category, optional: b.optional, tips: b.tips, altNote: b.altNote };
+      var html = bloque(ps, wi);
+      return /biset|triset|superserie|super-?set/i.test(b.title || '') || /(^|\n)\s*[A-F][2-9][.)]/.test(it.join('\n')) ? html.replace('<div class="pz-blq">', '<div class="pz-blq pz-bis">') : html;
+    } else return '';
+    if(b.tips) h += '<div class="pz-tip">' + E(b.tips) + '</div>';
+    if(b.altNote) h += '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>';
+    return '<div class="pz-blq">' + h + '</div>';
+  }
+  function semanaBase(a){ var p = S.plans && S.plans[a.id]; return Math.max(0, Math.min(3, ((p && p.agenda && parseInt(p.agenda.semana, 10)) || 1) - 1)); }
+  function cuerpoCfg(a, cfg){
+    var dias = diasDe(cfg);
+    var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
+      '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
+    if(!dias.length) return '<div class="pz-body"><div class="pz-meta">' + edit + '</div><div class="pz-note">Sin planificación cargada. Armala en el Builder y aparece acá sola.</div></div>';
+    var di = parseInt(ui.dia[a.id], 10); if(!(di >= 0 && di < dias.length)) di = 0;
+    var base = semanaBase(a), nW = Math.max(1, (cfg.weeks || []).length || 4);
+    var wi = ui.sem[a.id] != null ? Math.max(0, Math.min(nW - 1, parseInt(ui.sem[a.id], 10) || 0)) : Math.min(base, nW - 1);
+    var dd = dias[di] || {}, blq = bloquesCfg(cfg, dd, wi);
+    var h = '<div class="pz-body" data-fuente="alumno"><div class="pz-meta">' +
+      '<div class="pz-wk"><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="-1" aria-label="Semana anterior">‹</button><span>SEM ' + (wi + 1) + (wi === base ? ' · ACTUAL' : '') + '</span><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="1" aria-label="Semana siguiente">›</button></div>' +
+      edit + '</div>';
+    h += '<div class="pz-days">' + dias.map(function(x, i){
+      return '<button type="button" class="pz-day' + (i === di ? ' on' : '') + '" data-pz="dia" data-id="' + E(a.id) + '" data-n="' + i + '">' + E(x.short || ('DÍA ' + (i + 1))) + '</button>';
+    }).join('') + '</div>';
+    h += '<div class="pz-dt">' + E(dd.title || dd.label || ('Día ' + (di + 1))) + '</div>';
+    if(dd.focusText) h += '<div class="pz-foco">' + E(dd.focusText) + '</div>';
+    var cont = blq.map(function(b){ return bloqueCfg(cfg, b, wi); }).join('');
+    var cd = (dd.cooldown || []).map(function(x){ return typeof x === 'string' ? x : (x && (x.texto || x.nombre || x.titulo)) || ''; }).filter(function(x){ return String(x).trim(); });
+    if(cd.length) cont += '<div class="pz-blq">' + cab('Cool-down') + cd.map(function(x){ return fila('', String(x), null, '', true); }).join('') + '</div>';
+    h += cont || '<div class="pz-note">Este día todavía no tiene bloques cargados.</div>';
+    return h + '</div>';
+  }
+
   function cuerpo(a){
+    var cfgA = datosAlumno(a); if(cfgA) return cuerpoCfg(a, cfgA);      /* lo mismo que ve el alumno; el lector viejo queda solo como respaldo */
     var p = (typeof S !== 'undefined' && S.plans) ? S.plans[a.id] : null;
     var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
       '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
@@ -93470,8 +93714,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     }
     host.innerHTML = lista.map(function(a){
       var abierto = !!ui.open[a.id], c = colorDe(a);
-      var p = S.plans ? S.plans[a.id] : null;
-      var di = parseInt(ui.dia[a.id], 10) || 0, dd = p && p.dias && p.dias[di];
+      var p = S.plans ? S.plans[a.id] : null, cfgH = datosAlumno(a);
+      var di = parseInt(ui.dia[a.id], 10) || 0, dd = cfgH ? diasDe(cfgH)[di] : (p && p.dias && p.dias[di]);
       var tt = dd ? (dd.title || dd.label || '') : '';
       var det = [sedeLb(a), dd ? (dd.short || '') + (tt && nz(tt) !== nz(dd.short) ? ' · ' + tt : '') : ''].filter(Boolean).join('  ·  ') || (a.foco || a.nivel || '');
       return '<article class="pz-card' + (abierto ? ' open' : '') + '"' + (c ? ' style="--ac:' + E(c) + '"' : '') + '>' +

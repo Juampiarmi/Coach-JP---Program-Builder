@@ -3125,10 +3125,13 @@ function plan(athId){
   if(!S.plans[athId]) { S.plans[athId] = newPlan(a); save(); }
   const p = S.plans[athId];
   if(!p.meta) p.meta = defaultMeta(a);
-  if(!p.meso || !p.meso.length || p.meso[0].phase === undefined) p.meso = defaultWeeks();
+  /* v28: el mesociclo guardado nunca se reemplaza entero. Antes, si a la Semana 1 le faltaba «phase» (plan copiado, importado o armado por otro módulo),
+     se pisaban las 4 semanas con las de fábrica (nombres, notas, objetivos y AMRAP de cada semana). Ahora solo se completan los campos que faltan. */
+  if(!Array.isArray(p.meso) || !p.meso.length) p.meso = defaultWeeks();
+  else { const dw = defaultWeeks(); p.meso.forEach((w, i) => { if(!w || typeof w !== 'object') { p.meso[i] = dw[i] || dw[dw.length - 1]; return; } const base = dw[i] || dw[dw.length - 1]; Object.keys(base).forEach(k => { if(w[k] === undefined) w[k] = base[k]; }); }); }
   /* plan preexistente (de antes de esta directiva) sin el campo: se
      completa con el default sin tocar nada más del objeto */
-  if(p.estado !== 'borrador' && p.estado !== 'listo') p.estado = 'borrador';
+  if(p.estado == null || p.estado === '') p.estado = 'borrador';      /* v28: solo si falta; un estado guardado no se reinicia */
   if(p.vigenciaDesde == null) p.vigenciaDesde = '';
   if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
@@ -3144,7 +3147,7 @@ function plan(athId){
      al eliminar un día se volvía a crear uno vacío ("día fantasma") que además viajaba al export. p.freqBase recuerda la frecuencia ya aplicada. */
   const idLibre = () => { const usados = new Set(p.dias.map(x => x && x.id)); let k = p.dias.length + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
   if(typeof p.freqBase !== 'number'){
-    while(p.dias.length < need){ const nd = newDay(p.dias.length); nd.id = idLibre(); p.dias.push(nd); }
+    /* v28: un plan guardado sin freqBase (de antes) conserva sus días tal cual: no se le agregan días vacíos al recargar */
     p.freqBase = need;
   } else if(need !== p.freqBase){
     let falta = need - p.freqBase;
@@ -51960,6 +51963,10 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 #v-pizarra .pz-empty h4{font-family:var(--ffh);font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:6px}
 #v-pizarra .pz-empty .pz-btn{margin-top:14px}
 #v-pizarra .pz-note{padding:16px 12px;color:var(--muted);font-size:13.5px}
+/* biset / triset en la pizarra: el mismo naranja de la marca que ve el alumno */
+#v-pizarra .pz-blq.pz-bis{border-color:rgba(238,90,18,.5);box-shadow:inset 3px 0 0 #EE5A12}
+#v-pizarra .pz-blq.pz-bis .pz-bh{color:#FF8A4C;background:rgba(238,90,18,.08)}
+#v-pizarra .pz-blq.pz-bis .pz-k{color:#FF8A4C}
 /* hoja de grupo */
 .pz-sheet-bg{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.66);display:none;align-items:flex-end;justify-content:center}
 .pz-sheet-bg.on{display:flex}
@@ -52164,7 +52171,98 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     return '<div class="pz-blq">' + h + '</div>';
   }
 
+  /* ---------- MISMA FUENTE QUE LA APP DEL ALUMNO (v28) ----------
+     Antes la pizarra leía S.plans con un lector propio y simplificado: en la Pizarra Sports mostraba siempre la dosis de la semana 1 (el alumno ve la
+     proyección de S2-S4, weekItems), mostraba bloques vacíos que no se exportan, usaba el nombre largo de la biblioteca y el título del día sin la
+     corrección de rótulos que recibe el alumno. Ahora arma el plan con buildProgramConfig(), la MISMA función que compila la app del alumno, sobre una
+     COPIA del plan (la planificación guardada nunca se toca) y dibuja esos datos. Se cachea por contenido del plan: si el coach edita, se recalcula. */
+  var _cfgCache = {};
+  function datosAlumno(a){
+    if(typeof buildProgramConfig !== 'function' || typeof S === 'undefined' || !S.plans || !S.plans[a.id]) return null;
+    var orig = S.plans[a.id], firma = '';
+    try{ firma = JSON.stringify(orig) + '|' + JSON.stringify(a); }catch(e){ return null; }
+    var c = _cfgCache[a.id]; if(c && c.firma === firma) return c.cfg;
+    var exV = document.getElementById('expVideos'), exW = document.getElementById('expWarn'), v0 = exV ? exV.checked : null, w0 = exW ? exW.checked : null, cfg = null;
+    S.plans[a.id] = JSON.parse(JSON.stringify(orig));
+    try{ if(exV) exV.checked = true; if(exW) exW.checked = false; cfg = buildProgramConfig(a); }
+    catch(e){ console.warn('[Pizarra] no se pudo armar el plan de ' + nombreDe(a) + ' como lo ve el alumno', e); cfg = null; }
+    finally{ S.plans[a.id] = orig; if(exV) exV.checked = v0; if(exW) exW.checked = w0; }
+    _cfgCache[a.id] = { firma: firma, cfg: cfg };
+    return cfg;
+  }
+  function diasDe(cfg){ return (cfg && Array.isArray(cfg.days)) ? cfg.days : []; }
+  function bloquesCfg(cfg, dd, wi){
+    if(cfg.modoSemanal && Array.isArray(dd.blocksPorSemana) && Array.isArray(dd.blocksPorSemana[wi])) return dd.blocksPorSemana[wi];
+    return dd.blocks || [];
+  }
+  /* video: el mismo que recibe el alumno (videoMap por nombre); si no hay, la biblioteca por nombre; si no, búsqueda */
+  function vbtnCfg(cfg, nombre){
+    var yt = (cfg && cfg.videoMap && cfg.videoMap[nombre]) || '', ex = porNombre(nombre);
+    if(yt && ex && ex.videoId === yt) return vbtn(ex, nombre);
+    if(yt) return '<a class="pz-vid" target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=' + E(yt) + '" aria-label="Ver video de ' + E(nombre) + '"><i>▶</i>VIDEO</a>';
+    return vbtn(ex, nombre);
+  }
+  function filaCfg(cfg, k, nombre, chips){
+    return '<div class="pz-ex"><span class="pz-k">' + E(k) + '</span><div class="pz-exm"><div class="pz-n">' + E(nombre) + '</div>' +
+      (chips ? '<div class="pz-ds">' + chips + '</div>' : '') + '</div>' + vbtnCfg(cfg, nombre) + '</div>';
+  }
+  function bloqueCfg(cfg, b, wi){
+    var h = '';
+    if(b.isBlock){
+      var ch1 = ch((b.efSets ? b.efSets + '×' : '') + (b.reps || '—'), true) + ((b.hasApprox && b.approxSets) ? ch('+' + b.approxSets + ' aclim.') : '') +
+        (b.tempo ? ch('T ' + b.tempo) : '') + (b.restSeconds ? ch('⏱ ' + mmss(b.restSeconds)) : '') + (b.metodologia ? ch(tecTxt(b.metodologia, b.tecParam)) : '');
+      h = cab(b.title && b.title !== b.exerciseName ? b.title : (b.category || 'Bloque'), b.optional ? 'opcional' : '') + filaCfg(cfg, '', b.exerciseName || 'Ejercicio', ch1);
+    } else if(b.isSuperset){
+      var nS = (b.exercises || []).length;
+      h = cab(b.title || (nS === 3 ? 'Triset' : 'Biset'), [b.efSets ? b.efSets + ' rondas' : '', b.restSeconds ? 'pausa ' + mmss(b.restSeconds) : ''].filter(Boolean).join(' · '));
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.reps), true) + (e.tempo ? ch('T ' + e.tempo) : '') + (e.metodologia ? ch(tecTxt(e.metodologia, e.tecParam)) : '')); });
+      return '<div class="pz-blq pz-bis">' + h + (b.tips ? '<div class="pz-tip">' + E(b.tips) + '</div>' : '') + (b.altNote ? '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>' : '') + '</div>';
+    } else if(b.isFinisher){
+      var rondas = (b.roundsByWeek && b.roundsByWeek[wi]) || '';
+      h = cab(b.title || 'Finisher', 'opcional');
+      if(rondas) h += '<div class="pz-tip" style="border-top:0;color:var(--txt-2)">' + E(rondas) + '</div>';
+      (b.exercises || []).forEach(function(e, n){ h += filaCfg(cfg, 'A' + (n + 1), e.name, ch(repsTxt(e.repsRange), true)); });
+    } else if(b.isHyrox){
+      h = cab(b.title || 'Hyrox');
+      (b.movements || []).forEach(function(m){ h += fila('', String(m), null, '', true); });
+    } else if(Array.isArray(b.items)){
+      /* Pizarra: la semana activa sale de weekItems (igual que itemsDeSemana() del alumno) */
+      var it = (wi > 0 && Array.isArray(b.weekItems) && Array.isArray(b.weekItems[wi]) && b.weekItems[wi].length) ? b.weekItems[wi] : b.items;
+      var ps = { tipo: 'list', items: it, sportsPizarra: !!b.sportsPizarra, modalidad: b.modalidad, titulo: b.title, category: b.category, optional: b.optional, tips: b.tips, altNote: b.altNote };
+      var html = bloque(ps, wi);
+      return /biset|triset|superserie|super-?set/i.test(b.title || '') || /(^|\n)\s*[A-F][2-9][.)]/.test(it.join('\n')) ? html.replace('<div class="pz-blq">', '<div class="pz-blq pz-bis">') : html;
+    } else return '';
+    if(b.tips) h += '<div class="pz-tip">' + E(b.tips) + '</div>';
+    if(b.altNote) h += '<div class="pz-tip">↻ ' + E(b.altNote) + '</div>';
+    return '<div class="pz-blq">' + h + '</div>';
+  }
+  function semanaBase(a){ var p = S.plans && S.plans[a.id]; return Math.max(0, Math.min(3, ((p && p.agenda && parseInt(p.agenda.semana, 10)) || 1) - 1)); }
+  function cuerpoCfg(a, cfg){
+    var dias = diasDe(cfg);
+    var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
+      '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
+    if(!dias.length) return '<div class="pz-body"><div class="pz-meta">' + edit + '</div><div class="pz-note">Sin planificación cargada. Armala en el Builder y aparece acá sola.</div></div>';
+    var di = parseInt(ui.dia[a.id], 10); if(!(di >= 0 && di < dias.length)) di = 0;
+    var base = semanaBase(a), nW = Math.max(1, (cfg.weeks || []).length || 4);
+    var wi = ui.sem[a.id] != null ? Math.max(0, Math.min(nW - 1, parseInt(ui.sem[a.id], 10) || 0)) : Math.min(base, nW - 1);
+    var dd = dias[di] || {}, blq = bloquesCfg(cfg, dd, wi);
+    var h = '<div class="pz-body" data-fuente="alumno"><div class="pz-meta">' +
+      '<div class="pz-wk"><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="-1" aria-label="Semana anterior">‹</button><span>SEM ' + (wi + 1) + (wi === base ? ' · ACTUAL' : '') + '</span><button type="button" data-pz="sem" data-id="' + E(a.id) + '" data-n="1" aria-label="Semana siguiente">›</button></div>' +
+      edit + '</div>';
+    h += '<div class="pz-days">' + dias.map(function(x, i){
+      return '<button type="button" class="pz-day' + (i === di ? ' on' : '') + '" data-pz="dia" data-id="' + E(a.id) + '" data-n="' + i + '">' + E(x.short || ('DÍA ' + (i + 1))) + '</button>';
+    }).join('') + '</div>';
+    h += '<div class="pz-dt">' + E(dd.title || dd.label || ('Día ' + (di + 1))) + '</div>';
+    if(dd.focusText) h += '<div class="pz-foco">' + E(dd.focusText) + '</div>';
+    var cont = blq.map(function(b){ return bloqueCfg(cfg, b, wi); }).join('');
+    var cd = (dd.cooldown || []).map(function(x){ return typeof x === 'string' ? x : (x && (x.texto || x.nombre || x.titulo)) || ''; }).filter(function(x){ return String(x).trim(); });
+    if(cd.length) cont += '<div class="pz-blq">' + cab('Cool-down') + cd.map(function(x){ return fila('', String(x), null, '', true); }).join('') + '</div>';
+    h += cont || '<div class="pz-note">Este día todavía no tiene bloques cargados.</div>';
+    return h + '</div>';
+  }
+
   function cuerpo(a){
+    var cfgA = datosAlumno(a); if(cfgA) return cuerpoCfg(a, cfgA);      /* lo mismo que ve el alumno; el lector viejo queda solo como respaldo */
     var p = (typeof S !== 'undefined' && S.plans) ? S.plans[a.id] : null;
     var edit = '<button type="button" class="pz-edit" data-pz="quitar" data-id="' + E(a.id) + '">✖ Quitar</button>' +
       '<button type="button" class="pz-edit" style="margin-left:0" data-pz="edit" data-id="' + E(a.id) + '">✏️ Builder</button>';
@@ -52219,8 +52317,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     }
     host.innerHTML = lista.map(function(a){
       var abierto = !!ui.open[a.id], c = colorDe(a);
-      var p = S.plans ? S.plans[a.id] : null;
-      var di = parseInt(ui.dia[a.id], 10) || 0, dd = p && p.dias && p.dias[di];
+      var p = S.plans ? S.plans[a.id] : null, cfgH = datosAlumno(a);
+      var di = parseInt(ui.dia[a.id], 10) || 0, dd = cfgH ? diasDe(cfgH)[di] : (p && p.dias && p.dias[di]);
       var tt = dd ? (dd.title || dd.label || '') : '';
       var det = [sedeLb(a), dd ? (dd.short || '') + (tt && nz(tt) !== nz(dd.short) ? ' · ' + tt : '') : ''].filter(Boolean).join('  ·  ') || (a.foco || a.nivel || '');
       return '<article class="pz-card' + (abierto ? ' open' : '') + '"' + (c ? ' style="--ac:' + E(c) + '"' : '') + '>' +

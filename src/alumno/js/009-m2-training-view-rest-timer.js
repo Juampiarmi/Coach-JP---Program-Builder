@@ -1180,10 +1180,32 @@
           box.parentNode.removeChild(box);
         }
       }
+      jpRegistroAlFinalDelBisetSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
   }
+  /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
+     (cortaban la lectura de la ronda): se juntan al cierre del recuadro del biset, en el mismo orden y con su letra. Antes de moverlas, las notas de cada
+     estación pasan a las pautas del bloque (jpNotasAgrupar), así nada se pierde. Idempotente: una tarjeta ya movida no se vuelve a tocar. */
+  function jpRegistroAlFinalDelBisetSB(board){
+    if(!board || !board.querySelectorAll) return;
+    Array.prototype.forEach.call(board.querySelectorAll('.jp-sb-biset'), function(bis){
+      var subs = Array.prototype.slice.call(bis.querySelectorAll('.jp-sb-subex-resumen')), cards = [];
+      subs.forEach(function(sx){ var cd = sx.querySelector(':scope > .jp-qc'); if(cd){ try{ jpNotasAgrupar(sx); }catch(eN){} cards.push(cd); } });
+      if(!cards.length) return;
+      var reg = bis.querySelector(':scope > .jp-sb-biset-reg');
+      if(!reg){
+        var letras = subs.map(function(sx){ var l = sx.querySelector('.jp-sb-letra'); return l ? String(l.textContent || '').trim() : ''; }).filter(Boolean);
+        reg = document.createElement('div'); reg.className = 'jp-sb-biset-reg';
+        reg.innerHTML = '<div class="jp-sb-biset-reg-t"><span>' + (subs.length === 2 ? 'REGISTRO DEL BISET' : (subs.length === 3 ? 'REGISTRO DEL TRISET' : 'REGISTRO DEL BLOQUE')) + '</span>' + (letras.length ? '<em>' + escSB(letras.join(' · ')) + '</em>' : '') + '</div>';
+        bis.appendChild(reg);
+      }
+      cards.forEach(function(cd){ reg.appendChild(cd); });
+    });
+  }
+  window.jpRegistroAlFinalDelBiset = jpRegistroAlFinalDelBisetSB;
+
   function qrCtx(card){
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
     return (cfg && e) ? { c: cfg, e: e } : null;
@@ -4125,6 +4147,31 @@
      un identificador estable. Se degrada a '' con cualquier desajuste
      (plan viejo, texto editado a mano de forma irregular) -- nunca
      rompe el render por un dato ausente. */
+  /* BISET POR TÍTULO (v28): un bloque de la Pizarra titulado «Biset», «Triset» o «Superserie» cuyos ejercicios vienen sin letra de estación (A1 / A2)
+     se dibuja igual como biset: recuadro naranja, pastilla, transición y registro al final. Solo si TODOS los ejercicios del bloque tienen dosis (2 a 4)
+     y ninguno es de intervalo o técnica especial. El arreglo conserva su largo (las entradas absorbidas quedan como «agrupada») para que cada estación
+     mantenga su clave de registro de siempre (e<idx>): las cargas que el alumno ya anotó siguen apareciendo. El plan guardado no se toca. */
+  function jpAgruparBisetPorTituloSB(entries, titulo){
+    if(!Array.isArray(entries) || !/\b(?:bi-?sets?|tri-?sets?|super-?series?|super-?sets?)\b/i.test(String(titulo || ''))) return entries;
+    if(entries.some(function(e){ return e && e.tipo === 'biserie'; })) return entries;
+    var simples = entries.filter(function(e){ return e && e.tipo === 'simple'; });
+    if(simples.length < 2 || simples.length > 4) return entries;
+    if(!simples.every(function(e){ return e.dosisAsignada && (e.reps || e.sets) && !e.int && !e.tecnica; })) return entries;
+    var subs = simples.map(function(e){
+      return { nombre: e.titulo, reps: e.reps || '', tempo: e.tempo || '', tecnica: '', nota: (e.notas || []).join(' · '), unilateral: e.unilateral || '', unidad: e.unidad || 'reps',
+               rir: e.rir || '', restSeconds: 0, sets: e.sets, carga: e.carga || '', idxOrig: entries.indexOf(e) };
+    });
+    var rest = +simples[simples.length - 1].restSeconds || Math.max.apply(null, simples.map(function(e){ return +e.restSeconds || 0; })) || 0;
+    subs[subs.length - 1].restSeconds = rest;
+    var bis = { tipo: 'biserie', titulo: 'Biset / Triset', subs: subs, rondas: simples[0].sets || 3, restSeconds: rest, letra: 'A', rondasAuto: simples[0].sets || 3, porTitulo: true };
+    var puesto = false;
+    return entries.map(function(e){
+      if(simples.indexOf(e) < 0) return e;
+      if(!puesto){ puesto = true; return bis; }
+      return { tipo: 'agrupada' };
+    });
+  }
+  window.jpAgruparBisetPorTitulo = jpAgruparBisetPorTituloSB;
   function rirSemanaAnteriorSB(block, weekIdx, idx, si){
     if(!(weekIdx > 0)) return '';
     try{
@@ -4152,9 +4199,10 @@
       }
       return;
     }
-    const entries = parsearPizarraSB(lineas, { titulo: block.title });
+    let entries = parsearPizarraSB(lineas, { titulo: block.title });
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    if(!esCalentamiento) entries = jpAgruparBisetPorTituloSB(entries, block.title);      /* «Biset · Espalda» sin A1/A2 también se dibuja como biset */
     const contS = esCalentamiento ? null : jpContinuoInfo(block, lineas, true);
     /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
        dosis real de cada bloque es el "ancla" (el movimiento pesado
@@ -4203,11 +4251,11 @@
         }
         const rondasN = entry.rondas || 3;
         const subsInfo = entry.subs.map(function(sub, si){
-          const exIdx = 'b' + idx + 's' + si;
+          const exIdx = sub.idxOrig != null ? 'e' + sub.idxOrig : 'b' + idx + 's' + si;      /* agrupado por título: conserva la clave de registro que ya tenía */
           /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           const tmp = document.createElement('div');
-          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, (sub.idxOrig != null ? rirSemanaAnteriorSB(block, weekIdx, sub.idxOrig) : rirSemanaAnteriorSB(block, weekIdx, idx, si)), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
           const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
           const myo = tmp.querySelector('.jp-myo-mod');
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
@@ -4223,7 +4271,7 @@
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: o.sub.idxOrig != null ? 'e' + o.sub.idxOrig : 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '', uni: o.sub.unilateral || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;

@@ -59,6 +59,7 @@
 <script src="cases-femenino.js"></script>
 <script src="cases-ficha.js"></script>
 <script src="cases-persistencia.js"></script>
+<script src="cases-v28.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -120,6 +121,7 @@
     bisetNaranja: { run: function(i){ return bisetNaranja(i); }, valor: function(r){ return r; } },
     renombres:    { run: function(i){ return renombresBiblioteca(i); }, valor: function(r){ return r; } },
     persistencia: { run: function(i){ return persistenciaCaso(i); }, valor: function(r){ return r; } },
+    v28:          { run: function(i){ return v28Caso(i); }, valor: function(r){ return r; } },
     generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
@@ -515,6 +517,101 @@
       try{ w.jpSembrarHuellas(true); }catch(e){}
       w.save = orig.save; w.guardarAhora = orig.ga; w.renderAthletes = orig.ra; w.renderBuilder = orig.rb; w.toast = orig.toast;
       try{ orig.ra.call(w); }catch(e){}
+    }
+  }
+  /* ---------- v28: bisets con registro al final, casilleros, video junto al nombre, Pizarra del Coach = plan del alumno, plan() sin pisar ---------- */
+  function v28Caso(c){
+    if(c.caso === 'pizarra' || c.caso === 'planNorm') return v28Builder(c);
+    var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('no hay app del alumno');
+    var doc = w.document, cs = function(el, ps){ return w.getComputedStyle(el, ps || null); }, caja = doc.createElement('div');
+    caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
+    (doc.getElementById('mainContent') || doc.body).appendChild(caja);
+    var dibujar = function(id, titulo, items){ caja.innerHTML = '<div class="block"><div class="block-body"></div></div>'; w.jpPizarraSports(caja.querySelector('.block'), { id: id, title: titulo, category: 'strength', items: items, objective: '', tips: '' }, 0, 'dia1'); };
+    try{
+      if(c.caso === 'registro'){
+        dibujar('tv28a', 'Hipertrofia – Biset', ['A1. Hip thrust con barra', '3x8-10 | RIR 1', 'A2. Abducción en máquina', '3x12-15 | RIR 1', 'Rest 90s']);
+        var bis = caja.querySelector('.jp-sb-biset'), reg = bis && bis.querySelector(':scope > .jp-sb-biset-reg'), ids = reg ? [].map.call(reg.querySelectorAll('.jp-qc .jp-qc-tg-id'), function(x){ return x.textContent.replace(/[^A-Z0-9]/g, ''); }).join(',') : '';
+        var r = { alFinal: !!reg && bis.lastElementChild === reg, ordenYLetra: ids === 'A1,A2', titulo: !!reg && /REGISTRO DEL BISET/.test(reg.textContent) && /A1 · A2/.test(reg.textContent),
+          nadaIntercalado: !caja.querySelector('.jp-sb-subex-resumen .jp-qc'), estacionesSiguen: caja.querySelectorAll('.jp-sb-subex-resumen').length === 2 };
+        dibujar('tv28b', 'Triset de brazos', ['B1. Curl con barra', '3x10 | RIR 1', 'B2. Fondos en banco', '3x12 | RIR 1', 'B3. Curl martillo', '3x12 | RIR 1', 'Rest 60s']);
+        var reg3 = caja.querySelector('.jp-sb-biset > .jp-sb-biset-reg');
+        r.triset = !!reg3 && reg3.querySelectorAll('.jp-qc').length === 3 && /REGISTRO DEL TRISET/.test(reg3.textContent);
+        return r;
+      }
+      if(c.caso === 'porTitulo'){
+        dibujar('tv28c', 'Biset · Espalda', ['Jalón al pecho', '3x10 | RIR 1', 'Remo con mancuerna', '3x10 | RIR 1', 'Rest 90s']);
+        var bis2 = caja.querySelector('.jp-sb-biset'), keys = [].map.call(caja.querySelectorAll('.jp-qc-r'), function(x){ return (x.getAttribute('data-key') || '').split('|')[3]; });
+        var r2 = { esBiset: !!bis2 && caja.querySelectorAll('.jp-sb-biset .jp-sb-subex-resumen').length === 2, naranja: !!bis2 && /238, 90, 18/.test(cs(bis2).borderTopColor), pastilla: !!caja.querySelector('.jp-sb-biset-pill') && /BISET/.test(caja.querySelector('.jp-sb-biset-pill').textContent),
+          mismasClavesDeRegistro: keys.length > 0 && keys.every(function(k){ return k === 'e0' || k === 'e1'; }) && keys.indexOf('e0') >= 0 && keys.indexOf('e1') >= 0 };
+        dibujar('tv28d', 'Espalda', ['Jalón al pecho', '3x10 | RIR 1', 'Remo con mancuerna', '3x10 | RIR 1', 'Rest 90s']);
+        r2.sinTituloNoSeAgrupa = !caja.querySelector('.jp-sb-biset');
+        return r2;
+      }
+      if(c.caso === 'casillas'){
+        dibujar('tv28e', 'Fuerza', ['Sentadilla frontal', '4x5 | RIR 2', 'Rest 150s']);
+        var ok = caja.querySelector('.jp-qc-ok'), NAR = 'rgb(238, 90, 18)'; ok.style.transition = 'none';
+        var vacio = cs(ok).backgroundColor, vacioBorde = cs(ok).borderTopColor;
+        ok.classList.add('on'); ok.setAttribute('aria-pressed', 'true');
+        var lleno = cs(ok).backgroundColor;
+        var chk = doc.createElement('input'); chk.type = 'checkbox'; chk.className = 'set-check'; chk.style.transition = 'none'; caja.appendChild(chk);
+        var chkVacio = cs(chk).backgroundColor; chk.checked = true; var chkLleno = cs(chk).backgroundColor;
+        return { vacioNeutro: vacio !== NAR && !/255, 85, 0/.test(vacio) && /220, 230, 255/.test(vacioBorde), completoNaranja: lleno === NAR, checkVacioNeutro: chkVacio !== NAR && !/16, 185, 129/.test(chkVacio), checkCompletoNaranja: chkLleno === NAR };
+      }
+      if(c.caso === 'video'){
+        dibujar('tv28f', 'Hipertrofia – Biset', ['A1. Hip thrust con barra', '3x8-10 | RIR 1', 'A2. Abducción en máquina', '3x12-15 | RIR 1', 'Rest 90s']);
+        var heads = caja.querySelectorAll('.jp-sb-subex-head'), arriba = heads.length > 0;
+        /* el botón lo pone el pase de videos (o la lupa de búsqueda); si este render aislado no lo trajo, se agrega igual que lo hace la app */
+        [].forEach.call(heads, function(h){ if(!h.querySelector(':scope > .jp-ux-vid')){ var bt = doc.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid'; bt.innerHTML = '<span class="jp-ux-vp">▶</span>'; h.appendChild(bt); } });
+        [].forEach.call(heads, function(h){
+          var v = h.querySelector(':scope > .jp-ux-vid'), n = h.querySelector('.jp-sb-subex-tit'); if(!v || !n){ arriba = false; return; }
+          var rv = v.getBoundingClientRect(), rh = h.getBoundingClientRect(), rn = n.getBoundingClientRect();
+          if(!(Math.abs(rv.right - rh.right) <= 2 && rv.top <= rn.top + 4 && rv.left >= rn.right - 2)) arriba = false;
+        });
+        /* bisets heredados (bloque superset): misma estética naranja, video arriba a la derecha y dosis debajo del nombre */
+        caja.innerHTML = '<div class="block bs-uni"><div class="block-body"><div class="bs-wrap"><div class="bs-ex"><div class="bs-e"><span class="bs-l">A</span><span class="bs-n">Press de banca<a class="video-link jp-play" data-yt="x"></a></span><span class="bs-d">8 REPS</span></div></div></div></div></div>';
+        var wrap = caja.querySelector('.bs-wrap'), l = caja.querySelector('.bs-l'), e = caja.querySelector('.bs-e'), vl = caja.querySelector('.bs-n > .video-link'), dd = caja.querySelector('.bs-d');
+        return { videoArribaDerecha: arriba, legadoNaranja: /238, 90, 18/.test(cs(wrap).borderLeftColor) && cs(l).backgroundColor === 'rgb(238, 90, 18)',
+          legadoVideoYDosis: cs(e).display === 'grid' && cs(vl).order === '2' && dd.getBoundingClientRect().top >= caja.querySelector('.bs-n').getBoundingClientRect().bottom - 1 };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally { if(caja.parentNode) caja.parentNode.removeChild(caja); }
+  }
+  function v28Builder(c){
+    var S = getS(), w = win, orig = { save: w.save, ga: w.guardarAhora, ra: w.renderAthletes, rb: w.renderBuilder, toast: w.toast }, A = [];
+    w.save = w.guardarAhora = w.renderAthletes = w.renderBuilder = function(){}; w.toast = function(){};
+    var vista0 = S.ui ? S.ui.view : null, act0 = S.activeId;
+    try{
+      if(c.caso === 'planNorm'){
+        var a = { id: 'ath_test_v28n', nombre: 'Norma', apellido: 'Test', freq: 4, nivel: 'Intermedio', genero: 'F' }; S.athletes.push(a); A.push(a);
+        var semanas = [{ n: 1, short: 'S1', name: 'Base propia', note: 'nota del coach' }, { n: 2, short: 'S2', name: 'Carga', phase: 'Mía' }, { n: 3, short: 'S3', name: 'Pico' }, { n: 4, short: 'S4', name: 'Descarga' }];
+        S.plans[a.id] = { meta: w.defaultMeta(a), meso: JSON.parse(JSON.stringify(semanas)), estado: 'enviado', dias: [{ id: 'dia1', short: 'DÍA 1', bloques: [] }, { id: 'dia2', short: 'DÍA 2', bloques: [] }] };
+        var p = w.plan(a.id);
+        return { mesoConservado: p.meso[0].name === 'Base propia' && p.meso[0].note === 'nota del coach' && p.meso[1].phase === 'Mía', faltantesCompletados: !!p.meso[0].phase && !!p.meso[2].rpe,
+          estadoConservado: p.estado === 'enviado', sinDiasFantasma: p.dias.length === 2 && p.freqBase === 4 };
+      }
+      if(c.caso === 'pizarra'){
+        var b = { id: 'ath_test_v28p', nombre: 'Zeta', apellido: 'Pizarra', freq: 3, nivel: 'Intermedio', genero: 'F', presencial: true }; S.athletes.push(b); A.push(b);
+        var pl = w.newPlan(b); S.plans[b.id] = pl;
+        var pz = w.newBlock('list'); pz.sportsPizarra = true; pz.titulo = 'Fuerza'; pz.category = 'strength';
+        pz.items = ['Sentadilla frontal', '4x6 | RIR 2', 'Rest 150s']; pz.weekItems = [null, ['Sentadilla frontal', '5x5 | RIR 1', 'Rest 150s'], null, null];
+        var vac = w.newBlock('list'); vac.sportsPizarra = true; vac.titulo = 'Accesorio vacío'; vac.items = [];
+        pl.dias[0].bloques = [pz, vac];
+        var antes = JSON.stringify(pl), d = w.document;
+        w.go('pizarra');
+        var tog = [].filter.call(d.querySelectorAll('#pzList [data-pz="tog"]'), function(x){ return x.dataset.id === b.id; })[0]; tog.click();
+        var cuerpo = function(){ return d.querySelector('#pzList .pz-card.open .pz-body'); };
+        var s1 = cuerpo().textContent;
+        d.querySelector('#pzList .pz-card.open [data-pz="sem"][data-n="1"]').click();
+        var s2 = cuerpo().textContent, fuente = cuerpo().getAttribute('data-fuente');
+        d.querySelector('#pzList .pz-card.open [data-pz="sem"][data-n="-1"]').click(); tog = [].filter.call(d.querySelectorAll('#pzList [data-pz="tog"]'), function(x){ return x.dataset.id === b.id; })[0]; tog.click();
+        return { mismaFuenteQueElAlumno: fuente === 'alumno', semana1: /4x6|4×6/.test(s1), semana2ComoElAlumno: /5x5|5×5/.test(s2) && !/4x6|4×6/.test(s2), sinBloquesQueNoViajan: !/Accesorio vacío/.test(s1), planIntacto: JSON.stringify(S.plans[b.id]) === antes };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      A.forEach(function(a){ delete S.plans[a.id]; var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+      S.activeId = act0;
+      w.save = orig.save; w.guardarAhora = orig.ga; w.renderAthletes = orig.ra; w.renderBuilder = orig.rb; w.toast = orig.toast;
+      try{ if(w.CoachPizarra) w.CoachPizarra.render(); if(vista0 && vista0 !== 'pizarra') w.go(vista0); }catch(e){}
     }
   }
   function copiaPlanCaso(c){
