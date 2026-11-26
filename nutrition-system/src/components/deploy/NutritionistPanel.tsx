@@ -57,15 +57,15 @@ export function NutritionistPanel() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Label>Logo de NutrirCe</Label>
           <button type="button" onClick={() => file.current?.click()} className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-steel hover:text-ink" data-nutri-logo-upload>
-            <ImageUp className="h-3.5 w-3.5" /> {n.logo ? 'Reemplazar logo oficial' : 'Subir logo oficial'}
+            <ImageUp className="h-3.5 w-3.5" /> {n.logo ? 'Reemplazar logo' : 'Reemplazar por otro archivo'}
           </button>
           {n.logo && (
             <button type="button" onClick={() => set({ logo: undefined })} className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] text-mute hover:text-ink">
-              <Trash2 className="h-3.5 w-3.5" /> Volver al isotipo
+              <Trash2 className="h-3.5 w-3.5" /> Volver al logo oficial
             </button>
           )}
           <input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} data-nutri-logo-file />
-          <span className="text-[11.5px] text-mute">{n.logo ? 'Se usa tu archivo en la app, la storycard y el Builder.' : 'Por defecto: isotipo de mano + tenedor con «Nutrir» verde y «Ce» naranja.'}</span>
+          <span className="text-[11.5px] text-mute">{n.logo ? 'Se usa tu archivo en la app, la storycard y el Builder.' : 'En uso: logo oficial de NutrirCe (PNG sin fondo). Podés reemplazarlo por otro archivo cuando quieras.'}</span>
         </div>
         <label className="mt-2 flex items-center gap-2 text-[13px] text-steel">
           <input type="checkbox" checked={n.show} onChange={(e) => set({ show: e.target.checked })} /> Mostrar el co-branding NutrirCe y la firma en la app del alumno y en la storycard
@@ -78,7 +78,7 @@ export function NutritionistPanel() {
                 <b className="text-[14px] tracking-[0.04em] text-ink">COACH JP</b>
               </span>
               <span className="text-steel/60">×</span>
-              <NutrirCeLogo size={26} text={14} logo={n.logo} />
+              <NutrirCeLogo size={38} logo={n.logo} />
             </div>
             <div className="text-[#94C5DE]/80">Cabecera: {cobrandHeader(n)}</div>
             <div className="text-mute">Pie: {nutriCredit(n)}</div>

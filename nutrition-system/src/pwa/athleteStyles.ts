@@ -237,9 +237,9 @@ body.standalone .dock{display:none}
 .cobrand .brand{font-size:14.5px;white-space:nowrap}
 .cbx{color:rgba(148,163,184,.55);font-weight:400;font-size:13px}
 .ncw i{font-style:normal;color:var(--nc-green)}.ncw em{font-style:normal;color:var(--nc-orange)}
-.nc-img{height:28px;width:auto;max-width:120px;object-fit:contain;display:block}.nc-img.sm{height:24px;max-width:80px}
+.nc-img{height:38px;width:auto;max-width:96px;object-fit:contain;display:block;margin:-5px 0}.nc-img.sm{height:30px;max-width:64px;margin:0}
 .top.cob .guide-btn{margin-left:auto;flex:none}
-@media (max-width:370px){.cobrand{gap:5px}.cobrand .cb{gap:4px}.cobrand svg{width:24px;height:24px}.cobrand .brand{font-size:12.5px}.cobrand .cbx{font-size:11px}.top.cob .gbt{display:none}}
+@media (max-width:370px){.nc-img{height:34px}.cobrand{gap:5px}.cobrand .cb{gap:4px}.cobrand svg{width:24px;height:24px}.cobrand .brand{font-size:12.5px}.cobrand .cbx{font-size:11px}.top.cob .gbt{display:none}}
 .foot.cob{border-top:1px solid transparent;border-image:linear-gradient(90deg,rgba(56,189,248,.3),rgba(34,197,94,.3),rgba(249,115,22,.3)) 1}
 .foot .fmarks{display:flex;align-items:center;gap:4px;flex:none}.foot .fmarks svg{width:24px;height:24px}
 .nutri-line svg{color:var(--nc-green)!important}

@@ -126,7 +126,7 @@ function CoBrandHeader() {
       {n && (
         <>
           <span className="text-[15px] text-steel/60">×</span>
-          <NutrirCeLogo size={34} text={17} logo={n.logo} />
+          <NutrirCeLogo size={46} logo={n.logo} />
         </>
       )}
       <div className="basis-full font-mono text-[10px] tracking-[0.14em] text-mute">{n ? `ENTRENAMIENTO & NUTRICIÓN · ${n.name.toUpperCase()} · ` : '@coachjp.training · '}ARMADOR DE PLANES</div>

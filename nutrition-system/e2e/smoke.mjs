@@ -446,9 +446,10 @@ try {
   // Firma profesional en la app: cabecera discreta, crédito en el pie y sin desbordes en 360-390 px.
   await pwa.locator('[data-mode="on"]').first().click().catch(() => {});
   const cob = pwa.locator('[data-cobrand]');
-  check(/COACH JP/.test(await cob.innerText()) && /NutrirCe/.test(await cob.innerText()) && (await cob.locator('svg').count()) === 2, 'App: cabecera 50/50 [Coach JP] × [NutrirCe] con sus dos isotipos');
-  const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.querySelector('svg').getBoundingClientRect().height)));
-  check(hA === hB, `App: los dos emblemas con el mismo tamaño (${hA} / ${hB} px)`);
+  const ncOk = await cob.locator('img.nc-img').evaluate((i) => i.complete && i.naturalWidth > 0 && i.src.startsWith('data:image/png'));
+  check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [Coach JP] × [logo oficial NutrirCe en PNG transparente]');
+  const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  check(Math.abs(hA - hB) <= 12, `App: los dos sellos con el mismo peso visual (alto ${hA} / ${hB} px)`);
   check(/Entrenamiento & Nutrición · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: bajada «Entrenamiento & Nutrición · Lic. María Cecilia Rollán»');
   check(/Coach JP High Performance System × NutrirCe — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel y la Lic. Rollán');
   check((await pwa.locator('[data-yield]').count()) > 0, 'App: cada plato con su etiqueta de rendimiento');

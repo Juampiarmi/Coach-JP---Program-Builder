@@ -1568,6 +1568,7 @@ const runtime = String.raw`
     x.restore();
   }
   var NCIMG = null;
+  try { if (D.nutri && D.nutri.logo) setTimeout(ncImg, 0); } catch (e) {}
   function ncImg() {
     if (!D.nutri || !D.nutri.logo) return null;
     if (!NCIMG) { NCIMG = new Image(); NCIMG.onload = function () { if (S.panel === 'story') drawStory(); }; NCIMG.src = D.nutri.logo; }
@@ -1696,8 +1697,9 @@ const runtime = String.raw`
       x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('×', W / 2 - xw / 2, yb); font(700, fsz);
       var xb = W / 2 + xw / 2 + XG, img = ncImg();
       if (img) {
-        var k = Math.min(lw / img.naturalWidth, (IS + 6) / img.naturalHeight);
-        x.drawImage(img, xb, iy + (IS - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+        // Logo oficial apilado (isotipo + NUTRIR Ce.): mismo ancho visual que el bloque de Coach JP, centrado en la fila.
+        var k = Math.min(lw / img.naturalWidth, (IS * 1.6) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
+        x.drawImage(img, xb + (lw - lwI) / 2, iy + IS / 2 - lhI / 2, lwI, lhI);
       } else {
         drawNc(x, xb, iy, IS);
         x.fillStyle = '#22C55E'; x.fillText('NUTRIR', xb + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('CE', xb + IS + GAP + x.measureText('NUTRIR').width, yb);

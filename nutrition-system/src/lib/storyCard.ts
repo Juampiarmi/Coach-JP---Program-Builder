@@ -1,5 +1,6 @@
+import { NUTRIRCE_LOGO } from './nutrirceLogo';
 import { computeTelemetry, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from './bioenergetics';
-import { BRAND, drawNutritionIcon, drawNutrirceIcon, NC, nutriOf, shortSpecialty, storySignature } from './brand';
+import { BRAND, drawNutritionIcon, drawNutrirceIcon, NC, ncLogoSrc, nutriOf, shortSpecialty, storySignature } from './brand';
 import { CITES } from './evidence';
 import { DISCIPLINE_LABEL } from './exportHtml';
 import type { AthletePlan } from './types';
@@ -39,6 +40,14 @@ export async function ensureFonts() {
       '600 48px Inter',
     ].map((f) => document.fonts.load(f).catch(() => [])),
   );
+  // Logo oficial de NutrirCe listo antes de exportar el PNG (data URL: sin CORS ni canvas «tainted»).
+  await new Promise<void>((ok) => {
+    const img = logoImage(NUTRIRCE_LOGO);
+    if (img) return ok();
+    const i = LOGOS.get(NUTRIRCE_LOGO)!;
+    i.addEventListener('load', () => ok(), { once: true });
+    i.addEventListener('error', () => ok(), { once: true });
+  });
   await document.fonts.ready;
 }
 
@@ -427,10 +436,13 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
     ctx.textAlign = 'left';
     // Derecha: NutrirCe (logo oficial si el coach lo subió).
     const bx = STORY_W / 2 + 30;
-    const img = nutri.logo ? logoImage(nutri.logo) : null;
+    const img = logoImage(ncLogoSrc(nutri));
     if (img) {
-      const k = Math.min(half / img.naturalWidth, IS / img.naturalHeight);
-      ctx.drawImage(img, bx, iy + (IS - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+      // Logo oficial apilado: ocupa el mismo ancho que el bloque de Coach JP, centrado en la fila (sin texto extra).
+      const k = Math.min((half - 10) / img.naturalWidth, (IS * 1.3) / img.naturalHeight);
+      const lw = img.naturalWidth * k;
+      const lh = img.naturalHeight * k;
+      ctx.drawImage(img, bx + (half - lw) / 2, iy + IS / 2 - lh / 2, lw, lh);
     } else {
       drawNutrirceIcon(ctx, bx, iy, IS);
       const tx = bx + IS + 20;

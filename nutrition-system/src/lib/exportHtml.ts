@@ -5,7 +5,8 @@ import styles from '@/pwa/athleteStyles';
 import { coachPhone } from './coachContact';
 import { allergiesOf, CELIAC_PLATE_WARNING, foodIsSafe, planIsMeatFree, sealsFor } from './allergens';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
-import { BRAND, cobrandHeader, NC_CREASE, NC_FORK, NC_HAND, nutriCredit, nutriOf, nutrirceSvg, nutritionSvg, shieldSvg, storySignature } from './brand';
+import { NUTRIRCE_LOGO_RATIO } from './nutrirceLogo';
+import { BRAND, cobrandHeader, ncLogoSrc, NC_CREASE, NC_FORK, NC_HAND, nutriCredit, nutriOf, nutrirceSvg, nutritionSvg, shieldSvg, storySignature } from './brand';
 import { CITES } from './evidence';
 import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, unitStep, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
@@ -171,7 +172,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     // Co-branding 50/50 Coach JP × NutrirCe + firma de la nutricionista (cabecera, pie y storycard de la app).
     nutri: (() => {
       const n = nutriOf(plan);
-      return n ? { name: n.name.trim(), header: cobrandHeader(n), credit: nutriCredit(n), story: storySignature(n), logo: n.logo ?? null, mark: nutrirceSvg(28), markSm: nutrirceSvg(24), fork: NC_FORK, hand: NC_HAND, crease: NC_CREASE } : null;
+      return n ? { name: n.name.trim(), header: cobrandHeader(n), credit: nutriCredit(n), story: storySignature(n), logo: ncLogoSrc(n), logoRatio: NUTRIRCE_LOGO_RATIO, mark: nutrirceSvg(28), markSm: nutrirceSvg(24), fork: NC_FORK, hand: NC_HAND, crease: NC_CREASE } : null;
     })(),
     targets: {
       on: { kcal: Math.round(t.kcalOn), ...t.gramsOn },

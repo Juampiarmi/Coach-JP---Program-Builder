@@ -1,3 +1,4 @@
+import { NUTRIRCE_LOGO } from './nutrirceLogo';
 /** Isotipo Coach JP: escudo táctico oro con rayo negro (viewBox 0 0 100 120). */
 export const SHIELD_OUTER =
   'M50 3 L91 16 Q95 17.5 95 22 L95 57 C95 86 75 105 50 117 C25 105 5 86 5 57 L5 22 Q5 17.5 9 16 Z';
@@ -160,6 +161,9 @@ export function drawNutrirceIcon(ctx: CanvasRenderingContext2D, x: number, y: nu
   ctx.stroke(new Path2D(NC_CREASE));
   ctx.restore();
 }
+
+/** Logo de NutrirCe a usar: el que subió el coach o el oficial (PNG sin fondo, embebido). */
+export const ncLogoSrc = (n?: { logo?: string } | null) => n?.logo || NUTRIRCE_LOGO;
 
 /** Logo propio de NutrirCe subido por el coach (data URL de imagen; vacío = el isotipo de fábrica). */
 export const safeLogo = (s: unknown) => (typeof s === 'string' && /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(s) && s.length <= 300_000 ? s : undefined);
