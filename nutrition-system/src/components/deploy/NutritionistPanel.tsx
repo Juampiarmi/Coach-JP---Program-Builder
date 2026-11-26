@@ -4,8 +4,8 @@ import { useRef, useState } from 'react';
 import { ImageUp, ShieldCheck, Trash2 } from 'lucide-react';
 import { cobrandHeader, DEFAULT_NUTRITIONIST, nutriCredit, safeLogo, storySignature } from '@/lib/brand';
 import { usePlanStore } from '@/store/usePlanStore';
-import { inputCls, Label, NutritionMark, Panel } from '../hud/primitives';
-import { NutrirCeLogo } from '../hud/NutrirCe';
+import { inputCls, Label, Panel } from '../hud/primitives';
+import { CoachJpLogo, NutrirCeLogo } from '../hud/NutrirCe';
 
 /** Imagen subida → data URL liviana (máx. 360 px de alto en PNG; SVG tal cual si es chico). */
 async function toLogo(file: File): Promise<string | undefined> {
@@ -74,7 +74,7 @@ export function NutritionistPanel() {
           <div className="mt-2 space-y-1.5 rounded-lg border border-line bg-carbon/60 p-2.5 text-[12px]" data-nutri-preview>
             <div className="flex flex-wrap items-center gap-2">
               <span className="flex items-center gap-1.5">
-                <NutritionMark size={26} />
+                <CoachJpLogo size={38} />
                 <b className="text-[14px] tracking-[0.04em] text-ink">COACH JP</b>
               </span>
               <span className="text-steel/60">×</span>

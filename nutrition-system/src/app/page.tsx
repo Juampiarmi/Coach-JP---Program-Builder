@@ -5,7 +5,7 @@ import { Brain, Users, Library, Crosshair, Database, Dna, Globe2, Download, Imag
 import { AthleteSheet } from '@/components/builder/AthleteSheet';
 import { QuickAssignButton } from '@/components/builder/QuickAssign';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
-import { NutrirCeLogo } from '@/components/hud/NutrirCe';
+import { CoachJpLogo, NutrirCeLogo } from '@/components/hud/NutrirCe';
 import { nutriOf } from '@/lib/brand';
 import { GlobalBank } from '@/components/builder/GlobalBank';
 import { IntakeTab } from '@/components/builder/IntakeTab';
@@ -120,7 +120,7 @@ function CoBrandHeader() {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1" data-builder-cobrand>
       <span className="flex items-center gap-2">
-        <NutritionMark size={34} />
+        {n ? <CoachJpLogo size={46} /> : <NutritionMark size={34} />}
         <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-ink">COACH JP</span>
       </span>
       {n && (

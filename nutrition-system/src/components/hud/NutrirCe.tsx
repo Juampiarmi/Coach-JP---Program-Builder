@@ -1,6 +1,7 @@
 'use client';
 
 import { NC, NC_CREASE, NC_FORK, NC_HAND, ncLogoSrc } from '@/lib/brand';
+import { COACH_JP_LOGO } from '@/lib/coachJpLogo';
 
 /** Isotipo NutrirCe: mano (palma arriba) sosteniendo un tenedor, en verde esmeralda y naranja. */
 export function NutrirCeMark({ size = 32 }: { size?: number }) {
@@ -16,4 +17,9 @@ export function NutrirCeMark({ size = 32 }: { size?: number }) {
 /** Logo de NutrirCe: el oficial (PNG sin fondo, isotipo + «NUTRIR Ce.») o el que subió el coach. `size` = alto en px. */
 export function NutrirCeLogo({ size = 40, logo }: { size?: number; text?: number; logo?: string }) {
   return <img src={ncLogoSrc({ logo })} alt="NutrirCe" style={{ height: size, width: 'auto', maxWidth: size * 2.4 }} className="block object-contain" data-nc-logo={logo ? 'custom' : 'official'} />;
+}
+
+/** Escudo oficial de Coach JP (PNG sin fondo). `size` = alto en px (el mismo que el logo de NutrirCe en el 50/50). */
+export function CoachJpLogo({ size = 40 }: { size?: number }) {
+  return <img src={COACH_JP_LOGO} alt="Coach JP" style={{ height: size, width: 'auto' }} className="block flex-none" data-cj-logo />;
 }

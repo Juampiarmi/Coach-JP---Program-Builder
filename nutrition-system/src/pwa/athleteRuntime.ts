@@ -1578,7 +1578,13 @@ const runtime = String.raw`
     x.strokeStyle = 'rgba(11,15,23,.5)'; x.lineWidth = 2.2; x.lineCap = 'round'; x.stroke(new Path2D(D.nutri.crease));
     x.restore();
   }
-  var NCIMG = null;
+  var NCIMG = null, CJIMG = null;
+  function cjImg() {
+    if (!D.nutri || !D.nutri.cj) return null;
+    if (!CJIMG) { CJIMG = new Image(); CJIMG.onload = function () { if (S.panel === 'story') drawStory(); }; CJIMG.src = D.nutri.cj; }
+    return CJIMG.complete && CJIMG.naturalWidth ? CJIMG : null;
+  }
+  try { if (D.nutri) setTimeout(cjImg, 0); } catch (e) {}
   try { if (D.nutri && D.nutri.logo) setTimeout(ncImg, 0); } catch (e) {}
   function ncImg() {
     if (!D.nutri || !D.nutri.logo) return null;
@@ -1703,13 +1709,15 @@ const runtime = String.raw`
       while (fsz > 30 && IS * 2 + GAP * 2 + wA + wB + XG * 2 + 30 > CW) { fsz -= 2; font(700, fsz); wA = x.measureText('COACH JP').width; wB = x.measureText('NUTRIRCE').width; }
       var lw = Math.max(IS + GAP + wA, IS + GAP + wB), xw = x.measureText('×').width;
       var x0 = W / 2 - lw - XG - xw / 2, yb = H - 300, iy = yb - IS + 10;
-      drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
+      // Escudo oficial (PNG) con la misma altura que el logo de NutrirCe; si todavía no cargó, el vector.
+      var cjI = cjImg(), LH = IS * 1.3;
+      if (cjI) { var cwI = LH * cjI.naturalWidth / cjI.naturalHeight; x.drawImage(cjI, x0 + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH); } else drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
       x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = FLUOR; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
       x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('×', W / 2 - xw / 2, yb); font(700, fsz);
       var xb = W / 2 + xw / 2 + XG, img = ncImg();
       if (img) {
         // Logo oficial apilado (isotipo + NUTRIR Ce.): mismo ancho visual que el bloque de Coach JP, centrado en la fila.
-        var k = Math.min(lw / img.naturalWidth, (IS * 1.6) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
+        var k = Math.min(lw / img.naturalWidth, (IS * 1.3) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
         x.drawImage(img, xb + (lw - lwI) / 2, iy + IS / 2 - lhI / 2, lwI, lhI);
       } else {
         drawNc(x, xb, iy, IS);
@@ -1824,7 +1832,7 @@ const runtime = String.raw`
 
     // Fila 1 · HUD: logo + marca + fase + guía.
     // Co-branding 50/50: [Coach JP] × [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
-    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb">' + D.markSm + '<b class="brand">COACH JP</b></span><span class="cbx">×</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
+    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH JP</b></span><span class="cbx">×</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
     else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + (D.nutri ? ' · ' + esc(D.athlete.phase) : '') + '</span></div>';
@@ -1926,7 +1934,7 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks">' + D.shieldSm + '<span class="cbx">×</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">×</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
+    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">×</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">×</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
     else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();

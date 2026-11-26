@@ -1,3 +1,4 @@
+import { COACH_JP_LOGO } from './coachJpLogo';
 import { NUTRIRCE_LOGO } from './nutrirceLogo';
 import { computeTelemetry, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from './bioenergetics';
 import { BRAND, drawNutritionIcon, drawNutrirceIcon, NC, ncLogoSrc, nutriOf, shortSpecialty, storySignature } from './brand';
@@ -41,13 +42,17 @@ export async function ensureFonts() {
     ].map((f) => document.fonts.load(f).catch(() => [])),
   );
   // Logo oficial de NutrirCe listo antes de exportar el PNG (data URL: sin CORS ni canvas «tainted»).
-  await new Promise<void>((ok) => {
-    const img = logoImage(NUTRIRCE_LOGO);
-    if (img) return ok();
-    const i = LOGOS.get(NUTRIRCE_LOGO)!;
-    i.addEventListener('load', () => ok(), { once: true });
-    i.addEventListener('error', () => ok(), { once: true });
-  });
+  await Promise.all(
+    [NUTRIRCE_LOGO, COACH_JP_LOGO].map(
+      (src) =>
+        new Promise<void>((ok) => {
+          if (logoImage(src)) return ok();
+          const i = LOGOS.get(src)!;
+          i.addEventListener('load', () => ok(), { once: true });
+          i.addEventListener('error', () => ok(), { once: true });
+        }),
+    ),
+  );
   await document.fonts.ready;
 }
 
@@ -414,11 +419,18 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
       ctx.font = `500 ${ss}px ${MONO}`;
       while (ss > 12 && width(ctx, t, 2) > max) ctx.font = `500 ${--ss}px ${MONO}`;
     };
-    // Izquierda: Coach JP.
-    const icon = document.createElement('canvas');
-    icon.width = icon.height = IS * 2;
-    drawNutritionIcon(icon.getContext('2d')!, IS * 2, false);
-    ctx.drawImage(icon, PAD_X - 4, iy, IS, IS);
+    // Izquierda: escudo oficial de Coach JP (PNG) con la misma altura que el logo de NutrirCe.
+    const LH = IS * 1.2;
+    const cj = logoImage(COACH_JP_LOGO);
+    if (cj) {
+      const cwI = (LH * cj.naturalWidth) / cj.naturalHeight;
+      ctx.drawImage(cj, PAD_X + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH);
+    } else {
+      const icon = document.createElement('canvas');
+      icon.width = icon.height = IS * 2;
+      drawNutritionIcon(icon.getContext('2d')!, IS * 2, false);
+      ctx.drawImage(icon, PAD_X - 4, iy, IS, IS);
+    }
     const ax = PAD_X + IS + 20;
     ctx.font = `700 ${fs}px ${CHAKRA}`;
     ctx.fillStyle = C.ink;
@@ -439,7 +451,7 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
     const img = logoImage(ncLogoSrc(nutri));
     if (img) {
       // Logo oficial apilado: ocupa el mismo ancho que el bloque de Coach JP, centrado en la fila (sin texto extra).
-      const k = Math.min((half - 10) / img.naturalWidth, (IS * 1.3) / img.naturalHeight);
+      const k = Math.min((half - 10) / img.naturalWidth, (IS * 1.2) / img.naturalHeight);
       const lw = img.naturalWidth * k;
       const lh = img.naturalHeight * k;
       ctx.drawImage(img, bx + (half - lw) / 2, iy + IS / 2 - lh / 2, lw, lh);
