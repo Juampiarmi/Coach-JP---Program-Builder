@@ -41,7 +41,8 @@ export const useFoodDbStore = create<FoodDbState>()(
         set({ customCats: [...get().customCats, label] });
         return label;
       },
-      upsert: (item) => {
+      upsert: (raw) => {
+        const item = { ...raw, editadoEn: Date.now() };
         const items = get().items.some((x) => x.id === item.id) ? get().items.map((x) => (x.id === item.id ? item : x)) : [...get().items, item];
         set(sync(items));
       },

@@ -230,6 +230,23 @@ end $$;
 delete from public.coach_templates where id = '00000000-0000-0000-0000-0000000000e1';
 select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
 do $$ begin assert test.count('select * from public.coach_templates') = 1, 'otro coach no pudo borrarla'; end $$;
+-- ============ 10 · Banco Global del coach (platos y alimentos propios) ============
+select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
+insert into public.coach_foods (id, data) values ('db-receta-tortilla', '{"nombre": "Tortilla de berenjena y zucchini"}');
+update public.coach_foods set data = '{"nombre": "Tortilla de berenjena"}' where id = 'db-receta-tortilla';
+do $$ begin assert (select data->>'nombre' from public.coach_foods) = 'Tortilla de berenjena', 'el coach edita su plato'; end $$;
+select test.fails($$insert into public.coach_foods (coach_id, id, data) values ('00000000-0000-0000-0000-0000000000c2', 'colado', '{}')$$);
+select test.login('00000000-0000-0000-0000-0000000000c2', 'socio@jp.com');
+do $$ begin assert test.count('select * from public.coach_foods') = 0, 'otro coach no ve el banco ajeno'; end $$;
+-- El mismo id en otro coach es otra fila (no pisa la del primero).
+insert into public.coach_foods (id, data) values ('db-receta-tortilla', '{"nombre": "Mi tortilla"}');
+delete from public.coach_foods where id = 'db-receta-tortilla';
+select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
+do $$ begin assert (select data->>'nombre' from public.coach_foods) = 'Tortilla de berenjena', 'el plato del coach 1 sigue intacto'; end $$;
+select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
+do $$ begin assert test.count('select * from public.coach_foods') = 0, 'el atleta no ve el banco del coach'; end $$;
+select test.fails($$insert into public.coach_foods (id, data) values ('x', '{}')$$);
+
 select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
 
 -- ============ 7 · Visitante sin sesión (clave pública sola) ============
@@ -249,4 +266,4 @@ select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
 do $$ begin assert test.count('select * from public.published_plans') = 0, 'archivado: el atleta deja de ver el plan'; end $$;
 reset role;
 
-\echo '✓ 9 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión, archivados, check-ins y plantillas'
+\echo '✓ 10 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión, archivados, check-ins, plantillas y banco global'

@@ -1045,9 +1045,20 @@ export const ROLES_OF_CATEGORY: Record<CatCategory, MealRole[]> = { desayuno: ['
 export function catalogDishForMeal(dishId: string, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[] } | null {
   const d = CATALOG.find((x) => x.id === dishId);
   if (!d) return null;
-  const variant = variantFor(plan);
-  const base = catalogRecipe(d, variant);
+  const base = catalogRecipe(d, variantFor(plan));
   if (!base) return null;
+  return fitRecipeToMeal(base, meal, plan);
+}
+
+/** Receta del banco (P/C/F/X con pasos {id}) que se puede adaptar a cualquier comida. */
+export type BankRecipe = R;
+
+/**
+ * Cualquier receta del banco adaptada a una comida del alumno: alérgenos sustituidos, versión sin leche fluida en la
+ * mujer y gramos escalados a lo que aporta la comida (topes, pisos de carne, huevos enteros; densidad si falta).
+ */
+export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[] } | null {
+  const variant = variantFor(plan);
   const sex = plan.profile.sex;
   const allergies = allergiesOf(plan);
   const veg = variant === 'veg';

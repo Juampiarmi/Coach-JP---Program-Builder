@@ -2,6 +2,8 @@
 
 import { allergenConflicts } from '@/lib/allergens';
 import type { PlanTemplate } from '@/lib/planAdapt';
+import { isOwnFood, sanitizeBrandFood, type BrandFood } from '@/lib/foodBrandDb';
+import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { cloudConfigured } from '@/lib/cloud/config';
@@ -143,9 +145,66 @@ export const useCloudStore = create<CloudState>()(
         tplKnown = nowIds;
       };
 
+      // ---------- Banco Global del coach en la nube (platos y alimentos propios) ----------
+      // Sólo viajan los ítems propios (creados o editados por el coach); los borrados quedan como marca para que
+      // desaparezcan también en los otros dispositivos. Gana la edición más nueva.
+      let foodsReady = false;
+      const foodRow = (b: BrandFood) => ({ id: b.id, data: b, deleted: false });
+      const syncFoods = async () => {
+        const sb = supa();
+        const { data, error } = await sb.from('coach_foods').select('id, data, deleted');
+        if (error) return; // proyecto sin la tabla todavía: el banco sigue local
+        const db = useFoodDbStore.getState();
+        const local = new Map(db.items.map((x) => [x.id, x]));
+        let items = [...db.items];
+        let cats = [...db.customCats];
+        const up: BrandFood[] = [];
+        const remoteIds = new Set<string>();
+        for (const r of data ?? []) {
+          remoteIds.add(r.id);
+          if (r.id === '__cats') {
+            const rc = Array.isArray((r.data as { cats?: unknown }).cats) ? ((r.data as { cats: unknown[] }).cats.filter((c) => typeof c === 'string') as string[]) : [];
+            cats = [...new Set([...cats, ...rc])];
+            continue;
+          }
+          const mine = local.get(r.id);
+          if (r.deleted) {
+            items = items.filter((x) => x.id !== r.id);
+            continue;
+          }
+          const remote = sanitizeBrandFood(r.data);
+          if (!remote) continue;
+          if (!mine) items.push(remote);
+          else if ((remote.editadoEn ?? 0) > (mine.editadoEn ?? 0)) items = items.map((x) => (x.id === r.id ? remote : x));
+          else if ((mine.editadoEn ?? 0) > (remote.editadoEn ?? 0) && isOwnFood(mine)) up.push(mine);
+        }
+        for (const x of items) if (!remoteIds.has(x.id) && isOwnFood(x)) up.push(x);
+        foodsReady = false;
+        useFoodDbStore.getState().importJson(items, 'replace');
+        useFoodDbStore.setState({ customCats: cats });
+        foodsReady = true;
+        if (up.length) await sb.from('coach_foods').upsert(up.map(foodRow), { onConflict: 'coach_id,id' });
+        await sb.from('coach_foods').upsert([{ id: '__cats', data: { cats }, deleted: false }], { onConflict: 'coach_id,id' });
+      };
+      const pushFoods = async (now: BrandFood[], before: BrandFood[], cats: string[], prevCats: string[]) => {
+        if (!get().user || !foodsReady) return;
+        const sb = supa();
+        const prev = new Map(before.map((x) => [x.id, x]));
+        const nowIds = new Set(now.map((x) => x.id));
+        const changed = now.filter((x) => prev.get(x.id) !== x && isOwnFood(x));
+        const removed = before.filter((x) => !nowIds.has(x.id)).map((x) => ({ id: x.id, data: { id: x.id }, deleted: true }));
+        const rows = [...changed.map(foodRow), ...removed, ...(cats !== prevCats ? [{ id: '__cats', data: { cats }, deleted: false }] : [])];
+        if (!rows.length) return;
+        const { error } = await sb.from('coach_foods').upsert(rows, { onConflict: 'coach_id,id' });
+        if (error) console.warn('No se pudo sincronizar el Banco Global:', error.message);
+      };
+
       const watch = () => {
         if (subscribed) return;
         subscribed = true;
+        useFoodDbStore.subscribe((s, prev) => {
+          if (s.items !== prev.items || s.customCats !== prev.customCats) void pushFoods(s.items, prev.items, s.customCats, prev.customCats).catch(() => {});
+        });
         usePlanStore.subscribe((s, prev) => {
           if (s.templates !== prev.templates) void pushTemplates(s.templates, prev.templates).catch(() => {});
           if (s.plan === prev.plan) return;
@@ -301,6 +360,8 @@ export const useCloudStore = create<CloudState>()(
           const sb = supa();
           // Plantillas propias del coach: se unen las de la nube con las de este dispositivo (las locales nuevas se suben).
           void syncTemplates();
+          // Banco Global: platos y alimentos propios del coach (carga rápida con IA, recetas editadas).
+          void syncFoods().catch(() => {});
           set({ busy: 'Trayendo tus atletas…' });
           try {
             const [ath, drafts, pubs, access, devs] = await Promise.all([

@@ -90,6 +90,8 @@ export interface BrandFood {
   catLabel?: string;
   /** Alérgenos detectados al cargar el plato (gluten, lactosa, huevo…). */
   alergenos?: string[];
+  /** Última edición en este dispositivo (sincronización con la nube: gana la más nueva). */
+  editadoEn?: number;
   porcion_base: { cantidad: number; unidad: string; gramos: number };
   macros_por_porcion: { kcal: number; p: number; c: number; f: number; leucina: number };
   es_marca_local: boolean;
@@ -346,6 +348,16 @@ export function friendlyMealName(name: string) {
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */
 export const SEED_VERSION = 6;
 
+/** Ítems propios del coach: creados por él o editados respecto del catálogo de fábrica (los que viajan a la nube). */
+let seedIndex: Map<string, string> | null = null;
+export function isOwnFood(b: BrandFood) {
+  seedIndex ??= new Map(seedFoodDb().map((x) => [x.id, JSON.stringify({ ...x, disponible_para_ia: true })]));
+  const seed = seedIndex.get(b.id);
+  if (!seed) return true;
+  const { editadoEn: _e, ...rest } = b;
+  return JSON.stringify({ ...rest, disponible_para_ia: true }) !== seed && !!b.editadoEn;
+}
+
 /** Plato nuevo vacío (carga manual o rápida). */
 export const emptyDishBase = (): BrandFood => ({
   id: `db-receta-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
@@ -439,6 +451,7 @@ export function sanitizeBrandFood(raw: unknown): BrandFood | null {
     momentos: Array.isArray(r.momentos) ? r.momentos.filter((x): x is FoodSlot => x === 'am' || x === 'main' || x === 'peri') : undefined,
     catLabel: cat === 'custom' && typeof r.catLabel === 'string' && r.catLabel.trim() ? r.catLabel.trim().slice(0, 40) : undefined,
     alergenos: Array.isArray(r.alergenos) ? r.alergenos.filter((x) => typeof x === 'string') : undefined,
+    editadoEn: typeof r.editadoEn === 'number' && Number.isFinite(r.editadoEn) ? r.editadoEn : undefined,
   };
 }
 

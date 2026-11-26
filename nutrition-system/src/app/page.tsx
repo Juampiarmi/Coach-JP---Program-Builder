@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, Users, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, Utensils } from 'lucide-react';
+import { Brain, Users, Library, Crosshair, Database, Dna, Globe2, Download, Image as ImageIcon, RotateCcw, Smartphone, Utensils } from 'lucide-react';
 import { AthleteSheet } from '@/components/builder/AthleteSheet';
 import { QuickAssignButton } from '@/components/builder/QuickAssign';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
+import { GlobalBank } from '@/components/builder/GlobalBank';
 import { IntakeTab } from '@/components/builder/IntakeTab';
 import { TemplateBank } from '@/components/builder/TemplateBank';
 // Registra la Food & Brand DB en el motor de alimentos apenas carga el Builder.
@@ -32,6 +33,7 @@ const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain; block: 
   { id: 'intake', label: 'Asistente IA', icon: Brain, block: 'perfil' },
   { id: 'meals', label: 'Comidas', icon: Utensils, block: 'estructura' },
   { id: 'library', label: '📚 Planes listos', icon: Library, block: 'estructura' },
+  { id: 'global', label: '🌐 Banco Global', icon: Globe2, block: 'opciones' },
   { id: 'fooddb', label: 'Alimentos y marcas', icon: Database, block: 'opciones' },
 ];
 
@@ -202,6 +204,7 @@ export default function Home() {
           {builderTab === 'profile' && <AthleteSheet />}
 
           {builderTab === 'meals' && <MealsTab />}
+          {builderTab === 'global' && <GlobalBank />}
           {builderTab === 'fooddb' && <FoodBrandDatabase />}
           {builderTab === 'library' && <TemplateBank />}
           </div>

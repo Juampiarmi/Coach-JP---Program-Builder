@@ -88,7 +88,7 @@ export function CouplePanel() {
         <span className="text-[13.5px] text-ink">
           <b>{lead.profile.name}</b> <span className="text-mute">+</span> <b>{mirror.profile.name}</b>
         </span>
-        <span className="text-[12px] text-mute">· menú de {lead.profile.name.split(' ')[0]}, gramos de cada uno</span>
+        <span className="text-[12px] text-mute">· menú de {lead.profile.name.split(' ')[0]}, gramos de cada uno · se sincroniza solo</span>
         <div className="ml-auto flex flex-wrap gap-1.5">
           <button type="button" onClick={() => selectAthlete(partner.id)} className="rounded-lg border border-line px-2.5 py-1.5 text-[12px] text-steel hover:text-ink">
             Abrir a {partner.profile.name.split(' ')[0]}
@@ -108,11 +108,11 @@ export function CouplePanel() {
       )}
       {!isLead && !stale && (
         <p className="mt-2 text-[12px] text-mute">
-          Este plan es el espejo del de {partner.profile.name.split(' ')[0]}. Si cambiás el peso o el objetivo, tocá{' '}
+          Este plan es el espejo del de {partner.profile.name.split(' ')[0]}: si cambiás el peso, el objetivo o las restricciones, las porciones se recalculan solas (
           <button type="button" className="text-cyan-hud underline" onClick={pullMenuFromPartner}>
-            recalcular mis gramos
+            recalcular ahora
           </button>
-          ; para que este menú sea el de los dos,{' '}
+          ). Para que este menú sea el de los dos,{' '}
           <button type="button" className="text-cyan-hud underline" onClick={pushMenuToPartner}>
             pasarlo a {partner.profile.name.split(' ')[0]}
           </button>

@@ -242,6 +242,17 @@ try {
   check(firstRow[1] !== firstRow[2], 'Modo Parejas: cada uno con sus gramos');
   await page.locator('[data-couple-shop]').click();
   check((await page.locator('[data-couple-shoplist] tr').count()) > 3, 'Modo Parejas: lista de compras combinada (A + B)');
+  // Recálculo automático de la Persona B al cambiar su peso (sin «recalcular mis gramos»).
+  const bBefore = (await ctable.locator('tbody tr td:nth-child(3)').allInnerTexts()).join('|');
+  await page.getByRole('button', { name: /^Abrir a Pareja/ }).click();
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  const peso = page.getByLabel('Peso', { exact: true }).first();
+  await peso.fill('82');
+  await peso.press('Tab');
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  await page.waitForTimeout(900);
+  const bAfter = (await page.locator('[data-couple-table] tbody tr td:nth-child(3)').allInnerTexts()).join('|');
+  check(bAfter !== bBefore && (await page.locator('[data-couple-stale]').count()) === 0, 'Modo Parejas: la Persona B recalcula sus gramos sola al cambiar su peso');
 
   // Recetario Coach JP: plato aplicado a una comida y lista de compras que se recalcula sola.
   await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
@@ -260,6 +271,36 @@ try {
   check((await page.getByText(/Wok de pollo con fideos de arroz/).count()) > 0, 'Recetario: el plato queda como opción 1 de la comida');
   const shopAfter = await page.locator('[data-shop-list]').innerText();
   check(shopAfter !== shopBefore && /Fideos de arroz/.test(shopAfter), 'Lista de compras: se recalcula sola al cambiar el plato');
+
+  // Banco Global: explorador, filtros, ficha técnica y asignación auto-escalada con vista previa.
+  await page.locator('section nav button', { hasText: 'Banco Global' }).click();
+  const bank = page.locator('[data-global-bank]');
+  check(await bank.isVisible(), 'Banco Global: pestaña con el explorador');
+  const nDishes = await page.locator('[data-bank-item]').count();
+  check(nDishes >= 50, `Banco Global: platos armados del Recetario y propios (${nDishes})`);
+  await page.locator('[data-bank-view="foods"]').click();
+  const nFoods = await page.locator('[data-bank-item]').count();
+  await page.locator('[data-bank-group="p"]').click();
+  const nProt = await page.locator('[data-bank-item]').count();
+  check(nFoods > 40 && nProt > 3 && nProt < nFoods, `Banco Global: alimentos base filtrados por grupo (${nFoods} → ${nProt} proteínas)`);
+  await page.locator('[data-bank-restr="veg"]').click();
+  const vegNames = await page.locator('[data-bank-item]').allInnerTexts();
+  check(!vegNames.some((t) => /pollo|cuadril|merluza|atún|carne/i.test(t)), 'Banco Global: el filtro Vegetariano oculta carnes y pescados');
+  await page.locator('[data-bank-restr="veg"]').click();
+  await page.locator('[data-bank-group="all"]').click();
+  await page.locator('[data-bank-search]').fill('berenjena');
+  check((await page.locator('[data-bank-item]').count()) >= 1, 'Banco Global: buscador en tiempo real (berenjena)');
+  await page.locator('[data-bank-item]').first().click();
+  check(/Por 100 g/.test(await page.locator('[data-bank-macros]').innerText()), 'Banco Global: ficha con macros por 100 g y por porción');
+  await page.locator('[data-bank-view="dishes"]').click();
+  await page.locator('[data-bank-search]').fill('wok');
+  await page.locator('[data-bank-item]').first().click();
+  check((await page.locator('[data-bank-ingredients] li').count()) > 2 && (await page.locator('[data-bank-steps] li').count()) > 0, 'Banco Global: ficha del plato con ingredientes y pasos');
+  await page.locator('[data-bank-mode]').selectOption('alt');
+  const prev = await page.locator('[data-bank-preview]').innerText();
+  check(/\d+ g /.test(prev) && /kcal/.test(prev), 'Banco Global: vista previa con gramos ajustados antes de confirmar');
+  await page.locator('[data-bank-confirm]').click();
+  check(/Asignado/.test(await page.locator('[data-bank-msg]').innerText()), 'Banco Global: asignado a la comida como alternativa');
 
   // Nuevos platos: carga rápida (nombre + ingredientes + tip), categoría propia y guardado.
   await page.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();

@@ -241,6 +241,19 @@ try {
   await coach2.locator('section nav button', { hasText: 'Planes listos' }).click();
   check(await until(() => coach2.locator('[data-template-card]', { hasText: 'Plantilla nube e2e' }).isVisible(), 10000), 'Plantillas: aparecen en el otro dispositivo del coach');
 
+  // ================= Banco Global en la nube (plato del coach) =================
+  await coach.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();
+  await coach.getByRole('button', { name: /AGREGAR NUEVO PLATO/ }).first().click();
+  await coach.locator('[data-ql-name]').fill('Tortilla nube e2e');
+  await coach.locator('[data-ql-ingredients]').fill('3 huevos, 1 zucchini, 1 cda aceite de oliva');
+  await coach.getByRole('button', { name: /Ordenar y calcular/ }).click();
+  await coach.locator('[data-ql-use]').click();
+  await coach.getByRole('button', { name: /Guardar \]/ }).click();
+  check(await until(async () => (await sb.sql("select data->>'nombre' as n from coach_foods where not deleted")).some((r) => r.n === 'Tortilla nube e2e'), 10000), 'Banco Global: el plato nuevo se sube a Supabase');
+  await coach2.reload({ waitUntil: 'networkidle' });
+  await coach2.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();
+  check(await until(() => coach2.getByText('Tortilla nube e2e').first().isVisible(), 10000), 'Banco Global: el plato aparece en el otro dispositivo del coach');
+
   // ================= Panel del coach =================
   await coach.getByRole('button', { name: /Mis atletas/ }).first().click();
   check(await until(() => coach.locator('[data-athlete-row]').first().isVisible()), 'Panel: fila del atleta');

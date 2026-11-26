@@ -13,7 +13,8 @@ import { swapBase } from '@/lib/baseSwap';
 import { setCoachPhone as setCoachContact } from '@/lib/coachContact';
 import { QUICK_SWAPS, quickSwapItems } from '@/lib/quickSwaps';
 import { mirrorForPartner } from '@/lib/couple';
-import { catalogDishForMeal } from '@/lib/planBank';
+import { previewAssign, type BankSource } from '@/lib/bankAssign';
+import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { setPartnerResolver } from '@/lib/exportHtml';
 import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
@@ -42,7 +43,7 @@ import type {
 } from '@/lib/types';
 import { MAX_OPTIONS } from '@/lib/types';
 
-export type BuilderTab = 'athletes' | 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb' | 'library';
+export type BuilderTab = 'athletes' | 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'global' | 'fooddb' | 'library';
 export type DeployTab = 'preview' | 'export' | 'story';
 
 interface PlanState {
@@ -111,6 +112,8 @@ interface PlanState {
   swapItem: (mealId: string, itemId: string, foodId: string) => void;
   /** Recetario Coach JP: el plato como opción 1 (replace) o como alternativa (alt), escalado a esa comida. */
   applyCatalogDish: (mealId: string, dishId: string, mode: 'replace' | 'alt') => boolean;
+  /** Banco Global: alimento, plato del recetario o plato del coach a una comida, auto-escalado (y a la pareja). */
+  assignFromBank: (mealId: string, src: BankSource, mode: 'replace' | 'alt') => boolean;
   /** Reemplazo rápido 1 a 1 (tarjeta de macros): mismo aporte del macro principal, unidades enteras y topes. */
   quickSwap: (mealId: string, itemId: string, swapId: string) => void;
   /** Título / técnica / pasos de la Opción 1 o lista de alternativas. */
@@ -422,20 +425,22 @@ export const usePlanStore = create<PlanState>()(
           }),
         })),
 
-      applyCatalogDish: (mealId, dishId, mode) => {
+      applyCatalogDish: (mealId, dishId, mode) => get().assignFromBank(mealId, { kind: 'catalog', id: dishId }, mode),
+      assignFromBank: (mealId, src, mode) => {
         const s = get();
         const meal = s.plan.meals.find((m) => m.id === mealId);
-        const opt = meal ? catalogDishForMeal(dishId, meal, s.plan) : null;
+        const opt = meal ? previewAssign(src, meal, s.plan, useFoodDbStore.getState().items) : null;
         if (!meal || !opt) return false;
+        const fresh = opt.items.map((i) => ({ ...i, id: uid() }));
         const next = mapMeal(s.plan, mealId, (m) => {
-          if (mode === 'replace') return fitAltsToMain({ ...m, items: opt.items.map((i) => ({ ...i, id: uid() })), title: opt.title, steps: opt.steps, technique: undefined });
+          if (mode === 'replace') return fitAltsToMain({ ...m, items: fresh, title: opt.title, steps: opt.steps, technique: undefined });
           const alts = [...(m.alts ?? [])];
-          const alt = { title: opt.title, items: opt.items.map((i) => ({ ...i, id: uid() })), steps: opt.steps };
+          const alt = { title: opt.title, items: fresh, steps: opt.steps };
           if (alts.length >= 4) alts[3] = alt;
           else alts.push(alt);
           return { ...m, alts };
         });
-        // Modo Parejas: si este alumno es el que define el menú, la pareja recibe el mismo plato con sus gramos.
+        // Modo Parejas: si este alumno define el menú, la pareja recibe el mismo plato con sus gramos.
         const partner = next.partnerId ? s.roster[next.partnerId] : undefined;
         if (partner && partner.partnerId === next.id && !next.partnerSyncAt) {
           const lead = touch(next);
@@ -797,4 +802,31 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
 setPartnerResolver((id) => {
   const s = usePlanStore.getState();
   return id === s.plan.id ? s.plan : s.roster[id];
+});
+
+// Modo Parejas automático: sin «recalcular mis gramos» a mano.
+//  · Persona B (espejo): si cambian su peso, objetivo, macros o restricciones, sus porciones se recalculan solas con el
+//    menú del líder.
+//  · Líder: si edita el menú (platos, opciones, gramos), la pareja recibe el cambio con sus propios gramos.
+// Se agrupa con una pausa corta para no recalcular en cada tecla.
+let coupleTimer: ReturnType<typeof setTimeout> | null = null;
+usePlanStore.subscribe((s, prev) => {
+  if (s.plan.id !== prev.plan.id || s.plan === prev.plan) return;
+  const p = s.plan;
+  const q = prev.plan;
+  const partner = p.partnerId ? s.roster[p.partnerId] : undefined;
+  if (!partner || partner.partnerId !== p.id) return;
+  const mirror = !!p.partnerSyncAt;
+  const dataChanged = p.profile !== q.profile || p.periodization !== q.periodization || allergiesOf(p).join() !== allergiesOf(q).join();
+  const menuChanged = p.meals !== q.meals;
+  if (!(mirror ? dataChanged : menuChanged)) return;
+  if (coupleTimer) clearTimeout(coupleTimer);
+  coupleTimer = setTimeout(() => {
+    coupleTimer = null;
+    const st = usePlanStore.getState();
+    const other = st.plan.partnerId ? st.roster[st.plan.partnerId] : undefined;
+    if (!other || other.partnerId !== st.plan.id) return;
+    if (st.plan.partnerSyncAt) usePlanStore.setState({ plan: mirrorForPartner(st.plan, other) });
+    else usePlanStore.setState({ roster: { ...st.roster, [other.id]: mirrorForPartner(other, st.plan) } });
+  }, 400);
 });

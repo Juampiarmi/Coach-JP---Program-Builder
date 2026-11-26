@@ -253,7 +253,7 @@ function QuickLoad({ base, onUse }: { base: BrandFood; onUse: (b: BrandFood) => 
   );
 }
 
-function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => void }) {
+export function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => void }) {
   const upsert = useFoodDbStore((s) => s.upsert);
   const [d, setD] = useState<BrandFood>(initial);
   const m = d.macros_por_porcion;
