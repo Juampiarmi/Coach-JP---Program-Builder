@@ -170,7 +170,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     },
     coachNote: plan.coachNote,
     // Firma profesional (nutricionista responsable): cabecera, pie y storycard de la app.
-    // Co-branding 50/50 Coach JP × NutrirCe + firma de la nutricionista (cabecera, pie y storycard de la app).
+    // Co-branding 50/50 Coach JP & NutrirCe + firma de la nutricionista (cabecera, pie y storycard de la app).
     nutri: (() => {
       const n = nutriOf(plan);
       return n ? { name: n.name.trim(), header: cobrandHeader(n), credit: nutriCredit(n), story: storySignature(n), logo: ncLogoSrc(n), logoRatio: NUTRIRCE_LOGO_RATIO, cj: COACH_JP_LOGO, mark: nutrirceSvg(28), markSm: nutrirceSvg(24), fork: NC_FORK, hand: NC_HAND, crease: NC_CREASE } : null;

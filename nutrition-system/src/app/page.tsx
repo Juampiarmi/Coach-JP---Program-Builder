@@ -114,7 +114,7 @@ function StatusBar() {
   );
 }
 
-/** Cabecera del Builder: Coach JP × NutrirCe en igualdad de jerarquía (50/50). */
+/** Cabecera del Builder: Coach JP & NutrirCe en igualdad de jerarquía (50/50). */
 function CoBrandHeader() {
   const plan = usePlanStore((st) => st.plan);
   const n = nutriOf(plan);
@@ -126,8 +126,8 @@ function CoBrandHeader() {
       </span>
       {n && (
         <>
-          <span className="text-[15px] text-steel/60">×</span>
-          <NutrirCeLogo size={46} logo={n.logo} />
+          <span className="text-[15px] text-steel/60">{'&'}</span>
+          <span className="-mb-0.5 -mt-2.5"><NutrirCeLogo size={56} logo={n.logo} /></span>
         </>
       )}
       <div className="basis-full font-mono text-[10px] tracking-[0.14em] text-mute">{n ? `ENTRENAMIENTO & NUTRICIÓN · ${n.name.toUpperCase()} · ` : '@coachjp.training · '}ARMADOR DE PLANES</div>
@@ -255,7 +255,7 @@ export default function Home() {
 
       <MobileTabBar tabs={BUILDER_TABS} />
       <footer className="border-t border-line px-6 pb-24 pt-5 font-mono text-[10px] tracking-[0.12em] text-mute lg:pb-5">
-        COACH JP HIGH PERFORMANCE SYSTEM × NUTRIRCE · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
+        COACH JP HIGH PERFORMANCE SYSTEM & NUTRIRCE · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
       </footer>
     </div>
   );

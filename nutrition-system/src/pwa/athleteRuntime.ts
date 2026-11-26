@@ -1640,14 +1640,14 @@ const runtime = String.raw`
     x.fillStyle = FLUOR; x.fillRect(L, 262, 150, 6);
     var dateTxt = pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear();
     if (D.nutri) {
-      // Encabezado 50/50: COACH JP × NUTRIRCE con el mismo tamaño y peso; la fecha pasa debajo del rótulo.
+      // Encabezado 50/50: COACH JP & NUTRIRCE con el mismo tamaño y peso; la fecha pasa debajo del rótulo.
       font(500, 26); x.fillStyle = GRAY; x.fillText(dateTxt, L + 170, 270);
       font(600, 34); var tagW = x.measureText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]').width, hs = 30; font(700, hs);
-      var cbW = function () { return x.measureText('COACH JP  ×  NUTRIRCE').width; };
+      var cbW = function () { return x.measureText('COACH JP  &  NUTRIRCE').width; };
       while (hs > 20 && L + tagW + 40 + cbW() > R) { hs -= 1; font(700, hs); }
       var hx = R - cbW();
       x.fillStyle = WHITE; x.fillText('COACH JP', hx, 236); hx += x.measureText('COACH JP').width;
-      x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  ×  ', hx, 236); hx += x.measureText('  ×  ').width;
+      x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  &  ', hx, 236); hx += x.measureText('  &  ').width;
       x.fillStyle = '#22C55E'; x.fillText('NUTRIR', hx, 236); hx += x.measureText('NUTRIR').width;
       x.fillStyle = '#F97316'; x.fillText('CE', hx, 236);
     } else { x.textAlign = 'right'; font(500, 32); x.fillStyle = GRAY; x.fillText(dateTxt, R, 236); x.textAlign = 'left'; }
@@ -1699,7 +1699,7 @@ const runtime = String.raw`
     });
     if (more) { var mi = grid.length, mx = L + (mi % 2) * (gw + 48), myy = gy0 + Math.floor(mi / 2) * rh + 20; font(700, 30); x.fillStyle = CYAN; x.fillText('+ ' + more + (st.kind === 'day' ? ' COMIDAS' : ' INGREDIENTES') + ' MÁS', mx, myy); }
     if (D.nutri) {
-      // 9 · Bloque de firma 50/50: [escudo] COACH JP  ×  [mano + tenedor] NUTRIRCE, mismo tamaño y peso, dentro de la
+      // 9 · Bloque de firma 50/50: [escudo] COACH JP  &  [logo] NUTRIRCE, mismo tamaño y peso, dentro de la
       // zona segura de Instagram; debajo la firma de la nutricionista y el estado del plan.
       var dv = x.createLinearGradient(L, 0, R, 0); dv.addColorStop(0, 'rgba(56,189,248,.45)'); dv.addColorStop(.5, 'rgba(34,197,94,.45)'); dv.addColorStop(1, 'rgba(249,115,22,.45)');
       x.fillStyle = dv; x.fillRect(L, H - 382, CW, 2);
@@ -1707,17 +1707,17 @@ const runtime = String.raw`
       font(700, fsz);
       var wA = x.measureText('COACH JP').width, wB = x.measureText('NUTRIRCE').width;
       while (fsz > 30 && IS * 2 + GAP * 2 + wA + wB + XG * 2 + 30 > CW) { fsz -= 2; font(700, fsz); wA = x.measureText('COACH JP').width; wB = x.measureText('NUTRIRCE').width; }
-      var lw = Math.max(IS + GAP + wA, IS + GAP + wB), xw = x.measureText('×').width;
+      var lw = Math.max(IS + GAP + wA, IS + GAP + wB), xw = x.measureText('&').width;
       var x0 = W / 2 - lw - XG - xw / 2, yb = H - 300, iy = yb - IS + 10;
       // Escudo oficial (PNG) con la misma altura que el logo de NutrirCe; si todavía no cargó, el vector.
       var cjI = cjImg(), LH = IS * 1.3;
       if (cjI) { var cwI = LH * cjI.naturalWidth / cjI.naturalHeight; x.drawImage(cjI, x0 + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH); } else drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
       x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = FLUOR; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
-      x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('×', W / 2 - xw / 2, yb); font(700, fsz);
+      x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('&', W / 2 - xw / 2, yb); font(700, fsz);
       var xb = W / 2 + xw / 2 + XG, img = ncImg();
       if (img) {
         // Logo oficial apilado (isotipo + NUTRIR Ce.): mismo ancho visual que el bloque de Coach JP, centrado en la fila.
-        var k = Math.min(lw / img.naturalWidth, (IS * 1.3) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
+        var k = Math.min(lw / img.naturalWidth, (IS * 1.65) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
         x.drawImage(img, xb + (lw - lwI) / 2, iy + IS / 2 - lhI / 2, lwI, lhI);
       } else {
         drawNc(x, xb, iy, IS);
@@ -1831,8 +1831,8 @@ const runtime = String.raw`
     var h = '';
 
     // Fila 1 · HUD: logo + marca + fase + guía.
-    // Co-branding 50/50: [Coach JP] × [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
-    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH JP</b></span><span class="cbx">×</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
+    // Co-branding 50/50: [Coach JP] & [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
+    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH JP</b></span><span class="cbx">&amp;</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
     else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + (D.nutri ? ' · ' + esc(D.athlete.phase) : '') + '</span></div>';
@@ -1934,7 +1934,7 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">×</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">×</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
+    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">&amp;</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">&amp;</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
     else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();

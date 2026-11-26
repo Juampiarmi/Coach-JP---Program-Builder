@@ -132,7 +132,7 @@ export function renderIconPng(size: number, maskable = false): string {
   return c.toDataURL('image/png');
 }
 
-// ---------- CO-BRANDING 50/50 · COACH JP × NUTRIRCE ----------
+// ---------- CO-BRANDING 50/50 · COACH JP & NUTRIRCE ----------
 // NutrirCe: «Nutrir» verde esmeralda + «Ce» naranja energético, isotipo de una mano (palma arriba) sosteniendo un
 // tenedor, con buen contraste sobre el carbono táctico. viewBox 0 0 100 100.
 export const NC = { name: 'NutrirCe', green: '#22C55E', green2: '#16A34A', orange: '#F97316' };
@@ -182,6 +182,6 @@ export const shortSpecialty = (s: string) => s.split(/\s+y\s+|\s*[·,—–-]\s*
 export const cobrandHeader = (n: NutriLike) => `Entrenamiento & Nutrición · ${n.name.trim()}`;
 /** Firma de la storycard (línea bajo los dos sellos): «LIC. MARÍA CECILIA ROLLÁN · NUTRICIÓN DEPORTIVA». */
 export const storySignature = (n: NutriLike) => `${n.name.trim()}${n.specialty.trim() ? ` · ${shortSpecialty(n.specialty)}` : ''}`.toUpperCase();
-/** Crédito del pie: «Coach JP High Performance System × NutrirCe — Lic. … (Nutrición Deportiva y Recomposición Corporal)». */
+/** Crédito del pie: «Coach JP High Performance System & NutrirCe — Lic. … (Nutrición Deportiva y Recomposición Corporal)». */
 export const nutriCredit = (n: NutriLike) =>
-  `Coach JP High Performance System × ${NC.name} — ${n.name.trim()}${n.specialty.trim() ? ` (${n.specialty.trim()})` : ''}${n.license.trim() ? ` · ${n.license.trim()}` : ''}`;
+  `Coach JP High Performance System & ${NC.name} — ${n.name.trim()}${n.specialty.trim() ? ` (${n.specialty.trim()})` : ''}${n.license.trim() ? ` · ${n.license.trim()}` : ''}`;

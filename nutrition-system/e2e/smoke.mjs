@@ -363,7 +363,7 @@ try {
   check((await saved.count()) > 0 && /Tortillas de verduras/.test(await saved.first().innerText()), 'Nuevo plato: guardado con su categoría propia');
   check((await page.getByRole('button', { name: /★ Tortillas de verduras/ }).count()) > 0, 'Alimentos y marcas: filtro por la categoría propia');
 
-  check((await page.locator('[data-builder-cobrand] [data-nc-logo]').count()) === 1, 'Builder: cabecera Coach JP × NutrirCe');
+  check((await page.locator('[data-builder-cobrand] [data-nc-logo]').count()) === 1, 'Builder: cabecera Coach JP & NutrirCe');
   // Firma profesional (nutricionista) editable en Publicar, cargada por defecto.
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check((await page.locator('[data-nutri-name]').inputValue()) === 'Lic. María Cecilia Rollán', 'Firma profesional: Lic. María Cecilia Rollán cargada por defecto en el Builder');
@@ -507,11 +507,11 @@ try {
   await pwa.locator('[data-mode="on"]').first().click().catch(() => {});
   const cob = pwa.locator('[data-cobrand]');
   const ncOk = await cob.locator('img.nc-img').evaluate((i) => i.complete && i.naturalWidth > 0 && i.src.startsWith('data:image/png'));
-  check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [Coach JP] × [logo oficial NutrirCe en PNG transparente]');
+  check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [Coach JP] & [logo oficial NutrirCe en PNG transparente]');
   const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
   check(Math.abs(hA - hB) <= 12, `App: los dos sellos con el mismo peso visual (alto ${hA} / ${hB} px)`);
   check(/Entrenamiento & Nutrición · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: bajada «Entrenamiento & Nutrición · Lic. María Cecilia Rollán»');
-  check(/Coach JP High Performance System × NutrirCe — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel y la Lic. Rollán');
+  check(/Coach JP High Performance System & NutrirCe — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel (Coach JP & NutrirCe) y la Lic. Rollán');
   check((await pwa.locator('[data-yield]').count()) > 0, 'App: cada plato con su etiqueta de rendimiento');
   for (const w of [360, 375, 390]) {
     await pwa.setViewportSize({ width: w, height: 780 });
