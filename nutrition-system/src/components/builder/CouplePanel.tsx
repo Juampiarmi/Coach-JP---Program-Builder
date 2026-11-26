@@ -126,8 +126,8 @@ export function CouplePanel() {
         </div>
       </div>
       <div className="mt-2 overflow-x-auto">
-        <table className="tnum w-full min-w-[560px] text-[12.5px]" data-couple-table>
-          <thead>
+        <table className="tnum w-full text-[12.5px] sm:min-w-[560px]" data-couple-table>
+          <thead className="max-sm:hidden">
             <tr className="text-left font-mono text-[10px] tracking-[0.12em] text-mute">
               <th className="py-1.5 font-normal">PLATO</th>
               <th className="py-1.5 font-normal">{who(lead).toUpperCase()}</th>
@@ -136,15 +136,21 @@ export function CouplePanel() {
           </thead>
           <tbody>
             {rows.map(({ lead: a, partner: b }) => (
-              <tr key={a.id} className="border-t border-line align-top">
-                <td className="py-2 pr-3">
+              <tr key={a.id} className="border-t border-line align-top max-sm:block max-sm:py-2">
+                <td className="py-2 pr-3 max-sm:block max-sm:py-0.5">
                   <div className="font-mono text-[11px] text-mute">
                     {a.time} · {a.name}
                   </div>
                   <div className="font-semibold text-ink">{a.title || '—'}</div>
                 </td>
-                <td className="py-2 pr-3 text-steel">{itemsText(a.items)}</td>
-                <td className={cx('py-2 text-steel', !b && 'text-mute')}>{b ? itemsText(b.items) : 'Sin copiar todavía'}</td>
+                <td className="py-2 pr-3 text-steel max-sm:block max-sm:py-0.5">
+                  <b className="mr-1 font-mono text-[10px] text-cyan-hud sm:hidden">{who(lead).toUpperCase()}:</b>
+                  {itemsText(a.items)}
+                </td>
+                <td className={cx('py-2 text-steel max-sm:block max-sm:py-0.5', !b && 'text-mute')}>
+                  <b className="mr-1 font-mono text-[10px] text-[#F472B6] sm:hidden">{who(mirror).toUpperCase()}:</b>
+                  {b ? itemsText(b.items) : 'Sin copiar todavía'}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -421,7 +421,23 @@ export function PrecalcPanel({ title = 'PRECÁLCULO EN VIVO · CALORÍAS Y MACRO
         <Readout label="Gasto día de entreno" value={fmt0(pc.tdeeOn)} unit="kcal" tone="cyan" sub={`Sesión ~${fmt0(pr.sessionKcal)} kcal`} />
         <Readout label="Plan sugerido · comidas" value={`${pc.meals.on} / ${pc.meals.off}`} sub="entreno / descanso" />
       </div>
-      <div className="mt-3 overflow-x-auto">
+      <div className="mt-3 grid gap-2 sm:hidden" data-precalc-cards>
+        {(['on', 'off'] as const).map((d) => (
+          <div key={d} className="rounded-lg border border-line px-3 py-2">
+            <div className="flex items-baseline justify-between">
+              <span className={cx('text-[12.5px] font-semibold', d === 'on' ? 'text-fire' : 'text-cyan-hud')}>{d === 'on' ? 'Día de entreno' : 'Día de descanso'}</span>
+              <b className="tnum text-[14px] text-ink">{fmt0(pc.kcal[d])} kcal</b>
+            </div>
+            <div className="tnum mt-1 grid grid-cols-3 gap-1 text-[11.5px] text-steel">
+              <span>P {pc.grams[d].p} g</span>
+              <span>C {pc.grams[d].c} g</span>
+              <span>G {pc.grams[d].f} g</span>
+            </div>
+            <div className="text-[11px] text-mute">{fmt1(pc.gkg[d].p)} / {fmt1(pc.gkg[d].c)} / {fmt1(pc.gkg[d].f)} g/kg · {pct(pc.balance[d])} vs. gasto</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 hidden overflow-x-auto sm:block">
         <table className="tnum w-full min-w-[460px] text-[12.5px]">
           <thead>
             <tr className="text-left font-mono text-[10px] tracking-[0.12em] text-mute">

@@ -598,7 +598,30 @@ function OptionsTable({ meal, onEdit }: { meal: Meal; onEdit: () => void }) {
   const td = 'tnum px-2 py-2 align-top font-mono text-[11.5px]';
   return (
     <div className="mt-2">
-      <div className="scroll-thin overflow-x-auto rounded-lg border border-line">
+      <div className="space-y-1.5 sm:hidden" data-options-cards>
+        {rows.map((r) => {
+          const t = optionTotals(r.items);
+          return (
+            <div key={r.n} className={cx('rounded-lg border border-line px-3 py-2', r.n === 1 && 'bg-cyan-hud/[0.04]')}>
+              <div className="flex items-start gap-2">
+                <b className={cx('font-mono text-[12px]', r.n === 1 ? 'text-cyan-hud' : 'text-fire')}>{r.n}</b>
+                <span className="text-[12.5px] font-semibold leading-snug text-ink">{r.title}</span>
+              </div>
+              <div className="tnum mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11px]">
+                <span className={dev(t.kcal, main.kcal)}>
+                  {fmt0(t.kcal)} kcal{r.n > 1 ? ` (${pctTxt(t.kcal, main.kcal)})` : ''}
+                </span>
+                <span className={dev(t.p, main.p)}>P {fmt0(t.p)}</span>
+                <span className={dev(t.c, main.c)}>C {fmt0(t.c)}</span>
+                <span className={dev(t.f, main.f)}>G {fmt0(t.f)}</span>
+                <span className="text-gold">⏱ {prepMinutes(r.items)}′</span>
+              </div>
+              <div className="text-[11.5px] text-steel">Proteína base: {proteinBase(r.items)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="scroll-thin hidden overflow-x-auto rounded-lg border border-line sm:block">
         <table className="w-full min-w-[620px] border-collapse">
           <thead className="bg-white/[0.03]">
             <tr>

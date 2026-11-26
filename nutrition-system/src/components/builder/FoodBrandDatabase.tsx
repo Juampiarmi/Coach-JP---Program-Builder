@@ -287,7 +287,7 @@ export function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: (
         aria-modal="true"
         aria-label="Alimento o marca"
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-cyan-hud/25 bg-panel p-5 shadow-cyan sm:rounded-2xl"
+        className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-cyan-hud/25 bg-panel p-4 shadow-cyan sm:rounded-2xl sm:p-5"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="font-mono text-[10px] font-bold tracking-[0.18em] text-cyan-hud">{isDish ? '[ ➕ PLATO / PREPARACIÓN ]' : '[ + AGREGAR NUEVA MARCA / ALIMENTO ]'}</div>
@@ -395,7 +395,7 @@ export function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: (
           <Toggle checked={d.es_marca_local} onChange={(v) => setD({ ...d, es_marca_local: v })} tone="cyan" label={<span className="text-xs text-steel">Marca local (entra al selector de comidas)</span>} />
           <Toggle checked={d.disponible_para_ia} onChange={(v) => setD({ ...d, disponible_para_ia: v })} tone="cyan" label={<span className="text-xs text-steel">Disponible para la IA</span>} />
         </div>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="sticky -bottom-4 -mx-4 mt-4 flex justify-end gap-2 border-t border-line bg-panel px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0" data-sheet-actions>
           <HudButton tone="steel" variant="ghost" onClick={onClose}>
             Cancelar
           </HudButton>

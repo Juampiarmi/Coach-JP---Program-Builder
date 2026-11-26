@@ -370,6 +370,44 @@ try {
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 
+  // ---------- Builder en el celular (360 y 390 px) ----------
+  for (const w of [360, 390]) {
+    const mctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const mp = await mctx.newPage();
+    const merrs = [];
+    mp.on('pageerror', (e) => merrs.push(e.message));
+    await mp.goto(ROOT, { waitUntil: 'load' });
+    await mp.waitForTimeout(600);
+    const tabsM = await mp.locator('[data-mobile-tab]').evaluateAll((els) => els.map((e) => ({ id: e.getAttribute('data-mobile-tab'), h: e.getBoundingClientRect().height, r: e.getBoundingClientRect().right })));
+    check(tabsM.length >= 8 && tabsM.every((t) => t.h >= 44 && t.r <= w + 1), `Builder ${w} px: barra de pestañas fija abajo, 8 secciones a la vista y áreas táctiles ≥ 44 px`);
+    check(await mp.locator('[data-mobile-macros]').isVisible(), `Builder ${w} px: resumen compacto de calorías y macros fijo arriba`);
+    await mp.locator('[data-mobile-macros-toggle]').click();
+    check(await mp.locator('[data-mobile-macros-detail]').isVisible(), `Builder ${w} px: el resumen se despliega con entreno y descanso`);
+    const overs = [];
+    for (const t of tabsM.map((x) => x.id).filter((id) => id !== 'publish')) {
+      await mp.locator(`[data-mobile-tab="${t}"]`).click();
+      await mp.waitForTimeout(250);
+      const o = await mp.evaluate(() => {
+        const page = document.documentElement.scrollWidth - window.innerWidth;
+        const inner = [...document.querySelectorAll('*')].filter((e) => { const ox = getComputedStyle(e).overflowX; return (ox === 'auto' || ox === 'scroll') && e.scrollWidth > e.clientWidth + 2 && !e.closest('[data-mobile-tabs]') && !e.closest('[data-header-actions]') && e.getBoundingClientRect().width > 0; }).length;
+        return page > 0 || inner > 0 ? `${page}/${inner}` : '';
+      });
+      if (o) overs.push(`${t} (${o})`);
+    }
+    check(!overs.length, `Builder ${w} px: cero scroll horizontal en todas las pestañas${overs.length ? ' · ' + overs.join(', ') : ''}`);
+    // Banco Global: la ficha y la asignación se abren como panel desde abajo.
+    await mp.locator('[data-mobile-tab="global"]').click();
+    await mp.locator('[data-bank-item]').first().click();
+    const sheetBox = await mp.locator('[data-bank-sheet]').evaluate((el) => ({ pos: getComputedStyle(el).position, bottom: Math.round(el.getBoundingClientRect().bottom), h: window.innerHeight, right: el.getBoundingClientRect().right }));
+    check(sheetBox.pos === 'fixed' && sheetBox.bottom <= sheetBox.h + 1 && sheetBox.right <= w + 1, `Builder ${w} px: ficha del Banco Global como panel inferior (bottom sheet)`);
+    const confirmBox = await mp.locator('[data-bank-confirm]').evaluate((el) => { el.scrollIntoView(); const r = el.getBoundingClientRect(); return r.right <= window.innerWidth && r.height >= 40; });
+    check(confirmBox, `Builder ${w} px: botón Confirmar asignación visible y táctil`);
+    await mp.locator('[data-bank-sheet-close]').click();
+    check((await mp.locator('[data-bank-sheet-close]').count()) === 0, `Builder ${w} px: la ficha se cierra`);
+    check(merrs.length === 0, `Builder ${w} px sin errores de JS ${merrs.length ? JSON.stringify(merrs) : ''}`);
+    await mctx.close();
+  }
+
   // ---------- PWA del atleta ----------
   const pctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const pwa = await pctx.newPage();

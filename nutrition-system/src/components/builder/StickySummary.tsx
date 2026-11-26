@@ -54,7 +54,7 @@ export function StickySummary() {
     const got = dayTotals(plan.meals, d);
     const goal = d === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
     return (
-      <div className="min-w-[150px] flex-1 space-y-0.5">
+      <div className="min-w-[150px] flex-1 space-y-0.5 max-lg:hidden">
         <div className={cx('font-mono text-[9.5px] font-bold tracking-[0.14em]', d === 'on' ? 'text-fire' : 'text-cyan-hud')}>
           {d === 'on' ? 'ENTRENO' : 'DESCANSO'} · {fmt0(got.kcal)}/{fmt0(goal.kcal)} KCAL
         </div>

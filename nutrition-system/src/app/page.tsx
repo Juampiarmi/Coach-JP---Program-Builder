@@ -6,6 +6,7 @@ import { AthleteSheet } from '@/components/builder/AthleteSheet';
 import { QuickAssignButton } from '@/components/builder/QuickAssign';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
 import { CoachJpLogo, NutrirCeLogo } from '@/components/hud/NutrirCe';
+import { MobileMacroBar, MobileTabBar } from '@/components/builder/MobileBars';
 import { nutriOf } from '@/lib/brand';
 import { GlobalBank } from '@/components/builder/GlobalBank';
 import { IntakeTab } from '@/components/builder/IntakeTab';
@@ -102,7 +103,7 @@ function StatusBar() {
     ['PROTEÍNA POR COMIDA', low ? `${low} COMIDA${low > 1 ? 'S' : ''} CORTA${low > 1 ? 'S' : ''}` : 'BIEN EN TODAS', low ? 'text-fire' : 'text-cyan-hud'],
   ];
   return (
-    <div className="scroll-thin flex gap-5 overflow-x-auto border-t border-line bg-panel2 px-4 py-2 sm:px-6">
+    <div className="scroll-thin hidden gap-5 overflow-x-auto border-t border-line bg-panel2 px-4 py-2 sm:px-6 lg:flex">
       {items.map(([k, v, c]) => (
         <div key={k} title={STATUS_TIP[k]} className="flex flex-none cursor-help items-baseline gap-2 font-mono text-[10px] tracking-[0.14em]">
           <span className="text-mute">{k}</span>
@@ -159,10 +160,10 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-line bg-carbon/90 backdrop-blur-md">
+      <header className="z-30 border-b border-line bg-carbon/90 backdrop-blur-md lg:sticky lg:top-0">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
           <CoBrandHeader />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="scroll-thin flex w-full items-center gap-2 overflow-x-auto sm:ml-auto sm:w-auto sm:flex-wrap sm:overflow-visible [&>*]:flex-none" data-header-actions>
             <CloudAccount />
             <ProfileBackup />
             <AthleteSwitcher />
@@ -170,7 +171,7 @@ export default function Home() {
             <button
               onClick={() => confirm('¿Cargar el atleta de ejemplo? Reemplaza el plan que estás viendo.') && resetDemo()}
               title="Carga un atleta de ejemplo para probar el Builder (reemplaza el plan que estás viendo)"
-              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[10px] tracking-[0.12em] text-mute hover:border-white/20 hover:text-ink"
+              className="flex flex-none items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[10px] tracking-[0.12em] text-mute hover:border-white/20 hover:text-ink"
             >
               <RotateCcw className="h-3.5 w-3.5" /> DEMO
             </button>
@@ -178,18 +179,21 @@ export default function Home() {
         </div>
         <StatusBar />
       </header>
+      <MobileMacroBar />
 
-      <main className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
+      <main className="grid gap-6 px-3 pb-28 pt-4 sm:px-6 lg:py-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
         <section className="min-w-0">
           <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ARMÁ EL PLAN</div>
           <ConflictBanner />
           <StepFlow />
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <BlockLegend />
+            <div className="hidden lg:block">
+              <BlockLegend />
+            </div>
             <QuickAssignButton />
           </div>
           <div className="mb-4 flex items-start gap-2">
-          <nav className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
+          <nav className="scroll-thin hidden min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1 lg:flex">
             {BUILDER_TABS.map(({ id, label, icon: Icon, block }) => (
               <button
                 key={id}
@@ -249,7 +253,8 @@ export default function Home() {
         </aside>
       </main>
 
-      <footer className="border-t border-line px-6 py-5 font-mono text-[10px] tracking-[0.12em] text-mute">
+      <MobileTabBar tabs={BUILDER_TABS} />
+      <footer className="border-t border-line px-6 pb-24 pt-5 font-mono text-[10px] tracking-[0.12em] text-mute lg:pb-5">
         COACH JP HIGH PERFORMANCE SYSTEM × NUTRIRCE · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
       </footer>
     </div>

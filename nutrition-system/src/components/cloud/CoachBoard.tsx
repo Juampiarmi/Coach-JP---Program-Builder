@@ -433,8 +433,8 @@ function AdjustModal({ row, adj, planId, onClose, onDone }: { row: BoardRow; adj
     );
   }
   return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Ajuste sugerido" onClick={onClose}>
-      <div data-adjust-modal className="w-full max-w-lg rounded-2xl border border-line bg-panel p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Ajuste sugerido" onClick={onClose}>
+      <div data-adjust-modal className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-line bg-panel p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="font-mono text-[10px] font-bold tracking-[0.16em] text-fire">AJUSTE SUGERIDO · {row.input.name.toUpperCase()}</div>
         <h3 className="mt-1 text-[17px] font-bold leading-snug text-ink">{adj.title}</h3>
         <p className="mt-1.5 text-[13px] text-steel">{adj.why}</p>

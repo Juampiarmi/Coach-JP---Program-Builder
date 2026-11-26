@@ -115,7 +115,7 @@ const DESAYUNOS: CatalogDish[] = [
     category: 'desayuno',
     complexity: 'rapida',
     variants: STD_STACC,
-    base: ['huevos', 'pan integral o sin TACC', 'tomate', 'orégano', 'aceite o rocío vegetal'],
+    base: ['huevos', 'pan integral o sin TACC', 'tomate', 'orégano', 'rocío vegetal'],
     prep: 'Batí los huevos con sal y pimienta; cocinalos a fuego bajo/medio en sartén antiadherente con apenas rocío vegetal (sin aceite agregado), revolviendo suave hasta que queden cremosos sin secarse. Acompañá con pan tostado y rodajas de tomate con orégano.',
     adjust: 'Escalá cantidad de huevos y rebanadas de pan según proteína y carbohidratos requeridos.',
     std: {

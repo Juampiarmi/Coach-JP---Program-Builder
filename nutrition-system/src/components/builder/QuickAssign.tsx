@@ -87,8 +87,8 @@ function QuickAssign({ onClose }: { onClose: () => void }) {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Nuevo plan / Asignar rápido" onClick={onClose}>
-      <div data-quick-modal className="w-full max-w-3xl rounded-2xl border border-line bg-panel shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/70 p-0 backdrop-blur-sm sm:items-start sm:p-6" role="dialog" aria-modal="true" aria-label="Nuevo plan / Asignar rápido" onClick={onClose}>
+      <div data-quick-modal className="max-h-[94dvh] w-full max-w-3xl overflow-y-auto rounded-t-2xl border border-line bg-panel shadow-2xl sm:max-h-none sm:overflow-visible sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-line px-5 py-4">
           <div className="min-w-0 flex-1">
             <div className="font-mono text-[10px] font-bold tracking-[0.18em] text-fire">NUEVO PLAN · ASIGNAR RÁPIDO</div>

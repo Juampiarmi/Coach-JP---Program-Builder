@@ -178,8 +178,8 @@ export function LoginDialog({ onClose }: { onClose: () => void }) {
 
   return createPortal(
 
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Entrar a la nube">
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Entrar a la nube">
+      <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl border border-line bg-panel p-5 shadow-2xl sm:rounded-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-lg font-bold text-ink">{mode === 'up' ? 'Crear mi cuenta de coach' : 'Entrar a la nube'}</div>

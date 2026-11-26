@@ -45,8 +45,8 @@ export function PlanPreviewModal({ data, onClose }: { data: PreviewData; onClose
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={`Vista previa: ${data.title}`} onClick={onClose}>
-      <div className="w-full max-w-6xl rounded-2xl border border-line bg-panel shadow-2xl" onClick={(e) => e.stopPropagation()} data-plan-preview>
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/70 p-0 backdrop-blur-sm sm:items-start sm:p-6" role="dialog" aria-modal="true" aria-label={`Vista previa: ${data.title}`} onClick={onClose}>
+      <div className="max-h-[94dvh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-line bg-panel shadow-2xl sm:max-h-none sm:overflow-visible sm:rounded-2xl" onClick={(e) => e.stopPropagation()} data-plan-preview>
         <div className="sticky top-0 z-10 flex flex-wrap items-start gap-3 rounded-t-2xl border-b border-line bg-panel/95 px-5 py-4 backdrop-blur">
           <div className="min-w-0 flex-1">
             <div className="font-mono text-[10px] font-bold tracking-[0.18em] text-fire">VISTA PREVIA · TODAVÍA NO SE APLICÓ</div>

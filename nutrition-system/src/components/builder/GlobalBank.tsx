@@ -277,7 +277,22 @@ export function GlobalBank() {
           {!list.length && <div className="p-4 text-center text-[13px] text-mute">Nada para ese filtro.</div>}
         </div>
 
-        <div className="rounded-xl border border-line bg-panel p-3" data-bank-sheet>
+        {cur && sheet && <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setSel('')} aria-hidden="true" />}
+        <div
+          className={cx(
+            'rounded-xl border border-line bg-panel p-3',
+            cur && sheet ? 'max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-50 max-lg:max-h-[88dvh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:rounded-t-2xl max-lg:pb-[calc(env(safe-area-inset-bottom)+16px)] max-lg:shadow-2xl' : 'max-lg:hidden',
+          )}
+          data-bank-sheet
+        >
+          {cur && sheet && (
+            <div className="sticky -top-3 z-10 -mx-3 -mt-3 mb-2 flex items-center justify-between border-b border-line bg-panel px-3 py-2 lg:hidden">
+              <span className="mx-auto h-1 w-10 rounded-full bg-white/20" />
+              <button type="button" onClick={() => setSel('')} className="absolute right-2 top-1 min-h-[40px] min-w-[40px] text-[18px] text-steel" aria-label="Cerrar ficha" data-bank-sheet-close>
+                ✕
+              </button>
+            </div>
+          )}
           {!cur || !sheet ? (
             <p className="p-6 text-center text-[13px] text-mute">Elegí un alimento o un plato para ver su ficha técnica y asignarlo.</p>
           ) : (
