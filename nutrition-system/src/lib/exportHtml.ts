@@ -4,7 +4,7 @@ import styles from '@/pwa/athleteStyles';
 import { coachPhone } from './coachContact';
 import { allergiesOf, CELIAC_PLATE_WARNING, foodIsSafe, planIsMeatFree, sealsFor } from './allergens';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
-import { BRAND, nutritionSvg, shieldSvg } from './brand';
+import { BRAND, nutriCredit, nutriOf, nutritionSvg, shieldSvg, storySignature } from './brand';
 import { CITES } from './evidence';
 import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, unitStep, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
@@ -157,6 +157,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
       discipline: DISCIPLINE_LABEL[pr.discipline],
     },
     coachNote: plan.coachNote,
+    // Firma profesional (nutricionista responsable): cabecera, pie y storycard de la app.
+    nutri: (() => { const n = nutriOf(plan); return n ? { name: n.name.trim(), header: `Planificación Nutricional · ${n.name.trim()}`, credit: nutriCredit(n), story: storySignature(n) } : null; })(),
     targets: {
       on: { kcal: Math.round(t.kcalOn), ...t.gramsOn },
       off: { kcal: Math.round(t.kcalOff), ...t.gramsOff },

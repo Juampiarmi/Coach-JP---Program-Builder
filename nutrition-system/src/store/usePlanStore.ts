@@ -41,7 +41,8 @@ import type {
   Sport,
   Supplement,
 } from '@/lib/types';
-import { MAX_OPTIONS } from '@/lib/types';
+import { MAX_OPTIONS, type Nutritionist } from '@/lib/types';
+import { DEFAULT_NUTRITIONIST } from '@/lib/brand';
 
 export type BuilderTab = 'athletes' | 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'global' | 'fooddb' | 'library';
 export type DeployTab = 'preview' | 'export' | 'story';
@@ -102,6 +103,8 @@ interface PlanState {
   setMacro: (day: DayMode, key: keyof Macros, value: number) => void;
   setPeriodization: (p: Partial<Periodization>) => void;
   setCoachNote: (s: string) => void;
+  /** Firma profesional (nutricionista); `all` la aplica a todos los alumnos. */
+  setNutritionist: (n: Nutritionist, all?: boolean) => void;
 
   addMeal: (day: Meal['day']) => void;
   updateMeal: (id: string, patch: Partial<Omit<Meal, 'id' | 'items'>>) => void;
@@ -373,6 +376,14 @@ export const usePlanStore = create<PlanState>()(
         set((s) => ({ plan: touch({ ...s.plan, periodization: { ...s.plan.periodization, ...p } }) })),
 
       setCoachNote: (coachNote) => set((s) => ({ plan: touch({ ...s.plan, coachNote }) })),
+      setNutritionist: (n, all) =>
+        set((s) => {
+          const nutritionist = sanitizeNutritionist(n);
+          const plan = touch({ ...s.plan, nutritionist });
+          if (!all) return { plan };
+          const roster = Object.fromEntries(Object.entries(s.roster).map(([id, p]) => [id, id === plan.id ? plan : touch({ ...p, nutritionist })]));
+          return { plan, roster };
+        }),
 
       addMeal: (day) =>
         set((s) => ({
@@ -795,7 +806,14 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
     // Ingredientes repetidos en una comida (ej. palta 70 g + 45 g) se fusionan al cargar.
     meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal).map(normalizeMealOptions).map(modernizeMealNames),
     anamnesis: sanitizeAnamnesis(p.anamnesis),
+    nutritionist: sanitizeNutritionist(p.nutritionist),
   };
+}
+
+function sanitizeNutritionist(n: unknown): Nutritionist {
+  const x = (n && typeof n === 'object' ? n : DEFAULT_NUTRITIONIST) as Partial<Nutritionist>;
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return { name: str(x.name, 80), specialty: str(x.specialty, 120), license: str(x.license, 40), show: x.show !== false };
 }
 
 // Modo Parejas: la exportación encuentra el plan de la pareja en la base local (lista de compras combinada).

@@ -164,6 +164,8 @@ export interface AthletePlan {
   meals: Meal[];
   supplements: Supplement[];
   coachNote: string;
+  /** Firma profesional: nutricionista responsable (viaja en el plan publicado: cabecera, pie y storycard). */
+  nutritionist?: Nutritionist;
   /** Anamnesis Pro (lifestyle, cronobiología, clínica y gastronomía). */
   anamnesis?: Anamnesis;
   /** Modo Parejas: id del alumno con el que comparte menú (cada uno con sus gramos). */
@@ -179,4 +181,15 @@ export interface AiSettings {
   provider: AiProvider;
   model: string;
   apiKey: string;
+}
+
+/** Nutricionista responsable del plan (respaldo clínico que ve el alumno). */
+export interface Nutritionist {
+  name: string;
+  /** Especialidad (ej. «Nutrición Deportiva y Recomposición Corporal»). */
+  specialty: string;
+  /** Matrícula (opcional, ej. «M.N. 1234»). */
+  license: string;
+  /** Mostrar la firma en la app y en la storycard. */
+  show: boolean;
 }

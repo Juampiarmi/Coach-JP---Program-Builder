@@ -130,3 +130,18 @@ export function renderIconPng(size: number, maskable = false): string {
   drawNutritionIcon(c.getContext('2d')!, size, maskable);
   return c.toDataURL('image/png');
 }
+
+// ---------- FIRMA PROFESIONAL · NUTRICIONISTA RESPONSABLE ----------
+export const DEFAULT_NUTRITIONIST = { name: 'Lic. María Cecilia Rollán', specialty: 'Nutrición Deportiva y Recomposición Corporal', license: '', show: true };
+type NutriLike = { name: string; specialty: string; license: string; show: boolean };
+/** Nutricionista a mostrar (null si está oculta o sin nombre). Planes viejos sin el campo: la de fábrica. */
+export function nutriOf(plan: { nutritionist?: NutriLike }): NutriLike | null {
+  const n = plan.nutritionist ?? DEFAULT_NUTRITIONIST;
+  return n.show && n.name.trim() ? n : null;
+}
+/** Especialidad corta para la firma editorial («Nutrición Deportiva y Recomposición Corporal» → «Nutrición Deportiva»). */
+export const shortSpecialty = (s: string) => s.split(/\s+y\s+|\s*[·,—–-]\s*/)[0].trim();
+/** Firma de la storycard: COACH JP × LIC. MARÍA CECILIA ROLLÁN · NUTRICIÓN DEPORTIVA */
+export const storySignature = (n: NutriLike) => `${BRAND.name} × ${n.name.trim()}${n.specialty.trim() ? ` · ${shortSpecialty(n.specialty)}` : ''}`.toUpperCase();
+/** Crédito completo del pie de la app. */
+export const nutriCredit = (n: NutriLike) => `Supervisión Clínica y Nutricional: ${n.name.trim()}${n.specialty.trim() ? ` — ${n.specialty.trim()}` : ''}${n.license.trim() ? ` · ${n.license.trim()}` : ''}`;

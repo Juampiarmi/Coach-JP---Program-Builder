@@ -6,8 +6,8 @@ import type { AthletePlan } from './types';
  * FNV-1a de 32 bits: rápida y estable para detectar "plan editado después de la última exportación".
  */
 export function planFingerprint(plan: AthletePlan): string {
-  const { profile, periodization, meals, supplements, coachNote, hydration, anamnesis } = plan;
-  const txt = JSON.stringify({ profile, periodization, meals, supplements, coachNote, hydration, anamnesis });
+  const { profile, periodization, meals, supplements, coachNote, hydration, anamnesis, nutritionist } = plan;
+  const txt = JSON.stringify({ profile, periodization, meals, supplements, coachNote, hydration, anamnesis, nutritionist });
   let h = 0x811c9dc5;
   for (let i = 0; i < txt.length; i++) {
     h ^= txt.charCodeAt(i);

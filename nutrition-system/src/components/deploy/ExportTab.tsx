@@ -10,6 +10,7 @@ import { BalanceBanner } from '../builder/BalanceBanner';
 import { ExportFreshness } from './ExportFreshness';
 import { PublishPanel } from '../cloud/PublishPanel';
 import { QualityLights } from './QualityLights';
+import { NutritionistPanel } from './NutritionistPanel';
 import { publishBlocked } from '@/lib/quality';
 import { normalizePhone } from '@/lib/coachContact';
 import { CloudConnect } from '../cloud/CloudConnect';
@@ -139,6 +140,7 @@ export function ExportTab() {
       <QualityLights />
       {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
       <CoachPhoneCard />
+      <NutritionistPanel />
       <Advanced on={cloudConfigured}>
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">

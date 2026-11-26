@@ -1632,7 +1632,7 @@ const runtime = String.raw`
       var mfs = 68; font(700, mfs); while (mfs > 38 && x.measureText(dt.mainName.toUpperCase()).width > CW * 0.6) { mfs -= 4; font(700, mfs); }
       x.fillStyle = WHITE; x.fillText(clip(x, dt.mainName.toUpperCase(), CW * 0.6), L, ry + 66 + mfs * 0.95);
     }
-    var gy0 = ry + 196, rh = 86, gw = (CW - 48) / 2, foot = H - 226;
+    var gy0 = ry + 196, rh = 86, gw = (CW - 48) / 2, foot = H - (D.nutri ? 330 : 226);
     var maxRows = Math.max(1, Math.floor((foot - gy0) / rh)), cap = maxRows * 2, grid = dt.grid;
     var more = grid.length > cap ? grid.length - (cap - 1) : 0;
     if (more) grid = grid.slice(0, cap - 1);
@@ -1643,6 +1643,16 @@ const runtime = String.raw`
       font(700, 30); x.fillStyle = g.off ? 'rgba(255,106,0,.55)' : FLUOR; x.fillText(clip(x, g.v, gw - rw - 16), gx2, y + 40);
     });
     if (more) { var mi = grid.length, mx = L + (mi % 2) * (gw + 48), myy = gy0 + Math.floor(mi / 2) * rh + 20; font(700, 30); x.fillStyle = CYAN; x.fillText('+ ' + more + (st.kind === 'day' ? ' COMIDAS' : ' INGREDIENTES') + ' MÁS', mx, myy); }
+    // 9 · Firma editorial (Coach JP × nutricionista), sobre el sello de marca y dentro de la zona segura de IG.
+    if (D.nutri) {
+      x.fillStyle = 'rgba(248,250,252,.14)'; x.fillRect(L, H - 300, CW, 2);
+      var sig = D.nutri.story, sfs = 26; font(600, sfs);
+      while (sfs > 17 && x.measureText(sig).width + sig.length * 2 > CW) { sfs -= 1; font(600, sfs); }
+      var parts = sig.split(' × '), sx = L;
+      x.fillStyle = WHITE; x.fillText(parts[0], sx, H - 252); sx += x.measureText(parts[0]).width;
+      x.fillStyle = CYAN; x.fillText(' × ', sx, H - 252); sx += x.measureText(' × ').width;
+      x.fillStyle = '#CBD5E1'; x.fillText(clip(x, parts.slice(1).join(' × '), R - sx), sx, H - 252);
+    }
     // 9 · Footer de marca.
     drawLogo(x, L + 34, H - 168, 70);
     font(700, 46); x.fillStyle = WHITE; x.fillText('COACH ', L + 88, H - 160); var cw0 = x.measureText('COACH ').width; x.fillStyle = FLUOR; x.fillText('JP', L + 88 + cw0, H - 160);
@@ -1747,6 +1757,7 @@ const runtime = String.raw`
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + '</span></div>';
     h += '<div class="datesel"><button data-day="-1" aria-label="Día anterior">◀</button><span class="dlab' + (S.date === today ? ' now' : '') + '">' + dateLabel(S.date) + '</span><button data-day="1" aria-label="Día siguiente">▶</button></div></div>';
+    if (D.nutri) h += '<div class="nutri-line" data-nutri-line><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.5 13.5 4v4c0 3.2-2.4 5.6-5.5 6.5C4.9 13.6 2.5 11.2 2.5 8V4L8 1.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="m5.6 8.1 1.7 1.7 3.2-3.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>' + esc(D.nutri.header) + '</span></div>';
     if (D.cloud && window.__cjpCloud) {
       var cs = window.__cjpCloud.status();
       h += '<div class="sync-chip ' + cs.state + '" title="' + esc(cs.tip || '') + '">' + esc(cs.text) + '</div>';
@@ -1843,7 +1854,7 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div></div></footer>';
+    h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();
     var y = window.scrollY;

@@ -332,6 +332,9 @@ try {
   check((await saved.count()) > 0 && /Tortillas de verduras/.test(await saved.first().innerText()), 'Nuevo plato: guardado con su categoría propia');
   check((await page.getByRole('button', { name: /★ Tortillas de verduras/ }).count()) > 0, 'Alimentos y marcas: filtro por la categoría propia');
 
+  // Firma profesional (nutricionista) editable en Publicar, cargada por defecto.
+  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
+  check((await page.locator('[data-nutri-name]').inputValue()) === 'Lic. María Cecilia Rollán', 'Firma profesional: Lic. María Cecilia Rollán cargada por defecto en el Builder');
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
 
@@ -430,6 +433,18 @@ try {
   await pwa.locator('[data-imputar]').click();
   await pwa.waitForTimeout(150);
   check((await pwa.locator('.sheet.open').count()) === 0, 'Comer afuera: registrada en el día');
+  // Firma profesional en la app: cabecera discreta, crédito en el pie y sin desbordes en 360-390 px.
+  await pwa.locator('[data-mode="on"]').first().click().catch(() => {});
+  check(/Planificación Nutricional · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: sello «Planificación Nutricional · Lic. María Cecilia Rollán» bajo el nombre');
+  check(/Supervisión Clínica y Nutricional: Lic\. María Cecilia Rollán — Nutrición Deportiva y Recomposición Corporal/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: crédito profesional completo en el pie');
+  for (const w of [360, 375, 390]) {
+    await pwa.setViewportSize({ width: w, height: 780 });
+    await pwa.waitForTimeout(80);
+    const over = await pwa.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const lineFits = await pwa.locator('[data-nutri-line]').evaluate((el) => el.getBoundingClientRect().right <= window.innerWidth);
+    check(over <= 0 && lineFits, `App a ${w} px: sin scroll horizontal y la firma entra en pantalla`);
+  }
+  if (process.env.SHOTS) { await pwa.setViewportSize({ width: 360, height: 780 }); await pwa.screenshot({ path: process.env.SHOTS + '/nutri-top.png' }); await pwa.locator('[data-nutri-credit]').scrollIntoViewIfNeeded(); await pwa.screenshot({ path: process.env.SHOTS + '/nutri-foot.png' }); }
   check(perrs.length === 0, `PWA sin errores de JS ${perrs.length ? JSON.stringify(perrs) : ''}`);
   await pctx.close();
 } catch (e) {

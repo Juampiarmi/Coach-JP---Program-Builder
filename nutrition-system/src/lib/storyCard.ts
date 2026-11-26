@@ -1,5 +1,5 @@
 import { computeTelemetry, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from './bioenergetics';
-import { BRAND, drawNutritionIcon } from './brand';
+import { BRAND, drawNutritionIcon, nutriOf, storySignature } from './brand';
 import { CITES } from './evidence';
 import { DISCIPLINE_LABEL } from './exportHtml';
 import type { AthletePlan } from './types';
@@ -17,7 +17,7 @@ const PAD_X = 90;
 const CONTENT_W = STORY_W - PAD_X * 2;
 const TOP = 130;
 /** Altura reservada al footer (cita + separador + fila del logo), anclado al borde inferior. */
-const FOOTER_H = 220;
+const FOOTER_H = 272;
 const BOTTOM_SAFE = 84;
 /** Separación mínima entre bloques; si no entra, la nota se reduce de 3 a 2 líneas. */
 const MIN_GAP = 48;
@@ -344,16 +344,37 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   ctx.font = `500 22px ${MONO}`;
   ctx.fillStyle = C.mute;
   text(ctx, `[ ${CITES.morton.label} ]`, PAD_X, footerTop + 26, 2);
+  // Firma editorial: COACH JP × nutricionista responsable (fina, alto contraste, dentro de la zona segura de IG).
+  const nutri = nutriOf(plan);
+  let sepY = footerTop + 52;
+  if (nutri) {
+    const sig = storySignature(nutri);
+    const [lead, ...rest] = sig.split(' × ');
+    let fs = 26;
+    ctx.font = `600 ${fs}px ${CHAKRA}`;
+    while (fs > 16 && width(ctx, sig, 2) > CONTENT_W) ctx.font = `600 ${--fs}px ${CHAKRA}`;
+    const y = footerTop + 76;
+    let sx = PAD_X;
+    ctx.fillStyle = C.ink;
+    text(ctx, lead, sx, y, 2);
+    sx += width(ctx, lead, 2);
+    ctx.fillStyle = C.cyan;
+    text(ctx, ' × ', sx, y, 2);
+    sx += width(ctx, ' × ', 2);
+    ctx.fillStyle = '#CBD5E1';
+    text(ctx, rest.join(' × '), sx, y, 2);
+    sepY = footerTop + 104;
+  }
   // Separador.
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(PAD_X, footerTop + 52);
-  ctx.lineTo(STORY_W - PAD_X, footerTop + 52);
+  ctx.moveTo(PAD_X, sepY);
+  ctx.lineTo(STORY_W - PAD_X, sepY);
   ctx.stroke();
   // Fila 2: logo Nutrition + firma, con su propio espacio.
   const logoSize = 124;
-  const logoY = footerTop + 52 + 36;
+  const logoY = sepY + 30;
   const icon = document.createElement('canvas');
   icon.width = icon.height = logoSize * 2;
   drawNutritionIcon(icon.getContext('2d')!, logoSize * 2, false);

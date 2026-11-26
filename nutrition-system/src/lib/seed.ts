@@ -1,3 +1,4 @@
+import { DEFAULT_NUTRITIONIST } from './brand';
 import { EMPTY_SKINFOLDS, hydrationDefaults, PHASE_PRESETS } from './bioenergetics';
 import { aisGroupA } from './evidence';
 import { defaultAnamnesis } from './anamnesisPro';
@@ -104,6 +105,7 @@ export function seedPlan(): AthletePlan {
     ],
     supplements: aisGroupA(weightKg),
     anamnesis: defaultAnamnesis(),
+    nutritionist: { ...DEFAULT_NUTRITIONIST },
     coachNote:
       'Recomposición agresiva con periodización ON/OFF. Carbos concentrados alrededor de la sesión; grasas hormonales en días OFF. Proteína constante a 2,3 g/kg con bolos ≥2,7 g de leucina.',
     updatedAt: Date.now(),
