@@ -117,6 +117,11 @@ const ALLERGEN_RE: Record<string, RegExp> = {
   legumes: /\b(lentejas?|garbanzos?|porotos?|arvejas?|soja|man[ií])\b/i,
   veg: /\b(pollo|pechugas?|carnes?|vacun[oa]|cuadril|lomo|nalga|peceto|bifes?|asado|vac[ií]o|matambre|cerdo|bondiola|carr[eé]|jam[oó]n|chorizos?|morcilla|panceta|salame|milanesas? de (carne|pollo|nalga)|hamburguesas?|alb[oó]ndigas|pescados?|merluza|at[uú]n|salm[oó]n|mariscos?|langostinos?|camar[oó]n)\b/i,
 };
+const ALLERGEN_RE_DIET: Record<string, RegExp> = {
+  keto: /\b(pan|panes|tostad\w*|galletas?|galletitas?|arroz|fideos?|pasta(?! de man)|ñoquis?|polenta|papas?|pur[eé] de papa|batatas?|choclo|avena|granola|tartas?|empanadas?|pizzas?|s[aá]ndwich|s[aá]nguche|wraps?|miel|az[uú]car|dulce|alfajor\w*|barras? de cereal|barritas?|banana|bud[ií]n|tortas?|muffins?|panqueques?|waffles?|cereal(es)?|harinas?|lentejas?|garbanzos?|porotos?|quinoa|legumbres?|helados?|flan|licuados?)\b/i,
+  lowcarb: /\b(pan lactal|pan blanco|pan franc[eé]s|galletitas?|galletas de arroz|arroz blanco|fideos?(?! integrales| de legumbres)|ñoquis?|polenta|papas?|pur[eé] de papa|batatas?|choclo|granola|tartas?|empanadas?|pizzas?|miel|az[uú]car|dulce de leche|alfajor\w*|barras? de cereal|barritas?|bud[ií]n|tortas?|muffins?|panqueques?|waffles?|cereal(es)? azucarad\w*|helados?|flan)\b/i,
+};
+Object.assign(ALLERGEN_RE, ALLERGEN_RE_DIET);
 const SAFE_RE: Record<string, RegExp> = {
   lactose: /deslactosad|sin lactosa|zero lactosa|whey isolate|aislad|vegetal|de soja|de almendras?|de coco|de arroz/i,
   dairy: /vegetal|de soja|de almendras?|de arroz|de coco|de avena|arveja/i,

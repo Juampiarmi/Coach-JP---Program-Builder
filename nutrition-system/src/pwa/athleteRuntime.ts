@@ -176,13 +176,14 @@ const runtime = String.raw`
   var FREE_MEAL = { p: 45, c: 70, f: 32 };
   // Bebidas sociales: el alcohol / azúcar se computa como carbos equivalentes (7 kcal/g de alcohol ≈ 1,75 g de carbo).
   // Valores aproximados por unidad típica en Argentina (copa 150 ml, pinta 500 ml, vaso de trago 350 ml).
+  // nc: carbos netos reales (azúcares) por unidad, para los protocolos Keto / Low Carb; sug: azúcar del mixer.
   var OUT_DRINKS = [
-    { id: 'vino', icon: '🍷', label: 'Copa de vino', c: 31 },
-    { id: 'cerveza', al: ['gluten'], icon: '🍺', label: 'Pinta de cerveza', c: 54 },
-    { id: 'fernet-comun', icon: '🥃', label: 'Fernet con coca común', c: 52 },
-    { id: 'fernet', icon: '🥃', label: 'Fernet con coca zero', c: 32 },
-    { id: 'gin', icon: '🍸', label: 'Gin tonic', c: 44 },
-    { id: 'gin-light', icon: '🍸', label: 'Gin tonic con tónica light', c: 28 },
+    { id: 'fernet', icon: '🥃', label: 'Fernet con Coca Zero / Sin Azúcar (recomendado)', c: 32, nc: 8, sug: 0 },
+    { id: 'fernet-comun', icon: '🥃', label: 'Fernet con Coca común', c: 52, nc: 45, sug: 37 },
+    { id: 'vino', icon: '🍷', label: 'Copa de vino', c: 31, nc: 4 },
+    { id: 'cerveza', al: ['gluten'], icon: '🍺', label: 'Pinta de cerveza', c: 54, nc: 18 },
+    { id: 'gin-light', icon: '🍸', label: 'Gin tonic con tónica light', c: 28, nc: 2 },
+    { id: 'gin', icon: '🍸', label: 'Gin tonic', c: 44, nc: 14 },
   ];
   // Catálogo argentino para salir a comer: kcal y macros aproximados por porción real.
   var OUT_FOODS = [
@@ -206,7 +207,16 @@ const runtime = String.raw`
     { cat: 'Postres y helado', id: 'panqueque-ddl', al: ['gluten', 'egg', 'lactose', 'dairy'], label: 'Panqueque con dulce de leche', unit: '1 u', p: 7, c: 52, f: 12 },
   ];
   // Lo que el alumno no puede comer (alergias o vegetariano) directamente no aparece.
-  function outOk(x) { return !(x.al || []).some(function (a) { return (D.allergies || []).indexOf(a) >= 0; }); }
+  // Protocolo Keto / Low Carb: sólo lo que entra en su tope de carbos por porción (keto ≤ 6 g por plato / 8 g por
+  // trago; low carb ≤ 15 / 18 g). Alergias y vegetariano: directamente no aparece.
+  function outProto() { var a = D.allergies || []; return a.indexOf('keto') >= 0 ? 'keto' : a.indexOf('lowcarb') >= 0 ? 'lowcarb' : ''; }
+  function outOk(x) {
+    if ((x.al || []).some(function (a) { return (D.allergies || []).indexOf(a) >= 0; })) return false;
+    var pr = outProto();
+    if (!pr) return true;
+    var c = x.nc != null ? x.nc : x.c, drink = !x.unit;
+    return c <= (pr === 'keto' ? (drink ? 8 : 6) : (drink ? 18 : 15));
+  }
   function outFood(id) { return OUT_FOODS.filter(function (x) { return x.id === id; })[0]; }
   function outDrink(id) { return OUT_DRINKS.filter(function (x) { return x.id === id; })[0]; }
   function kcalOf(x) { return x.p * 4 + x.c * 4 + x.f * 9; }
@@ -889,6 +899,7 @@ const runtime = String.raw`
         // Catálogo argentino: si elegís lo que vas a comer, se registra con esos números (si no, con los de tu comida).
         var oc = countOf(S.outFoods), cats = [];
         OUT_FOODS.filter(outOk).forEach(function (x) { if (cats.indexOf(x.cat) < 0) cats.push(x.cat); });
+        if (outProto()) h3 += '<p class="out-proto" data-out-proto>🥑 Protocolo ' + (outProto() === 'keto' ? 'Keto: sólo opciones con ≤ 6 g de carbos netos por porción (y tragos sin azúcar)' : 'Low Carb: sólo opciones con ≤ 15 g de carbos netos por porción') + '. Pedí carne, pescado o pollo con ensalada y sin pan.</p>';
         h3 += '<details class="out-cat"' + (S.outFoods.length ? ' open' : '') + '><summary>🇦🇷 ¿Qué vas a comer? Calorías y macros de lo típico (opcional)</summary>';
         cats.forEach(function (c) {
           h3 += '<div class="oc-h">' + esc(c) + '</div>';
@@ -899,7 +910,7 @@ const runtime = String.raw`
         });
         h3 += '</details>';
         var dcnt = countOf(S.outDrinks);
-        h3 += '<label class="lbl">Bebida social (opcional · tocá varias veces para sumar)</label><div class="scenes drinks">' + OUT_DRINKS.filter(outOk).map(function (d) { var q = dcnt[d.id] || 0; return '<button data-drink="' + d.id + '" class="' + (q ? 'on' : '') + '">' + d.icon + ' ' + (q > 1 ? q + ' × ' : '') + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal c/u</i></button>'; }).join('') + (S.outDrinks.length ? '<button data-drink="__none" class="ghost">✕ sin bebida</button>' : '') + '</div>';
+        h3 += '<label class="lbl">Bebida social (opcional · tocá varias veces para sumar)</label><div class="scenes drinks">' + OUT_DRINKS.filter(outOk).map(function (d) { var q = dcnt[d.id] || 0; return '<button data-drink="' + d.id + '" class="' + (q ? 'on' : '') + '">' + d.icon + ' ' + (q > 1 ? q + ' × ' : '') + esc(d.label) + '<i>+' + n0(d.c * 4) + ' kcal c/u' + (d.sug != null ? ' · ' + (d.sug ? d.sug + ' g de azúcar' : '0 g de azúcar') : '') + '</i></button>'; }).join('') + (S.outDrinks.length ? '<button data-drink="__none" class="ghost">✕ sin bebida</button>' : '') + '</div>';
         var dk = S.outDrinks.reduce(function (a, id) { var d = outDrink(id); return a + (d ? d.c * 4 : 0); }, 0);
         // Trueques de alcohol: lo que "cuesta" la bebida en comida real.
         var EMP = outFood('emp-carne-h'), BOCHA = outFood('helado-bocha');

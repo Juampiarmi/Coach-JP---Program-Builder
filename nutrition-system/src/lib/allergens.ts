@@ -11,8 +11,15 @@ import type { AthletePlan, FoodItem, Meal, MealOption, MealRole, Sex } from './t
  * Cuando el alumno tiene una restricción, el banco elige recetas aptas o sustituye el ingrediente por un equivalente
  * seguro y coherente (mismo rol en el plato: proteína, carbo o grasa), y el plan no se publica si queda alguno.
  */
-export type Allergen = 'gluten' | 'lactose' | 'dairy' | 'nuts' | 'legumes' | 'shellfish' | 'egg' | 'veg';
-export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'dairy', 'nuts', 'legumes', 'shellfish', 'egg', 'veg'];
+export type Allergen = 'gluten' | 'lactose' | 'dairy' | 'nuts' | 'legumes' | 'shellfish' | 'egg' | 'veg' | 'keto' | 'lowcarb';
+export const ALLERGENS: Allergen[] = ['gluten', 'lactose', 'dairy', 'nuts', 'legumes', 'shellfish', 'egg', 'veg', 'keto', 'lowcarb'];
+/** Protocolos dietarios (no alergias): se aplican con el mismo filtro estricto que las restricciones. */
+export type DietProtocol = 'keto' | 'lowcarb';
+export const DIET_PROTOCOLS: DietProtocol[] = ['keto', 'lowcarb'];
+/** Etiquetas de prescripción (vegetariano, keto, low carb): no se muestran como «alérgenos» del plato. */
+export const isDietTag = (a: string) => a === 'veg' || a === 'keto' || a === 'lowcarb';
+/** Protocolo del alumno (keto tiene prioridad si quedaron las dos marcas). */
+export const protocolOf = (allergies: string[]): DietProtocol | null => (allergies.includes('keto') ? 'keto' : allergies.includes('lowcarb') ? 'lowcarb' : null);
 
 export const ALLERGEN_INFO: Record<Allergen, { label: string; seal: string; short: string }> = {
   gluten: { label: 'Gluten (TACC)', seal: 'Sin TACC', short: 'gluten' },
@@ -24,6 +31,9 @@ export const ALLERGEN_INFO: Record<Allergen, { label: string; seal: string; shor
   egg: { label: 'Huevo', seal: 'Sin huevo', short: 'huevo' },
   // Prescripción alimentaria (no alergia): ovo-lácteo, sin carnes, pollo, fiambres ni pescado.
   veg: { label: 'Vegetariano', seal: 'Vegetariano', short: 'carne' },
+  // Protocolos: cetogénica (≤ 30-50 g de carbos netos/día) y low carb (~50-100 g/día).
+  keto: { label: 'Dieta Keto', seal: 'Apto Keto', short: 'carbos (keto)' },
+  lowcarb: { label: 'Dieta Low Carb', seal: 'Low Carb', short: 'carbos (low carb)' },
 };
 
 /** Alérgenos reales de cada alimento de la base ([] = apto para todos). */
@@ -86,6 +96,31 @@ export const FOOD_ALLERGENS: Record<string, Allergen[]> = {
   mani: ['nuts', 'legumes'],
   nueces: ['nuts'],
 };
+
+// ---------- PROTOCOLOS KETO Y LOW CARB ----------
+// Keto: fuera cereales, almidones, tubérculos, legumbres, azúcares, snacks con carbos, frutas (salvo frutillas),
+// leche y yogures, hummus y soja texturizada. Low carb: fuera cereales refinados, tubérculos altos en carbos,
+// azúcares y frutas muy dulces (se mantienen avena, pan integral, quinoa, legumbres, calabaza y frutas enteras).
+const KETO_FRUIT_OK = new Set(['frutillas']);
+const KETO_OUT = new Set(['leche', 'leche-deslactosada', 'yogur', 'yogur-deslactosado', 'yogur-vegetal', 'yogur-proteico', 'hummus', 'soja-texturizada']);
+const LOWCARB_OUT = new Set(['pan-lactal', 'pan-arabe', 'pan-sin-tacc', 'galletitas-agua', 'galletas-arroz', 'tutucas', 'copos-maiz', 'tostadas-arroz', 'harina-arroz', 'tapa-tarta', 'tapa-tarta-sin-tacc', 'granola', 'granola-sin-tacc', 'fideos', 'fideos-sin-tacc', 'noquis', 'polenta', 'arroz', 'pan-rallado', 'tortillas-maiz', 'avena-instantanea', 'papa', 'batata', 'choclo', 'pasas', 'banana']);
+export const ketoBanned = (id: string) => {
+  const f = FOOD_BY_ID[id];
+  if (!f || f.custom) return false;
+  const g = f.group;
+  return g === 'cereal' || g === 'starch' || g === 'sport-carb' || g === 'protein-snack' || (g === 'fruit' && !KETO_FRUIT_OK.has(id)) || KETO_OUT.has(id);
+};
+export const lowcarbBanned = (id: string) => {
+  const f = FOOD_BY_ID[id];
+  if (!f || f.custom) return false;
+  return f.group === 'sport-carb' || f.group === 'protein-snack' || LOWCARB_OUT.has(id);
+};
+for (const id of Object.keys(FOOD_BY_ID)) {
+  const tags = [...(FOOD_ALLERGENS[id] ?? [])];
+  if (ketoBanned(id)) tags.push('keto');
+  if (lowcarbBanned(id)) tags.push('lowcarb');
+  if (tags.length) FOOD_ALLERGENS[id] = tags;
+}
 
 /** Carnes y pescados (no entran como sustituto en un plan vegetariano). */
 const MEAT = new Set(['pollo', 'cuadril', 'lomo', 'nalga', 'picada', 'cerdo', 'jamon', 'merluza', 'atun']);
@@ -199,8 +234,31 @@ const SUBS: Record<string, (c: SubCtx) => string[]> = {
 };
 
 /** Sustituto apto (para todas las restricciones del alumno y su dieta) o null si no hay ninguno coherente. */
+/** Sustitutos de los alimentos que el protocolo excluye (keto / low carb). */
+function protocolSubs(foodId: string, allergies: Allergen[]): string[] {
+  const g = FOOD_BY_ID[foodId]?.group;
+  if (allergies.includes('keto') && ketoBanned(foodId)) {
+    if (g === 'fruit') return ['frutillas'];
+    if (/^leche|bebida-soja/.test(foodId)) return ['bebida-almendra'];
+    if (/^yogur/.test(foodId)) return ['cottage', 'ricota', 'queso-light'];
+    if (g === 'protein-snack') return ['huevo', 'queso-light'];
+    if (foodId === 'hummus') return ['palta'];
+    if (foodId === 'soja-texturizada') return ['tofu', 'huevo'];
+    if (g === 'sport-carb') return [];
+    return ['vegetales', 'zapallito', 'brocoli'];
+  }
+  if (allergies.includes('lowcarb') && lowcarbBanned(foodId)) {
+    if (/^(pan-|galletitas|galletas-arroz|tostadas|tutucas|copos|granola|avena-instantanea|tortillas)/.test(foodId)) return ['pan', 'avena', 'avena-sin-tacc'];
+    if (foodId === 'banana' || foodId === 'pasas') return ['frutillas', 'manzana', 'pera'];
+    if (g === 'protein-snack') return ['yogur-proteico', 'huevo'];
+    if (g === 'sport-carb') return [];
+    return ['quinoa', 'calabaza', 'lentejas', 'yamani'];
+  }
+  return [];
+}
+
 export function pickSub(foodId: string, c: SubCtx, allergies: Allergen[], taken: string[] = []): string | null {
-  const list = SUBS[foodId]?.(c) ?? [];
+  const list = [...(SUBS[foodId]?.(c) ?? []), ...protocolSubs(foodId, allergies)];
   return list.find((id) => FOOD_BY_ID[id] && !taken.includes(id) && foodIsSafe(id, allergies) && !(c.veg && MEAT.has(id))) ?? null;
 }
 

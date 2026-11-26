@@ -1,9 +1,9 @@
 import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
 import { inferYield, type YieldInfo } from './yieldInfo';
-import { allergiesOf, FOOD_ALLERGENS, safeRecipes, type Allergen } from './allergens';
+import { allergiesOf, FOOD_ALLERGENS, protocolOf, recipeSafe, safeRecipes, type Allergen } from './allergens';
 import { CITES } from './evidence';
 import { CATALOG, catalogRecipe, type CatCategory } from './catalog';
-import { FOOD_BY_ID, unitStep } from './foods';
+import { FOOD_BY_ID, netCarbs, unitStep } from './foods';
 import { comboSteps, type Combo, type ComboPart } from './menuOptions';
 import { isLiquid, mealVolumeCap, portionCap, solidGrams, type CapCtx } from './portionCaps';
 import { itemFromFood, uid } from './seed';
@@ -20,7 +20,7 @@ import type { AthletePlan, FoodItem, Macros, Meal, MealDay, MealRole, Phase, Sex
 // =====================================================================================================
 
 export type BankGoal = 'def' | 'rec' | 'hip' | 'ren';
-export type BankVariant = 'std' | 'stacc' | 'veg';
+export type BankVariant = 'std' | 'stacc' | 'veg' | 'keto' | 'lowcarb';
 export type BankPlanId = `${Sex}-${BankGoal}`;
 
 export interface BankSelection {
@@ -106,6 +106,16 @@ export const BANK_VARIANTS: { id: BankVariant; label: string; note: string }[] =
     note: 'Apto celíacos: arroz, papa, batata, polenta, galletas de arroz y panqueques de harina de arroz primero; pan y fideos sin TACC como alternativa.',
   },
   { id: 'veg', label: 'Vegetariano', note: 'Ovo-lácteo: huevos, lácteos, legumbres, tofu y soja, con la proteína justa en cada comida principal.' },
+  {
+    id: 'lowcarb',
+    label: 'Low Carb',
+    note: 'Carbos netos ~50-100 g/día: proteína magra, verduras de bajo índice glucémico, palta, frutos secos, huevos y oliva; sin cereales refinados, azúcares ni tubérculos altos en carbos.',
+  },
+  {
+    id: 'keto',
+    label: 'Keto',
+    note: 'Cetogénica: carbos netos ≤ 30-50 g/día (≤ 5-10 % de las kcal), proteína moderada 1,6-2,0 g/kg y el resto de la energía con grasas saludables (palta, oliva, huevos, quesos, frutos secos, carnes y pescados).',
+  },
 ];
 
 export const STACC_WARNING =
@@ -211,7 +221,7 @@ const STACC: Record<SlotKind, R[]> = {
     { title: 'Yogur con banana', parts: [P('yogur', { min: 150 }), C('banana')], steps: ['Serví {yogur} de yogur con {banana} de banana en rodajas.', SELLO] },
     { title: 'Galletas de arroz con queso untable y fruta', parts: [C('galletas-arroz'), X('untable', 30), X('naranja', 150)], steps: ['Untá {galletas-arroz} de galletas de arroz con {untable} de queso untable.', 'Acompañá con {naranja} de mandarina.', SELLO] },
     { title: 'Mate con frutos secos y fruta', parts: [F('nueces'), C('manzana')], steps: ['Comé {nueces} de nueces con {manzana} de manzana. Con mate.'] },
-    { title: 'Leche con cacao amargo y tostadas de arroz', parts: [P('leche', { min: 200 }), C('tostadas-arroz')], steps: ['Tomá {leche} de leche con cacao amargo.', 'Acompañá con {tostadas-arroz} de tostadas de arroz.', SELLO] },
+    { title: 'Leche con cacao amargo y tostadas de arroz', parts: [P('leche', { min: 200 }), C('tostadas-arroz'), X('cacao-amargo', 10)], steps: ['Tomá {leche} de leche con {cacao-amargo} de cacao amargo.', 'Acompañá con {tostadas-arroz} de tostadas de arroz.', SELLO] },
     { title: 'Sándwich chico de pan sin TACC con jamón y queso', parts: [P('jamon'), C('pan-sin-tacc'), X('queso-light', 30)], steps: ['Armá el sándwich con {pan-sin-tacc} de pan sin TACC, {jamon} de jamón y {queso-light} de queso light.', 'Llevalo en un táper propio.', SELLO] },
     { title: 'Yogur bebible y una banana', parts: [P('yogur-proteico', { min: 150 }), C('banana')], steps: ['Llevá {yogur-proteico} de yogur bebible y {banana} de banana.', SELLO] },
   ],
@@ -299,7 +309,103 @@ const VEG: Record<SlotKind, R[]> = {
   ],
 };
 
-export const RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = { std: STD, stacc: STACC, veg: VEG };
+// ---------------------------------------------------------------------------------------------------------
+// KETO: carbos netos ≤ 30-50 g/día. Proteína moderada, verduras de hoja y fibrosas, palta, oliva, huevos, quesos,
+// frutos secos, carnes y pescados. Ningún cereal, tubérculo, legumbre, azúcar ni fruta (salvo frutillas).
+// ---------------------------------------------------------------------------------------------------------
+const KT = {
+  huevosPalta: { title: 'Huevos duros con palta', parts: [P('huevo'), F('palta')], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {palta} de palta con sal, pimienta y limón.'] },
+  quesoNueces: { title: 'Queso light en cubos con nueces', parts: [P('queso-light'), F('nueces')], steps: ['Serví {queso-light} de queso light en cubos con {nueces} de nueces.'] },
+  jamonQueso: { title: 'Rollitos de jamón y queso con aceitunas', parts: [P('jamon'), X('queso-light', 30), F('aceitunas')], steps: ['Armá rollitos con {jamon} de jamón cocido natural y {queso-light} de queso light.', 'Acompañá con {aceitunas} de aceitunas.'] },
+  cottageAlmendras: { title: 'Queso cottage con almendras y canela', parts: [P('cottage'), F('almendras')], steps: ['Serví {cottage} de queso cottage con canela.', 'Sumá {almendras} de almendras.'] },
+  cottageFrutillas: { title: 'Queso cottage con frutillas', parts: [P('cottage'), X('frutillas', 80), F('almendras', { min: 0 })], steps: ['Serví {cottage} de queso cottage con {frutillas} de frutillas en cubos y canela.', '[Sumá {almendras} de almendras.]'] },
+  frutos: { title: 'Puñado medido de nueces y almendras', parts: [F('nueces'), X('almendras', 15)], steps: ['Serví {nueces} de nueces y {almendras} de almendras medidas (no directo de la bolsa).'] },
+  paltaSemillas: { title: 'Palta con limón, sal y semillas', parts: [F('palta'), X('semillas', 10)], steps: ['Cortá {palta} de palta, condimentá con limón y sal y espolvoreá {semillas} de semillas.'] },
+  aceitunas: { title: 'Aceitunas con almendras', parts: [F('aceitunas'), X('almendras', 15)], steps: ['Serví {aceitunas} de aceitunas con {almendras} de almendras.'] },
+  batido: { title: 'Batido de proteína con bebida de almendras', parts: [P('whey'), X('bebida-almendra', 250), F('almendras', { min: 0 })], steps: ['Licuá {whey} de proteína en polvo con {bebida-almendra} de bebida de almendras sin azúcar y hielo.', '[Acompañá con {almendras} de almendras.]'] },
+} satisfies Record<string, R>;
+const KETO: Record<SlotKind, R[]> = {
+  breakfast: [
+    { title: 'Huevos revueltos con palta, tomate y queso', parts: [P('huevo'), F('palta'), X('tomate', 80), X('queso-light', 30)], steps: ['Batí {huevo} y cocinalos revueltos en sartén antiadherente 2-3 min con {queso-light} de queso light.', 'Serví con {palta} de palta en láminas y {tomate} de tomate. Café o mate sin azúcar.'] },
+    { title: 'Omelette de espinaca y champiñones con queso', parts: [P('huevo'), F('oliva'), X('espinaca', 60), X('champinones', 60), X('queso-light', 30)], steps: ['Salteá {champinones} de champiñones y {espinaca} de espinaca en {oliva} de aceite de oliva 3 min.', 'Sumá {huevo} batidos y {queso-light} de queso light; tapá y cociná a fuego bajo 3-4 min. Doblá y serví con café o mate sin azúcar.'] },
+    { title: 'Queso cottage con nueces, frutillas y canela', parts: [P('cottage'), F('nueces'), X('frutillas', 80)], steps: ['Serví {cottage} de queso cottage con {frutillas} de frutillas en cubos y canela.', 'Sumá {nueces} de nueces picadas. Café o mate sin azúcar.'] },
+    { title: 'Revuelto de claras y huevo con jamón y palta', parts: [P('claras', { min: 66 }), X('huevo', 60), X('jamon', 40), F('palta')], steps: ['Batí {claras} de claras con {huevo} y cociná revuelto con {jamon} de jamón cocido picado.', 'Acompañá con {palta} de palta pisada con limón y sal.'] },
+    { title: 'Jamón cocido, queso y palta con café', parts: [P('jamon'), F('palta'), X('queso-light', 30), X('tomate', 60)], steps: ['Armá un plato con {jamon} de jamón cocido natural, {queso-light} de queso light y {tomate} de tomate.', 'Sumá {palta} de palta en láminas con sal y limón. Café o mate sin azúcar.'] },
+    { title: 'Tofu salteado con espinaca y palta', parts: [P('tofu'), F('palta'), X('espinaca', 60)], steps: ['Desmenuzá {tofu} de tofu y salteá con {espinaca} de espinaca, cúrcuma, sal y pimienta 4-5 min.', 'Serví con {palta} de palta en láminas.'] },
+  ],
+  mid: [KT.huevosPalta, KT.quesoNueces, KT.frutos, KT.jamonQueso, KT.paltaSemillas],
+  lunch: [
+    { title: 'Pollo a la plancha con ensalada verde y palta', parts: [P('pollo'), F('oliva'), X('palta', 50), X('lechuga', 80), X('tomate', 100)], steps: ['Cociná {pollo} de pechuga de pollo a la plancha 5-6 min por lado.', 'Armá la ensalada con {lechuga} de lechuga, {tomate} de tomate y {palta} de palta; condimentá con {oliva} de aceite de oliva, sal y limón.'] },
+    { title: 'Bife de cuadril con brócoli salteado en oliva', parts: [P('cuadril'), F('oliva'), X('brocoli', 150)], steps: ['Cociná {cuadril} de bife de cuadril a la plancha a tu punto.', 'Salteá {brocoli} de brócoli en {oliva} de aceite de oliva con ajo 4-5 min.'] },
+    { title: 'Merluza al horno con zucchini y queso gratinado', parts: [P('merluza'), F('oliva'), X('zucchini', 150), X('queso-light', 30)], steps: ['Acomodá {merluza} de merluza y {zucchini} de zucchini en rodajas en una fuente con {oliva} de aceite de oliva.', 'Cubrí con {queso-light} de queso light y horneá a 200 °C 15-18 min.'] },
+    { title: 'Cerdo a la plancha con rúcula, tomate y aceitunas', parts: [P('cerdo'), F('oliva'), X('rucula', 50), X('tomate', 100), X('aceitunas', 20)], steps: ['Cociná {cerdo} de solomillo de cerdo a la plancha 5 min por lado.', 'Ensalada: {rucula} de rúcula, {tomate} de tomate y {aceitunas} de aceitunas con {oliva} de aceite de oliva.'] },
+  ],
+  pre: [KT.batido, { title: 'Huevo duro con almendras', parts: [P('huevo'), F('almendras')], steps: ['Herví {huevo} 9-10 min.', 'Acompañá con {almendras} de almendras.'] }, KT.cottageFrutillas, { title: 'Jamón cocido con queso light', parts: [P('jamon'), X('queso-light', 30)], steps: ['Serví {jamon} de jamón cocido natural con {queso-light} de queso light.'] }],
+  merienda: [KT.cottageFrutillas, KT.huevosPalta, KT.frutos, KT.quesoNueces, KT.paltaSemillas],
+  dinner: [
+    { title: 'Hamburguesas de carne con champiñones salteados y palta', parts: [P('picada'), F('palta'), X('champinones', 120), X('lechuga', 60)], steps: ['Formá medallones con {picada} de carne picada magra, sal y pimienta; cocinalos a la plancha 4 min por lado.', 'Salteá {champinones} de champiñones y serví con {lechuga} de lechuga y {palta} de palta.'] },
+    { title: 'Omelette grande de espinaca y queso con ensalada de tomate', parts: [P('huevo'), F('oliva'), X('espinaca', 100), X('queso-light', 40), X('tomate', 100)], steps: ['Salteá {espinaca} de espinaca en {oliva} de aceite de oliva 2 min.', 'Sumá {huevo} batidos y {queso-light} de queso light; cociná tapado a fuego bajo 4-5 min.', 'Acompañá con {tomate} de tomate en rodajas con orégano.'] },
+    { title: 'Pollo al horno con zapallitos y morrón asados', parts: [P('pollo'), F('oliva'), X('zapallito', 150), X('morron', 60)], steps: ['Acomodá {pollo} de pollo, {zapallito} de zapallito y {morron} de morrón en tiras en una fuente con {oliva} de aceite de oliva.', 'Horneá a 200 °C 25 min con sal, pimentón y ajo.'] },
+    { title: 'Merluza a la plancha con ensalada de rúcula y palta', parts: [P('merluza'), F('palta'), X('rucula', 50), X('tomate', 100)], steps: ['Cociná {merluza} de merluza a la plancha 3-4 min por lado.', 'Ensalada: {rucula} de rúcula, {tomate} de tomate y {palta} de palta con limón y sal.'] },
+  ],
+  dessert: [
+    { title: 'Frutillas con nueces', parts: [C('frutillas'), F('nueces')], steps: ['De postre: {frutillas} de frutillas con {nueces} de nueces picadas y canela.'] },
+    { title: 'Queso cottage con canela', parts: [P('cottage'), F('almendras', { min: 0 })], steps: ['De postre: {cottage} de queso cottage con canela y esencia de vainilla[ y {almendras} de almendras].'] },
+  ],
+  extra: [KT.frutos, KT.quesoNueces, KT.aceitunas, KT.huevosPalta],
+};
+
+// ---------------------------------------------------------------------------------------------------------
+// LOW CARB: carbos netos ~50-100 g/día de fuentes integrales (avena, pan integral, quinoa, legumbres, calabaza,
+// frutillas, manzana); sin cereales refinados, azúcares ni tubérculos altos en carbos.
+// ---------------------------------------------------------------------------------------------------------
+const LOWCARB: Record<SlotKind, R[]> = {
+  breakfast: [
+    { title: 'Avena con yogur, frutillas y nueces', parts: [P('yogur', { min: 150 }), C('avena'), F('nueces'), X('frutillas', 100)], steps: ['Mezclá {yogur} de yogur natural con {avena} de avena arrollada.', 'Sumá {frutillas} de frutillas y {nueces} de nueces picadas.'] },
+    { title: 'Huevos revueltos con tostada integral y palta', parts: [P('huevo'), C('pan'), F('palta'), X('tomate', 60)], steps: ['Batí {huevo} y cocinalos revueltos 2-3 min.', 'Tostá {pan} de pan integral; untá {palta} de palta y sumá {tomate} de tomate.'] },
+    KETO.breakfast[1],
+    { title: 'Queso cottage con frutillas y almendras', parts: [P('cottage'), C('frutillas'), F('almendras')], steps: ['Serví {cottage} de queso cottage con {frutillas} de frutillas y canela.', 'Sumá {almendras} de almendras.'] },
+    { title: 'Tostada integral con palta y tomate + frutillas', parts: [C('pan'), F('palta'), X('tomate', 60), X('frutillas', 100)], steps: ['Tostá {pan} de pan integral y untá {palta} de palta con limón y sal.', 'Sumá {tomate} de tomate y acompañá con {frutillas} de frutillas. Café o mate sin azúcar.'] },
+  ],
+  mid: [
+    { title: 'Yogur con frutillas y nueces', parts: [P('yogur', { min: 150 }), C('frutillas'), F('nueces')], steps: ['Serví {yogur} de yogur natural con {frutillas} de frutillas y {nueces} de nueces.'] },
+    { title: 'Manzana con pasta de maní', parts: [C('manzana'), F('mani')], steps: ['Cortá {manzana} de manzana en gajos y untalos con {mani} de pasta de maní 100 % natural.'] },
+    KT.frutos,
+    KT.huevosPalta,
+  ],
+  lunch: [
+    { title: 'Pollo grillado con quinoa y ensalada', parts: [P('pollo'), C('quinoa'), F('oliva'), X('lechuga', 60), X('tomate', 100)], steps: ['Cociná {pollo} de pechuga de pollo a la plancha 5-6 min por lado.', 'Serví con {quinoa} de quinoa cocida, {lechuga} de lechuga y {tomate} de tomate con {oliva} de aceite de oliva.'] },
+    { title: 'Bife de cuadril con calabaza asada y ensalada verde', parts: [P('cuadril'), C('calabaza'), F('oliva'), X('lechuga', 80)], steps: ['Asá {calabaza} de calabaza en cubos a 200 °C 25 min con {oliva} de aceite de oliva.', 'Cociná {cuadril} de bife de cuadril a la plancha y serví con {lechuga} de lechuga.'] },
+    { title: 'Bowl de atún con garbanzos, tomate y palta', parts: [P('atun'), C('garbanzos'), F('palta'), X('tomate', 100), X('lechuga', 50)], steps: ['Mezclá {atun} de atún al natural con {garbanzos} de garbanzos cocidos.', 'Sumá {tomate} de tomate, {lechuga} de lechuga y {palta} de palta; sal y limón.'] },
+    KETO.lunch[1],
+  ],
+  pre: [
+    { title: 'Yogur con frutillas y avena', parts: [P('yogur', { min: 150 }), C('frutillas'), X('avena', 20)], steps: ['Serví {yogur} de yogur natural con {frutillas} de frutillas y {avena} de avena.'] },
+    { title: 'Manzana con queso light', parts: [C('manzana'), P('queso-light')], steps: ['Acompañá {manzana} de manzana con {queso-light} de queso light en cubos.'] },
+    { title: 'Batido de proteína con frutillas', parts: [P('whey'), C('frutillas'), X('bebida-almendra', 250)], steps: ['Licuá {whey} de proteína en polvo con {frutillas} de frutillas y {bebida-almendra} de bebida de almendras sin azúcar.'] },
+    { title: 'Tostada integral con jamón', parts: [P('jamon'), C('pan')], steps: ['Tostá {pan} de pan integral y sumá {jamon} de jamón cocido natural.'] },
+    { title: 'Manzana con almendras', parts: [C('manzana'), F('almendras')], steps: ['Acompañá {manzana} de manzana con {almendras} de almendras.'] },
+  ],
+  merienda: [
+    { title: 'Yogur con avena, frutillas y nueces', parts: [P('yogur', { min: 150 }), C('frutillas'), F('nueces'), X('avena', 20)], steps: ['Serví {yogur} de yogur natural con {avena} de avena, {frutillas} de frutillas y {nueces} de nueces.'] },
+    { title: 'Tostada integral con queso untable y huevo', parts: [P('huevo'), C('pan'), X('untable', 20)], steps: ['Herví {huevo} 9-10 min.', 'Tostá {pan} de pan integral y untalo con {untable} de queso untable.'] },
+    { title: 'Manzana con pasta de maní', parts: [C('manzana'), F('mani')], steps: ['Cortá {manzana} de manzana en gajos y untalos con {mani} de pasta de maní 100 % natural.'] },
+    KT.cottageFrutillas,
+  ],
+  dinner: [
+    { title: 'Merluza al horno con lentejas y espinaca', parts: [P('merluza'), C('lentejas'), F('oliva'), X('espinaca', 80)], steps: ['Horneá {merluza} de merluza a 200 °C 15 min con {oliva} de aceite de oliva.', 'Salteá {espinaca} de espinaca y mezclá con {lentejas} de lentejas cocidas.'] },
+    KETO.dinner[0],
+    { title: 'Pollo al horno con calabaza y brócoli', parts: [P('pollo'), C('calabaza'), F('oliva'), X('brocoli', 120)], steps: ['Acomodá {pollo} de pollo, {calabaza} de calabaza y {brocoli} de brócoli en una fuente con {oliva} de aceite de oliva.', 'Horneá a 200 °C 25-30 min con sal, pimentón y romero.'] },
+    KETO.dinner[1],
+  ],
+  dessert: [
+    { title: 'Frutillas con yogur', parts: [P('yogur', { min: 100 }), C('frutillas')], steps: ['De postre: {frutillas} de frutillas con {yogur} de yogur natural y canela.'] },
+    { title: 'Manzana asada con canela y nueces', parts: [C('manzana'), F('nueces')], steps: ['De postre: {manzana} de manzana asada con canela y {nueces} de nueces picadas.'] },
+  ],
+  extra: [KT.frutos, { title: 'Manzana con pasta de maní', parts: [C('manzana'), F('mani')], steps: ['Cortá {manzana} de manzana en gajos y untalos con {mani} de pasta de maní 100 % natural.'] }, KT.huevosPalta, KT.cottageAlmendras],
+};
+
+export const RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = { std: STD, stacc: STACC, veg: VEG, keto: KETO, lowcarb: LOWCARB };
 
 /**
  * RECETARIO COACH JP en el banco: cada plato del catálogo entra en las comidas de su categoría y sólo en las
@@ -309,7 +415,7 @@ export const RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = { std: STD, s
  */
 const KINDS_OF: Record<CatCategory, SlotKind[]> = { desayuno: ['breakfast'], plato_principal: ['lunch', 'dinner'], merienda: ['merienda'], colacion: ['mid', 'extra'] };
 export const CATALOG_RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = Object.fromEntries(
-  (['std', 'stacc', 'veg'] as BankVariant[]).map((v) => {
+  (['std', 'stacc', 'veg', 'keto', 'lowcarb'] as BankVariant[]).map((v) => {
     const out = Object.fromEntries((Object.keys(STD) as SlotKind[]).map((k) => [k, [] as R[]])) as Record<SlotKind, R[]>;
     for (const d of CATALOG) {
       const r = catalogRecipe(d, v);
@@ -423,16 +529,25 @@ const totals = (items: FoodItem[]): Tot => {
 };
 
 /** Macros del día (g) a partir del objetivo y el peso; respeta el piso de energía subiendo los carbos. */
-export function dayTargets(goal: GoalDef, sex: Sex, weightKg: number) {
-  const mk = (d: { c: number; f: number }) => {
+export function dayTargets(goal: GoalDef, sex: Sex, weightKg: number, variant: BankVariant = 'std') {
+  const mk = (d: { c: number; f: number }, isOn: boolean) => {
     const p = goal.p[sex];
     let c = d.c;
     const kcal = kcalOf({ p: p * weightKg, c: c * weightKg, f: d.f * weightKg });
     if (kcal < KCAL_FLOOR[sex]) c += (KCAL_FLOOR[sex] - kcal) / 4 / weightKg;
-    return { p, c: Math.round(c * 100) / 100, f: d.f };
+    if (variant !== 'keto' && variant !== 'lowcarb') return { p, c: Math.round(c * 100) / 100, f: d.f };
+    // Protocolos: mismas calorías del objetivo; carbos netos acotados y el resto de la energía con grasas.
+    //  · Keto: ~30 g/día de carbos del plato (las verduras suman, el total queda ≤ 50 g) y proteína moderada 1,6-2,0 g/kg.
+    //  · Low carb: 50-100 g/día (un poco más el día de entreno) con proteína del objetivo (máx. 2,2 g/kg).
+    const day = Math.max(kcal, KCAL_FLOOR[sex]);
+    const pp = variant === 'keto' ? Math.min(2.0, Math.max(1.6, p)) : Math.min(sex === 'F' ? 2.0 : 2.2, p);
+    const cDay = variant === 'keto' ? 30 : Math.min(100, Math.max(50, weightKg * (isOn ? 1.1 : 0.8)));
+    const ff = Math.max(0.8, (day - 4 * pp * weightKg - 4 * cDay) / 9 / weightKg);
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    return { p: r2(pp), c: r2(cDay / weightKg), f: r2(ff) };
   };
-  const on = mk(goal.on);
-  const off = mk(goal.off);
+  const on = mk(goal.on, true);
+  const off = mk(goal.off, false);
   const grams = (g: Macros) => ({ p: g.p * weightKg, c: g.c * weightKg, f: g.f * weightKg });
   return { gkg: { on, off }, on: { ...grams(on), kcal: kcalOf(grams(on)) }, off: { ...grams(off), kcal: kcalOf(grams(off)) } };
 }
@@ -447,6 +562,8 @@ const stepOf = (id: string) => {
 
 interface Ctx extends CapCtx {
   sex: Sex;
+  /** Protocolo Keto / Low Carb: el cierre del día suma grasas (y en low carb, frutillas), nunca carbos rápidos. */
+  diet?: 'keto' | 'lowcarb';
   /** Filtro de alérgenos del alumno para los módulos de densidad (nueces, etc.). */
   ok?: (foodId: string) => boolean;
 }
@@ -570,8 +687,26 @@ const MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
   dessert: { c: [], f: [] },
   extra: { c: [], f: [] },
 };
+const KETO_MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
+  breakfast: { c: [], f: ['nueces', 'palta', 'oliva'] },
+  mid: { c: [], f: ['almendras', 'nueces'] },
+  lunch: { c: [], f: ['oliva', 'palta'] },
+  pre: { c: [], f: ['almendras', 'palta'] },
+  merienda: { c: [], f: ['nueces', 'almendras'] },
+  dinner: { c: [], f: ['oliva', 'palta'] },
+  dessert: { c: [], f: [] },
+  extra: { c: [], f: ['almendras', 'palta'] },
+};
+const LOWCARB_MODULES: Record<SlotKind, { c: string[]; f: string[] }> = {
+  ...KETO_MODULES,
+  breakfast: { c: ['frutillas'], f: ['nueces', 'palta'] },
+  mid: { c: ['frutillas'], f: ['almendras', 'nueces'] },
+  merienda: { c: ['manzana'], f: ['nueces'] },
+};
+/** Módulos de densidad de cada comida según el protocolo del alumno. */
+const modsOf = (kind: SlotKind, ctx: { diet?: 'keto' | 'lowcarb' }) => (ctx.diet === 'keto' ? KETO_MODULES : ctx.diet === 'lowcarb' ? LOWCARB_MODULES : MODULES)[kind];
 const moduleTitle = (id: string, kind: SlotKind) =>
-  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana', miel: ' + miel', 'dulce-membrillo': ' + dulce de membrillo', palta: ' + palta', semillas: ' + semillas', isotonica: ' + bebida isotónica para el entreno' } as Record<string, string>)[id] ?? '';
+  id === 'naranja' ? (kind === 'lunch' || kind === 'dinner' ? ' + fruta de postre' : ' + una mandarina') : ({ nueces: ' + nueces', banana: ' + banana', manzana: ' + manzana', miel: ' + miel', 'dulce-membrillo': ' + dulce de membrillo', palta: ' + palta', semillas: ' + semillas', almendras: ' + almendras', aceitunas: ' + aceitunas', frutillas: ' + frutillas', oliva: '', isotonica: ' + bebida isotónica para el entreno' } as Record<string, string>)[id] ?? '';
 /** Título con tramos opcionales "[ con proteína|whey]": sólo se nombra lo que el plato lleva de verdad. */
 const titleFor = (title: string, g: Record<string, number>) => title.replace(/\[([^|\]]*)\|([a-z-]+)\]/g, (_, txt: string, id: string) => ((g[id] ?? 0) > 0 ? txt : ''));
 
@@ -624,9 +759,9 @@ function dayMacros(ws: Work[]): Tot {
 
 type Move = [Work, string, { allowNew?: boolean; floor?: number; max?: number }];
 /** Módulo de densidad: como mucho 1 unidad por comida (1 fruta de postre, 1 banana, 1 cda de aceite). */
-const MODULE_MAX: Record<string, number> = { naranja: 150, banana: 120, manzana: 180, nueces: 30, semillas: 30, oliva: 15, miel: 20, 'dulce-membrillo': 20, palta: 50 };
+const MODULE_MAX: Record<string, number> = { almendras: 30, frutillas: 150, naranja: 150, banana: 120, manzana: 180, nueces: 30, semillas: 30, oliva: 15, miel: 20, 'dulce-membrillo': 20, palta: 50 };
 /** Equivalente seguro de un módulo de densidad para un alumno con alergia. */
-const MODULE_SAFE: Record<string, string> = { nueces: 'semillas' };
+const MODULE_SAFE: Record<string, string> = { nueces: 'semillas', almendras: 'semillas', mani: 'semillas' };
 
 /**
  * Cierre del día: lleva la opción 1 de cada comida al total de calorías (±2 %) corrigiendo primero el macro más
@@ -643,20 +778,20 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
   // Carbo líquido para el entreno (isotónica): en la toma pegada al entreno (antes o después), sin volumen sólido.
   const preTraining = (w: Work) => w.slot.kind === 'pre' || /(antes|después) de entrenar/.test(w.slot.name);
   const mods = (k: 'c' | 'f'): Move[] => [
-    ...ws.flatMap((w) => (k === 'c' && preTraining(w) ? [[w, 'isotonica', { allowNew: true, max: 500 }] as Move] : [])),
+    ...ws.flatMap((w) => (k === 'c' && preTraining(w) && !ctx.diet && (!ctx.ok || ctx.ok('isotonica')) ? [[w, 'isotonica', { allowNew: true, max: 500 }] as Move] : [])),
     ...ws.flatMap((w) =>
-      MODULES[w.slot.kind][k]
+      modsOf(w.slot.kind, ctx)[k]
         .filter((id) => !adjustable(w, k).includes(id) && !(k === 'f' && w.recipes[0].parts.some((p) => p.r === 'f' && FOOD_BY_ID[p.id].group === 'fat')))
         // Alergia: el módulo se cambia por su equivalente seguro (nueces → semillas) o se saltea.
         .map((id) => (ctx.ok && !ctx.ok(id) ? (MODULE_SAFE[id] ?? '') : id))
         .filter((id) => id && (!ctx.ok || ctx.ok(id)) && !adjustable(w, k).includes(id))
         // Con postre en la cena, nada de fruta de postre aparte (un solo postre).
         .filter((id) => !(w.slot.kind === 'dinner' && ws.some((d) => d.slot.kind === 'dessert')))
-        .map((id): Move => [w, id, { allowNew: true, max: MODULE_MAX[id] }]),
+        .map((id): Move => [w, id, { allowNew: true, max: ctx.diet ? undefined : MODULE_MAX[id] }]),
     ),
   ];
   const down = (k: 'p' | 'c' | 'f'): Move[] => [
-    ...ws.flatMap((w) => [...w.added].filter((id) => (k === 'f' ? [...MODULES[w.slot.kind].f, 'semillas'] : [...MODULES[w.slot.kind].c, 'isotonica']).includes(id)).map((id): Move => [w, id, { floor: 0 }])),
+    ...ws.flatMap((w) => [...w.added].filter((id) => (k === 'f' ? [...modsOf(w.slot.kind, ctx).f, 'semillas'] : [...modsOf(w.slot.kind, ctx).c, 'isotonica']).includes(id)).map((id): Move => [w, id, { floor: 0 }])),
     ...ws.flatMap((w) => adjustable(w, k).map((id): Move => [w, id, k === 'f' ? { floor: 0 } : {}])),
   ];
   const kpgOf = (id: string) => kcalOf(FOOD_BY_ID[id]) / 100;
@@ -676,8 +811,9 @@ function closeDay(ws: Work[], target: Tot, ctx: Ctx, extraLeft: { n: number }, m
     if (Math.abs(gap) <= target.kcal * 0.02) return;
     let lists: Move[][];
     if (gap > 0) {
-      const order = (['c', 'f'] as const).slice().sort((a, b) => dev[a] - dev[b]);
-      lists = [up(order[0]), up(order[1])];
+      // Keto: la energía que falta sale siempre de grasas; low carb: carbos sólo mientras estén por debajo de su meta.
+      const order = (['c', 'f'] as const).slice().sort((a, b) => dev[a] - dev[b]).filter((k) => !(k === 'c' && (ctx.diet === 'keto' || (ctx.diet === 'lowcarb' && dev.c >= 0))));
+      lists = order.map((k) => up(k));
     } else {
       const order = (['p', 'c', 'f'] as const).slice().sort((a, b) => dev[b] - dev[a]);
       lists = order.map((k) => down(k));
@@ -815,7 +951,7 @@ function femaleNoMilk(rec: R): R {
       parts: rec.parts.map((p) => (p === milk ? { id: 'yogur', r: 'p' as const, min: 120 } : p)),
       steps: steps.map((t) =>
         t
-          .replace(/Tomá \{leche[a-z-]*\} de leche con cacao amargo\./, 'Mezclá {yogur} de yogur griego con 1 cdita de cacao amargo.')
+          .replace(/Tomá \{leche[a-z-]*\} de leche con \{cacao-amargo\} de cacao amargo\./, 'Mezclá {yogur} de yogur griego con {cacao-amargo} de cacao amargo.')
           .replace(/Tomá \{leche[a-z-]*\} de leche( descremada)?\./, 'Sumá {yogur} de yogur griego.')
           .replace(/Licuá \{leche[a-z-]*\} de leche con/, 'Mezclá {yogur} de yogur griego con'),
       ),
@@ -826,8 +962,9 @@ function femaleNoMilk(rec: R): R {
 
 function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot, tr: BankTraining, fixed: BankMainTimes, allergies: Allergen[], weightKg = 70): Meal[] {
   const sex = sexOf(sel.plan);
-  const veg = sel.variant === 'veg';
-  const ctx: Ctx = { sex, veg, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
+  const veg = sel.variant === 'veg' || allergies.includes('veg');
+  const diet = sel.variant === 'keto' || sel.variant === 'lowcarb' ? sel.variant : undefined;
+  const ctx: Ctx = { sex, veg, diet, ok: allergies.length ? (id) => !(FOOD_ALLERGENS[id] ?? []).some((a) => allergies.includes(a)) : undefined };
   const goalId = goalOf(sel.plan).id;
   const lightF = sex === 'F' && weightKg <= 62;
   const forSex = (lists: Record<SlotKind, R[]>) => (sex === 'F' ? (Object.fromEntries(Object.entries(lists).map(([k, list]) => [k, list.map((r) => r.female ?? femaleNoMilk(r))])) as Record<SlotKind, R[]>) : lists);
@@ -890,10 +1027,50 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
     return dw;
   };
   closeDay(ws, target, ctx, extraLeft, mkExtra);
+  const carbCeil = () => {
+  // Keto / Low Carb: techo de carbos NETOS del día (keto 42 g, low carb su meta de 50-100 g). Primero se bajan los
+  // carbos ajustables y los módulos de carbo; si no alcanza, las colaciones y el desayuno rotan a su opción con
+  // menos carbos. Después el día se vuelve a cerrar con grasas.
+  if (ctx.diet) {
+    const lim = ctx.diet === 'keto' ? 38 : Math.max(50, Math.min(96, target.c));
+    const netOf = (g: Record<string, number>) => netCarbs(toItems(g));
+    const dayNet = () => ws.reduce((a, w) => a + netOf(w.grams[0]), 0);
+    for (let round = 0; round < 12 && dayNet() > lim; round++) {
+      let cut = 0;
+      for (const w of ws) {
+        for (const id of [...adjustable(w, 'c'), ...[...w.added].filter((x) => modsOf(w.slot.kind, ctx).c.includes(x))]) {
+          if (dayNet() <= lim) break;
+          cut += Math.abs(nudge(w, id, -Math.min(300, (dayNet() - lim) * 4 * 1.4), ctx, w.added.has(id) ? { floor: 0 } : {}));
+        }
+      }
+      if (!cut) {
+        let best: { w: Work; i: number; save: number } | null = null;
+        for (const w of ws) {
+          if (w.recipes.length < 2) continue;
+          const cur = netOf(w.grams[0]);
+          w.grams.forEach((g, i) => {
+            const save = cur - netOf(g);
+            if (i > 0 && save > 2 && (!best || save > best.save)) best = { w, i, save };
+          });
+        }
+        if (!best) break;
+        const { w, i } = best as { w: Work; i: number };
+        const order = [i, ...w.recipes.map((_, k) => k).filter((k) => k !== i)];
+        w.recipes = order.map((k) => w.recipes[k]);
+        w.grams = order.map((k, j) => (j === 0 ? { ...w.grams[k] } : w.grams[k]));
+        w.added = new Set();
+      }
+      closeDay(ws, target, ctx, extraLeft, mkExtra);
+    }
+  }
+
+  };
+  const protCeil = () => {
   // Techo fisiológico de proteína en la mujer (2,3 g/kg): si las porciones mínimas de las principales y del desayuno
   // la pasan, el desayuno y las colaciones rotan a su opción con menos proteína y el día se vuelve a cerrar.
-  if (sex === 'F') {
-    const pMax = PROTEIN_MAX_F * weightKg * 0.99;
+  // Keto: proteína moderada (≤ 2,0 g/kg, sin exceso gluconeogénico) con el mismo mecanismo.
+  if (sex === 'F' || ctx.diet === 'keto') {
+    const pMax = Math.min(sex === 'F' ? PROTEIN_MAX_F : Infinity, ctx.diet === 'keto' ? 2.0 : Infinity) * weightKg * 0.98;
     const pOf = (g: Record<string, number>) => totals(toItems(g)).p;
     for (let round = 0; round < 8 && dayMacros(ws).p > pMax; round++) {
       let best: { w: Work; i: number; save: number } | null = null;
@@ -920,6 +1097,13 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
       w.added = new Set();
       closeDay(ws, target, ctx, extraLeft, mkExtra);
     }
+  }
+
+  };
+  // Los dos techos se alternan hasta estabilizarse (bajar carbos no debe subir la proteína y viceversa).
+  for (let r = 0; r < 4; r++) {
+    carbCeil();
+    protCeil();
   }
 
   const dessert = ws.find((w) => w.slot.kind === 'dessert');
@@ -980,9 +1164,12 @@ export function buildBankPlan(sel: BankSelection, weightKg: number, tr: BankTrai
   if (allergies.includes('gluten') && sel.variant === 'std') sel = { ...sel, variant: 'stacc' };
   // Vegetariano: siempre la variante ovo-láctea (las proteínas son huevo, lácteos, legumbres, tofu y soja).
   if (allergies.includes('veg')) sel = { ...sel, variant: 'veg' };
+  // Protocolo Keto / Low Carb: manda sobre las otras variantes (la vegetariana sustituye las carnes dentro del protocolo).
+  const proto = protocolOf(allergies);
+  if (proto) sel = { ...sel, variant: proto };
   const sex = sexOf(sel.plan);
   const goal = goalOf(sel.plan);
-  const t = dayTargets(goal, sex, weightKg);
+  const t = dayTargets(goal, sex, weightKg, sel.variant);
   const tierB = t.on.kcal > TIER_B[sex];
   const meals = [...buildDay(sel, 'on', tierB, t.on, tr, fixed, allergies, weightKg), ...buildDay(sel, 'off', tierB, t.off, tr, fixed, allergies, weightKg)];
   return { sel, weightKg, tier: tierB ? 'B' : 'A', gkg: t.gkg, target: { on: t.on, off: t.off }, meals };
@@ -1021,7 +1208,7 @@ export function applyBankPlan<T extends { profile: { weightKg: number; phase: Ph
 /** Resumen para la tarjeta del banco (sin armar las comidas): macros, calorías y cantidad de comidas por día. */
 export function planSummary(sel: BankSelection, weightKg: number, tr: BankTraining = DEFAULT_TRAINING) {
   const sex = sexOf(sel.plan);
-  const t = dayTargets(goalOf(sel.plan), sex, weightKg);
+  const t = dayTargets(goalOf(sel.plan), sex, weightKg, sel.variant);
   const tierB = t.on.kcal > TIER_B[sex];
   const opts = (kinds: SlotKind[]) => kinds.reduce((a, k) => a + RECIPES[sel.variant][k].length, 0) / kinds.length;
   const on = daySlots(mealCount(sex, tierB, 'on', tr), 'on', tr).map((x) => x.kind);
@@ -1036,7 +1223,7 @@ export function planSummary(sel: BankSelection, weightKg: number, tr: BankTraini
 /** Variante estricta del alumno: celíaco → Sin TACC; vegetariano → Vegetariana; si no, Estándar. */
 export function variantFor(plan: Pick<AthletePlan, 'anamnesis'>): BankVariant {
   const a = allergiesOf(plan);
-  return a.includes('veg') ? 'veg' : a.includes('gluten') ? 'stacc' : 'std';
+  return protocolOf(a) ?? (a.includes('veg') ? 'veg' : a.includes('gluten') ? 'stacc' : 'std');
 }
 
 /** Comidas del día donde va cada categoría del recetario. */
@@ -1086,7 +1273,7 @@ export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'an
   // Si con sus topes el plato queda corto, se suma densidad limpia como en el cierre del banco (fruta, miel,
   // frutos secos, aceite o palta), nunca agrandando un lácteo o una verdura.
   const w: Work = { slot, T, recipes: [rec], grams: [g], added: new Set() };
-  const mods = [...MODULES[slot.kind].c, ...MODULES[slot.kind].f].map((id) => (ctx.ok && !ctx.ok(id) ? (MODULE_SAFE[id] ?? '') : id)).filter((id) => id && !rec.parts.some((p) => p.id === id));
+  const mods = [...modsOf(slot.kind, ctx).c, ...modsOf(slot.kind, ctx).f].map((id) => (ctx.ok && !ctx.ok(id) ? (MODULE_SAFE[id] ?? '') : id)).filter((id) => id && !rec.parts.some((p) => p.id === id));
   for (const id of mods) {
     const gap = T.kcal - totals(toItems(g)).kcal;
     if (gap <= T.kcal * 0.05) break;

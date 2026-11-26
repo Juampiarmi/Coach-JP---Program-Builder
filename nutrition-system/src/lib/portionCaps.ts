@@ -14,6 +14,8 @@ export interface Range {
   max: number;
 }
 export interface CapCtx {
+  /** Protocolo Keto / Low Carb: las grasas saludables cubren la energía (topes de grasa más amplios por toma). */
+  diet?: 'keto' | 'lowcarb';
   sex?: Sex;
   role?: MealRole;
   /** Plan vegetariano: legumbres hasta 300 g (son la base proteica). */
@@ -125,6 +127,7 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   nueces: both(10, 30),
   mani: both(10, 30),
   semillas: both(10, 30),
+  'cacao-amargo': both(5, 20),
   // Carbos de rápida absorción
   miel: both(5, 20),
   'dulce-membrillo': both(5, 20),
@@ -173,6 +176,8 @@ export function withCapSex<T>(sex: Sex | undefined, fn: () => T): T {
   }
 }
 
+/** Keto / Low Carb: grasas saludables por toma (mujer, hombre) en g; siguen siendo porciones reales de una comida. */
+const DIET_FAT_CAP: Record<string, [number, number]> = { oliva: [35, 50], palta: [160, 200], nueces: [60, 80], almendras: [60, 80], mani: [40, 60], aceitunas: [60, 100], semillas: [30, 40], 'queso-light': [80, 120], untable: [50, 60] };
 export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range {
   if (!foodId) return { min: 0, max: Infinity };
   ctx = { ...ctx, sex: ctx.sex ?? activeSex };
@@ -186,6 +191,7 @@ export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range 
     [lo, hi] = (g && GROUP_CAPS[g]) || [5, 450];
   }
   if (ctx.veg && ['lentejas', 'garbanzos', 'porotos'].includes(foodId)) hi = ctx.sex === 'F' ? 250 : 300;
+  if (ctx.diet && DIET_FAT_CAP[foodId]) hi = Math.max(hi, DIET_FAT_CAP[foodId][ctx.sex === 'F' ? 0 : 1]);
   if (MAIN_MEATS.has(foodId) && (ctx.role === 'lunch' || ctx.role === 'dinner')) lo = Math.max(lo, ctx.sex ? MAIN_MEAT_FLOOR[ctx.sex] : MAIN_MEAT_FLOOR.F);
   if ((foodId === 'vegetales' || FOOD_BY_ID[foodId]?.group === 'veg') && ctx.role && SIDE_ROLES.includes(ctx.role)) [lo, hi] = [30, ctx.sex === 'F' ? 120 : 150];
   return { min: lo, max: hi };

@@ -8,7 +8,7 @@ import { FOOD_BY_ID } from '@/lib/foods';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, Panel } from '../hud/primitives';
 
-const VARIANT_LABEL = { std: 'Estándar', stacc: 'Sin TACC', veg: 'Vegetariana' } as const;
+const VARIANT_LABEL = { std: 'Estándar', stacc: 'Sin TACC', veg: 'Vegetariana', keto: 'Keto', lowcarb: 'Low Carb' } as const;
 const DAY = { on: 'Entreno', off: 'Descanso', both: 'Ambos días' } as const;
 const short = (id?: string) => (id ? FOOD_BY_ID[id]?.name.split(' (')[0].toLowerCase() : '') ?? '';
 

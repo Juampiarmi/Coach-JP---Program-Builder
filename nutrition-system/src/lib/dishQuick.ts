@@ -1,5 +1,5 @@
 import { aiText } from './ai';
-import { ALLERGEN_INFO, type Allergen, itemAllergens } from './allergens';
+import { ALLERGEN_INFO, type Allergen, isDietTag, itemAllergens } from './allergens';
 import { allergenHits } from './anamnesisPro';
 import type { BrandCategory, BrandFood } from './foodBrandDb';
 import { FOOD_BY_ID, macrosFor, matchFood, snapUnit, unitStep } from './foods';
@@ -274,7 +274,7 @@ function assemble(input: QuickInput, parsed: ReturnType<typeof parseIngredient>[
     }
   }
   const category = catHint ?? suggestCategory(name, items.map((i) => i.foodId));
-  const allergens = [...new Set([...items.flatMap((i) => itemAllergens({ foodId: i.foodId, food: i.food })), ...unknown.flatMap((u) => allergenHits(u, Object.keys(ALLERGEN_INFO)) as Allergen[])])].filter((a) => a !== 'veg') as Allergen[];
+  const allergens = [...new Set([...items.flatMap((i) => itemAllergens({ foodId: i.foodId, food: i.food })), ...unknown.flatMap((u) => allergenHits(u, Object.keys(ALLERGEN_INFO)) as Allergen[])])].filter((a) => !isDietTag(a)) as Allergen[];
   const t = totalsOf(items);
   const finalSteps = stepsWithYield(steps?.length ? integrateTip(steps, steps.some((s) => s.includes('Tip')) ? '' : (input.tip ?? '')) : localSteps(name, items, seasonings, input.tip ?? '', category), yieldInfo);
   const r1 = (x: number) => Math.round(x * 10) / 10;

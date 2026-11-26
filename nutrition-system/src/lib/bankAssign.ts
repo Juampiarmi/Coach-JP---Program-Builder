@@ -4,7 +4,8 @@ import { DISH_CATEGORIES, dishYield, type BrandFood } from './foodBrandDb';
 import { stepsWithYield, type YieldInfo } from './yieldInfo';
 import { FOOD_BY_ID, macrosFor, snapUnit, unitStep } from './foods';
 import { itemFromFood as itemFromFoodSafe } from './seed';
-import { catalogDishForMeal, fitRecipeToMeal, type BankRecipe } from './planBank';
+import { CATALOG } from './catalog';
+import { catalogDishForMeal, fitRecipeToMeal, ROLES_OF_CATEGORY, type BankRecipe } from './planBank';
 import { portionCap } from './portionCaps';
 import { macroOf } from './quickSwaps';
 import type { AthletePlan, FoodItem, Meal } from './types';
@@ -81,6 +82,42 @@ export function previewAssign(src: BankSource, meal: Meal, plan: Pick<AthletePla
     return null;
   }
   return foodIntoMeal(b.id, meal, plan);
+}
+
+/**
+ * Flujo rápido del Banco Global: el plato elegido como Opción 1 + las 2 variantes del Recetario más parecidas en
+ * calorías y proteína para esa comida (isocalóricas / isoproteicas), todas escaladas al alumno y sus restricciones.
+ */
+export function previewTriple(src: BankSource, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>, db: BrandFood[] = []): AssignPreview[] {
+  const main = previewAssign(src, meal, plan, db);
+  if (!main) return [];
+  const t = totalsOf(main.items);
+  const alts = CATALOG.filter((d) => !(src.kind === 'catalog' && src.id === d.id) && ROLES_OF_CATEGORY[d.category].includes(meal.role))
+    .map((d) => catalogDishForMeal(d.id, { ...meal, items: main.items }, plan))
+    .filter((o): o is NonNullable<typeof o> => !!o && o.title !== main.title)
+    .map((o) => {
+      const u = totalsOf(o.items);
+      return { o, score: Math.abs(u.kcal - t.kcal) / Math.max(1, t.kcal) + (Math.abs(u.p - t.p) / Math.max(1, t.p)) * 1.5 };
+    })
+    .sort((a, b) => a.score - b.score);
+  const out: AssignPreview[] = [main];
+  for (const { o } of alts) if (out.length < 3 && !out.some((x) => x.title === o.title)) out.push(o);
+  return out;
+}
+
+/** Plato del Recetario más parecido a lo que hoy aporta la comida (para «3 variantes del Banco» en cada comida). */
+export function bestCatalogFor(meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): BankSource | null {
+  const t = totalsOf(meal.items);
+  let best: { id: string; score: number } | null = null;
+  for (const d of CATALOG) {
+    if (!ROLES_OF_CATEGORY[d.category].includes(meal.role)) continue;
+    const o = catalogDishForMeal(d.id, meal, plan);
+    if (!o) continue;
+    const u = totalsOf(o.items);
+    const score = t.kcal > 50 ? Math.abs(u.kcal - t.kcal) / t.kcal + (Math.abs(u.p - t.p) / Math.max(1, t.p)) * 1.5 : 0;
+    if (!best || score < best.score) best = { id: d.id, score };
+  }
+  return best ? { kind: 'catalog', id: best.id } : null;
 }
 
 /** Macros de una lista de ingredientes (ficha técnica). */

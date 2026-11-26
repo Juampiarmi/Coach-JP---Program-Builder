@@ -1,5 +1,6 @@
 'use client';
 
+import { bestCatalogFor } from '@/lib/bankAssign';
 import { useState } from 'react';
 import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCcw, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
@@ -294,6 +295,12 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
   // Vista compacta: la Opción 1 a la vista y las alternativas plegadas (sin scroll infinito).
   const [showAlts, setShowAlts] = useState(false);
   const [baseOpen, setBaseOpen] = useState(false);
+  const assignTriple = usePlanStore((s) => s.assignTriple);
+  const plan = usePlanStore((s) => s.plan);
+  const bankTriple = () => {
+    const src = bestCatalogFor(meal, plan);
+    if (src) assignTriple(meal.id, src);
+  };
 
   return (
     <Panel tone={lowLeu ? 'fire' : meal.day === 'off' ? 'gold' : 'cyan'} className={cx(lowLeu && 'border-fire/35')}>
@@ -329,6 +336,15 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
             <RefreshCcw className="h-3.5 w-3.5" /> Cambiar base proteica / carbo
           </button>
         )}
+        <button
+          type="button"
+          data-bank-triple-meal
+          onClick={bankTriple}
+          title="Opción 1 + 2 variantes equivalentes del Banco Global, escaladas a esta comida (y a la pareja)"
+          className="flex items-center gap-1.5 rounded-md border border-[#22C55E]/40 px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.1em] text-[#4ADE80] transition hover:border-[#22C55E]/70 hover:bg-[#22C55E]/10"
+        >
+          ⚡ 3 variantes del Banco
+        </button>
         <button onClick={() => removeMeal(meal.id)} title="Eliminar comida" className="rounded-md p-1.5 text-steel hover:bg-fire/10 hover:text-fire">
           <Trash2 className="h-3.5 w-3.5" />
         </button>

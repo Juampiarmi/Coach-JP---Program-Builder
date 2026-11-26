@@ -169,16 +169,16 @@ type Dish = [string, BrandCategory, string, number, number, number, number, numb
 // [nombre, categoría, unidad, gramos, P, C, G, leucina, prep (min), lactosa, flex, detalle, marca, técnica]. Kcal = Atwater 4/4/9.
 const DISH_ROWS: Dish[] = [
   // 1.1 · Desayunos, meriendas y toast bar
-  ['Avocado Toast integral', 'desayuno', 'porción', 170, 13, 30, 15.5, 1, 8, false, false, 'Pan integral o de semillas + 50-70 g de palta + huevo poché o revuelto', undefined, 'Tostá el pan, pisá la palta con limón y sal y sumá el huevo poché (3 min) o revuelto'],
-  ['Avocado Toast en galletas de arroz', 'desayuno', 'porción', 127, 9, 23, 12.5, 0.7, 6, false, false, 'Galletas de arroz + 50 g de palta + huevo poché o revuelto', undefined, 'Pisá la palta con limón, armá sobre las galletas y coroná con el huevo'],
+  ['Avocado Toast integral', 'desayuno', 'porción', 170, 13, 30, 15.5, 1, 8, false, false, '2 rebanadas de pan integral (60 g) + 60 g de palta (½ unidad chica) + 1 huevo (50 g) poché o revuelto', undefined, 'Tostá el pan, pisá la palta con limón y sal y sumá el huevo poché (3 min) o revuelto'],
+  ['Avocado Toast en galletas de arroz', 'desayuno', 'porción', 127, 9, 23, 12.5, 0.7, 6, false, false, '3 galletas de arroz (27 g) + 50 g de palta (⅓ unidad) + 1 huevo (50 g) poché o revuelto', undefined, 'Pisá la palta con limón, armá sobre las galletas y coroná con el huevo'],
   ['Tostadas Proteicas de Masa Madre', 'desayuno', 'porción', 180, 25, 28, 13, 2.1, 8, true, false, 'Pan de masa madre o integral + queso untable magro + jamón cocido + huevo duro', undefined, 'Tostá el pan y armá en frío; huevo duro hervido 9 min'],
   ['Galletas de Arroz con Queso Gratinado y Huevo', 'desayuno', 'porción', 88, 12, 15, 9, 1, 5, true, false, '2 galletas de arroz + 20 g de queso por salut + 1 huevo', undefined, 'Gratiná el queso 1 min en sartén tapada y sumá el huevo a la plancha'],
   ['Panqueques de avena y yogur', 'desayuno', '3 unidades', 216, 25, 27, 8.8, 2.1, 12, true, false, '40 g de avena arrollada o harina de avena + 1 huevo + 2 claras + 50 g de yogur griego + 1 cdita de polvo de hornear + esencia de vainilla', undefined, 'Mixeá, reposá 5 min y cociná vuelta y vuelta en sartén antiadherente a fuego medio-bajo'],
-  ['Pancake de avena, coco y huevo', 'desayuno', 'porción', 160, 18, 33, 17, 1.4, 10, false, false, '40 g de avena + 10 g de coco + 2 huevos + 1 cda de miel · saborizantes libres: vainilla, ralladura de limón, canela, cacao amargo o café instantáneo', undefined, 'Mixeá todo y cociná en sartén antiadherente 2-3 min por lado'],
+  ['Pancake de avena, coco y huevo', 'desayuno', 'porción', 160, 18, 33, 17, 1.4, 10, false, false, '40 g de avena + 10 g de coco + 2 huevos + 1 cda de miel · saborizantes sin calorías: vainilla, ralladura de limón, canela o café instantáneo', undefined, 'Mixeá todo y cociná en sartén antiadherente 2-3 min por lado'],
   ['Bowl de yogur proteico con granola y frutas', 'desayuno', 'bowl', 290, 18, 45, 5, 1.7, 3, true, false, '160 g de yogur proteico + 30 g de granola crujiente + 100 g de banana o frutos rojos', undefined, 'Armalo en bowl, en frío'],
   ['Café con leche descremada', 'desayuno', 'taza', 250, 8, 12, 0.3, 0.8, 3, true, false, '250 ml · leche descremada o proteica · sin azúcar o con edulcorante', undefined, ''],
-  ['Chocolatada con Leche Descremada', 'desayuno', 'taza', 250, 9, 14, 1.5, 0.85, 2, true, false, '250 ml de leche descremada + cacao amargo + edulcorante'],
-  ['Mate cebado', 'desayuno', 'termo / ronda', 500, 0, 1, 0, 0, 3, false, false, 'Sin azúcar · cafeína ~70 mg por ronda'],
+  ['Chocolatada con Leche Descremada', 'desayuno', 'taza', 260, 10, 14, 1.6, 0.9, 2, true, false, '250 ml de leche descremada + 10 g de cacao amargo en polvo (1 cda sopera) + edulcorante'],
+  ['Mate cebado', 'desayuno', 'termo / ronda', 500, 0, 0, 0, 0, 3, false, false, 'Sin azúcar · infusión: 0 kcal y ~0 g de carbos por termo (el agua no arrastra los carbos de la yerba) · apta ayuno intermitente y Keto · cafeína ~70 mg por ronda'],
   // 1.2 · Tartas, empanadas y sfijas (porción casera estándar)
   ['Tarta de pollo y puerro', 'tarta', 'porción (1/8)', 150, 16, 22, 14, 1.3, 60, true, false, 'Pollo desmenuzado, puerro, verduras y queso · masa casera o integral', undefined, 'Mandá al horno a 180 °C 35-40 min'],
   ['Tarta de jamón, queso y huevo', 'tarta', 'porción (1/8)', 150, 15, 21, 18, 1.3, 50, true, false, ''],
@@ -190,13 +190,13 @@ const DISH_ROWS: Dish[] = [
   ['Empanada de jamón y queso al horno', 'tarta', 'unidad', 80, 8, 20, 10, 0.7, 45, true, false, ''],
   ['Sfija / empanada árabe de carne', 'tarta', 'unidad', 70, 7, 18, 6, 0.6, 45, false, false, 'Carne picada magra con limón, tomate y cebolla', undefined, 'Mandá al horno a 200 °C 15 min'],
   // 1.3 · Minutas y platos principales rioplatenses
-  ['Milanesa de pechuga de pollo al horno', 'minuta', 'unidad', 150, 38, 14, 9, 3, 25, false, false, 'Rebozado con pan rallado y huevo', undefined, 'Mandá al horno a 200 °C 20 min con spray de oliva y dala vuelta a la mitad'],
-  ['Milanesa de nalga / peceto al horno', 'minuta', 'unidad', 150, 36, 14, 11, 2.9, 25, false, false, 'Rebozado con pan rallado y huevo', undefined, 'Mandá al horno a 200 °C 15-18 min con spray de oliva'],
-  ['Milanesa de merluza al horno', 'minuta', 'unidad', 150, 27, 15, 7, 2.2, 25, false, false, 'Merluza con rebozado fino de pan rallado', undefined, 'Mandá al horno a 200 °C 15-18 min con spray de oliva'],
-  ['Milanesa napolitana al horno', 'minuta', 'unidad', 200, 42, 18, 18, 3.4, 30, true, false, 'Napolitana fit: salsa de tomate, jamón magro y queso por salut', undefined, 'Mandá al horno a 200 °C 20 min + 3 min de gratinado'],
+  ['Milanesa de pechuga de pollo al horno', 'minuta', 'unidad', 150, 38, 14, 9, 3, 25, false, false, '105 g de pechuga cocida (≈ 140 g cruda) + 20 g de pan rallado (2 cdas) + 25 g de huevo batido (½ huevo) para rebozar · al horno con rocío vegetal, sin aceite agregado', undefined, 'Mandá al horno a 200 °C 20 min con spray de oliva y dala vuelta a la mitad'],
+  ['Milanesa de nalga / peceto al horno', 'minuta', 'unidad', 150, 36, 14, 11, 2.9, 25, false, false, '105 g de nalga o peceto cocido (≈ 140 g crudo) + 20 g de pan rallado (2 cdas) + 25 g de huevo batido (½ huevo) para rebozar · al horno con rocío vegetal, sin aceite agregado', undefined, 'Mandá al horno a 200 °C 15-18 min con spray de oliva'],
+  ['Milanesa de merluza al horno', 'minuta', 'unidad', 150, 27, 15, 7, 2.2, 25, false, false, '105 g de merluza cocida (≈ 130 g cruda) + 20 g de pan rallado (2 cdas) + 25 g de huevo batido (½ huevo) para rebozar · al horno con rocío vegetal', undefined, 'Mandá al horno a 200 °C 15-18 min con spray de oliva'],
+  ['Milanesa napolitana al horno', 'minuta', 'unidad', 200, 42, 18, 18, 3.4, 30, true, false, '105 g de carne o pollo cocido + 20 g de pan rallado + 25 g de huevo para rebozar + 20 g de salsa de tomate + 15 g de jamón magro + 15 g de queso por salut', undefined, 'Mandá al horno a 200 °C 20 min + 3 min de gratinado'],
   ['Pastel de Papa Tradicional Magro', 'minuta', 'porción', 300, 32, 40, 13, 2.6, 60, true, false, 'Carne picada magra + puré de papa sin manteca pesada + huevo duro', undefined, 'Sarteneá la carne, cubrila con el puré y gratiná 15 min'],
   ['Matambre a la pizza', 'minuta', 'porción', 200, 40, 4, 22, 3.2, 90, true, false, ''],
-  ['Pollo a la provenzal', 'minuta', 'porción', 200, 46, 2, 14, 3.7, 40, false, false, 'Pollo con ajo, perejil y aceite de oliva', undefined, 'Mandá al horno a 200 °C 35 min (o en sartén tapada)'],
+  ['Pollo a la provenzal', 'minuta', 'porción', 200, 46, 2, 14, 3.7, 40, false, false, '190 g de pollo cocido sin piel + ajo y perejil + 5 g de aceite de oliva (1 cdita)', undefined, 'Mandá al horno a 200 °C 35 min (o en sartén tapada)'],
   ['Guiso de Lentejas Criollo Magro', 'minuta', 'plato', 350, 24, 52, 9, 1.9, 50, false, false, 'Lentejas con carne picada o pechuga, verduras · sin embutidos grasos', undefined, 'En olla 40 min a fuego bajo'],
   ['Guiso de Garbanzos Casero Magro', 'minuta', 'plato', 350, 22, 50, 11, 1.7, 50, false, false, 'Garbanzos con pechuga o carne magra y verduras · sin embutidos grasos', undefined, 'En olla 40 min a fuego bajo'],
   ['Canelones de espinaca y ricota', 'minuta', '2 unidades', 300, 24, 40, 16, 2.3, 60, true, false, '2 canelones con salsa tuco liviana', undefined, 'Mandá al horno a 180 °C 20 min'],
@@ -214,7 +214,8 @@ const DISH_ROWS: Dish[] = [
   ['Parrillada Completa (Porción Individual)', 'parrilla', 'porción', 400, 70, 0, 60, 5.6, 90, false, true, 'Cortes + achuras + chorizo', undefined, 'Parrilla a fuego medio: chorizo 20-25 min, achuras 20 min y cortes según el grosor; elegí 1-2 cortes magros (vacío desgrasado, entraña) y sumá ensalada'],
   ['Helado artesanal (1/4 kg)', 'parrilla', '1/4 kg', 250, 10, 70, 28, 0.9, 0, true, true, ''],
   ['Cerveza (pinta)', 'parrilla', 'pinta 473 ml', 473, 2, 50, 0, 0, 0, false, true, 'Alcohol computado como carbos (~200 kcal)'],
-  ['Fernet con cola', 'parrilla', 'vaso', 300, 0, 55, 0, 0, 0, false, true, 'Alcohol + azúcar computados como carbos (~220 kcal)'],
+  ['Fernet con Coca Zero / Sin Azúcar', 'parrilla', 'vaso', 300, 0, 32, 0, 0, 0, false, true, 'Opción recomendada · 50 ml de fernet + 250 ml de cola sin azúcar (0 g de azúcar) · el alcohol se computa como carbos (~130 kcal)'],
+  ['Fernet con Coca común', 'parrilla', 'vaso', 300, 0, 55, 0, 0, 0, false, true, '50 ml de fernet + 250 ml de cola común (≈ 26 g de azúcar) · alcohol + azúcar computados como carbos (~220 kcal)'],
   ['Vino tinto (copa)', 'parrilla', 'copa 150 ml', 150, 0, 31, 0, 0, 0, false, true, 'Alcohol computado como carbos (~125 kcal)'],
   // 1.5 · Clásicos dulces y quiosco deportivo
   ['Postre Vigilante', 'dulce', 'porción', 100, 10, 27, 12, 0.9, 2, true, false, '60 g de queso fresco + 40 g de dulce de batata o membrillo'],
@@ -254,7 +255,7 @@ const DISH_ROWS: Dish[] = [
   ['Provoleta a la Parrilla (1/2 Unidad)', 'parrilla', 'porción', 70, 18, 1, 20, 1.7, 10, true, true, '1/2 provoleta compartida', undefined, 'Parrilla en provoletera 5 min'],
   ['Tarta de calabaza y queso', 'tarta', 'porción (1/8)', 150, 9, 22, 11, 0.8, 50, true, false, 'Calabaza, cebolla, queso y huevo', undefined, 'Mandá al horno a 180 °C 35 min'],
   ['Empanada de verdura al horno', 'tarta', 'unidad', 80, 6, 20, 7, 0.5, 45, true, false, 'Acelga / espinaca, salsa blanca liviana y huevo', undefined, 'Mandá al horno a 200 °C 15 min'],
-  ['Flan Casero Liviano', 'dulce', 'porción', 120, 8, 14, 4, 0.7, 50, true, false, 'Leche descremada, huevos y edulcorante', undefined, 'A baño maría 45 min'],
+  ['Flan Casero Liviano', 'dulce', 'porción', 120, 8, 14, 4, 0.7, 50, true, false, '250 ml de leche descremada + 2 huevos + edulcorante (rinde 2 porciones de 120 g)', undefined, 'A baño maría 45 min'],
   ['Gelatina sin Azúcar con Fruta', 'dulce', 'porción', 200, 3, 12, 0.2, 0.1, 5, false, false, 'Gelatina sin azúcar + 100 g de fruta', undefined, 'A la heladera 2 h'],
   ['Medialuna de manteca', 'dulce', 'unidad', 45, 3.5, 22, 9, 0.3, 0, true, true, 'Flex de panadería', undefined, ''],
   ['Factura (bola de fraile / vigilante)', 'dulce', 'unidad', 60, 4, 30, 10, 0.3, 0, true, true, 'Flex de panadería', undefined, ''],
@@ -277,11 +278,11 @@ const DISH_ROWS: Dish[] = [
   ['Salpicón de pollo', 'minuta', 'plato', 300, 34, 20, 10, 2.8, 15, false, false, 'Pollo desmenuzado, tomate, lechuga, zanahoria, choclo y huevo duro', undefined, 'Se arma en frío'],
   ['Bondiola al horno con puré de calabaza', 'minuta', 'plato', 380, 38, 30, 15, 3, 45, false, false, '160 g de bondiola + 200 g de puré de calabaza', undefined, 'Mandá al horno a 200 °C 30-40 min'],
   ['Revuelto de zapallitos con huevo y arroz', 'minuta', 'plato', 350, 18, 40, 11, 1.5, 15, false, false, 'Zapallitos, cebolla, 2 huevos + 120 g de arroz', undefined, 'Sartén antiadherente 10 min'],
-  ['Sándwich de Milanesa de Pollo al Horno', 'minuta', 'unidad', 280, 42, 45, 12, 3.3, 25, false, false, 'Pan francés o integral + milanesa de pollo al horno + lechuga y tomate', undefined, 'Milanesa al horno 200 °C 20 min'],
+  ['Sándwich de Milanesa de Pollo al Horno', 'minuta', 'unidad', 280, 42, 45, 12, 3.3, 25, false, false, '80 g de pan integral o francés + 1 milanesa de pollo al horno de 150 g (105 g de pechuga + 20 g de pan rallado + 25 g de huevo) + 50 g de lechuga y tomate', undefined, 'Milanesa al horno 200 °C 20 min'],
   ['Wrap de huevo, atún y palta', 'minuta', 'unidad', 250, 30, 30, 14, 2.5, 10, false, false, 'Tortilla integral + 2 huevos + 1/2 lata de atún + 40 g de palta', undefined, 'Armalo y doralo 1 min por lado'],
-  ['Fideos con atún, tomate y aceitunas', 'minuta', 'plato', 400, 34, 70, 10, 2.8, 15, false, false, '80 g de fideos secos + 1 lata de atún + tomate + aceitunas', undefined, 'Fideos al dente; salsa 3 min'],
+  ['Fideos con atún, tomate y aceitunas', 'minuta', 'plato', 400, 34, 70, 10, 2.8, 15, false, false, '80 g de fideos secos + 1 lata de atún al natural (120 g escurrido) + 100 g de tomate + 20 g de aceitunas', undefined, 'Fideos al dente; salsa 3 min'],
   ['Pollo al limón con batatas al horno', 'minuta', 'plato', 420, 44, 48, 10, 3.5, 40, false, false, '200 g de pollo + 250 g de batata · limón, ajo y orégano', undefined, 'Mandá al horno a 200 °C 35 min'],
-  ['Arroz con Leche Liviano', 'dulce', 'porción', 200, 9, 36, 2, 0.8, 35, true, false, 'Arroz, leche descremada, edulcorante, canela y cáscara de limón', undefined, 'En olla a fuego bajo 30 min'],
+  ['Arroz con Leche Liviano', 'dulce', 'porción', 200, 9, 36, 2, 0.8, 35, true, false, '40 g de arroz + 160 ml de leche descremada + edulcorante, canela y cáscara de limón', undefined, 'En olla a fuego bajo 30 min'],
 ];
 
 const slug = (s: string) =>
@@ -364,7 +365,7 @@ export function friendlyMealName(name: string) {
 }
 
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */
-export const SEED_VERSION = 6;
+export const SEED_VERSION = 7;
 
 /** Ítems propios del coach: creados por él o editados respecto del catálogo de fábrica (los que viajan a la nube). */
 let seedIndex: Map<string, string> | null = null;

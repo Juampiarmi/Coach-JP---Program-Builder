@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { Globe2, Pencil, Plus, Search } from 'lucide-react';
-import { ALLERGEN_INFO, FOOD_ALLERGENS, itemAllergens, type Allergen } from '@/lib/allergens';
-import { previewAssign, totalsOf, type BankSource } from '@/lib/bankAssign';
+import { ALLERGEN_INFO, FOOD_ALLERGENS, isDietTag, itemAllergens, protocolOf, type Allergen } from '@/lib/allergens';
+import { previewAssign, previewTriple, totalsOf, type BankSource } from '@/lib/bankAssign';
 import { CAT_LABEL, CATALOG, catalogRecipe, type CatalogDish } from '@/lib/catalog';
 import { categoryLabel, DISH_CATEGORIES, dishYield, emptyDishBase, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
 import { FOOD_BY_ID, FOODS, GROUP_LABEL, macrosFor, type FoodRef } from '@/lib/foods';
@@ -17,21 +17,61 @@ import { FoodModal } from './FoodBrandDatabase';
 import { individual, stepsWithYield, yieldLabel, yieldTag, type YieldInfo } from '@/lib/yieldInfo';
 
 type View = 'foods' | 'dishes';
-type Group = 'all' | 'p' | 'c' | 'f' | 'vf' | 'dairy';
-type Restriction = 'gluten' | 'lactose' | 'dairy' | 'veg';
-const GROUPS: { id: Group; label: string; groups: string[] }[] = [
-  { id: 'all', label: 'Todos', groups: [] },
-  { id: 'p', label: 'Proteínas', groups: ['lean-protein'] },
-  { id: 'c', label: 'Carbos', groups: ['starch', 'cereal', 'sport-carb'] },
-  { id: 'f', label: 'Grasas', groups: ['fat'] },
-  { id: 'vf', label: 'Verduras / Frutas', groups: ['veg', 'fruit'] },
-  { id: 'dairy', label: 'Lácteos / Huevos', groups: ['dairy-protein', 'eggs', 'whey'] },
+type Group = string;
+type Restriction = 'gluten' | 'lactose' | 'dairy' | 'veg' | 'keto' | 'lowcarb';
+/** Categorías reales del Banco Global (alimentos base). */
+const FOOD_CATS: { id: Group; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'carnes', label: 'Carnes y aves' },
+  { id: 'pescados', label: 'Pescados y mariscos' },
+  { id: 'huevos', label: 'Huevos y lácteos' },
+  { id: 'cereales', label: 'Cereales y tubérculos' },
+  { id: 'legumbres', label: 'Legumbres' },
+  { id: 'verduras', label: 'Verduras y hortalizas' },
+  { id: 'frutas', label: 'Frutas' },
+  { id: 'grasas', label: 'Grasas saludables y frutos secos' },
+  { id: 'extras', label: 'Condimentos / extras / infusiones' },
 ];
+/** Platos armados por momento del día. */
+const DISH_CATS: { id: Group; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'desayuno', label: 'Desayunos' },
+  { id: 'plato_principal', label: 'Almuerzo / cena' },
+  { id: 'merienda', label: 'Meriendas' },
+  { id: 'colacion', label: 'Colaciones y postres' },
+];
+const FISH = /merluza|atun|salm[oó]n|pescad|camar|mariscos?/;
+const LEGUMES = new Set(['lentejas', 'garbanzos', 'porotos', 'arvejas', 'tofu', 'soja-texturizada', 'fideos-legumbres', 'hummus']);
+const catOfFood = (f: FoodRef): Group => {
+  if (LEGUMES.has(f.id)) return 'legumbres';
+  switch (f.group) {
+    case 'lean-protein':
+      return FISH.test(f.id) ? 'pescados' : 'carnes';
+    case 'eggs':
+    case 'dairy-protein':
+    case 'whey':
+      return 'huevos';
+    case 'starch':
+    case 'cereal':
+      return 'cereales';
+    case 'veg':
+      return 'verduras';
+    case 'fruit':
+      return 'frutas';
+    case 'fat':
+      return 'grasas';
+    default:
+      return 'extras';
+  }
+};
+const dbMoment = (b: BrandFood): Group => (b.categoria === 'desayuno' ? 'desayuno' : ['colacion', 'postre', 'licuado', 'snack'].includes(b.categoria) ? 'colacion' : 'plato_principal');
 const RESTR: { id: Restriction; label: string }[] = [
   { id: 'gluten', label: 'Sin TACC' },
   { id: 'lactose', label: 'Sin lactosa' },
   { id: 'dairy', label: 'APLV' },
   { id: 'veg', label: 'Vegetariano' },
+  { id: 'lowcarb', label: 'Low Carb' },
+  { id: 'keto', label: 'Keto' },
 ];
 const DAY_LABEL: Record<MealDay, string> = { on: 'Entreno', off: 'Descanso', both: 'Ambos días' };
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -54,11 +94,6 @@ interface Entry {
 const catYield = (d: CatalogDish): YieldInfo => (d.yieldType === 'batch' ? { yieldType: 'batch', servings: d.servings ?? 4, unit: d.yieldUnit, storage: d.storage ?? '' } : individual(d.storage));
 const yieldSub = (y?: YieldInfo) => (y?.yieldType === 'batch' ? ` · 🥧 rinde ${y.servings} porciones` : '');
 
-const domGroup = (m: { p: number; c: number; f: number }): Group => {
-  const e = { p: m.p * 4, c: m.c * 4, f: m.f * 9 };
-  return e.p >= e.c && e.p >= e.f ? 'p' : e.c >= e.f ? 'c' : 'f';
-};
-const groupOfFood = (f: FoodRef): Group => GROUPS.find((g) => g.groups.includes(f.group))?.id ?? domGroup(f);
 const partsAllergens = (ids: string[]) => [...new Set(ids.flatMap((id) => FOOD_ALLERGENS[id] ?? []))] as Allergen[];
 
 /** Comida de referencia para la ficha de un plato del recetario (porción estándar del alumno activo). */
@@ -77,13 +112,15 @@ export function GlobalBank() {
   const [view, setView] = useState<View>('dishes');
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<Group>('all');
-  const own = (plan.anamnesis?.allergies ?? []).filter((a): a is Restriction => ['gluten', 'lactose', 'dairy', 'veg'].includes(a));
+  const own = (plan.anamnesis?.allergies ?? []).filter((a): a is Restriction => ['gluten', 'lactose', 'dairy', 'veg', 'keto', 'lowcarb'].includes(a));
   const [restr, setRestr] = useState<Restriction[]>(own);
   const [sel, setSel] = useState<string>('');
   const [editing, setEditing] = useState<BrandFood | null>(null);
   const [day, setDay] = useState<'on' | 'off'>('on');
   const [mealId, setMealId] = useState('');
-  const [mode, setMode] = useState<'replace' | 'alt'>('replace');
+  const [mode, setMode] = useState<'replace' | 'alt' | 'triple'>('triple');
+  const [confirmPlan, setConfirmPlan] = useState(false);
+  const { assignTriple, buildFromBank } = state;
   const [msg, setMsg] = useState('');
 
   const entries = useMemo<Entry[]>(() => {
@@ -93,17 +130,17 @@ export function GlobalBank() {
         src: { kind: 'food', id: f.id },
         name: f.name,
         sub: `${GROUP_LABEL[f.group]} · ${kc(f)} kcal/100 g`,
-        group: groupOfFood(f),
+        group: catOfFood(f),
         allergens: (FOOD_ALLERGENS[f.id] ?? []) as Allergen[],
         food: f,
       }));
-    const variant = restr.includes('veg') ? 'veg' : restr.includes('gluten') ? 'stacc' : 'std';
+    const variant = restr.includes('keto') ? 'keto' : restr.includes('lowcarb') ? 'lowcarb' : restr.includes('veg') ? 'veg' : restr.includes('gluten') ? 'stacc' : 'std';
     const cat: Entry[] = CATALOG.flatMap((d) => {
       const r = catalogRecipe(d, variant);
       if (!r) return [];
       const ids = r.parts.map((x) => x.id);
       const m = ids.reduce((a, id) => { const x = macrosFor(id, 100)!; return { p: a.p + x.p, c: a.c + x.c, f: a.f + x.f }; }, { p: 0, c: 0, f: 0 });
-      return [{ key: `cat:${d.id}`, src: { kind: 'catalog' as const, id: d.id }, name: r.title.replace(/\[([^|\]]*)\|[^\]]*\]/g, '$1'), sub: `Recetario Coach JP · ${CAT_LABEL[d.category]} · ${d.complexity === 'rapida' ? 'rápida' : 'elaborada'}`, group: domGroup(m), allergens: partsAllergens(ids), dish: d, yieldInfo: catYield(d) }];
+      return [{ key: `cat:${d.id}`, src: { kind: 'catalog' as const, id: d.id }, name: r.title.replace(/\[([^|\]]*)\|[^\]]*\]/g, '$1'), sub: `Recetario Coach JP · ${CAT_LABEL[d.category]} · ${d.complexity === 'rapida' ? 'rápida' : 'elaborada'}`, group: d.category, allergens: partsAllergens(ids), dish: d, yieldInfo: catYield(d) }];
     });
     const mine: Entry[] = db
       .filter((b) => DISH_CATEGORIES.includes(b.categoria))
@@ -112,7 +149,7 @@ export function GlobalBank() {
         src: { kind: 'dish' as const, id: b.id },
         name: b.nombre,
         sub: `${b.ingredientes?.length ? 'Plato propio' : 'Plato preparado'} · ${categoryLabel(b)} · ${b.macros_por_porcion.kcal} kcal / porción`,
-        group: domGroup(b.macros_por_porcion),
+        group: dbMoment(b),
         allergens: [...new Set([...(b.ingredientes ?? []).flatMap((x) => itemAllergens({ foodId: x.foodId, food: x.nombre })), ...itemAllergens({ food: b.nombre }), ...(b.lactosa ? (['lactose', 'dairy'] as Allergen[]) : [])])] as Allergen[],
         db: b,
         yieldInfo: dishYield(b),
@@ -126,6 +163,7 @@ export function GlobalBank() {
   const dayMeals = [...plan.meals].filter((m) => m.day === day || m.day === 'both').sort((a, b) => a.time.localeCompare(b.time));
   const meal = dayMeals.find((m) => m.id === mealId) ?? dayMeals[0];
   const preview = cur && meal ? previewAssign(cur.src, meal, plan, db) : null;
+  const triple = cur && meal && mode === 'triple' ? previewTriple(cur.src, meal, plan, db) : [];
   const partner = plan.partnerId && state.roster[plan.partnerId]?.partnerId === plan.id && !plan.partnerSyncAt ? state.roster[plan.partnerId] : undefined;
 
   // Ficha técnica.
@@ -176,9 +214,29 @@ export function GlobalBank() {
         <p className="-mt-1 text-[13px] text-steel">
           Todo lo que el sistema sabe cocinar: alimentos base con su ficha técnica y platos armados (Recetario Coach JP y los tuyos). Elegí uno y asignalo a una comida de <b className="text-ink">{plan.profile.name}</b>: los gramos se calculan solos para sus macros.
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#22C55E]/30 bg-[#22C55E]/[0.05] p-2.5" data-bank-build>
+          <div className="min-w-0 flex-1 text-[12.5px] text-steel">
+            <b className="text-ink">⚡ Armar plan completo desde el Banco Global</b> · día de entreno y descanso con 3 opciones por comida, escalado a las calorías, macros{protocolOf(plan.anamnesis?.allergies ?? []) ? `, protocolo ${protocolOf(plan.anamnesis?.allergies ?? []) === 'keto' ? 'Keto' : 'Low Carb'}` : ''} y restricciones de {plan.profile.name}.
+          </div>
+          {!confirmPlan ? (
+            <button type="button" onClick={() => setConfirmPlan(true)} className="min-h-[40px] rounded-lg bg-[#10B981] px-3 py-1.5 text-[12.5px] font-semibold text-white" data-bank-build-start>
+              Armar plan
+            </button>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="text-[12px] text-gold">Reemplaza las comidas actuales.</span>
+              <button type="button" onClick={() => { buildFromBank(); setConfirmPlan(false); }} className="min-h-[40px] rounded-lg bg-[#10B981] px-3 py-1.5 text-[12.5px] font-semibold text-white" data-bank-build-confirm>
+                Confirmar
+              </button>
+              <button type="button" onClick={() => setConfirmPlan(false)} className="min-h-[40px] rounded-lg border border-line px-3 py-1.5 text-[12.5px] text-steel">
+                Cancelar
+              </button>
+            </span>
+          )}
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {(['dishes', 'foods'] as View[]).map((v) => (
-            <button key={v} type="button" data-bank-view={v} onClick={() => { setView(v); setSel(''); }} className={cx('rounded-lg border px-3 py-1.5 text-[13px] font-semibold', view === v ? 'border-cyan-hud bg-cyan-hud/10 text-ink' : 'border-line text-steel')}>
+            <button key={v} type="button" data-bank-view={v} onClick={() => { setView(v); setSel(''); setGroup('all'); }} className={cx('rounded-lg border px-3 py-1.5 text-[13px] font-semibold', view === v ? 'border-cyan-hud bg-cyan-hud/10 text-ink' : 'border-line text-steel')}>
               {v === 'dishes' ? 'Platos armados' : 'Alimentos base'}
             </button>
           ))}
@@ -188,7 +246,7 @@ export function GlobalBank() {
           </div>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {GROUPS.map((g) => (
+          {(view === 'foods' ? FOOD_CATS : DISH_CATS).map((g) => (
             <button key={g.id} type="button" data-bank-group={g.id} onClick={() => setGroup(g.id)} className={cx('rounded-md border px-2.5 py-1 text-[12px]', group === g.id ? 'border-fire bg-fire/10 text-ink' : 'border-line text-steel')}>
               {g.label}
             </button>
@@ -212,7 +270,7 @@ export function GlobalBank() {
               <div className="text-[11.5px] text-mute">
                 {e.sub}
                 {yieldSub(e.yieldInfo)}
-                {e.allergens.filter((a) => a !== 'veg').length > 0 && ` · ${e.allergens.filter((a) => a !== 'veg').map((a) => ALLERGEN_INFO[a].short).join(', ')}`}
+                {e.allergens.filter((a) => !isDietTag(a)).length > 0 && ` · ${e.allergens.filter((a) => !isDietTag(a)).map((a) => ALLERGEN_INFO[a].short).join(', ')}`}
               </div>
             </button>
           ))}
@@ -270,13 +328,15 @@ export function GlobalBank() {
                 </tbody>
               </table>
               <div className="mt-2 flex flex-wrap gap-1.5" data-bank-allergens>
-                {cur.allergens.filter((a) => a !== 'veg').map((a) => (
+                {cur.allergens.filter((a) => !isDietTag(a)).map((a) => (
                   <span key={a} className="rounded border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#FCA5A5]">
                     {ALLERGEN_INFO[a].label}
                   </span>
                 ))}
                 {!cur.allergens.includes('veg') && <span className="rounded border border-[#34D399]/40 px-1.5 py-0.5 text-[11px] text-[#34D399]">Apto vegetariano</span>}
-                {!cur.allergens.filter((a) => a !== 'veg').length && <span className="text-[11.5px] text-[#34D399]">Sin alérgenos declarados</span>}
+                {!cur.allergens.includes('lowcarb') && <span className="rounded border border-[#34D399]/40 px-1.5 py-0.5 text-[11px] text-[#34D399]" data-bank-lowcarb>Low Carb</span>}
+                {!cur.allergens.includes('keto') && <span className="rounded border border-[#34D399]/40 px-1.5 py-0.5 text-[11px] text-[#34D399]" data-bank-keto>Apto Keto</span>}
+                {!cur.allergens.filter((a) => !isDietTag(a)).length && <span className="text-[11.5px] text-[#34D399]">Sin alérgenos declarados</span>}
               </div>
               {cur.yieldInfo && (
                 <div className={cx('mt-2 rounded-md border-l-2 px-2.5 py-1.5 text-[12.5px]', cur.yieldInfo.yieldType === 'batch' ? 'border-[#22C55E] bg-[#22C55E]/[0.07] text-steel' : 'border-line text-mute')} data-bank-yield={cur.yieldInfo.yieldType}>
@@ -328,8 +388,9 @@ export function GlobalBank() {
                       </option>
                     ))}
                   </select>
-                  <select value={mode} onChange={(e) => setMode(e.target.value as 'replace' | 'alt')} className="rounded-md border border-line bg-carbon px-2 py-1.5 text-[12.5px] text-ink" data-bank-mode>
-                    <option value="replace">Opción 1 (principal)</option>
+                  <select value={mode} onChange={(e) => setMode(e.target.value as 'replace' | 'alt' | 'triple')} className="rounded-md border border-line bg-carbon px-2 py-1.5 text-[12.5px] text-ink" data-bank-mode>
+                    <option value="triple">Opción 1 + 2 variantes (3 opciones)</option>
+                    <option value="replace">Sólo Opción 1 (principal)</option>
                     <option value="alt">Alternativa</option>
                   </select>
                 </div>
@@ -346,6 +407,15 @@ export function GlobalBank() {
                         Ojo: queda {totalsOf(preview.items).kcal > totalsOf(meal.items).kcal ? 'por encima' : 'por debajo'} de lo que pide esta comida (es un plato pensado para otra toma). Revisá el cierre del día.
                       </div>
                     )}
+                    {triple.length > 1 && (
+                      <ol className="mt-1.5 space-y-0.5 border-l-2 border-[#22C55E]/50 pl-2 text-[11.5px]" data-bank-triple>
+                        {triple.map((o, k) => (
+                          <li key={k}>
+                            <b className="text-ink">{k === 0 ? 'Opción 1' : `Opción ${k + 1}`}:</b> {o.title} <span className="font-mono text-mute">· {kc(totalsOf(o.items))} kcal · P {r1(totalsOf(o.items).p)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
                     {partner && <div className="mt-0.5 text-[11.5px] text-cyan-hud">Se copia a {partner.profile.name} con sus propios gramos.</div>}
                   </div>
                 ) : (
@@ -355,7 +425,7 @@ export function GlobalBank() {
                   type="button"
                   disabled={!preview || !meal}
                   data-bank-confirm
-                  onClick={() => meal && assignFromBank(meal.id, cur.src, mode) && setMsg(`✓ Asignado a ${meal.name} (${DAY_LABEL[meal.day]}) como ${mode === 'replace' ? 'opción 1' : 'alternativa'}${partner ? `; ${partner.profile.name} lo recibió con sus gramos` : ''}.`)}
+                  onClick={() => meal && (mode === 'triple' ? assignTriple(meal.id, cur.src) : assignFromBank(meal.id, cur.src, mode)) && setMsg(`✓ Asignado a ${meal.name} (${DAY_LABEL[meal.day]}) como ${mode === 'triple' ? `opción 1 + ${triple.length - 1} variantes equivalentes` : mode === 'replace' ? 'opción 1' : 'alternativa'}${partner ? `; ${partner.profile.name} lo recibió con sus gramos` : ''}.`)}
                   className="mt-2 flex items-center gap-1.5 rounded-lg bg-[#10B981] px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40"
                 >
                   <Plus className="h-4 w-4" /> Confirmar asignación

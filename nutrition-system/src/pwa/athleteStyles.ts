@@ -244,6 +244,7 @@ body.standalone .dock{display:none}
 .foot .fmarks{display:flex;align-items:center;gap:4px;flex:none}.foot .fmarks svg{width:24px;height:24px}
 .nutri-line svg{color:var(--nc-green)!important}
 .yield{display:flex;flex-direction:column;gap:2px;margin:8px 0 6px;padding:7px 10px;border-left:2px solid var(--nc-green);background:rgba(34,197,94,.07);border-radius:0 8px 8px 0;font-size:12px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}.yield b{color:var(--title);font-size:12.5px;font-weight:600}.yield.ind{border-left-color:rgba(148,163,184,.35);background:transparent;padding:2px 10px;font-size:11.5px;color:var(--micro)}.desglose .mold{font-size:12.5px;line-height:1.55;color:var(--text);overflow-wrap:anywhere}.desglose .mold b{color:var(--nc-green)}.desglose .keep{font-size:12px;color:var(--text)}
+.out-proto{margin:6px 0 8px;padding:7px 10px;border-left:2px solid var(--nc-green);background:rgba(34,197,94,.07);border-radius:0 8px 8px 0;font-size:12px;line-height:1.45;color:var(--text)}
 .idrow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 .who{min-width:0;display:flex;flex-direction:column}
 .who b{font-size:15px;font-weight:700;letter-spacing:.01em;color:var(--title);text-transform:uppercase;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

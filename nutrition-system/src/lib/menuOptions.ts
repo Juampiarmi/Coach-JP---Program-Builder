@@ -155,11 +155,13 @@ const STEP_ORDER = ['starch', 'plato', 'lean-protein', 'eggs', 'cereal', 'whey',
 const LEGACY_CONDIMENT_STEP = 'Condimentá a gusto: sal moderada, pimienta, orégano, pimentón, ajo, perejil o limón.';
 
 // ---------- Condimento / saborizante según el tipo de preparación ----------
-export type Flavor = 'sweet' | 'savory' | 'salad';
+export type Flavor = 'sweet' | 'savory' | 'salad' | 'plain';
 export const SEASONING_STEP: Record<Flavor, string> = {
-  sweet: 'Saborizá a gusto con esencia de vainilla, canela en polvo, edulcorante o cacao amargo.',
-  savory: 'Condimentá a gusto con sal moderada, pimienta, provenzal, pimentón o limón.',
+  sweet: 'Saborizá a gusto con esencia de vainilla, canela en polvo o edulcorante (sin calorías).',
+  savory: 'Condimentá a gusto con sal moderada, pimienta, provenzal, pimentón, ajo o jugo de limón.',
   salad: 'Aderezá con el aceite de oliva de la porción, sal, vinagre o limón.',
+  // Frutos secos o fruta sola: se comen como vienen (sin aderezo ni condimentos).
+  plain: '',
 };
 const SAVORY_DISH_CATS = ['minuta', 'tarta', 'parrilla', 'principal', 'guarnicion', 'tortilla', 'ensalada'];
 const SAVORY_TEXT = /s[aá]ndwich|tostado\b|wrap|toast|palta|queso (light|cremoso)|pizza|milanesa|empanada|tarta/i;
@@ -170,9 +172,13 @@ export function flavorOf(items: FoodItem[], title = ''): Flavor {
   const live = items.filter((i) => i.grams > 0);
   const refs = live.map((i) => (i.foodId ? FOOD_BY_ID[i.foodId] : undefined));
   const groups = refs.map((r) => r?.group ?? 'zz');
+  if (live.length && live.every((i) => i.foodId && (FOOD_BY_ID[i.foodId]?.group === 'fruit' || ['nueces', 'almendras', 'mani', 'semillas', 'pasas'].includes(i.foodId)))) return 'plain';
   if (groups.some((g) => g === 'lean-protein')) return 'savory';
-  // Pancakes, budines, licuados, avena y bowls dulces: aunque lleven huevo o claras.
-  if (/pancake|panqueque|bud[ií]n|flan|licuado|shake|batido|avena (cocida|remojada)|overnight|bowl de yogur/i.test(title)) return 'sweet';
+  // Pancakes, budines, mug cake, waffles, licuados, avena y bowls dulces: aunque lleven huevo o claras (nunca sal ni
+  // limón en un postre). Si el plato nombra algo salado (queso, jamón, verduras), manda lo salado.
+  const savoryWords = /salad[ao]s?|queso|jam[oó]n|espinaca|zanahoria|champi|tomate|cebolla|zapallit|at[uú]n/i.test(title);
+  if (/pancake|panqueque|bud[ií]n|flan|licuado|shake|batido|avena (cocida|remojada)|overnight|bowl de yogur|mug cake|waffle|compota|postre|chocolatad|cacao/i.test(title)) return 'sweet';
+  if (!savoryWords && (/banana|canela|vainilla|frutillas|ar[aá]ndanos|dulce\b|manzana asada/i.test(title) || live.some((i) => i.foodId === 'cacao-amargo'))) return 'sweet';
   if (groups.some((g) => g === 'eggs')) return 'savory';
   if (refs.some((r) => r?.group === 'plato' && SAVORY_DISH_CATS.includes(r.dishCat ?? '') && !/^ensalada/i.test(r.name))) return 'savory';
   if (/^ensalada|vegetales grillados/i.test(title)) return 'salad';
@@ -184,7 +190,9 @@ export function flavorOf(items: FoodItem[], title = ''): Flavor {
   return 'sweet';
 }
 const seasoningStep = (items: FoodItem[], title = '') => SEASONING_STEP[flavorOf(items, title)];
-const ALL_SEASONING = new Set([LEGACY_CONDIMENT_STEP, ...Object.values(SEASONING_STEP)]);
+// Textos de versiones anteriores (se reemplazan por el condimento correcto en los planes guardados).
+const OLD_SEASONING = ['Saborizá a gusto con esencia de vainilla, canela en polvo, edulcorante o cacao amargo.', 'Condimentá a gusto con sal moderada, pimienta, provenzal, pimentón o limón.'];
+const ALL_SEASONING = new Set([LEGACY_CONDIMENT_STEP, ...OLD_SEASONING, ...Object.values(SEASONING_STEP).filter(Boolean)]);
 
 /** Tips guardados con el condimento genérico de versiones anteriores → condimento según el tipo de plato. */
 export function fixTechnique(tech: string | undefined, items: FoodItem[], title = '') {
@@ -194,7 +202,7 @@ export function fixTechnique(tech: string | undefined, items: FoodItem[], title 
 /** Reemplaza el paso de condimento (viejo o desactualizado) por el que corresponde al tipo de plato. */
 export function fixSeasoning(steps: string[], items: FoodItem[], title = '') {
   const right = seasoningStep(items, title);
-  return steps.map((st) => (ALL_SEASONING.has(st) ? right : st));
+  return steps.map((st) => (ALL_SEASONING.has(st) ? right : st)).filter(Boolean);
 }
 
 // ---------- Tiempo de preparación estimado ----------
@@ -599,7 +607,7 @@ export function comboSteps(c: Combo, items: FoodItem[]) {
   // Ingredientes que no son de la receta base (ej. la palta que suma el cierre del día): también llevan su paso.
   const own = new Set(c.parts.map((p) => p.id).filter((id) => !c.loose?.includes(id)));
   items.filter((i) => i.grams > 0 && i.foodId && !own.has(i.foodId)).forEach((i) => stepsForItem(i).forEach((st) => steps.push(st)));
-  return [...steps, seasoningStep(items, c.title)];
+  return [...steps, seasoningStep(items, c.title)].filter(Boolean);
 }
 
 /** Rango de reescalado de una alternativa para igualar las kcal de la Opción 1. */

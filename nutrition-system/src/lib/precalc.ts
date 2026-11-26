@@ -1,3 +1,4 @@
+import { protocolOf } from './allergens';
 import { trainingOf } from './agenda';
 import { computeTelemetry } from './bioenergetics';
 import { BANK_GOALS, dayTargets, goalOf, planSummary, type BankGoal, type BankPlanId, type BankSelection, type BankVariant } from './planBank';
@@ -61,6 +62,10 @@ export function goalFor(plan: AthletePlan): BankGoal {
 
 export function variantFor(plan: AthletePlan): BankVariant {
   const an = plan.anamnesis;
+  // Protocolo Keto / Low Carb primero (convive con alergias y vegetarianismo dentro del protocolo).
+  const proto = protocolOf(an?.allergies ?? []);
+  if (proto) return proto;
+  if (an?.allergies?.includes('veg')) return 'veg';
   if (an?.allergies?.includes('gluten')) return 'stacc';
   if (/vegetarian|vegan|sin carne/i.test(`${an?.aversions ?? ''} ${an?.favorites ?? ''}`)) return 'veg';
   return 'std';
@@ -88,7 +93,7 @@ export function precalc(plan: AthletePlan): Precalc {
   const pr = plan.profile;
   const goal = goalFor(plan);
   const sel: BankSelection = { plan: `${pr.sex}-${goal}` as BankPlanId, variant: variantFor(plan) };
-  const d = dayTargets(goalOf(sel.plan), pr.sex, pr.weightKg);
+  const d = dayTargets(goalOf(sel.plan), pr.sex, pr.weightKg, sel.variant);
   const sum = planSummary(sel, pr.weightKg, trainingOf(pr));
   const r = (m: { p: number; c: number; f: number }) => ({ p: Math.round(m.p), c: Math.round(m.c), f: Math.round(m.f) });
   return {

@@ -1,3 +1,4 @@
+import { FOOD_ALLERGENS } from './allergens';
 import type { ComboPart } from './menuOptions';
 import { individual, inferYield, stepsWithYield, type YieldInfo, type YieldType } from './yieldInfo';
 
@@ -115,14 +116,14 @@ const DESAYUNOS: CatalogDish[] = [
     complexity: 'rapida',
     variants: STD_STACC,
     base: ['huevos', 'pan integral o sin TACC', 'tomate', 'orégano', 'aceite o rocío vegetal'],
-    prep: 'Batí los huevos con sal y pimienta; cocinalos a fuego bajo/medio en sartén antiadherente con apenas rocío vegetal o unas gotas de aceite, revolviendo suave hasta que queden cremosos sin secarse. Acompañá con pan tostado y rodajas de tomate con orégano.',
+    prep: 'Batí los huevos con sal y pimienta; cocinalos a fuego bajo/medio en sartén antiadherente con apenas rocío vegetal (sin aceite agregado), revolviendo suave hasta que queden cremosos sin secarse. Acompañá con pan tostado y rodajas de tomate con orégano.',
     adjust: 'Escalá cantidad de huevos y rebanadas de pan según proteína y carbohidratos requeridos.',
     std: {
       title: 'Huevos revueltos cremosos con pan integral tostado y tomate',
       parts: [P('huevo'), C('pan'), X('tomate', 100)],
       steps: [
         'Batí {huevo} con sal y pimienta.',
-        'Cocinalos a fuego bajo-medio en sartén antiadherente con rocío vegetal o unas gotas de aceite, revolviendo suave hasta que queden cremosos, sin secarse.',
+        'Cocinalos a fuego bajo-medio en sartén antiadherente con rocío vegetal (sin aceite agregado), revolviendo suave hasta que queden cremosos, sin secarse.',
         'Tostá {pan} de pan integral.',
         'Acompañá con {tomate} de tomate en rodajas con orégano.',
       ],
@@ -134,15 +135,15 @@ const DESAYUNOS: CatalogDish[] = [
     category: 'desayuno',
     complexity: 'rapida',
     variants: ALL,
-    base: ['huevos', 'avena', 'polvo de hornear', 'banana', 'limón', 'esencia de vainilla', 'canela', 'cacao amargo'],
-    prep: 'Mezclá huevo entero (o huevo + claras) con avena, polvo de hornear y elegí tu sabor: banana pisada + canela; ralladura de limón + vainilla; o cacao amargo + café instantáneo + vainilla. Volcá en sartén antiadherente tapada a fuego mínimo 3-4 min hasta que haga burbujas, dala vuelta y dorá 1-2 min más.',
+    base: ['huevos', 'avena', 'polvo de hornear', 'banana', 'limón', 'esencia de vainilla', 'canela'],
+    prep: 'Mezclá huevo entero (o huevo + claras) con avena, polvo de hornear y elegí tu sabor: banana pisada + canela; o ralladura de limón + vainilla. Volcá en sartén antiadherente tapada a fuego mínimo 3-4 min hasta que haga burbujas, dala vuelta y dorá 1-2 min más.',
     adjust: 'Escalá gramos de avena y unidades de huevo; podés sumar yogur griego o fruta fresca según macros.',
     std: {
       title: 'Tortilla esponjosa de avena y huevo con banana y canela',
       parts: [P('huevo'), C('avena'), X('banana', 60)],
       steps: [
         'Mezclá en un bowl {huevo} (o huevo + claras) con {avena} de avena y 1 cdita de polvo de hornear.',
-        'Elegí el sabor: {banana} de banana madura pisada con canela (o ralladura de limón + vainilla, o cacao amargo + café instantáneo + vainilla).',
+        'Elegí el sabor: {banana} de banana madura pisada con canela (o ralladura de limón + esencia de vainilla).',
         'Volcá en sartén antiadherente tapada a fuego mínimo 3-4 min, hasta que haga burbujas.',
         'Dala vuelta y dorá 1-2 min más.',
       ],
@@ -271,9 +272,9 @@ const DESAYUNOS: CatalogDish[] = [
     adjust: 'Regulá avena y fruta para carbohidratos.',
     std: {
       title: 'Overnight oats de avena, yogur y cacao con pera',
-      parts: [C('avena'), P('yogur', { min: 100 }), X('leche', 100), X('pera', 120)],
+      parts: [C('avena'), P('yogur', { min: 100 }), X('leche', 100), X('pera', 120), X('cacao-amargo', 5)],
       steps: [
-        'Mezclá en un frasco {avena} de avena, {leche} de leche (o bebida vegetal), {yogur} de yogur, 1 cdita de cacao amargo y esencia de vainilla.',
+        'Mezclá en un frasco {avena} de avena, {leche} de leche (o bebida vegetal), {yogur} de yogur, {cacao-amargo} de cacao amargo y esencia de vainilla.',
         'Llevalo a la heladera mínimo 4 h (o toda la noche).',
         'Al servir, sumá {pera} de pera en cubos.',
       ],
@@ -886,7 +887,7 @@ const MERIENDAS: CatalogDish[] = [
     std: {
       title: 'Yogur griego con manzana picada y nueces',
       parts: [P('yogur', { min: 150 }), C('manzana'), F('nueces')],
-      steps: ['Serví {yogur} de yogur griego en un bowl.', 'Sumá {manzana} de manzana (o la fruta de estación) picada.', 'Terminá con {nueces} de nueces o almendras.'],
+      steps: ['Serví {yogur} de yogur griego en un bowl.', 'Sumá {manzana} de manzana (o la fruta de estación) picada.', 'Terminá con {nueces} de nueces (o la misma cantidad de almendras).'],
     },
   }),
   dish({
@@ -915,17 +916,17 @@ const MERIENDAS: CatalogDish[] = [
     category: 'merienda',
     complexity: 'rapida',
     variants: ALL,
-    base: ['leche o bebida vegetal', 'banana', 'avena', 'canela o cacao amargo'],
-    prep: 'Licuá leche o bebida vegetal fría, banana, avena y canela o cacao amargo hasta integrar bien.',
+    base: ['leche o bebida vegetal', 'banana', 'avena', 'canela'],
+    prep: 'Licuá leche o bebida vegetal fría, banana, avena y canela hasta integrar bien.',
     adjust: 'Escalá avena, banana o líquido según energía necesaria.',
     std: {
       title: 'Licuado de leche con banana y avena',
       parts: [P('leche', { min: 200 }), C('banana'), X('avena', 20)],
-      steps: ['Licuá {leche} de leche fría (o bebida vegetal) con {banana} de banana, {avena} de avena y canela o cacao amargo.'],
+      steps: ['Licuá {leche} de leche fría (o bebida vegetal) con {banana} de banana, {avena} de avena y canela.'],
       female: {
         title: 'Licuado de yogur con banana y avena',
         parts: [P('yogur', { min: 120 }), C('banana'), X('avena', 20)],
-        steps: ['Licuá {yogur} de yogur griego con agua fría, {banana} de banana, {avena} de avena y canela o cacao amargo.'],
+        steps: ['Licuá {yogur} de yogur griego con agua fría, {banana} de banana, {avena} de avena y canela.'],
       },
     },
   }),
@@ -940,8 +941,8 @@ const MERIENDAS: CatalogDish[] = [
     adjust: 'Escalá avena y huevo según macros.',
     std: {
       title: 'Mug cake de banana, avena, huevo y cacao al microondas',
-      parts: [P('huevo'), C('avena'), X('banana', 80)],
-      steps: ['En una taza apta microondas, pisá {banana} de banana madura.', 'Mezclala con {huevo}, {avena} de avena, 1 cdita de cacao amargo y una pizca de polvo de hornear.', 'Cociná 2,5 min en el microondas, hasta que quede firme.'],
+      parts: [P('huevo'), C('avena'), X('banana', 80), X('cacao-amargo', 5)],
+      steps: ['En una taza apta microondas, pisá {banana} de banana madura.', 'Mezclala con {huevo}, {avena} de avena, {cacao-amargo} de cacao amargo y una pizca de polvo de hornear.', 'Cociná 2,5 min en el microondas, hasta que quede firme.'],
     },
   }),
   dish({
@@ -1160,14 +1161,14 @@ const COLACIONES: CatalogDish[] = [
     category: 'colacion',
     complexity: 'rapida',
     variants: ALL,
-    base: ['leche o bebida vegetal', 'cacao amargo o café'],
+    base: ['leche o bebida vegetal', 'cacao amargo en polvo (10 g)'],
     prep: 'Mezclá frío o tibio sin azúcar agregada.',
     adjust: 'Ajustá mililitros según macros.',
     std: {
-      title: 'Vaso de leche con cacao amargo o café',
-      parts: [P('leche', { min: 200 })],
-      steps: ['Mezclá {leche} de leche (o bebida vegetal) con cacao amargo o café, frío o tibio, sin azúcar.'],
-      female: { title: 'Yogur griego con cacao amargo', parts: [P('yogur', { min: 120 })], steps: ['Mezclá {yogur} de yogur griego con 1 cdita de cacao amargo (sin azúcar).'] },
+      title: 'Vaso de leche chocolatada con cacao amargo',
+      parts: [P('leche', { min: 200 }), X('cacao-amargo', 10)],
+      steps: ['Mezclá {leche} de leche (o bebida vegetal) con {cacao-amargo} de cacao amargo en polvo, frío o tibio, sin azúcar (edulcorante a gusto). Si preferís café, mismo vaso sin el cacao.'],
+      female: { title: 'Yogur griego con cacao amargo', parts: [P('yogur', { min: 120 }), X('cacao-amargo', 5)], steps: ['Mezclá {yogur} de yogur griego con {cacao-amargo} de cacao amargo (sin azúcar).'] },
     },
   }),
   dish({
@@ -1210,11 +1211,16 @@ const COLACIONES: CatalogDish[] = [
 export const CATALOG: CatalogDish[] = [...DESAYUNOS, ...PRINCIPALES, ...MERIENDAS, ...COLACIONES];
 export const CATALOG_BY_ID: Record<string, CatalogDish> = Object.fromEntries(CATALOG.map((d) => [d.id, d]));
 
-export type BankVariantKey = 'std' | 'stacc' | 'veg';
-export const VARIANT_OF: Record<BankVariantKey, CatVariant> = { std: 'Estandar', stacc: 'Sin TACC', veg: 'Vegetariana' };
+export type BankVariantKey = 'std' | 'stacc' | 'veg' | 'keto' | 'lowcarb';
+export const VARIANT_OF: Record<BankVariantKey, CatVariant> = { std: 'Estandar', stacc: 'Sin TACC', veg: 'Vegetariana', keto: 'Estandar', lowcarb: 'Estandar' };
 
 /** Receta del plato para una variante (null si el plato no admite esa variante). */
 export function catalogRecipe(d: CatalogDish, v: BankVariantKey): CatRecipe | null {
+  // Keto / Low Carb: sólo los platos cuyos ingredientes respetan el protocolo (sin sustituciones forzadas).
+  if (v === 'keto' || v === 'lowcarb') {
+    const r = d.std;
+    return r.parts.every((p) => !(FOOD_ALLERGENS[p.id] ?? []).includes(v)) ? r : null;
+  }
   if (!d.variants.includes(VARIANT_OF[v])) return null;
   if (v === 'stacc') return d.stacc ?? d.std;
   if (v === 'veg') return d.veg ?? d.std;

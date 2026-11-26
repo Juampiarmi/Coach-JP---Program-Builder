@@ -10,6 +10,10 @@ import { timeToMinutes } from './schedule';
 
 /** Entreno a la mañana temprano, al mediodía, a la tarde y a la noche. */
 const TRAININGS = [{ trainingTime: '07:00', sessionMinutes: 60 }, { trainingTime: '12:00', sessionMinutes: 75 }, { trainingTime: '18:00', sessionMinutes: 60 }, { trainingTime: '20:00', sessionMinutes: 90 }];
+import { netCarbs } from './foods';
+import { FOOD_ALLERGENS } from './allergens';
+let ketoMax = 0;
+let lowMax = 0;
 import { MAIN_MEAT_FLOOR, MAIN_MEATS, mealVolumeCap, portionCap, solidGrams } from './portionCaps';
 
 const fails: string[] = [];
@@ -60,6 +64,10 @@ for (const plan of BANK_PLAN_IDS) {
         // Mujer: proteína en su rango fisiológico 1,6-2,3 g/kg, también en las más livianas con el bife de ≥ 120 g.
         const pMax = 2.3;
         if (sex === 'F' && (p / w < 1.6 || p / w > pMax)) fails.push(`${tag}: proteína ${(p / w).toFixed(2)} g/kg (rango 1,6-${pMax})`);
+        // Protocolos: carbos NETOS del día (keto ≤ 50 g; low carb ≤ 100 g + 5 % de tolerancia) y proteína moderada en keto.
+        const net = netCarbs(meals.flatMap((m) => m.items));
+        if (variant === 'keto') { ketoMax = Math.max(ketoMax, net); if (net > 50) fails.push(`${tag}: ${net.toFixed(0)} g de carbos netos (keto ≤ 50 g)`); if (p / w > 2.3) fails.push(`${tag}: proteína keto ${(p / w).toFixed(2)} g/kg (moderada ≤ 2,3)`); }
+        if (variant === 'lowcarb') { lowMax = Math.max(lowMax, net); if (net > 105) fails.push(`${tag}: ${net.toFixed(0)} g de carbos netos (low carb ≤ 100 g)`); }
         if (Math.abs(dev) > 0.05) fails.push(`${tag}: el día cierra en ${Math.round(kcal)} kcal vs ${Math.round(T.kcal)} (${(dev * 100).toFixed(1)} %)`);
         for (const m of meals) {
           const opts = [{ title: m.title ?? '', items: m.items }, ...(m.alts ?? [])];
@@ -70,7 +78,7 @@ for (const plan of BANK_PLAN_IDS) {
             if (vol > mealVolumeCap(sex, m.role) + 5) fails.push(`${tag} · ${m.name} · ${o.title}: ${vol} g sólidos (tope ${mealVolumeCap(sex, m.role)} g)`);
             for (const it of o.items) {
               checks++;
-              const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg' }).max;
+              const cap = portionCap(it.foodId, { sex, role: m.role, veg: variant === 'veg', diet: variant === 'keto' || variant === 'lowcarb' ? variant : undefined }).max;
               if (it.grams > cap) fails.push(`${tag} · ${m.name} · ${o.title}: ${it.food} ${it.grams} g supera el tope de ${cap} g`);
               // Piso visible de carne en almuerzo y cena; unidades enteras; mujer sin leche fluida.
               if (it.foodId && MAIN_MEATS.has(it.foodId) && (m.role === 'lunch' || m.role === 'dinner') && it.grams < MAIN_MEAT_FLOOR[sex]) fails.push(`${tag} · ${m.name} · ${o.title}: ${it.food} ${it.grams} g (piso ${MAIN_MEAT_FLOOR[sex]} g)`);
@@ -79,6 +87,7 @@ for (const plan of BANK_PLAN_IDS) {
               if (sex === 'F' && (it.foodId === 'leche' || it.foodId === 'leche-deslactosada') && it.grams > 100) fails.push(`${tag} · ${o.title}: ${it.grams} ml de leche fluida en un plan de mujer`);
               if (variant === 'stacc' && it.foodId && GLUTEN_FOODS.has(it.foodId)) fails.push(`${tag} · ${o.title}: ${it.food} tiene gluten`);
               if (variant === 'veg' && it.foodId && MEAT_FOODS.has(it.foodId)) fails.push(`${tag} · ${o.title}: ${it.food} no es vegetariano`);
+              if ((variant === 'keto' || variant === 'lowcarb') && it.foodId && (FOOD_ALLERGENS[it.foodId] ?? []).includes(variant)) fails.push(`${tag} · ${o.title}: ${it.food} no respeta el protocolo ${variant}`);
             }
             const eggs = o.items.reduce((a, i) => a + (i.foodId === 'huevo' ? i.grams / 60 : i.foodId === 'claras' ? i.grams / 33 : 0), 0);
             if (eggs > 8.01) fails.push(`${tag} · ${o.title}: ${eggs} huevos + claras (máximo 8)`);
@@ -101,10 +110,11 @@ for (const plan of BANK_PLAN_IDS) {
 console.log(`Banco de planes: ${checks} verificaciones · peor cierre de calorías ${(worst * 100).toFixed(1)} % · peor desvío de proteína ${(worstP * 100).toFixed(1)} % · ${extras} colaciones extra · ${desserts} cenas con postre`);
 if (short.length) console.log(`Días con una colación menos (no entra en la agenda): ${short.length}\n  ${short.slice(0, 6).join('\n  ')}`);
 console.log(`Peor proteína: ${worstPTag}`);
+console.log(`Protocolos: carbos netos máximos del día · Keto ${ketoMax.toFixed(0)} g · Low Carb ${lowMax.toFixed(0)} g`);
 console.log(`Comidas por día (máximo): ${[...counts].sort().map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 if (fails.length) {
   console.error(fails.slice(0, Number(process.env.SHOW ?? 40)).join('\n'));
   console.error(`\n✗ ${fails.length} problemas en el banco de planes`);
   process.exit(1);
 }
-console.log('✓ 24 planes × 6 pesos × 4 horarios de entreno × entreno / descanso: ningún ingrediente supera su tope, todos los días cierran a ±5 % y la cena cierra el día');
+console.log('✓ 40 planes (8 perfiles × 5 variantes: estándar, sin TACC, vegetariano, low carb y keto) × 6 pesos × 4 horarios de entreno × entreno / descanso: ningún ingrediente supera su tope, todos los días cierran a ±5 % y la cena cierra el día');

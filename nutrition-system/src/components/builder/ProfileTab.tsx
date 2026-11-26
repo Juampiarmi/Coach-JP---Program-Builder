@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { protocolOf, type DietProtocol } from '@/lib/allergens';
 import { Activity, Calculator, Eye, Gauge, Ruler, SlidersHorizontal, Zap } from 'lucide-react';
 import {
   ACTIVITY_PRESETS,
@@ -488,6 +489,41 @@ export function PrecalcPanel({ title = 'PRECÁLCULO EN VIVO · CALORÍAS Y MACRO
   );
 }
 
+const PROTOCOL_OPTS: { id: DietProtocol | null; label: string; note: string }[] = [
+  { id: null, label: 'Estándar', note: 'Reparto de macros del objetivo.' },
+  { id: 'lowcarb', label: 'Low Carb', note: '~50-100 g de carbos netos/día: sin cereales refinados, azúcares ni tubérculos altos en carbos.' },
+  { id: 'keto', label: 'Keto', note: '≤ 30-50 g de carbos netos/día, proteína 1,6-2,0 g/kg y el resto con grasas saludables.' },
+];
+/** Protocolo nutricional del alumno (convive con alergias y vegetarianismo): macros, banco, swaps, Mi heladera y Comer afuera. */
+export function ProtocolPicker() {
+  const allergies = usePlanStore((s) => s.plan.anamnesis?.allergies ?? []);
+  const setProtocol = usePlanStore((s) => s.setProtocol);
+  const cur = protocolOf(allergies);
+  return (
+    <div className="mb-3" data-protocol>
+      <Label>Protocolo nutricional</Label>
+      <div className="grid gap-1.5 sm:grid-cols-3">
+        {PROTOCOL_OPTS.map((o) => (
+          <button
+            key={o.label}
+            type="button"
+            data-protocol-opt={o.id ?? 'std'}
+            onClick={() => setProtocol(o.id)}
+            className={cx('min-h-[44px] rounded-lg border px-3 py-2 text-left transition', cur === o.id ? 'border-[#22C55E] bg-[#22C55E]/10' : 'border-line hover:border-white/20')}
+          >
+            <div className={cx('text-[13px] font-semibold', cur === o.id ? 'text-ink' : 'text-steel')}>
+              {cur === o.id ? '✓ ' : ''}
+              {o.label}
+            </div>
+            <div className="text-[11px] leading-snug text-mute">{o.note}</div>
+          </button>
+        ))}
+      </div>
+      {cur && <p className="mt-1.5 text-[11.5px] text-[#4ADE80]/90">Macros, banco de recetas, reemplazos, Mi heladera y Comer afuera respetan el tope de carbos de {cur === 'keto' ? 'Keto' : 'Low Carb'}. Las comidas actuales ya se corrigieron.</p>}
+    </div>
+  );
+}
+
 /** Alergias e intolerancias (las mismas de la anamnesis): el banco, los swaps y la publicación las respetan. */
 export function AllergyChips() {
   const an = usePlanStore((s) => s.plan.anamnesis);
@@ -496,6 +532,7 @@ export function AllergyChips() {
   const toggle = (id: string) => setAnamnesis({ allergies: list.includes(id) ? list.filter((x) => x !== id) : [...list, id] });
   return (
     <div>
+      <ProtocolPicker />
       <Label>Alergias e intolerancias · el plan nunca las incluye (bloquea la publicación)</Label>
       <div className="flex flex-wrap gap-1.5">
         {ALLERGIES.map((a) => (

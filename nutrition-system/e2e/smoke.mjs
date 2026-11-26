@@ -231,6 +231,16 @@ try {
   await page.locator('section nav button', { hasText: 'Alumno' }).click();
   await page.locator('[data-allergy="veg"]').first().click();
   await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  // Protocolo Keto: los selectores dejan de ofrecer cereales, tubérculos y frutas dulces; se vuelve a Estándar.
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  await page.locator('[data-protocol-opt="keto"]').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  await page.waitForTimeout(150);
+  const ketoOpts = await page.locator('select:has(option:text-matches("Agregar alimento"))').first().locator('option').allInnerTexts();
+  check(ketoOpts.length > 5 && !ketoOpts.some((o) => /arroz|banana|papa|pan integral|avena/i.test(o)), 'Keto: arroz, papa, pan, avena y banana no aparecen al agregar alimentos');
+  await page.locator('section nav button', { hasText: 'Alumno' }).click();
+  await page.locator('[data-protocol-opt="std"]').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
   // Modo Parejas: Persona B con el mismo menú y sus gramos, lado a lado, y lista de compras combinada.
   await page.locator('[data-couple-create]').click();
   await page.waitForTimeout(300);
@@ -280,9 +290,11 @@ try {
   check(nDishes >= 50, `Banco Global: platos armados del Recetario y propios (${nDishes})`);
   await page.locator('[data-bank-view="foods"]').click();
   const nFoods = await page.locator('[data-bank-item]').count();
-  await page.locator('[data-bank-group="p"]').click();
+  const cats = await page.locator('[data-bank-group]').allInnerTexts();
+  check(['Carnes y aves', 'Pescados y mariscos', 'Huevos y lácteos', 'Cereales y tubérculos', 'Legumbres', 'Verduras y hortalizas', 'Frutas', 'Grasas saludables y frutos secos', 'Condimentos / extras / infusiones'].every((c) => cats.includes(c)), `Banco Global: categorías reales (${cats.join(' · ')})`);
+  await page.locator('[data-bank-group="carnes"]').click();
   const nProt = await page.locator('[data-bank-item]').count();
-  check(nFoods > 40 && nProt > 3 && nProt < nFoods, `Banco Global: alimentos base filtrados por grupo (${nFoods} → ${nProt} proteínas)`);
+  check(nFoods > 40 && nProt > 3 && nProt < nFoods, `Banco Global: alimentos base filtrados por categoría (${nFoods} → ${nProt} carnes y aves)`);
   await page.locator('[data-bank-restr="veg"]').click();
   const vegNames = await page.locator('[data-bank-item]').allInnerTexts();
   check(!vegNames.some((t) => /pollo|cuadril|merluza|atún|carne/i.test(t)), 'Banco Global: el filtro Vegetariano oculta carnes y pescados');
@@ -308,6 +320,16 @@ try {
   check(/\d+ g /.test(prev) && /kcal/.test(prev), 'Banco Global: vista previa con gramos ajustados antes de confirmar');
   await page.locator('[data-bank-confirm]').click();
   check(/Asignado/.test(await page.locator('[data-bank-msg]').innerText()), 'Banco Global: asignado a la comida como alternativa');
+  // 3 variantes por comida: Opción 1 + 2 equivalentes auto-escaladas.
+  await page.locator('[data-bank-mode]').selectOption('triple');
+  check((await page.locator('[data-bank-triple] li').count()) === 3, 'Banco Global: vista previa de 3 variantes equivalentes por comida');
+  await page.locator('[data-bank-confirm]').click();
+  check(/2 variantes equivalentes/.test(await page.locator('[data-bank-msg]').innerText()), 'Banco Global: asignada la Opción 1 + 2 variantes');
+  // Armar plan completo desde el Banco Global.
+  await page.locator('[data-bank-build-start]').click();
+  await page.locator('[data-bank-build-confirm]').click();
+  await page.waitForTimeout(300);
+  check((await page.locator('[data-sticky-summary]').count()) > 0 || (await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).count()) > 0, 'Banco Global: plan completo armado (pasa a Comidas)');
 
   // Nuevos platos: carga rápida (nombre + ingredientes + tip), categoría propia y guardado.
   await page.locator('section nav button', { hasText: 'Alimentos y marcas' }).click();

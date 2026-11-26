@@ -13,10 +13,10 @@ import { swapBase } from '@/lib/baseSwap';
 import { setCoachPhone as setCoachContact } from '@/lib/coachContact';
 import { QUICK_SWAPS, quickSwapItems } from '@/lib/quickSwaps';
 import { mirrorForPartner } from '@/lib/couple';
-import { previewAssign, type BankSource } from '@/lib/bankAssign';
+import { previewAssign, previewTriple, type AssignPreview, type BankSource } from '@/lib/bankAssign';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { setPartnerResolver } from '@/lib/exportHtml';
-import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree } from '@/lib/allergens';
+import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree, type DietProtocol } from '@/lib/allergens';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
 import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
@@ -89,6 +89,12 @@ interface PlanState {
   setObjective: (goal: BankGoal) => void;
   /** Usa los macros g/kg del plan sugerido por el precálculo (entreno y descanso). */
   applyPrecalcMacros: () => void;
+  /** Protocolo nutricional (Keto / Low Carb / estándar): restricciones, macros del protocolo y comidas corregidas. */
+  setProtocol: (p: DietProtocol | null) => void;
+  /** Arma el plan completo (entreno + descanso) desde el Banco Global para el perfil del alumno: 3 opciones por comida. */
+  buildFromBank: () => void;
+  /** Un plato del banco como Opción 1 + 2 variantes equivalentes (isocalóricas / isoproteicas) auto-escaladas. */
+  assignTriple: (mealId: string, src: BankSource) => boolean;
   /** Guarda el plan del atleta activo como plantilla propia. */
   saveTemplate: (name: string) => void;
   deleteTemplate: (id: string) => void;
@@ -334,6 +340,36 @@ export const usePlanStore = create<PlanState>()(
           const pc = precalc(s.plan);
           return { plan: touch({ ...s.plan, profile: { ...s.plan.profile, phase: pc.goal.phase }, periodization: { ...s.plan.periodization, on: pc.gkg.on, off: pc.gkg.off } }) };
         }),
+      setProtocol: (proto) => {
+        const s = get();
+        const an = sanitizeAnamnesis(s.plan.anamnesis);
+        const allergies = [...an.allergies.filter((a) => a !== 'keto' && a !== 'lowcarb'), ...(proto ? [proto] : [])];
+        const base = { ...s.plan, anamnesis: { ...an, allergies } };
+        const pc = precalc(base);
+        // Macros del protocolo (mismas calorías del objetivo) y las comidas actuales sin lo que el protocolo excluye.
+        const withMacros = { ...base, periodization: { ...base.periodization, on: pc.gkg.on, off: pc.gkg.off } };
+        set({ plan: touch(fixPlanAllergens(withMacros, planIsMeatFree(withMacros)).plan) });
+      },
+      buildFromBank: () => {
+        get().applyTemplate(precalc(get().plan).sel);
+        // Flujo rápido: Opción 1 + 2 variantes por comida (las más parecidas en calorías y proteína).
+        const s = get();
+        set({ plan: touch({ ...s.plan, meals: s.plan.meals.map((m) => ({ ...m, alts: (m.alts ?? []).slice(0, 2) })) }) });
+      },
+      assignTriple: (mealId, src) => {
+        const s = get();
+        const meal = s.plan.meals.find((m) => m.id === mealId);
+        if (!meal) return false;
+        const opts = previewTriple(src, meal, s.plan, useFoodDbStore.getState().items);
+        if (!opts.length) return false;
+        const fresh = (o: AssignPreview) => ({ title: o.title, items: o.items.map((i) => ({ ...i, id: uid() })), steps: o.steps, yieldInfo: o.yieldInfo });
+        const [main, ...alts] = opts.map(fresh);
+        const next = mapMeal(s.plan, mealId, (m) => ({ ...m, items: main.items, title: main.title, steps: main.steps, yieldInfo: main.yieldInfo, technique: undefined, alts }));
+        const partner = next.partnerId ? s.roster[next.partnerId] : undefined;
+        if (partner && partner.partnerId === next.id && !next.partnerSyncAt) set({ plan: touch(next), roster: { ...s.roster, [partner.id]: mirrorForPartner(partner, touch(next)) } });
+        else set({ plan: touch(next) });
+        return true;
+      },
       saveTemplate: (name) => set((s) => ({ templates: [templateFromPlan(s.plan, name), ...s.templates] })),
       fixAllergens: () => {
         const s = get();
@@ -543,7 +579,13 @@ export const usePlanStore = create<PlanState>()(
         const anamnesis = {
           ...an,
           goal: goal.anamnesisGoal,
-          allergies: sel.variant === 'stacc' ? [...new Set([...an.allergies, 'gluten'])] : an.allergies,
+          // Keto / Low Carb quedan como protocolo del alumno (filtros de la app, Mi heladera y Comer afuera).
+          allergies:
+            sel.variant === 'stacc'
+              ? [...new Set([...an.allergies, 'gluten'])]
+              : sel.variant === 'keto' || sel.variant === 'lowcarb'
+                ? [...an.allergies.filter((a) => a !== 'keto' && a !== 'lowcarb'), sel.variant]
+                : an.allergies,
           disabledSlots: [],
         };
         const base = { ...s.plan, anamnesis };

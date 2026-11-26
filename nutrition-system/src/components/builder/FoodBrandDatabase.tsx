@@ -5,7 +5,7 @@ import { ChefHat, Database, Download, Pencil, Plus, RotateCcw, Save, Search, Tra
 import { fmt0 } from '@/lib/bioenergetics';
 import { BRAND_CATEGORIES as BRAND_CATEGORY_KEYS, BRAND_CATEGORY_LABEL, categoryLabel, DISH_CATEGORIES, dishYield, emptyDishBase, FOOD_CATEGORIES, NEW_DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
 import { FOOD_BY_ID, FOODS, macrosFor } from '@/lib/foods';
-import { ALLERGEN_INFO, itemAllergens, type Allergen } from '@/lib/allergens';
+import { ALLERGEN_INFO, isDietTag, itemAllergens, type Allergen } from '@/lib/allergens';
 import { auditDish } from '@/lib/dishAudit';
 import { quickDish, quickToBrandFood, type QuickDish } from '@/lib/dishQuick';
 import { yieldLabel, yieldTag } from '@/lib/yieldInfo';
@@ -269,7 +269,7 @@ export function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: (
   const setP = (patch: Partial<BrandFood['porcion_base']>) => setD((x) => ({ ...x, porcion_base: { ...x.porcion_base, ...patch } }));
   const [dishMode] = useState(DISH_CATEGORIES.includes(initial.categoria));
   const isDish = dishMode || DISH_CATEGORIES.includes(d.categoria);
-  const liveAllergens = [...new Set((d.ingredientes ?? []).filter((x) => x.foodId).flatMap((x) => itemAllergens({ foodId: x.foodId, food: x.nombre })))].filter((a) => a !== 'veg') as Allergen[];
+  const liveAllergens = [...new Set((d.ingredientes ?? []).filter((x) => x.foodId).flatMap((x) => itemAllergens({ foodId: x.foodId, food: x.nombre })))].filter((a) => !isDietTag(a)) as Allergen[];
   const ingr = d.ingredientes ?? [];
   const hasRecipe = isDish && ingr.some((x) => x.foodId && x.gramos > 0);
   const valid = d.nombre.trim().length >= 2 && (hasRecipe || d.porcion_base.gramos > 0);

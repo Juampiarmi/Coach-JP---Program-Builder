@@ -87,6 +87,7 @@ export const HOUSE: Record<string, Measure[]> = {
   quinoa: [M(150, 'taza', 'tazas', true)],
   hummus: [M(20, 'cda', 'cdas', true)],
   aceitunas: [M(5, 'aceituna', 'aceitunas')],
+  'cacao-amargo': [M(10, 'cda sopera', 'cdas soperas'), M(5, 'cdita', 'cditas')],
   oliva: [M(5, 'cdita', 'cditas', true), M(13, 'cda', 'cdas', true)],
   palta: [M(20, 'cda colmada', 'cdas colmadas', true), M(40, 'cuarto', 'cuartos', false, ' de palta'), M(160, 'palta mediana', 'paltas medianas', true)],
   nueces: [M(15, 'puñadito', 'puñaditos')],

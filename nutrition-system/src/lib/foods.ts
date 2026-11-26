@@ -154,6 +154,8 @@ export const FOODS: FoodRef[] = [
   { id: 'hummus', name: 'Hummus de garbanzos', group: 'fat', unit: { label: 'cda', grams: 20 }, p: 8, c: 14, f: 10, leucine: 0.55 },
   { id: 'cottage', name: 'Queso cottage', group: 'dairy-protein', p: 11, c: 3.4, f: 4, leucine: 1.1, equiv: ['ricota'] },
   { id: 'aceitunas', name: 'Aceitunas', group: 'fat', p: 0.8, c: 4, f: 11, leucine: 0.03 },
+  // Cacao amargo en polvo (sin azúcar): carbos disponibles (la fibra, ~33 g/100 g, no se cuenta).
+  { id: 'cacao-amargo', name: 'Cacao amargo en polvo', group: 'fat', unit: { label: 'cda', grams: 10 }, p: 20, c: 16, f: 14, leucine: 1.2 },
   { id: 'avena-sin-tacc', name: 'Avena certificada sin TACC', group: 'cereal', p: 13, c: 60, f: 7, leucine: 1.0, equiv: ['galletas-arroz'] },
   { id: 'granola-sin-tacc', name: 'Granola sin TACC', group: 'cereal', p: 8, c: 66, f: 12, leucine: 0.6, equiv: ['avena-sin-tacc'] },
   // Biblioteca de planes: variantes sin lactosa y plant-based.
@@ -454,3 +456,18 @@ function normalize(s: string) {
 
 export const round1 = (n: number) => Math.round(n * 10) / 10;
 export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Fibra (g / 100 g) de los alimentos con carbos relevantes: carbos netos = carbos totales − fibra. Es la medida que
+ * usan los protocolos Keto (≤ 30-50 g netos/día) y Low Carb (~50-100 g netos/día). Fuente: tablas USDA / ARGENFOOD.
+ */
+export const FIBER: Record<string, number> = {
+  palta: 6.7, nueces: 6.7, almendras: 12.5, mani: 6, semillas: 15, aceitunas: 3.2, frutillas: 2, arandanos: 2.4, manzana: 2.4, pera: 3.1, kiwi: 3, naranja: 2.4, banana: 2.6,
+  lentejas: 7.9, garbanzos: 7.6, porotos: 6.4, arvejas: 5.5, quinoa: 2.8, avena: 10, 'avena-sin-tacc': 10, 'harina-avena': 10, pan: 7, 'fideos-integrales': 4, 'fideos-legumbres': 7, yamani: 1.8, choclo: 2.7, batata: 3, papa: 1.8, calabaza: 2,
+  espinaca: 2.2, brocoli: 2.6, lechuga: 1.3, tomate: 1.2, zucchini: 1, zapallito: 1.1, champinones: 1, morron: 2, rucula: 1.6, pepino: 0.5, apio: 1.6, cebolla: 1.7, berenjena: 3, zanahoria: 2.8, vegetales: 2.5,
+  hummus: 6, granola: 7, 'granola-sin-tacc': 7, 'galletas-arroz': 3, tofu: 0.3, 'soja-texturizada': 13, 'bebida-almendra': 0.4,
+};
+/** Carbos netos de un ingrediente (g). */
+export const netCarbsOf = (it: { foodId?: string; grams: number; c: number }) => Math.max(0, it.c - (it.foodId ? ((FIBER[it.foodId] ?? 0) * it.grams) / 100 : 0));
+/** Carbos netos de una lista de ingredientes (g). */
+export const netCarbs = (items: { foodId?: string; grams: number; c: number }[]) => items.reduce((a, i) => a + netCarbsOf(i), 0);
