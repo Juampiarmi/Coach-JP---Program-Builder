@@ -1646,7 +1646,8 @@ const runtime = String.raw`
       var cbW = function () { return x.measureText('COACH JP  &  NUTRIRCE').width; };
       while (hs > 20 && L + tagW + 40 + cbW() > R) { hs -= 1; font(700, hs); }
       var hx = R - cbW();
-      x.fillStyle = WHITE; x.fillText('COACH JP', hx, 236); hx += x.measureText('COACH JP').width;
+      x.fillStyle = WHITE; x.fillText('COACH ', hx, 236); hx += x.measureText('COACH ').width;
+      x.fillStyle = '#F97316'; x.fillText('JP', hx, 236); hx += x.measureText('JP').width;
       x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  &  ', hx, 236); hx += x.measureText('  &  ').width;
       x.fillStyle = '#22C55E'; x.fillText('NUTRIR', hx, 236); hx += x.measureText('NUTRIR').width;
       x.fillStyle = '#F97316'; x.fillText('CE', hx, 236);
@@ -1712,7 +1713,7 @@ const runtime = String.raw`
       // Escudo oficial (PNG) con la misma altura que el logo de NutrirCe; si todavía no cargó, el vector.
       var cjI = cjImg(), LH = IS * 1.3;
       if (cjI) { var cwI = LH * cjI.naturalWidth / cjI.naturalHeight; x.drawImage(cjI, x0 + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH); } else drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
-      x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = FLUOR; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
+      x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
       x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('&', W / 2 - xw / 2, yb); font(700, fsz);
       var xb = W / 2 + xw / 2 + XG, img = ncImg();
       if (img) {
@@ -1832,8 +1833,8 @@ const runtime = String.raw`
 
     // Fila 1 · HUD: logo + marca + fase + guía.
     // Co-branding 50/50: [Coach JP] & [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
-    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH JP</b></span><span class="cbx">&amp;</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
-    else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
+    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH <span class="jp">JP</span></b></span><span class="cbx">&amp;</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
+    else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH <span class="jp">JP</span></div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + (D.nutri ? ' · ' + esc(D.athlete.phase) : '') + '</span></div>';
     h += '<div class="datesel"><button data-day="-1" aria-label="Día anterior">◀</button><span class="dlab' + (S.date === today ? ' now' : '') + '">' + dateLabel(S.date) + '</span><button data-day="1" aria-label="Día siguiente">▶</button></div></div>';
@@ -1934,8 +1935,8 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">&amp;</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">&amp;</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
-    else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
+    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">&amp;</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH <span class="jp">JP</span> <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">&amp;</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
+    else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH <span class="jp">JP</span> · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();
     var y = window.scrollY;

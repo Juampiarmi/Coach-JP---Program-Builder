@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Rocket, ShieldAlert } from 'lucide-react';
-import { computeTelemetry, dayTotals, fmt0 } from '@/lib/bioenergetics';
+import { computeTelemetry, fmt0 } from '@/lib/bioenergetics';
+import { shownDayTotals } from '@/lib/netCarbView';
 import { cloudConfigured } from '@/lib/cloud/config';
 import { qualityChecks, type Light } from '@/lib/quality';
 import { useExportFreshness } from '@/components/deploy/ExportFreshness';
@@ -51,7 +52,7 @@ export function StickySummary() {
   const blocked = checks.some((c) => c.status === 'block');
   const issues = checks.filter((c) => c.status !== 'ok');
   const day = (d: 'on' | 'off') => {
-    const got = dayTotals(plan.meals, d);
+    const got = shownDayTotals(plan, d);
     const goal = d === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
     return (
       <div className="min-w-[150px] flex-1 space-y-0.5 max-lg:hidden">
@@ -60,7 +61,7 @@ export function StickySummary() {
         </div>
         <Bar label="Kcal" got={got.kcal} goal={goal.kcal} />
         <Bar label="Prot" got={got.p} goal={goal.p} />
-        <Bar label="Carb" got={got.c} goal={goal.c} />
+        <Bar label={got.net ? 'C.net' : 'Carb'} got={got.c} goal={goal.c} />
         <Bar label="Gras" got={got.f} goal={goal.f} />
       </div>
     );

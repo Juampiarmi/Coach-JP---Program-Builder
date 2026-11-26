@@ -122,7 +122,7 @@ function CoBrandHeader() {
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1" data-builder-cobrand>
       <span className="flex items-center gap-2">
         {n ? <CoachJpLogo size={46} /> : <NutritionMark size={34} />}
-        <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-ink">COACH JP</span>
+        <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-white">COACH <span className="text-fire">JP</span></span>
       </span>
       {n && (
         <>

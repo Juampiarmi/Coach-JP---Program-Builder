@@ -1,4 +1,5 @@
-import { MAIN_MEATS, portionCap, withCapSex } from './portionCaps';
+import { MAIN_MEATS, portionCap, capDiet, withCapSex } from './portionCaps';
+import { allergiesOf, protocolOf } from './allergens';
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
 import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2, snapUnit, unitStep } from './foods';
 import { fitAltsToMain } from './menuOptions';
@@ -88,7 +89,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
     // Se corrige el macro más desviado en la dirección de la brecha (si sobran kcal, el que más se pasó; si faltan, el que más falta).
     const got = dayTotals(meals, day);
     const dev = (k: Anchor) => (target[k] > 0 ? got[k] / target[k] - 1 : 0);
-    const order = (['c', 'f', 'p'] as Anchor[]).sort((a, b) => (gap < 0 ? dev(b) - dev(a) : dev(a) - dev(b)));
+    const order = (['c', 'f', 'p'] as Anchor[]).filter((k) => !(k === 'c' && capDiet() === 'keto') && !(k === 'c' && capDiet() === 'lowcarb' && gap > 0)).sort((a, b) => (gap < 0 ? dev(b) - dev(a) : dev(a) - dev(b)));
     let host: (FoodItem & { cap: number; floor: number }) | undefined;
     for (const k of order) {
       host = pick(k, [day]) ?? pick(k, [day, 'both']);
@@ -184,7 +185,7 @@ function injectSource(meals: Meal[], day: DayMode, macro: 'c' | 'f', gap: number
  * (y por ende de kcal, con la proteína ya fijada por la IA / el coach).
  */
 export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: DayBalance[] } {
-  return withCapSex(plan.profile.sex, () => balancePlanInner(plan));
+  return withCapSex(plan.profile.sex, () => balancePlanInner(plan), protocolOf(allergiesOf(plan)));
 }
 
 function balancePlanInner(plan: AthletePlan): { plan: AthletePlan; report: DayBalance[] } {
@@ -197,10 +198,13 @@ function balancePlanInner(plan: AthletePlan): { plan: AthletePlan; report: DayBa
     const before = dayTotals(meals, day);
     // Proteína fuera de ±3 % (la IA o el escalado de carbos la corren): se corrige primero para que el cierre de kcal no castigue a los carbos.
     const pr = balanceMacro(meals, day, 'p', target.p);
-    const c = balanceMacro(pr.meals, day, 'c', target.c);
+    // Keto / Low Carb: los carbos del protocolo son NETOS y los acota el armado (techo de carbos netos); el cierre no
+    // los empuja hacia la meta con carbos totales (eso descalibraría verduras y calorías).
+    const proto = capDiet();
+    const c = proto ? { meals: pr.meals, changed: 0 } : balanceMacro(pr.meals, day, 'c', target.c);
     const f = balanceMacro(c.meals, day, 'f', target.f);
     // Las grasas de frutos secos / maní mueven algo de carbos: una pasada final de carbos.
-    const c2 = balanceMacro(f.meals, day, 'c', target.c);
+    const c2 = proto ? { meals: f.meals, changed: 0 } : balanceMacro(f.meals, day, 'c', target.c);
     // Cierre calórico estricto (±1 %): la proteína de la IA puede desviar las kcal aunque carbos y grasas cierren.
     const k = closeKcal(c2.meals, day, target);
     meals = k.meals;

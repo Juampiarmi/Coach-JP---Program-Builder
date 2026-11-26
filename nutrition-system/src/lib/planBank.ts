@@ -1277,7 +1277,15 @@ export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'an
   for (const id of mods) {
     const gap = T.kcal - totals(toItems(g)).kcal;
     if (gap <= T.kcal * 0.05) break;
+    const before = { ...g };
+    const wasNew = !w.added.has(id);
     nudge(w, id, gap, ctx, { allowNew: true, max: MODULE_MAX[id] });
+    // Una porción mínima (ej. 1 cda de aceite) que pasa más de largo de lo que faltaba no se suma: queda más cerca sin ella.
+    if (Math.abs(T.kcal - totals(toItems(g)).kcal) > gap) {
+      for (const k of Object.keys(g)) if (!(k in before)) delete g[k];
+      Object.assign(g, before);
+      if (wasNew) w.added.delete(id);
+    }
   }
   const items = toItems(g);
   const recItems = items.filter((i) => !w.added.has(i.foodId ?? ''));

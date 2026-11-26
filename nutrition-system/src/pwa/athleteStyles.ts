@@ -236,6 +236,7 @@ body.standalone .dock{display:none}
 .cobrand svg{width:28px;height:28px;flex:none}.cj-img{height:36px;width:auto;display:block;flex:none;margin:-4px 0}.cj-img.sm{height:30px;margin:0}
 .cobrand .brand{font-size:14.5px;white-space:nowrap}
 .cbx{color:rgba(148,163,184,.55);font-weight:400;font-size:13px}
+.brand{color:#FFFFFF}.brand .jp{color:#F97316}
 .ncw i{font-style:normal;color:var(--nc-green)}.ncw em{font-style:normal;color:var(--nc-orange)}
 .nc-img{height:50px;width:auto;max-width:110px;object-fit:contain;display:block;margin:-11px 0}.nc-img.sm{height:40px;max-width:84px;margin:-5px 0}
 .top.cob .guide-btn{margin-left:auto;flex:none}

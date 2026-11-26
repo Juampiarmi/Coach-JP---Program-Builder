@@ -508,6 +508,12 @@ try {
   const cob = pwa.locator('[data-cobrand]');
   const ncOk = await cob.locator('img.nc-img').evaluate((i) => i.complete && i.naturalWidth > 0 && i.src.startsWith('data:image/png'));
   check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [Coach JP] & [logo oficial NutrirCe en PNG transparente]');
+  const jpColors = await cob.evaluate((el) => {
+    const b = el.querySelector('.brand');
+    const jp = b && b.querySelector('.jp');
+    return b && jp ? [getComputedStyle(b).color, getComputedStyle(jp).color] : null;
+  });
+  check(!!jpColors && jpColors[0] === 'rgb(255, 255, 255)' && jpColors[1] === 'rgb(249, 115, 22)', `App: logo «COACH» en blanco y «JP» en naranja de la marca (${jpColors})`);
   const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
   check(Math.abs(hA - hB) <= 12, `App: los dos sellos con el mismo peso visual (alto ${hA} / ${hB} px)`);
   check(/Entrenamiento & Nutrición · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: bajada «Entrenamiento & Nutrición · Lic. María Cecilia Rollán»');

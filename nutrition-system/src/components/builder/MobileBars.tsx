@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { ChevronDown, Rocket } from 'lucide-react';
-import { computeTelemetry, dayTotals, fmt0 } from '@/lib/bioenergetics';
+import { computeTelemetry, fmt0 } from '@/lib/bioenergetics';
+import { shownDayTotals } from '@/lib/netCarbView';
 import { usePlanStore, type BuilderTab } from '@/store/usePlanStore';
 import { cx } from '../hud/primitives';
 
@@ -19,7 +20,7 @@ export function MobileMacroBar() {
   const [open, setOpen] = useState(false);
   const t = computeTelemetry(plan);
   const row = (d: 'on' | 'off') => {
-    const got = dayTotals(plan.meals, d);
+    const got = shownDayTotals(plan, d);
     const goal = d === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
     return { got, goal, k: pctOf(got.kcal, goal.kcal), p: pctOf(got.p, goal.p), c: pctOf(got.c, goal.c), f: pctOf(got.f, goal.f) };
   };
@@ -54,7 +55,7 @@ export function MobileMacroBar() {
                   [
                     ['Kcal', x.k],
                     ['Prot', x.p],
-                    ['Carb', x.c],
+                    [x.got.net ? 'C.net' : 'Carb', x.c],
                     ['Gras', x.f],
                   ] as const
                 ).map(([l, v]) => (

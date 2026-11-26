@@ -1,10 +1,10 @@
+import { weeklyShopping } from './shopping';
 import { fixPlanAllergens } from './allergens';
 import { balancePlan } from './balance';
 import { computeTelemetry } from './bioenergetics';
-import { FOOD_BY_ID, householdHint } from './foods';
 import { scaleItem } from './planAdapt';
 import { uid } from './seed';
-import type { AthletePlan, FoodItem, Meal, MealDay } from './types';
+import type { AthletePlan, Meal, MealDay } from './types';
 
 /**
  * MODO PAREJAS: dos alumnos que cocinan lo mismo. La pareja copia exactamente la estructura del plan líder (comidas,
@@ -41,21 +41,6 @@ export function partnerOutOfSync(lead: AthletePlan, partner: AthletePlan) {
 }
 
 /** Factor cocido → compra (carnes en crudo, arroz y fideos en seco), igual que la lista de compras de la app. */
-const BUY: Record<string, { k: number; note: string }> = {
-  pollo: { k: 1.3, note: 'crudo' },
-  cuadril: { k: 1.3, note: 'crudo' },
-  lomo: { k: 1.3, note: 'crudo' },
-  nalga: { k: 1.3, note: 'crudo' },
-  picada: { k: 1.3, note: 'crudo' },
-  merluza: { k: 1.3, note: 'crudo' },
-  cerdo: { k: 1.3, note: 'crudo' },
-  arroz: { k: 0.4, note: 'seco' },
-  yamani: { k: 0.4, note: 'seco' },
-  fideos: { k: 0.4, note: 'seco' },
-  'fideos-sin-tacc': { k: 0.4, note: 'seco' },
-  lentejas: { k: 0.4, note: 'seco' },
-};
-
 export interface CoupleShopRow {
   key: string;
   name: string;
@@ -66,31 +51,14 @@ export interface CoupleShopRow {
   hint: string;
 }
 
-/** Lista de compras semanal combinada: suma los gramos de las dos personas (opción 1 de cada comida, 7 días). */
+/**
+ * Lista de compras semanal combinada: la MISMA lista que la individual (weeklyShopping, con sus conversiones a
+ * crudo / seco, agrupaciones y paquetes) con la columna de cada persona. Opción 1 de cada comida, 7 días.
+ */
 export function coupleShopping(a: AthletePlan, b: AthletePlan): CoupleShopRow[] {
-  const acc: Record<string, CoupleShopRow> = {};
-  const add = (p: AthletePlan, who: 'a' | 'b') => {
-    const on = Math.max(0, Math.min(7, p.profile.trainingDaysPerWeek));
-    const mult: Record<MealDay, number> = { on, off: 7 - on, both: 7 };
-    for (const m of p.meals) {
-      for (const it of m.items as FoodItem[]) {
-        if (!(it.grams > 0)) continue;
-        const key = it.foodId ?? `x:${it.food}`;
-        const buy = (it.foodId && BUY[it.foodId]) || { k: 1, note: '' };
-        const name = it.foodId ? FOOD_BY_ID[it.foodId]?.name.split(' (')[0] ?? it.food : it.food;
-        const row = (acc[key] ??= { key, name, a: 0, b: 0, total: 0, note: buy.note, hint: '' });
-        row[who] += it.grams * mult[m.day] * buy.k;
-      }
-    }
-  };
-  add(a, 'a');
-  add(b, 'b');
-  return Object.values(acc)
-    .map((r) => {
-      const round = (g: number) => Math.round(g / 10) * 10;
-      const total = round(r.a + r.b);
-      return { ...r, a: round(r.a), b: round(r.b), total, hint: r.key.startsWith('x:') ? '' : householdHint(r.key, total) };
-    })
+  return weeklyShopping([a, b])
+    .flatMap((g) => g.rows)
+    .map((r) => ({ key: r.key, name: r.name, a: r.by[0], b: r.by[1], total: r.grams, note: r.note, hint: r.hint }))
     .sort((x, y) => y.total - x.total);
 }
 

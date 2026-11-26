@@ -45,7 +45,9 @@ for (const [label, partner0] of [
   if (partnerOutOfSync(lead, partner)) fails.push(`${label}: recién copiado figura desactualizado`);
   if (!partnerOutOfSync({ ...lead, updatedAt: lead.updatedAt + 5000 }, partner)) fails.push(`${label}: no detecta cambios del menú`);
   const shop = coupleShopping(lead, partner);
-  if (!shop.length || shop.some((r) => r.total !== Math.round((r.a + r.b) / 10) * 10 && Math.abs(r.total - r.a - r.b) > 10)) fails.push(`${label}: la lista combinada no suma`);
+  if (!shop.length || shop.some((r) => r.total < r.a + r.b - 10 || (r.total > r.a + r.b + 10 && !r.hint))) fails.push(`${label}: la lista combinada no suma`);
+  // Misma lista que la individual: sin claves repetidas.
+  if (new Set(shop.map((r) => r.key)).size !== shop.length) fails.push(`${label}: filas repetidas en la lista combinada`);
 }
 if (fails.length) {
   console.error(fails.join('\n'));

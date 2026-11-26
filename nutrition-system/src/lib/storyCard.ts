@@ -121,7 +121,7 @@ function badge(ctx: Ctx, label: string, x: number, y: number, color: string, siz
 /** Encabezado 50/50: [ COACH JP & NUTRIRCE ] con el mismo tamaño y peso para las dos marcas. */
 function cobrandBadge(ctx: Ctx, x: number, y: number, size = 26) {
   ctx.font = `700 ${size}px ${CHAKRA}`;
-  const segs: [string, string][] = [['[ ', C.cyan], ['COACH JP', C.ink], ['  &  ', 'rgba(203,213,225,.6)'], ['NUTRIR', NC.green], ['CE', NC.orange], [' ]', C.cyan]];
+  const segs: [string, string][] = [['[ ', C.cyan], ['COACH ', '#FFFFFF'], ['JP', C.fire], ['  &  ', 'rgba(203,213,225,.6)'], ['NUTRIR', NC.green], ['CE', NC.orange], [' ]', C.cyan]];
   const w = segs.reduce((a, [t]) => a + width(ctx, t, 5), 0) + 44;
   const h = size + 26;
   const g = ctx.createLinearGradient(x, 0, x + w, 0);
@@ -433,7 +433,7 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
     }
     const ax = PAD_X + IS + 20;
     ctx.font = `700 ${fs}px ${CHAKRA}`;
-    ctx.fillStyle = C.ink;
+    ctx.fillStyle = '#FFFFFF';
     text(ctx, 'COACH ', ax, iy + 66, 3);
     ctx.fillStyle = C.fire;
     text(ctx, 'JP', ax + width(ctx, 'COACH ', 3), iy + 66, 3);
@@ -498,8 +498,10 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   ctx.drawImage(icon, PAD_X - 6, logoY, logoSize, logoSize);
   const tx = PAD_X + logoSize + 26;
   ctx.font = `700 54px ${CHAKRA}`;
-  ctx.fillStyle = C.ink;
-  text(ctx, 'COACH JP', tx, logoY + 62, 3);
+  ctx.fillStyle = '#FFFFFF';
+  text(ctx, 'COACH ', tx, logoY + 62, 3);
+  ctx.fillStyle = C.fire;
+  text(ctx, 'JP', tx + width(ctx, 'COACH ', 3), logoY + 62, 3);
   ctx.font = `500 30px ${MONO}`;
   ctx.fillStyle = C.steel;
   text(ctx, BRAND.handle, tx, logoY + 108);

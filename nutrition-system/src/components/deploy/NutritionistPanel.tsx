@@ -75,7 +75,7 @@ export function NutritionistPanel() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="flex items-center gap-1.5">
                 <CoachJpLogo size={38} />
-                <b className="text-[14px] tracking-[0.04em] text-ink">COACH JP</b>
+                <b className="text-[14px] tracking-[0.04em] text-white">COACH <span className="text-fire">JP</span></b>
               </span>
               <span className="text-steel/60">{'&'}</span>
               <span className="-my-1.5"><NutrirCeLogo size={50} logo={n.logo} /></span>

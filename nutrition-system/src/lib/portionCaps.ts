@@ -31,8 +31,10 @@ const bySex = (f: [number, number], m: [number, number]): SexRange => ({ F: f, M
 // Hombre: platos contundentes pero cómodos (nada de 400 g de papa + 250 g de carne + 300 g de ensalada juntos).
 const MEAT = bySex([80, 160], [130, 220]);
 const STARCH = bySex([100, 200], [150, 300]);
-const TUBER = bySex([120, 250], [200, 350]);
-const BREAD = bySex([25, 90], [25, 120]);
+// Volumen real en el plato: papa / batata / polenta / calabaza hasta 220 g cocidos en la mujer y 320 g en el hombre.
+const TUBER = bySex([120, 220], [200, 320]);
+// Panificados: como mucho 2 rebanadas (~60 g) por comida en la mujer y 3 (~90 g) en el hombre.
+const BREAD = bySex([25, 60], [25, 90]);
 const YOGURT = bySex([120, 200], [150, 200]);
 const MILK = bySex([200, 250], [200, 300]);
 
@@ -76,10 +78,11 @@ export const PORTION_CAPS: Record<string, SexRange> = {
   pan: BREAD,
   'pan-lactal': BREAD,
   'pan-sin-tacc': BREAD,
-  'pan-arabe': both(60, 120),
-  'galletas-arroz': both(18, 54),
-  'tostadas-arroz': both(16, 48),
-  'galletitas-agua': both(18, 48),
+  'pan-arabe': bySex([45, 60], [60, 90]),
+  // Galletas / tostadas de arroz: 3-4 unidades en la mujer, hasta 6 en el hombre.
+  'galletas-arroz': bySex([18, 36], [18, 54]),
+  'tostadas-arroz': bySex([16, 32], [16, 48]),
+  'galletitas-agua': bySex([18, 30], [18, 48]),
   tutucas: both(20, 45),
   'copos-maiz': both(20, 45),
   'harina-arroz': both(20, 60),
@@ -166,21 +169,37 @@ const SIDE_ROLES: MealRole[] = ['breakfast', 'snack', 'peri', 'post'];
 
 // Sexo del atleta que se está calculando (lo fijan el cierre del día y las alternativas con withCapSex).
 let activeSex: Sex | undefined;
-export function withCapSex<T>(sex: Sex | undefined, fn: () => T): T {
+// Protocolo (Keto / Low Carb) del cálculo en curso; si no se fijó, el del alumno activo del Builder.
+let activeDiet: 'keto' | 'lowcarb' | undefined;
+let defaultDiet: 'keto' | 'lowcarb' | undefined;
+let defaultSex: Sex | undefined;
+export function withCapSex<T>(sex: Sex | undefined, fn: () => T, diet?: 'keto' | 'lowcarb' | null): T {
   const prev = activeSex;
+  const prevD = activeDiet;
   activeSex = sex;
+  if (diet !== undefined) activeDiet = diet ?? undefined;
   try {
     return fn();
   } finally {
     activeSex = prev;
+    activeDiet = prevD;
   }
 }
+/** Protocolo del alumno activo (lo fija el Builder): reescalados, cierre y variantes usan sus topes de grasa. */
+export const setDefaultCapDiet = (d: 'keto' | 'lowcarb' | null) => {
+  defaultDiet = d ?? undefined;
+};
+export const capDiet = () => activeDiet ?? defaultDiet;
+/** Sexo del alumno activo del Builder: «Generar opciones», reemplazos y cambios de plato usan SUS topes (no los de hombre). */
+export const setDefaultCapSex = (s: Sex | undefined) => {
+  defaultSex = s;
+};
 
 /** Keto / Low Carb: grasas saludables por toma (mujer, hombre) en g; siguen siendo porciones reales de una comida. */
 const DIET_FAT_CAP: Record<string, [number, number]> = { oliva: [35, 50], palta: [160, 200], nueces: [60, 80], almendras: [60, 80], mani: [40, 60], aceitunas: [60, 100], semillas: [30, 40], 'queso-light': [80, 120], untable: [50, 60] };
 export function portionCap(foodId: string | undefined, ctx: CapCtx = {}): Range {
   if (!foodId) return { min: 0, max: Infinity };
-  ctx = { ...ctx, sex: ctx.sex ?? activeSex };
+  ctx = { ...ctx, sex: ctx.sex ?? activeSex ?? defaultSex, diet: ctx.diet ?? capDiet() };
   const row = PORTION_CAPS[foodId];
   let lo: number, hi: number;
   if (row) {

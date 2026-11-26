@@ -3,6 +3,7 @@
 import { bestCatalogFor } from '@/lib/bankAssign';
 import { useState } from 'react';
 import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCcw, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
+import { shownDayTotals } from '@/lib/netCarbView';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
@@ -778,11 +779,11 @@ function DayCompare({ day }: { day: DayMode }) {
   const plan = usePlanStore((s) => s.plan);
   const t = computeTelemetry(plan);
   const target = day === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
-  const got = dayTotals(plan.meals, day);
+  const got = shownDayTotals(plan, day);
   const rows: [string, number, number][] = [
     ['Kcal', got.kcal, target.kcal],
     ['Proteína', got.p, target.p],
-    ['Carbos', got.c, target.c],
+    [got.net ? 'C. netos' : 'Carbos', got.c, target.c],
     ['Grasas', got.f, target.f],
   ];
   return (

@@ -16,7 +16,9 @@ import { mirrorForPartner } from '@/lib/couple';
 import { previewAssign, previewTriple, type AssignPreview, type BankSource } from '@/lib/bankAssign';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { setPartnerResolver } from '@/lib/exportHtml';
-import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree, type DietProtocol } from '@/lib/allergens';
+import { acceptForPlan, allergenConflicts, allergiesOf, fixPlanAllergens, planIsMeatFree, protocolOf, type DietProtocol } from '@/lib/allergens';
+import { setDefaultCapDiet, setDefaultCapSex } from '@/lib/portionCaps';
+import { equivalentOptions } from '@/lib/planBuild';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
 import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
@@ -352,9 +354,9 @@ export const usePlanStore = create<PlanState>()(
       },
       buildFromBank: () => {
         get().applyTemplate(precalc(get().plan).sel);
-        // Flujo rápido: Opción 1 + 2 variantes por comida (las más parecidas en calorías y proteína).
+        // Flujo rápido: Opción 1 + las 2 variantes más parecidas en calorías y proteína (equivalentes de verdad).
         const s = get();
-        set({ plan: touch({ ...s.plan, meals: s.plan.meals.map((m) => ({ ...m, alts: (m.alts ?? []).slice(0, 2) })) }) });
+        set({ plan: touch(equivalentOptions(s.plan, 2)) });
       },
       assignTriple: (mealId, src) => {
         const s = get();
@@ -889,4 +891,25 @@ usePlanStore.subscribe((s, prev) => {
     if (st.plan.partnerSyncAt) usePlanStore.setState({ plan: mirrorForPartner(st.plan, other) });
     else usePlanStore.setState({ roster: { ...st.roster, [other.id]: mirrorForPartner(other, st.plan) } });
   }, 400);
+});
+
+/** Las `n` alternativas más equivalentes a la Opción 1 (desvío de calorías + proteína). */
+export function closestAlts(m: Meal, n: number): MealOption[] {
+  const tot = (items: Meal['items']) => items.reduce((a, i) => ({ p: a.p + i.p, k: a.k + i.p * 4 + i.c * 4 + i.f * 9 }), { p: 0, k: 0 });
+  const t = tot(m.items);
+  const score = (o: MealOption) => {
+    const u = tot(o.items);
+    return Math.abs(u.k / Math.max(1, t.k) - 1) + Math.abs(u.p - t.p) / Math.max(10, t.p);
+  };
+  return [...(m.alts ?? [])].sort((a, b) => score(a) - score(b)).slice(0, n);
+}
+
+// Topes por protocolo (Keto / Low Carb): los reescalados del Builder usan los del alumno activo.
+const syncCapDiet = (p: AthletePlan) => {
+  setDefaultCapDiet(protocolOf(allergiesOf(p)));
+  setDefaultCapSex(p.profile.sex);
+};
+syncCapDiet(usePlanStore.getState().plan);
+usePlanStore.subscribe((s, prev) => {
+  if (s.plan.anamnesis !== prev.plan.anamnesis || s.plan.id !== prev.plan.id || s.plan.profile.sex !== prev.plan.profile.sex) syncCapDiet(s.plan);
 });
