@@ -266,4 +266,15 @@ select test.login('00000000-0000-0000-0000-0000000000d1', null, true);
 do $$ begin assert test.count('select * from public.published_plans') = 0, 'archivado: el atleta deja de ver el plan'; end $$;
 reset role;
 
-\echo '✓ 10 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión, archivados, check-ins, plantillas y banco global'
+-- ============ 11 · Sin TRUNCATE para los roles del cliente (TRUNCATE no pasa por RLS) ============
+do $$ begin assert (select count(*) from information_schema.role_table_grants where table_schema = 'public' and grantee in ('anon', 'authenticated') and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')) = 0, 'anon/authenticated sin TRUNCATE, REFERENCES ni TRIGGER'; end $$;
+select test.login('00000000-0000-0000-0000-0000000000c1', 'coach@jp.com');
+set role authenticated;
+select test.fails($$truncate public.coach_foods$$, '42501');
+select test.fails($$truncate public.athletes cascade$$, '42501');
+reset role;
+set role anon;
+select test.fails($$truncate public.checkins$$, '42501');
+reset role;
+
+\echo '✓ 11 bloques de seguridad: alta de coaches, aislamiento entre coaches, vinculación por link y PIN, freno de intentos, registros, revocación, sin sesión, archivados, check-ins, plantillas, banco global y sin TRUNCATE'
