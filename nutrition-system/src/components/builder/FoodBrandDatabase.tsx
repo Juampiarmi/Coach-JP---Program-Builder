@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChefHat, Database, Download, Pencil, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { fmt0 } from '@/lib/bioenergetics';
-import { BRAND_CATEGORIES as BRAND_CATEGORY_KEYS, BRAND_CATEGORY_LABEL, categoryLabel, DISH_CATEGORIES, emptyDishBase, FOOD_CATEGORIES, NEW_DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
+import { BRAND_CATEGORIES as BRAND_CATEGORY_KEYS, BRAND_CATEGORY_LABEL, categoryLabel, DISH_CATEGORIES, dishYield, emptyDishBase, FOOD_CATEGORIES, NEW_DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
 import { FOOD_BY_ID, FOODS, macrosFor } from '@/lib/foods';
 import { ALLERGEN_INFO, itemAllergens, type Allergen } from '@/lib/allergens';
 import { auditDish } from '@/lib/dishAudit';
 import { quickDish, quickToBrandFood, type QuickDish } from '@/lib/dishQuick';
+import { yieldLabel, yieldTag } from '@/lib/yieldInfo';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, HudButton, inputCls, Label, NumInput, Panel, Toggle } from '../hud/primitives';
@@ -223,6 +224,12 @@ function QuickLoad({ base, onUse }: { base: BrandFood; onUse: (b: BrandFood) => 
           <div className="tnum mt-2 font-mono text-[12px] text-ink" data-ql-macros>
             {res.totals.kcal} kcal · P {res.totals.p} g · C {res.totals.c} g · G {res.totals.f} g · porción {res.totals.g} g
           </div>
+          <div className={`mt-2 rounded-md border-l-2 px-2 py-1 text-[12px] ${res.yieldInfo.yieldType === 'batch' ? 'border-[#22C55E] bg-[#22C55E]/[0.07] text-steel' : 'border-line text-mute'}`} data-ql-yield={res.yieldInfo.yieldType}>
+            <b className="text-ink">{res.yieldInfo.yieldType === 'batch' ? `🥧 ${yieldTag(res.yieldInfo)}` : '🍽 Porción individual'}</b>
+            {res.yieldInfo.yieldType === 'batch' && <> · {yieldLabel(res.yieldInfo)}</>}
+            {res.dividedFrom && <div className="text-[11.5px] text-gold">Cargaste la receta entera: dividí los gramos por {res.dividedFrom} (lo de arriba es 1 porción).</div>}
+            {res.yieldInfo.yieldType === 'batch' && <div className="text-[11.5px] text-mute">❄️ {res.yieldInfo.storage}</div>}
+          </div>
           <div className="mt-2 flex flex-wrap gap-1.5" data-ql-allergens>
             {res.allergens.length ? (
               res.allergens.map((a) => (
@@ -324,6 +331,35 @@ export function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: (
             <label className="mt-3 block">
               <Label>Preparación paso a paso (un paso por línea)</Label>
               <textarea rows={4} value={(d.pasos ?? []).join('\n')} onChange={(e) => setD({ ...d, pasos: e.target.value.split('\n') })} placeholder={'Cortá las verduras.\nSalteá…'} className={inputCls} data-dish-steps />
+            </label>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]" data-dish-yield>
+              <label className="block">
+                <Label>Rendimiento</Label>
+                <select
+                  value={dishYield(d).yieldType}
+                  onChange={(e) => {
+                    const yt = e.target.value as 'individual' | 'batch';
+                    const g = dishYield({ ...d, yieldType: yt });
+                    setD({ ...d, yieldType: yt, servings: yt === 'batch' ? g.servings : 1, storage: d.storage || g.storage });
+                  }}
+                  className={inputCls}
+                  data-dish-yield-type
+                >
+                  <option value="individual">Porción individual — lista para consumir en esta comida</option>
+                  <option value="batch">Receta de molde / tanda — rinde varias porciones</option>
+                </select>
+              </label>
+              {dishYield(d).yieldType === 'batch' && (
+                <label className="block">
+                  <Label>Rinde (porciones)</Label>
+                  <input type="number" min={2} max={24} value={dishYield(d).servings} onChange={(e) => setD({ ...d, yieldType: 'batch', servings: Math.max(2, Math.min(24, Number(e.target.value) || 2)) })} className={inputCls} data-dish-servings />
+                </label>
+              )}
+            </div>
+            {dishYield(d).yieldType === 'batch' && <p className="mt-1 text-[11.5px] text-[#4ADE80]/90">{yieldLabel(dishYield(d))}. Los ingredientes y macros de esta ficha son de 1 porción.</p>}
+            <label className="mt-2 block">
+              <Label>Conservación / freezer</Label>
+              <input value={d.storage ?? ''} onChange={(e) => setD({ ...d, storage: e.target.value || undefined })} placeholder={dishYield(d).storage} className={inputCls} data-dish-storage />
             </label>
             <label className="mt-3 block">
               <Label>Técnica de cocción rápida y condimentos</Label>

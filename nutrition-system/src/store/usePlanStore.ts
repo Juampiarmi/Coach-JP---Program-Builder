@@ -42,7 +42,7 @@ import type {
   Supplement,
 } from '@/lib/types';
 import { MAX_OPTIONS, type Nutritionist } from '@/lib/types';
-import { DEFAULT_NUTRITIONIST } from '@/lib/brand';
+import { DEFAULT_NUTRITIONIST, safeLogo } from '@/lib/brand';
 
 export type BuilderTab = 'athletes' | 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'global' | 'fooddb' | 'library';
 export type DeployTab = 'preview' | 'export' | 'story';
@@ -444,9 +444,9 @@ export const usePlanStore = create<PlanState>()(
         if (!meal || !opt) return false;
         const fresh = opt.items.map((i) => ({ ...i, id: uid() }));
         const next = mapMeal(s.plan, mealId, (m) => {
-          if (mode === 'replace') return fitAltsToMain({ ...m, items: fresh, title: opt.title, steps: opt.steps, technique: undefined });
+          if (mode === 'replace') return fitAltsToMain({ ...m, items: fresh, title: opt.title, steps: opt.steps, yieldInfo: opt.yieldInfo, technique: undefined });
           const alts = [...(m.alts ?? [])];
-          const alt = { title: opt.title, items: fresh, steps: opt.steps };
+          const alt = { title: opt.title, items: fresh, steps: opt.steps, yieldInfo: opt.yieldInfo };
           if (alts.length >= 4) alts[3] = alt;
           else alts.push(alt);
           return { ...m, alts };
@@ -813,7 +813,7 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
 function sanitizeNutritionist(n: unknown): Nutritionist {
   const x = (n && typeof n === 'object' ? n : DEFAULT_NUTRITIONIST) as Partial<Nutritionist>;
   const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-  return { name: str(x.name, 80), specialty: str(x.specialty, 120), license: str(x.license, 40), show: x.show !== false };
+  return { name: str(x.name, 80), specialty: str(x.specialty, 120), license: str(x.license, 40), show: x.show !== false, logo: safeLogo(x.logo) };
 }
 
 // Modo Parejas: la exportación encuentra el plan de la pareja en la base local (lista de compras combinada).

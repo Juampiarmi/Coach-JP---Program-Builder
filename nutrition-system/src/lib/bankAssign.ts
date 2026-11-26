@@ -1,6 +1,7 @@
 import { allergiesOf, foodIsSafe } from './allergens';
 import { retitleBase } from './baseSwap';
-import { DISH_CATEGORIES, type BrandFood } from './foodBrandDb';
+import { DISH_CATEGORIES, dishYield, type BrandFood } from './foodBrandDb';
+import { stepsWithYield, type YieldInfo } from './yieldInfo';
 import { FOOD_BY_ID, macrosFor, snapUnit, unitStep } from './foods';
 import { itemFromFood as itemFromFoodSafe } from './seed';
 import { catalogDishForMeal, fitRecipeToMeal, type BankRecipe } from './planBank';
@@ -18,6 +19,7 @@ export interface AssignPreview {
   title: string;
   items: FoodItem[];
   steps?: string[];
+  yieldInfo?: YieldInfo;
 }
 
 const kcalOf = (xs: { p: number; c: number; f: number }[]) => xs.reduce((a, i) => a + i.p * 4 + i.c * 4 + i.f * 9, 0);
@@ -73,8 +75,9 @@ export function previewAssign(src: BankSource, meal: Meal, plan: Pick<AthletePla
   if (!b) return null;
   const rec = DISH_CATEGORIES.includes(b.categoria) && b.ingredientes?.length ? recipeFromIngredients(b.nombre, b.ingredientes, b.pasos) : null;
   if (rec) {
-    const r = fitRecipeToMeal(rec, meal, plan);
-    if (r) return { ...r, title: b.nombre };
+    const yieldInfo = { ...dishYield(b), for: b.nombre };
+    const r = fitRecipeToMeal({ ...rec, yieldInfo }, meal, plan);
+    if (r) return { ...r, title: b.nombre, steps: stepsWithYield(r.steps, yieldInfo), yieldInfo };
     return null;
   }
   return foodIntoMeal(b.id, meal, plan);

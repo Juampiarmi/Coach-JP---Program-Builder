@@ -131,9 +131,42 @@ export function renderIconPng(size: number, maskable = false): string {
   return c.toDataURL('image/png');
 }
 
+// ---------- CO-BRANDING 50/50 · COACH JP × NUTRIRCE ----------
+// NutrirCe: «Nutrir» verde esmeralda + «Ce» naranja energético, isotipo de una mano (palma arriba) sosteniendo un
+// tenedor, con buen contraste sobre el carbono táctico. viewBox 0 0 100 100.
+export const NC = { name: 'NutrirCe', green: '#22C55E', green2: '#16A34A', orange: '#F97316' };
+export const NC_FORK = 'M50 8h4.5v19h3.2V8h4.6v19h3.2V8H70v21c0 5.4-3.3 8.8-7 9.8V63h-6V38.8c-3.7-1-7-4.4-7-9.8Z';
+export const NC_HAND =
+  'M10 70.5 L20 66.5 C26 64.5 28.5 57 32.5 52.5 C35.5 49.2 40.5 50 40.5 54.5 C40.5 58 38.6 60.5 39.5 63.5 L85 61 C91.5 60.6 93.5 67 89 70.5 C80 77.5 63 81.5 45 81.5 L23 81.5 L10 85.5 C7 86.3 5 84.5 5 81.5 L5 75 C5 72.6 7.2 71.2 10 70.5 Z';
+export const NC_CREASE = 'M45 72.5 L76 70.5';
+
+/** Isotipo NutrirCe (SVG inline). */
+export function nutrirceSvg(size: number) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true" class="nc-mark"><path d="${NC_FORK}" fill="${NC.orange}"/><path d="${NC_HAND}" fill="${NC.green}"/><path d="${NC_CREASE}" stroke="#0B0F17" stroke-width="2.2" stroke-linecap="round" opacity=".5" fill="none"/></svg>`;
+}
+
+/** Isotipo NutrirCe en canvas (storycards). */
+export function drawNutrirceIcon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(size / 100, size / 100);
+  ctx.fillStyle = NC.orange;
+  ctx.fill(new Path2D(NC_FORK));
+  ctx.fillStyle = NC.green;
+  ctx.fill(new Path2D(NC_HAND));
+  ctx.strokeStyle = 'rgba(11,15,23,.5)';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.stroke(new Path2D(NC_CREASE));
+  ctx.restore();
+}
+
+/** Logo propio de NutrirCe subido por el coach (data URL de imagen; vacío = el isotipo de fábrica). */
+export const safeLogo = (s: unknown) => (typeof s === 'string' && /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(s) && s.length <= 300_000 ? s : undefined);
+
 // ---------- FIRMA PROFESIONAL · NUTRICIONISTA RESPONSABLE ----------
 export const DEFAULT_NUTRITIONIST = { name: 'Lic. María Cecilia Rollán', specialty: 'Nutrición Deportiva y Recomposición Corporal', license: '', show: true };
-type NutriLike = { name: string; specialty: string; license: string; show: boolean };
+type NutriLike = { name: string; specialty: string; license: string; show: boolean; logo?: string };
 /** Nutricionista a mostrar (null si está oculta o sin nombre). Planes viejos sin el campo: la de fábrica. */
 export function nutriOf(plan: { nutritionist?: NutriLike }): NutriLike | null {
   const n = plan.nutritionist ?? DEFAULT_NUTRITIONIST;
@@ -141,7 +174,10 @@ export function nutriOf(plan: { nutritionist?: NutriLike }): NutriLike | null {
 }
 /** Especialidad corta para la firma editorial («Nutrición Deportiva y Recomposición Corporal» → «Nutrición Deportiva»). */
 export const shortSpecialty = (s: string) => s.split(/\s+y\s+|\s*[·,—–-]\s*/)[0].trim();
-/** Firma de la storycard: COACH JP × LIC. MARÍA CECILIA ROLLÁN · NUTRICIÓN DEPORTIVA */
-export const storySignature = (n: NutriLike) => `${BRAND.name} × ${n.name.trim()}${n.specialty.trim() ? ` · ${shortSpecialty(n.specialty)}` : ''}`.toUpperCase();
-/** Crédito completo del pie de la app. */
-export const nutriCredit = (n: NutriLike) => `Supervisión Clínica y Nutricional: ${n.name.trim()}${n.specialty.trim() ? ` — ${n.specialty.trim()}` : ''}${n.license.trim() ? ` · ${n.license.trim()}` : ''}`;
+/** Bajada de la cabecera de la app: «Entrenamiento & Nutrición · Lic. María Cecilia Rollán». */
+export const cobrandHeader = (n: NutriLike) => `Entrenamiento & Nutrición · ${n.name.trim()}`;
+/** Firma de la storycard (línea bajo los dos sellos): «LIC. MARÍA CECILIA ROLLÁN · NUTRICIÓN DEPORTIVA». */
+export const storySignature = (n: NutriLike) => `${n.name.trim()}${n.specialty.trim() ? ` · ${shortSpecialty(n.specialty)}` : ''}`.toUpperCase();
+/** Crédito del pie: «Coach JP High Performance System × NutrirCe — Lic. … (Nutrición Deportiva y Recomposición Corporal)». */
+export const nutriCredit = (n: NutriLike) =>
+  `Coach JP High Performance System × ${NC.name} — ${n.name.trim()}${n.specialty.trim() ? ` (${n.specialty.trim()})` : ''}${n.license.trim() ? ` · ${n.license.trim()}` : ''}`;

@@ -296,6 +296,13 @@ try {
   await page.locator('[data-bank-search]').fill('wok');
   await page.locator('[data-bank-item]').first().click();
   check((await page.locator('[data-bank-ingredients] li').count()) > 2 && (await page.locator('[data-bank-steps] li').count()) > 0, 'Banco Global: ficha del plato con ingredientes y pasos');
+  await page.locator('[data-bank-search]').fill('tarta casera de pollo');
+  await page.locator('[data-bank-item]').first().click();
+  const yb = page.locator('[data-bank-yield="batch"]');
+  check((await yb.count()) === 1 && /Rinde 1 tarta mediana .*= 4 porciones · Los gramos de tu plan corresponden a 1 porción \(¼ de tarta\)/.test(await yb.innerText()) && /Conservación/.test(await yb.innerText()), 'Banco Global: tarta con rendimiento (4 porciones, ¼ por porción) y conservación');
+  check((await page.locator('[data-bank-whole]').count()) === 1 && /^Rinde .* porciones\. /.test(await page.locator('[data-bank-steps] li').first().innerText()), 'Banco Global: cantidades de la receta entera y primer paso con el rendimiento');
+  await page.locator('[data-bank-search]').fill('wok');
+  await page.locator('[data-bank-item]').first().click();
   await page.locator('[data-bank-mode]').selectOption('alt');
   const prev = await page.locator('[data-bank-preview]').innerText();
   check(/\d+ g /.test(prev) && /kcal/.test(prev), 'Banco Global: vista previa con gramos ajustados antes de confirmar');
@@ -319,7 +326,9 @@ try {
   check(/Huevo/.test(await qr.locator('[data-ql-allergens]').innerText()), 'Carga rápida: alérgenos etiquetados (huevo)');
   check((await qr.locator('[data-ql-steps] li').count()) >= 4 && /Tip: Hacerla vuelta y vuelta/.test(await qr.locator('[data-ql-steps]').innerText()), 'Carga rápida: pasos ordenados con el tip del coach');
   check(/Tortillas \/ Tartas \/ Revueltos/.test(await qr.innerText()), 'Carga rápida: categoría sugerida (Tortillas / Tartas / Revueltos)');
+  check((await qr.locator('[data-ql-yield="individual"]').count()) === 1, 'Carga rápida: rendimiento inferido (tortilla de 3 huevos = porción individual)');
   await qr.locator('[data-ql-use]').click();
+  check((await page.locator('[data-dish-yield-type]').count()) === 1 && (await page.locator('[data-dish-storage]').count()) === 1, 'Nuevo plato: campos de Rendimiento y Conservación / Freezer');
   check((await page.locator('[data-cat="ensalada"]').count()) === 1 && (await page.locator('[data-cat="licuado"]').count()) === 1, 'Nuevos platos: categorías ampliadas (ensaladas, licuados…)');
   await page.locator('[data-new-cat]').click();
   await page.locator('[data-new-cat-input]').fill('Tortillas de verduras');
@@ -332,6 +341,7 @@ try {
   check((await saved.count()) > 0 && /Tortillas de verduras/.test(await saved.first().innerText()), 'Nuevo plato: guardado con su categoría propia');
   check((await page.getByRole('button', { name: /★ Tortillas de verduras/ }).count()) > 0, 'Alimentos y marcas: filtro por la categoría propia');
 
+  check((await page.locator('[data-builder-cobrand] [data-nc-logo]').count()) === 1, 'Builder: cabecera Coach JP × NutrirCe');
   // Firma profesional (nutricionista) editable en Publicar, cargada por defecto.
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check((await page.locator('[data-nutri-name]').inputValue()) === 'Lic. María Cecilia Rollán', 'Firma profesional: Lic. María Cecilia Rollán cargada por defecto en el Builder');
@@ -435,13 +445,18 @@ try {
   check((await pwa.locator('.sheet.open').count()) === 0, 'Comer afuera: registrada en el día');
   // Firma profesional en la app: cabecera discreta, crédito en el pie y sin desbordes en 360-390 px.
   await pwa.locator('[data-mode="on"]').first().click().catch(() => {});
-  check(/Planificación Nutricional · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: sello «Planificación Nutricional · Lic. María Cecilia Rollán» bajo el nombre');
-  check(/Supervisión Clínica y Nutricional: Lic\. María Cecilia Rollán — Nutrición Deportiva y Recomposición Corporal/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: crédito profesional completo en el pie');
+  const cob = pwa.locator('[data-cobrand]');
+  check(/COACH JP/.test(await cob.innerText()) && /NutrirCe/.test(await cob.innerText()) && (await cob.locator('svg').count()) === 2, 'App: cabecera 50/50 [Coach JP] × [NutrirCe] con sus dos isotipos');
+  const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.querySelector('svg').getBoundingClientRect().height)));
+  check(hA === hB, `App: los dos emblemas con el mismo tamaño (${hA} / ${hB} px)`);
+  check(/Entrenamiento & Nutrición · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: bajada «Entrenamiento & Nutrición · Lic. María Cecilia Rollán»');
+  check(/Coach JP High Performance System × NutrirCe — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel y la Lic. Rollán');
+  check((await pwa.locator('[data-yield]').count()) > 0, 'App: cada plato con su etiqueta de rendimiento');
   for (const w of [360, 375, 390]) {
     await pwa.setViewportSize({ width: w, height: 780 });
     await pwa.waitForTimeout(80);
     const over = await pwa.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    const lineFits = await pwa.locator('[data-nutri-line]').evaluate((el) => el.getBoundingClientRect().right <= window.innerWidth);
+    const lineFits = await pwa.evaluate(() => ['[data-nutri-line]', '[data-cobrand]', '.guide-btn'].every((q) => { const el = document.querySelector(q); return el && el.getBoundingClientRect().right <= window.innerWidth; }));
     check(over <= 0 && lineFits, `App a ${w} px: sin scroll horizontal y la firma entra en pantalla`);
   }
   if (process.env.SHOTS) { await pwa.setViewportSize({ width: 360, height: 780 }); await pwa.screenshot({ path: process.env.SHOTS + '/nutri-top.png' }); await pwa.locator('[data-nutri-credit]').scrollIntoViewIfNeeded(); await pwa.screenshot({ path: process.env.SHOTS + '/nutri-foot.png' }); }

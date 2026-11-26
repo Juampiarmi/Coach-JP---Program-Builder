@@ -1,10 +1,11 @@
 import runtime from '@/pwa/athleteRuntime';
+import { stepsWithYield, yieldLabel, yieldOf, yieldTag, type YieldInfo } from './yieldInfo';
 import cloudBoot from '@/pwa/cloudBoot';
 import styles from '@/pwa/athleteStyles';
 import { coachPhone } from './coachContact';
 import { allergiesOf, CELIAC_PLATE_WARNING, foodIsSafe, planIsMeatFree, sealsFor } from './allergens';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
-import { BRAND, nutriCredit, nutriOf, nutritionSvg, shieldSvg, storySignature } from './brand';
+import { BRAND, cobrandHeader, NC_CREASE, NC_FORK, NC_HAND, nutriCredit, nutriOf, nutrirceSvg, nutritionSvg, shieldSvg, storySignature } from './brand';
 import { CITES } from './evidence';
 import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, unitStep, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
@@ -104,6 +105,15 @@ export const setPartnerResolver = (fn: (id: string) => AthletePlan | undefined) 
   partnerResolver = fn;
 };
 
+/**
+ * Rendimiento de cada opción para la app: etiqueta (porción individual o receta de molde / tanda con sus porciones),
+ * conservación, y el primer paso que aclara cuánto rinde el molde entero y qué fracción es la porción del alumno.
+ */
+function withYield(o: { title: string; yieldInfo?: YieldInfo }, steps: string[]) {
+  const y = yieldOf(o);
+  return { steps: stepsWithYield(steps, y), yieldInfo: { ...y, label: yieldLabel(y), tag: yieldTag(y) } };
+}
+
 export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: DayMode; icons?: ExportIcons }) {
   const t = computeTelemetry(plan);
   const pr = plan.profile;
@@ -158,7 +168,11 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     },
     coachNote: plan.coachNote,
     // Firma profesional (nutricionista responsable): cabecera, pie y storycard de la app.
-    nutri: (() => { const n = nutriOf(plan); return n ? { name: n.name.trim(), header: `Planificación Nutricional · ${n.name.trim()}`, credit: nutriCredit(n), story: storySignature(n) } : null; })(),
+    // Co-branding 50/50 Coach JP × NutrirCe + firma de la nutricionista (cabecera, pie y storycard de la app).
+    nutri: (() => {
+      const n = nutriOf(plan);
+      return n ? { name: n.name.trim(), header: cobrandHeader(n), credit: nutriCredit(n), story: storySignature(n), logo: n.logo ?? null, mark: nutrirceSvg(28), markSm: nutrirceSvg(24), fork: NC_FORK, hand: NC_HAND, crease: NC_CREASE } : null;
+    })(),
     targets: {
       on: { kcal: Math.round(t.kcalOn), ...t.gramsOn },
       off: { kcal: Math.round(t.kcalOff), ...t.gramsOff },
@@ -173,14 +187,14 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         mps: isMpsMeal(m),
         title: c.title || autoTitle(c.items),
         technique: fixTechnique(c.technique, c.items, c.title) || autoTechnique(c.items),
-        steps: optionSteps(c),
+        ...withYield({ title: c.title || autoTitle(c.items), yieldInfo: c.yieldInfo }, optionSteps(c)),
         prepMin: prepMinutes(c.items),
         seals: sealsFor(c.items, allergies, veg),
         // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
         // Las alternativas fuera de la franja del día (planes viejos) no llegan al atleta.
         alts: (c.alts ?? [])
           .filter((a) => a.items.length && a.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], m.role)))
-          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items), seals: sealsFor(a.items, allergies, veg) })),
+          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), ...withYield({ title: a.title || autoTitle(a.items), yieldInfo: a.yieldInfo }, optionSteps(a)), prepMin: prepMinutes(a.items), seals: sealsFor(a.items, allergies, veg) })),
       };
     }),
     // Marca sugerida (Nivel 1 / 2 / 3 según presupuesto) sólo en procesados clave; el resto, «marca a elección».

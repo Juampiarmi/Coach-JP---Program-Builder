@@ -1,4 +1,5 @@
 import type { ComboPart } from './menuOptions';
+import { individual, inferYield, stepsWithYield, type YieldInfo, type YieldType } from './yieldInfo';
 
 /**
  * RECETARIO COACH JP · 55+ preparaciones (desayunos, platos principales, meriendas y colaciones).
@@ -41,6 +42,14 @@ export interface CatalogDish {
   veg?: CatRecipe;
   /** Colación apta para antes / después de entrenar (fácil digestión). */
   peri?: boolean;
+  /** Rendimiento: porción individual o receta de molde / tanda. */
+  yieldType?: YieldType;
+  /** Porciones que rinde la receta completa. */
+  servings?: number;
+  /** Qué sale de la receta entera (ej. «1 tarta mediana»). */
+  yieldUnit?: string;
+  /** Conservación y freezer. */
+  storage?: string;
 }
 
 export const CAT_LABEL: Record<CatCategory, string> = {
@@ -79,9 +88,21 @@ function stacc(r: CatRecipe, title?: string): CatRecipe {
 const ALL: CatVariant[] = ['Estandar', 'Sin TACC', 'Vegetariana'];
 const STD_STACC: CatVariant[] = ['Estandar', 'Sin TACC'];
 
-function dish(d: Omit<CatalogDish, 'stacc'> & { stacc?: CatRecipe | true }): CatalogDish {
-  return { ...d, stacc: d.stacc === true ? stacc(d.std) : d.stacc ?? (d.variants.includes('Sin TACC') ? stacc(d.std) : undefined) };
+function dish(d0: Omit<CatalogDish, 'stacc'> & { stacc?: CatRecipe | true }): CatalogDish {
+  const d = { ...d0, stacc: d0.stacc === true ? stacc(d0.std) : d0.stacc ?? (d0.variants.includes('Sin TACC') ? stacc(d0.std) : undefined) };
+  // Rendimiento (auditoría de platos grandes): tartas, pastel de papa, guisos, albóndigas, muffins… rinden varias
+  // porciones; el primer paso de cada variante dice cuánto rinde el molde y qué fracción es la porción del alumno.
+  const y: YieldInfo = YIELD_OVERRIDE[d.id] ?? inferYield(d.title) ?? individual();
+  const withY = (r?: CatRecipe): CatRecipe | undefined => (r ? { ...r, steps: stepsWithYield(r.steps, y), female: withY(r.female) } : undefined);
+  return { ...d, std: withY(d.std)!, stacc: withY(d.stacc), veg: withY(d.veg), yieldType: y.yieldType, servings: y.servings, yieldUnit: y.unit, storage: y.storage };
 }
+
+/** Platos cuyo rendimiento no se deduce del nombre. */
+const YIELD_OVERRIDE: Record<string, YieldInfo> = {
+  'pp-polenta-bolognesa': { yieldType: 'batch', servings: 4, unit: '1 olla de salsa bolognesa (la polenta se hace en el momento)', storage: 'La salsa se conserva 4 días en heladera o hasta 3 meses freezada en porciones; la polenta, hacela fresca.' },
+  'pp-pasta-albondigas': { yieldType: 'batch', servings: 4, unit: '1 tanda de albóndigas con salsa (la pasta se hace en el momento)', storage: 'Albóndigas con salsa: 3 días en heladera o hasta 3 meses freezadas en porciones; la pasta, hacela fresca.' },
+  'pp-solomillo-cerdo-batatas': { yieldType: 'batch', servings: 3, unit: '1 solomillo entero (~500 g crudo) con su bandeja de batatas y manzanas', storage: 'Se conserva 3 días en heladera en recipiente hermético o hasta 2 meses freezado en porciones (en fetas con su jugo).' },
+};
 
 // =====================================================================================================
 // 1 · DESAYUNOS

@@ -1,3 +1,4 @@
+import type { YieldInfo } from './yieldInfo';
 export type Sex = 'M' | 'F';
 export type Discipline = 'bodybuilding' | 'hybrid';
 /** Deporte principal (define el gasto de la sesión y el objetivo sugerido). */
@@ -81,6 +82,8 @@ export interface MealOption {
   technique?: string;
   /** Preparación paso a paso en lenguaje simple (vacío = se arma sola desde los ingredientes). */
   steps?: string[];
+  /** Rendimiento (porción individual o receta de molde / tanda) y conservación. */
+  yieldInfo?: YieldInfo;
 }
 
 /** Máximo de opciones culinarias por comida (Opción 1 + 4 alternativas). */
@@ -97,6 +100,8 @@ export interface Meal {
   title?: string;
   technique?: string;
   steps?: string[];
+  /** Rendimiento de la Opción 1 (porción individual o receta de molde / tanda) y conservación. */
+  yieldInfo?: YieldInfo;
   /** Opciones 2 a 5 · alternativas equivalentes en macros. */
   alts?: MealOption[];
   /** Modo Parejas: id de la comida de la pareja (plan líder) de la que es espejo. */
@@ -190,6 +195,8 @@ export interface Nutritionist {
   specialty: string;
   /** Matrícula (opcional, ej. «M.N. 1234»). */
   license: string;
-  /** Mostrar la firma en la app y en la storycard. */
+  /** Mostrar la firma y el co-branding NutrirCe en la app y en la storycard. */
   show: boolean;
+  /** Logo oficial de NutrirCe subido por el coach (data URL); vacío = isotipo de fábrica. */
+  logo?: string;
 }

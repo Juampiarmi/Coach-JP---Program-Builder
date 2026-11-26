@@ -1043,6 +1043,12 @@ const runtime = String.raw`
     return all.filter(function (i) { return i.id === id; })[0];
   }
 
+  // Sello NutrirCe: logo oficial subido por el coach o isotipo (mano + tenedor) con la palabra «Nutrir» verde y «Ce» naranja.
+  function ncLogo(small) {
+    if (D.nutri.logo) return '<img src="' + esc(D.nutri.logo) + '" alt="NutrirCe" class="nc-img' + (small ? ' sm' : '') + '">';
+    return small ? D.nutri.markSm : D.nutri.mark + '<b class="brand ncw"><i>Nutrir</i><em>Ce</em></b>';
+  }
+
   // Desglose táctico: ingredientes de los platos (receta escalada a la porción), técnica y condimentos.
   function desglose(m, x) {
     var o = x.alt || m, tech = o.technique, steps = o.steps || [];
@@ -1057,10 +1063,15 @@ const runtime = String.raw`
       } else rows += '<li><b>' + esc(ref.name) + '</b>: ' + esc(ref.detail) + (ref.unit && it.grams !== ref.unit.grams ? ' (porción base ' + n0(ref.unit.grams) + ' g, la tuya ' + n0(it.grams) + ' g)' : '') + '</li>';
     });
     var ing = '<ul class="ing">' + x.items.filter(function (it) { return it.grams > 0 && !it.free; }).map(function (it) { return '<li><b>' + n0(it.grams) + ' g</b> ' + esc(it.food) + (unitHintFor(it.foodId, it.grams) ? ' <em>' + unitHintFor(it.foodId, it.grams) + '</em>' : '') + (D.brands && D.brands[it.foodId] ? ' <em class="br">· ' + esc(D.brands[it.foodId][D.brandTier || 0]) + '</em>' : '') + '</li>'; }).join('') + '</ul>';
+    // Rendimiento: porción individual o receta de molde / tanda (cuánto rinde y qué fracción es la porción) + conservación.
+    var yi = o.yieldInfo, batch = yi && yi.yieldType === 'batch';
+    var yb = yi ? '<div class="yield ' + (batch ? 'batch' : 'ind') + '" data-yield="' + (batch ? 'batch' : 'individual') + '">' + (batch ? '<b>🥧 ' + esc(yi.tag) + '</b><span>' + esc(yi.label) + '</span>' : '<span>🍽 ' + esc(yi.label) + '</span>') + '</div>' : '';
+    var mold = batch ? '<div class="dsub">RECETA ENTERA · ' + yi.servings + ' PORCIONES</div><p class="mold" data-mold>' + x.items.filter(function (it) { return it.grams > 0 && !it.free; }).map(function (it) { return '<b>' + n0(it.grams * yi.servings) + ' g</b> ' + esc(it.food); }).join(' · ') + '</p>' : '';
+    var keep = yi && batch && yi.storage ? '<p class="keep">❄️ <b>Conservación:</b> ' + esc(yi.storage) + '</p>' : '';
     var how = steps.length ? '<ol class="psteps">' + steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' : '';
     // Abierto por defecto (los pasos a la vista); si el atleta lo cierra, queda cerrado para esa comida y opción.
     var dk = m.id + '|' + x.opt, mins = (x.alt || m).prepMin;
-    return '<details class="desglose" data-ds="' + esc(dk) + '"' + (S.dsClosed[dk] ? '' : ' open') + '><summary>[ ' + (mins ? '⏱ ' + mins + ' MIN · ' : '') + 'PREPARACIÓN PASO A PASO ]</summary>' + how + '<div class="dsub">INGREDIENTES Y MARCAS</div>' + ing + (rows ? '<div class="dsub">COMPOSICIÓN DE LOS PLATOS</div><ul>' + rows + '</ul>' : '') + (tech ? '<p><b>Tip:</b> ' + esc(tech) + '</p>' : '') + '</details>';
+    return yb + '<details class="desglose" data-ds="' + esc(dk) + '"' + (S.dsClosed[dk] ? '' : ' open') + '><summary>[ ' + (mins ? '⏱ ' + mins + ' MIN · ' : '') + 'PREPARACIÓN PASO A PASO ]</summary>' + how + '<div class="dsub">' + (batch ? 'TU PORCIÓN · INGREDIENTES Y MARCAS' : 'INGREDIENTES Y MARCAS') + '</div>' + ing + mold + keep + (rows ? '<div class="dsub">COMPOSICIÓN DE LOS PLATOS</div><ul>' + rows + '</ul>' : '') + (tech ? '<p><b>Tip:</b> ' + esc(tech) + '</p>' : '') + '</details>';
   }
 
   // =================== HERRAMIENTAS TÁCTICAS ===================
@@ -1548,6 +1559,20 @@ const runtime = String.raw`
     };
   }
   // Logo: escudo naranja con rayo (dibujado, no emoji: se ve igual en todos los celulares).
+  // Isotipo NutrirCe (mano + tenedor) y logo oficial subido por el coach (se carga una vez y redibuja la story).
+  function drawNc(x, px, py, s) {
+    x.save(); x.translate(px, py); x.scale(s / 100, s / 100);
+    x.fillStyle = '#F97316'; x.fill(new Path2D(D.nutri.fork));
+    x.fillStyle = '#22C55E'; x.fill(new Path2D(D.nutri.hand));
+    x.strokeStyle = 'rgba(11,15,23,.5)'; x.lineWidth = 2.2; x.lineCap = 'round'; x.stroke(new Path2D(D.nutri.crease));
+    x.restore();
+  }
+  var NCIMG = null;
+  function ncImg() {
+    if (!D.nutri || !D.nutri.logo) return null;
+    if (!NCIMG) { NCIMG = new Image(); NCIMG.onload = function () { if (S.panel === 'story') drawStory(); }; NCIMG.src = D.nutri.logo; }
+    return NCIMG.complete && NCIMG.naturalWidth ? NCIMG : null;
+  }
   function drawLogo(x, cx, cy, s) {
     x.save(); x.translate(cx, cy); x.scale(s / 100, s / 100);
     x.beginPath(); x.moveTo(0, -50); x.lineTo(42, -34); x.lineTo(42, 6); x.quadraticCurveTo(38, 36, 0, 52); x.quadraticCurveTo(-38, 36, -42, 6); x.lineTo(-42, -34); x.closePath();
@@ -1595,7 +1620,19 @@ const runtime = String.raw`
     var pd = planDay(S.date), dd = new Date(S.date + 'T12:00:00');
     font(600, 34); x.fillStyle = CYAN; x.fillText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]', L, 236);
     x.fillStyle = FLUOR; x.fillRect(L, 262, 150, 6);
-    x.textAlign = 'right'; font(500, 32); x.fillStyle = GRAY; x.fillText(pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear(), R, 236); x.textAlign = 'left';
+    var dateTxt = pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear();
+    if (D.nutri) {
+      // Encabezado 50/50: COACH JP × NUTRIRCE con el mismo tamaño y peso; la fecha pasa debajo del rótulo.
+      font(500, 26); x.fillStyle = GRAY; x.fillText(dateTxt, L + 170, 270);
+      font(600, 34); var tagW = x.measureText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]').width, hs = 30; font(700, hs);
+      var cbW = function () { return x.measureText('COACH JP  ×  NUTRIRCE').width; };
+      while (hs > 20 && L + tagW + 40 + cbW() > R) { hs -= 1; font(700, hs); }
+      var hx = R - cbW();
+      x.fillStyle = WHITE; x.fillText('COACH JP', hx, 236); hx += x.measureText('COACH JP').width;
+      x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  ×  ', hx, 236); hx += x.measureText('  ×  ').width;
+      x.fillStyle = '#22C55E'; x.fillText('NUTRIR', hx, 236); hx += x.measureText('NUTRIR').width;
+      x.fillStyle = '#F97316'; x.fillText('CE', hx, 236);
+    } else { x.textAlign = 'right'; font(500, 32); x.fillStyle = GRAY; x.fillText(dateTxt, R, 236); x.textAlign = 'left'; }
     // 5 · Atleta: nombre en blanco, apellido en naranja, barra lateral + disciplina.
     var words = String(D.athlete.name || 'ATLETA').toUpperCase().split(/\s+/).filter(Boolean);
     var lines = words.length > 1 ? [words[0], words.slice(1).join(' ')] : [words[0]];
@@ -1632,7 +1669,7 @@ const runtime = String.raw`
       var mfs = 68; font(700, mfs); while (mfs > 38 && x.measureText(dt.mainName.toUpperCase()).width > CW * 0.6) { mfs -= 4; font(700, mfs); }
       x.fillStyle = WHITE; x.fillText(clip(x, dt.mainName.toUpperCase(), CW * 0.6), L, ry + 66 + mfs * 0.95);
     }
-    var gy0 = ry + 196, rh = 86, gw = (CW - 48) / 2, foot = H - (D.nutri ? 330 : 226);
+    var gy0 = ry + 196, rh = 86, gw = (CW - 48) / 2, foot = H - (D.nutri ? 400 : 226);
     var maxRows = Math.max(1, Math.floor((foot - gy0) / rh)), cap = maxRows * 2, grid = dt.grid;
     var more = grid.length > cap ? grid.length - (cap - 1) : 0;
     if (more) grid = grid.slice(0, cap - 1);
@@ -1643,22 +1680,42 @@ const runtime = String.raw`
       font(700, 30); x.fillStyle = g.off ? 'rgba(255,106,0,.55)' : FLUOR; x.fillText(clip(x, g.v, gw - rw - 16), gx2, y + 40);
     });
     if (more) { var mi = grid.length, mx = L + (mi % 2) * (gw + 48), myy = gy0 + Math.floor(mi / 2) * rh + 20; font(700, 30); x.fillStyle = CYAN; x.fillText('+ ' + more + (st.kind === 'day' ? ' COMIDAS' : ' INGREDIENTES') + ' MÁS', mx, myy); }
-    // 9 · Firma editorial (Coach JP × nutricionista), sobre el sello de marca y dentro de la zona segura de IG.
     if (D.nutri) {
-      x.fillStyle = 'rgba(248,250,252,.14)'; x.fillRect(L, H - 300, CW, 2);
-      var sig = D.nutri.story, sfs = 26; font(600, sfs);
-      while (sfs > 17 && x.measureText(sig).width + sig.length * 2 > CW) { sfs -= 1; font(600, sfs); }
-      var parts = sig.split(' × '), sx = L;
-      x.fillStyle = WHITE; x.fillText(parts[0], sx, H - 252); sx += x.measureText(parts[0]).width;
-      x.fillStyle = CYAN; x.fillText(' × ', sx, H - 252); sx += x.measureText(' × ').width;
-      x.fillStyle = '#CBD5E1'; x.fillText(clip(x, parts.slice(1).join(' × '), R - sx), sx, H - 252);
-    }
+      // 9 · Bloque de firma 50/50: [escudo] COACH JP  ×  [mano + tenedor] NUTRIRCE, mismo tamaño y peso, dentro de la
+      // zona segura de Instagram; debajo la firma de la nutricionista y el estado del plan.
+      var dv = x.createLinearGradient(L, 0, R, 0); dv.addColorStop(0, 'rgba(56,189,248,.45)'); dv.addColorStop(.5, 'rgba(34,197,94,.45)'); dv.addColorStop(1, 'rgba(249,115,22,.45)');
+      x.fillStyle = dv; x.fillRect(L, H - 382, CW, 2);
+      var IS = 64, GAP = 18, fsz = 44, XG = 30;
+      font(700, fsz);
+      var wA = x.measureText('COACH JP').width, wB = x.measureText('NUTRIRCE').width;
+      while (fsz > 30 && IS * 2 + GAP * 2 + wA + wB + XG * 2 + 30 > CW) { fsz -= 2; font(700, fsz); wA = x.measureText('COACH JP').width; wB = x.measureText('NUTRIRCE').width; }
+      var lw = Math.max(IS + GAP + wA, IS + GAP + wB), xw = x.measureText('×').width;
+      var x0 = W / 2 - lw - XG - xw / 2, yb = H - 300, iy = yb - IS + 10;
+      drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
+      x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = FLUOR; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
+      x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('×', W / 2 - xw / 2, yb); font(700, fsz);
+      var xb = W / 2 + xw / 2 + XG, img = ncImg();
+      if (img) {
+        var k = Math.min(lw / img.naturalWidth, (IS + 6) / img.naturalHeight);
+        x.drawImage(img, xb, iy + (IS - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+      } else {
+        drawNc(x, xb, iy, IS);
+        x.fillStyle = '#22C55E'; x.fillText('NUTRIR', xb + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('CE', xb + IS + GAP + x.measureText('NUTRIR').width, yb);
+      }
+      x.textAlign = 'center'; font(600, 25); x.fillStyle = '#CBD5E1';
+      x.fillText(clip(x, D.nutri.story, CW), W / 2, H - 236);
+      x.textAlign = 'left'; font(500, 24); x.fillStyle = GRAY; x.fillText(D.handle, L, H - 184);
+      x.textAlign = 'right'; font(700, 24); x.fillStyle = dt.done ? FLUOR : GRAY;
+      x.fillText(dt.done ? '// PLAN NUTRICIONAL COMPLETADO' : '// PLAN NUTRICIONAL EN CURSO', R, H - 184);
+      x.textAlign = 'left';
+    } else {
     // 9 · Footer de marca.
     drawLogo(x, L + 34, H - 168, 70);
     font(700, 46); x.fillStyle = WHITE; x.fillText('COACH ', L + 88, H - 160); var cw0 = x.measureText('COACH ').width; x.fillStyle = FLUOR; x.fillText('JP', L + 88 + cw0, H - 160);
     font(500, 26); x.fillStyle = GRAY; x.fillText(D.handle, L + 88, H - 120);
     x.textAlign = 'right'; font(700, 26); x.fillStyle = dt.done ? FLUOR : GRAY;
     x.fillText(dt.done ? '// PLAN NUTRICIONAL COMPLETADO' : '// PLAN NUTRICIONAL EN CURSO', R, H - 140);
+    }
     x.restore();
   }
   function paintStory() {
@@ -1753,9 +1810,11 @@ const runtime = String.raw`
     var h = '';
 
     // Fila 1 · HUD: logo + marca + fase + guía.
-    h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
+    // Co-branding 50/50: [Coach JP] × [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
+    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb">' + D.markSm + '<b class="brand">COACH JP</b></span><span class="cbx">×</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
+    else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
     // Fila 2 · atleta + selector de fecha.
-    h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + '</span></div>';
+    h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + (D.nutri ? ' · ' + esc(D.athlete.phase) : '') + '</span></div>';
     h += '<div class="datesel"><button data-day="-1" aria-label="Día anterior">◀</button><span class="dlab' + (S.date === today ? ' now' : '') + '">' + dateLabel(S.date) + '</span><button data-day="1" aria-label="Día siguiente">▶</button></div></div>';
     if (D.nutri) h += '<div class="nutri-line" data-nutri-line><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 1.5 13.5 4v4c0 3.2-2.4 5.6-5.5 6.5C4.9 13.6 2.5 11.2 2.5 8V4L8 1.5Z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="m5.6 8.1 1.7 1.7 3.2-3.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>' + esc(D.nutri.header) + '</span></div>';
     if (D.cloud && window.__cjpCloud) {
@@ -1854,7 +1913,8 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
+    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks">' + D.shieldSm + '<span class="cbx">×</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH JP <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">×</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
+    else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();
     var y = window.scrollY;

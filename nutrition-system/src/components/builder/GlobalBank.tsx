@@ -5,7 +5,7 @@ import { Globe2, Pencil, Plus, Search } from 'lucide-react';
 import { ALLERGEN_INFO, FOOD_ALLERGENS, itemAllergens, type Allergen } from '@/lib/allergens';
 import { previewAssign, totalsOf, type BankSource } from '@/lib/bankAssign';
 import { CAT_LABEL, CATALOG, catalogRecipe, type CatalogDish } from '@/lib/catalog';
-import { categoryLabel, DISH_CATEGORIES, emptyDishBase, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
+import { categoryLabel, DISH_CATEGORIES, dishYield, emptyDishBase, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
 import { FOOD_BY_ID, FOODS, GROUP_LABEL, macrosFor, type FoodRef } from '@/lib/foods';
 import { houseMeasure } from '@/lib/household';
 import { catalogDishForMeal, ROLES_OF_CATEGORY } from '@/lib/planBank';
@@ -14,6 +14,7 @@ import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, Panel } from '../hud/primitives';
 import { FoodModal } from './FoodBrandDatabase';
+import { individual, stepsWithYield, yieldLabel, yieldTag, type YieldInfo } from '@/lib/yieldInfo';
 
 type View = 'foods' | 'dishes';
 type Group = 'all' | 'p' | 'c' | 'f' | 'vf' | 'dairy';
@@ -47,7 +48,11 @@ interface Entry {
   dish?: CatalogDish;
   db?: BrandFood;
   food?: FoodRef;
+  /** Rendimiento del plato (porción individual o receta de molde / tanda). */
+  yieldInfo?: YieldInfo;
 }
+const catYield = (d: CatalogDish): YieldInfo => (d.yieldType === 'batch' ? { yieldType: 'batch', servings: d.servings ?? 4, unit: d.yieldUnit, storage: d.storage ?? '' } : individual(d.storage));
+const yieldSub = (y?: YieldInfo) => (y?.yieldType === 'batch' ? ` · 🥧 rinde ${y.servings} porciones` : '');
 
 const domGroup = (m: { p: number; c: number; f: number }): Group => {
   const e = { p: m.p * 4, c: m.c * 4, f: m.f * 9 };
@@ -98,7 +103,7 @@ export function GlobalBank() {
       if (!r) return [];
       const ids = r.parts.map((x) => x.id);
       const m = ids.reduce((a, id) => { const x = macrosFor(id, 100)!; return { p: a.p + x.p, c: a.c + x.c, f: a.f + x.f }; }, { p: 0, c: 0, f: 0 });
-      return [{ key: `cat:${d.id}`, src: { kind: 'catalog' as const, id: d.id }, name: r.title.replace(/\[([^|\]]*)\|[^\]]*\]/g, '$1'), sub: `Recetario Coach JP · ${CAT_LABEL[d.category]} · ${d.complexity === 'rapida' ? 'rápida' : 'elaborada'}`, group: domGroup(m), allergens: partsAllergens(ids), dish: d }];
+      return [{ key: `cat:${d.id}`, src: { kind: 'catalog' as const, id: d.id }, name: r.title.replace(/\[([^|\]]*)\|[^\]]*\]/g, '$1'), sub: `Recetario Coach JP · ${CAT_LABEL[d.category]} · ${d.complexity === 'rapida' ? 'rápida' : 'elaborada'}`, group: domGroup(m), allergens: partsAllergens(ids), dish: d, yieldInfo: catYield(d) }];
     });
     const mine: Entry[] = db
       .filter((b) => DISH_CATEGORIES.includes(b.categoria))
@@ -110,12 +115,13 @@ export function GlobalBank() {
         group: domGroup(b.macros_por_porcion),
         allergens: [...new Set([...(b.ingredientes ?? []).flatMap((x) => itemAllergens({ foodId: x.foodId, food: x.nombre })), ...itemAllergens({ food: b.nombre }), ...(b.lactosa ? (['lactose', 'dairy'] as Allergen[]) : [])])] as Allergen[],
         db: b,
+        yieldInfo: dishYield(b),
       }));
     return [...cat, ...mine];
   }, [view, db, restr]);
 
   const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const list = entries.filter((e) => (group === 'all' || e.group === group) && !restr.some((r) => e.allergens.includes(r)) && (!q.trim() || norm(`${e.name} ${e.sub} ${e.dish?.base.join(' ') ?? ''}`).includes(norm(q.trim()))));
+  const list = entries.filter((e) => (group === 'all' || e.group === group) && !restr.some((r) => e.allergens.includes(r)) && (!q.trim() || norm(`${e.name} ${e.dish?.title ?? ''} ${e.sub} ${e.dish?.base.join(' ') ?? ''}`).includes(norm(q.trim()))));
   const cur = entries.find((e) => e.key === sel);
   const dayMeals = [...plan.meals].filter((m) => m.day === day || m.day === 'both').sort((a, b) => a.time.localeCompare(b.time));
   const meal = dayMeals.find((m) => m.id === mealId) ?? dayMeals[0];
@@ -141,7 +147,7 @@ export function GlobalBank() {
     const g = b.porcion_base.gramos || 1;
     const m = b.macros_por_porcion;
     const items = (b.ingredientes ?? []).filter((x) => x.foodId && FOOD_BY_ID[x.foodId]).map((x) => ({ id: x.foodId!, foodId: x.foodId, food: FOOD_BY_ID[x.foodId!].name, grams: x.gramos, ...macrosFor(x.foodId!, x.gramos)! }));
-    return { per100: { p: (m.p / g) * 100, c: (m.c / g) * 100, f: (m.f / g) * 100 }, portion: g, portionLabel: `${b.porcion_base.cantidad} ${b.porcion_base.unidad}`, perPortion: m, ingredients: items.length ? items : null, base: null, steps: b.pasos ?? (b.tecnica ? [b.tecnica] : null) };
+    return { per100: { p: (m.p / g) * 100, c: (m.c / g) * 100, f: (m.f / g) * 100 }, portion: g, portionLabel: `${b.porcion_base.cantidad} ${b.porcion_base.unidad}`, perPortion: m, ingredients: items.length ? items : null, base: null, steps: stepsWithYield(b.pasos ?? (b.tecnica ? [b.tecnica] : []), dishYield(b)) };
   })();
 
   const editCatalog = (d: CatalogDish) => {
@@ -155,6 +161,9 @@ export function GlobalBank() {
       porcion_base: { cantidad: 1, unidad: 'porción', gramos: Math.round(t.g) },
       macros_por_porcion: { kcal: Math.round(t.kcal), p: r1(t.p), c: r1(t.c), f: r1(t.f), leucina: r1(ref.items.reduce((a, i) => a + i.leucine, 0)) },
       ingredientes: ref.items.map((i) => ({ nombre: i.food, gramos: i.grams, foodId: i.foodId })),
+      yieldType: d.yieldType ?? 'individual',
+      servings: d.servings ?? 1,
+      storage: d.storage,
       pasos: ref.steps,
       detalle: d.base.join(', '),
       prep_min: d.complexity === 'rapida' ? 15 : 60,
@@ -202,6 +211,7 @@ export function GlobalBank() {
               <div className="text-[13.5px] font-medium text-ink">{e.name}</div>
               <div className="text-[11.5px] text-mute">
                 {e.sub}
+                {yieldSub(e.yieldInfo)}
                 {e.allergens.filter((a) => a !== 'veg').length > 0 && ` · ${e.allergens.filter((a) => a !== 'veg').map((a) => ALLERGEN_INFO[a].short).join(', ')}`}
               </div>
             </button>
@@ -268,6 +278,23 @@ export function GlobalBank() {
                 {!cur.allergens.includes('veg') && <span className="rounded border border-[#34D399]/40 px-1.5 py-0.5 text-[11px] text-[#34D399]">Apto vegetariano</span>}
                 {!cur.allergens.filter((a) => a !== 'veg').length && <span className="text-[11.5px] text-[#34D399]">Sin alérgenos declarados</span>}
               </div>
+              {cur.yieldInfo && (
+                <div className={cx('mt-2 rounded-md border-l-2 px-2.5 py-1.5 text-[12.5px]', cur.yieldInfo.yieldType === 'batch' ? 'border-[#22C55E] bg-[#22C55E]/[0.07] text-steel' : 'border-line text-mute')} data-bank-yield={cur.yieldInfo.yieldType}>
+                  <b className="text-ink">{cur.yieldInfo.yieldType === 'batch' ? `🥧 ${yieldTag(cur.yieldInfo)}` : '🍽 Porción individual'}</b>
+                  <div>{yieldLabel(cur.yieldInfo)}</div>
+                  {cur.yieldInfo.yieldType === 'batch' && !sheet.ingredients && (
+                    <div className="mt-1 text-[12px]" data-bank-whole>
+                      <b className="text-[#4ADE80]">Receta entera ({cur.yieldInfo.servings} porciones):</b> ≈ {sheet.portion * cur.yieldInfo.servings} g en total · tu porción {sheet.portion} g
+                    </div>
+                  )}
+                  {cur.yieldInfo.yieldType === 'batch' && sheet.ingredients && (
+                    <div className="mt-1 text-[12px]" data-bank-whole>
+                      <b className="text-[#4ADE80]">Receta entera ({cur.yieldInfo.servings} porciones):</b> {sheet.ingredients.map((i) => `${i.grams * cur.yieldInfo!.servings} g ${i.food.split(' (')[0].toLowerCase()}`).join(' · ')}
+                    </div>
+                  )}
+                  {cur.yieldInfo.yieldType === 'batch' && cur.yieldInfo.storage && <div className="mt-1 text-[12px]">❄️ <b className="text-ink">Conservación:</b> {cur.yieldInfo.storage}</div>}
+                </div>
+              )}
               {sheet.base && <p className="mt-2 text-[12px] text-steel"><b className="text-ink">Ingredientes base:</b> {sheet.base.join(', ')}.</p>}
               {sheet.ingredients && (
                 <ul className="mt-2 space-y-0.5 text-[12.5px] text-steel" data-bank-ingredients>

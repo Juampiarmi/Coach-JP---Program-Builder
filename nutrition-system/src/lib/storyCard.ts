@@ -1,5 +1,5 @@
 import { computeTelemetry, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from './bioenergetics';
-import { BRAND, drawNutritionIcon, nutriOf, storySignature } from './brand';
+import { BRAND, drawNutritionIcon, drawNutrirceIcon, NC, nutriOf, shortSpecialty, storySignature } from './brand';
 import { CITES } from './evidence';
 import { DISCIPLINE_LABEL } from './exportHtml';
 import type { AthletePlan } from './types';
@@ -17,8 +17,8 @@ const PAD_X = 90;
 const CONTENT_W = STORY_W - PAD_X * 2;
 const TOP = 130;
 /** Altura reservada al footer (cita + separador + fila del logo), anclado al borde inferior. */
-const FOOTER_H = 272;
-const BOTTOM_SAFE = 84;
+const FOOTER_H = 290;
+const BOTTOM_SAFE = 150;
 /** Separación mínima entre bloques; si no entra, la nota se reduce de 3 a 2 líneas. */
 const MIN_GAP = 48;
 
@@ -104,6 +104,45 @@ function badge(ctx: Ctx, label: string, x: number, y: number, color: string, siz
   return { w, h };
 }
 
+/** Encabezado 50/50: [ COACH JP × NUTRIRCE ] con el mismo tamaño y peso para las dos marcas. */
+function cobrandBadge(ctx: Ctx, x: number, y: number, size = 26) {
+  ctx.font = `700 ${size}px ${CHAKRA}`;
+  const segs: [string, string][] = [['[ ', C.cyan], ['COACH JP', C.ink], ['  ×  ', 'rgba(203,213,225,.6)'], ['NUTRIR', NC.green], ['CE', NC.orange], [' ]', C.cyan]];
+  const w = segs.reduce((a, [t]) => a + width(ctx, t, 5), 0) + 44;
+  const h = size + 26;
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, 'rgba(56,189,248,.35)');
+  g.addColorStop(1, 'rgba(34,197,94,.35)');
+  ctx.fillStyle = 'rgba(56,189,248,.07)';
+  ctx.strokeStyle = g;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 10);
+  ctx.fill();
+  ctx.stroke();
+  ctx.textBaseline = 'middle';
+  let cx = x + 22;
+  for (const [t, col] of segs) {
+    ctx.fillStyle = col;
+    text(ctx, t, cx, y + h / 2 + 1, 5);
+    cx += width(ctx, t, 5);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** Logo oficial subido (data URL): se carga una vez y avisa para redibujar la story. */
+const LOGOS = new Map<string, HTMLImageElement>();
+function logoImage(src: string): HTMLImageElement | null {
+  let img = LOGOS.get(src);
+  if (!img) {
+    img = new Image();
+    img.onload = () => window.dispatchEvent(new Event('cjp-story-redraw'));
+    img.src = src;
+    LOGOS.set(src, img);
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
+
 /** Bloque vertical medido: el layout reparte el espacio sobrante entre bloques (justify-between). */
 interface Block {
   height: number;
@@ -176,6 +215,7 @@ function drawBackground(ctx: Ctx) {
 export let lastLayout = { contentBottom: 0, footerTop: 0, spacing: 0 };
 
 export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
+  const nutri = nutriOf(plan);
   canvas.width = STORY_W;
   canvas.height = STORY_H;
   const ctx = canvas.getContext('2d')! as Ctx;
@@ -202,7 +242,8 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   const header: Block = {
     height: 78 + 30 + nameLines.length * nameLH + 20 + 44 + 18 + 26,
     draw: (y) => {
-      badge(ctx, '[ BIOENERGETICS & PERFORMANCE ]', PAD_X, y, C.cyan);
+      if (nutri) cobrandBadge(ctx, PAD_X, y);
+      else badge(ctx, '[ BIOENERGETICS & PERFORMANCE ]', PAD_X, y, C.cyan);
       const nameTop = y + 78 + 30;
       ctx.font = `700 ${nameSize}px ${CHAKRA}`;
       ctx.fillStyle = C.ink;
@@ -344,37 +385,89 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   ctx.font = `500 22px ${MONO}`;
   ctx.fillStyle = C.mute;
   text(ctx, `[ ${CITES.morton.label} ]`, PAD_X, footerTop + 26, 2);
-  // Firma editorial: COACH JP × nutricionista responsable (fina, alto contraste, dentro de la zona segura de IG).
-  const nutri = nutriOf(plan);
-  let sepY = footerTop + 52;
   if (nutri) {
-    const sig = storySignature(nutri);
-    const [lead, ...rest] = sig.split(' × ');
-    let fs = 26;
-    ctx.font = `600 ${fs}px ${CHAKRA}`;
-    while (fs > 16 && width(ctx, sig, 2) > CONTENT_W) ctx.font = `600 ${--fs}px ${CHAKRA}`;
-    const y = footerTop + 76;
-    let sx = PAD_X;
+    // Bloque de firma 50/50: [Coach JP] × [NutrirCe] con el mismo tamaño y peso, y la firma de la nutricionista.
+    const sepY = footerTop + 50;
+    const grad = ctx.createLinearGradient(PAD_X, 0, STORY_W - PAD_X, 0);
+    grad.addColorStop(0, 'rgba(56,189,248,.45)');
+    grad.addColorStop(0.5, 'rgba(34,197,94,.45)');
+    grad.addColorStop(1, 'rgba(249,115,22,.45)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(PAD_X, sepY, CONTENT_W, 2);
+    const IS = 104;
+    const iy = sepY + 22;
+    const half = (CONTENT_W - 60) / 2;
+    let fs = 50;
+    ctx.font = `700 ${fs}px ${CHAKRA}`;
+    while (fs > 32 && IS + 20 + Math.max(width(ctx, 'COACH JP', 3), width(ctx, 'NUTRIRCE', 3)) > half) ctx.font = `700 ${--fs}px ${CHAKRA}`;
+    const subOf = (t: string, max: number) => {
+      let ss = 18;
+      ctx.font = `500 ${ss}px ${MONO}`;
+      while (ss > 12 && width(ctx, t, 2) > max) ctx.font = `500 ${--ss}px ${MONO}`;
+    };
+    // Izquierda: Coach JP.
+    const icon = document.createElement('canvas');
+    icon.width = icon.height = IS * 2;
+    drawNutritionIcon(icon.getContext('2d')!, IS * 2, false);
+    ctx.drawImage(icon, PAD_X - 4, iy, IS, IS);
+    const ax = PAD_X + IS + 20;
+    ctx.font = `700 ${fs}px ${CHAKRA}`;
     ctx.fillStyle = C.ink;
-    text(ctx, lead, sx, y, 2);
-    sx += width(ctx, lead, 2);
-    ctx.fillStyle = C.cyan;
-    text(ctx, ' × ', sx, y, 2);
-    sx += width(ctx, ' × ', 2);
+    text(ctx, 'COACH ', ax, iy + 66, 3);
+    ctx.fillStyle = C.fire;
+    text(ctx, 'JP', ax + width(ctx, 'COACH ', 3), iy + 66, 3);
+    subOf('HIGH PERFORMANCE SYSTEM', half - IS - 20);
+    ctx.fillStyle = C.steel;
+    text(ctx, 'HIGH PERFORMANCE SYSTEM', ax, iy + 100, 2);
+    // Centro: ×.
+    ctx.font = `400 ${fs}px ${CHAKRA}`;
+    ctx.fillStyle = 'rgba(203,213,225,.6)';
+    ctx.textAlign = 'center';
+    text(ctx, '×', STORY_W / 2, iy + 66);
+    ctx.textAlign = 'left';
+    // Derecha: NutrirCe (logo oficial si el coach lo subió).
+    const bx = STORY_W / 2 + 30;
+    const img = nutri.logo ? logoImage(nutri.logo) : null;
+    if (img) {
+      const k = Math.min(half / img.naturalWidth, IS / img.naturalHeight);
+      ctx.drawImage(img, bx, iy + (IS - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+    } else {
+      drawNutrirceIcon(ctx, bx, iy, IS);
+      const tx = bx + IS + 20;
+      ctx.font = `700 ${fs}px ${CHAKRA}`;
+      ctx.fillStyle = NC.green;
+      text(ctx, 'NUTRIR', tx, iy + 66, 3);
+      ctx.fillStyle = NC.orange;
+      text(ctx, 'CE', tx + width(ctx, 'NUTRIR', 3), iy + 66, 3);
+      const spec = nutri.specialty.trim() ? shortSpecialty(nutri.specialty).toUpperCase() : 'NUTRICIÓN';
+      subOf(spec, half - IS - 20);
+      ctx.fillStyle = C.steel;
+      text(ctx, spec, tx, iy + 100, 2);
+    }
+    // Firma de la nutricionista, centrada.
+    const sig = storySignature(nutri);
+    let ss = 26;
+    ctx.font = `600 ${ss}px ${CHAKRA}`;
+    while (ss > 16 && width(ctx, sig, 2) > CONTENT_W) ctx.font = `600 ${--ss}px ${CHAKRA}`;
     ctx.fillStyle = '#CBD5E1';
-    text(ctx, rest.join(' × '), sx, y, 2);
-    sepY = footerTop + 104;
+    ctx.textAlign = 'center';
+    text(ctx, sig, STORY_W / 2, footerTop + 232, 2);
+    ctx.font = `500 20px ${MONO}`;
+    ctx.fillStyle = C.mute;
+    text(ctx, BRAND.handle, STORY_W / 2, footerTop + 272, 2);
+    ctx.textAlign = 'left';
+    return;
   }
   // Separador.
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(PAD_X, sepY);
-  ctx.lineTo(STORY_W - PAD_X, sepY);
+  ctx.moveTo(PAD_X, footerTop + 52);
+  ctx.lineTo(STORY_W - PAD_X, footerTop + 52);
   ctx.stroke();
   // Fila 2: logo Nutrition + firma, con su propio espacio.
   const logoSize = 124;
-  const logoY = sepY + 30;
+  const logoY = footerTop + 52 + 36;
   const icon = document.createElement('canvas');
   icon.width = icon.height = logoSize * 2;
   drawNutritionIcon(icon.getContext('2d')!, logoSize * 2, false);

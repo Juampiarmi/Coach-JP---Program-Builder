@@ -6,6 +6,7 @@ import { FOOD_BY_ID, macrosFor, matchFood, snapUnit, unitStep } from './foods';
 import { houseMeasure } from './household';
 import type { FoodSlot } from './mealSlots';
 import type { AiSettings } from './types';
+import { individual, inferYield, stepsWithYield, type YieldInfo } from './yieldInfo';
 
 /**
  * CARGA RÁPIDA DE PLATOS: el coach escribe nombre + ingredientes aproximados + un tip, y el sistema devuelve la receta
@@ -41,7 +42,13 @@ export interface QuickDish {
   prepMin: number;
   /** 'ia' si la IA ordenó y redactó; 'local' si se resolvió con el motor propio. */
   source: 'ia' | 'local';
+  /** Rendimiento (porción individual o receta de molde / tanda) y conservación. */
+  yieldInfo: YieldInfo;
+  /** Receta de molde cargada entera: los gramos de `items` ya están divididos por porción. */
+  dividedFrom?: number;
 }
+
+type YieldHint = { type?: string; servings?: number; storage?: string } | null;
 
 const SEASONING = /^(sal|pimienta|or[eé]gano|ajo|perejil|condimentos?|especias?|comino|piment[oó]n|nuez moscada|lim[oó]n|jugo de lim[oó]n|vinagre|agua|vainilla|esencia|polvo de hornear|edulcorante|canela|cacao amargo|aceto|mostaza|ciboulette|albahaca|romero|tomillo|caldo|provenzal|aj[ií] molido|curry|c[uú]rcuma|jengibre|spray|rocío vegetal|hielo)\b/i;
 const NUM_WORDS: Record<string, number> = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, diez: 10, medio: 0.5, media: 0.5, '½': 0.5, '¼': 0.25, cuarto: 0.25 };
@@ -229,7 +236,7 @@ function totalsOf(items: QuickItem[]) {
   );
 }
 
-function assemble(input: QuickInput, parsed: ReturnType<typeof parseIngredient>[], steps: string[] | null, catHint: BrandCategory | null, source: 'ia' | 'local'): QuickDish {
+function assemble(input: QuickInput, parsed: ReturnType<typeof parseIngredient>[], steps: string[] | null, catHint: BrandCategory | null, source: 'ia' | 'local', yieldHint: YieldHint = null): QuickDish {
   const items: QuickItem[] = [];
   const seasonings: string[] = [];
   const unknown: string[] = [];
@@ -246,10 +253,30 @@ function assemble(input: QuickInput, parsed: ReturnType<typeof parseIngredient>[
     }
   }
   const name = cap(input.name.trim() || 'Plato nuevo');
+  // Rendimiento: la IA lo declara o se deduce del nombre (tarta, budín, tortilla grande, guiso…). Si la receta de
+  // molde se cargó entera (más de ~900 kcal), los gramos se dividen por porción: el plan siempre usa 1 porción.
+  // Por el nombre (sin declaración de la IA): una «tortilla de verduras» de 3 huevos es individual, no un molde.
+  const named = inferYield(name);
+  const guess = named && !yieldHint?.type && totalsOf(items).kcal < 600 ? null : named;
+  const servings = Math.round(Number(yieldHint?.servings) || guess?.servings || 0);
+  const yieldInfo: YieldInfo =
+    (yieldHint?.type === 'batch' || (!yieldHint?.type && guess)) && servings >= 2
+      ? { yieldType: 'batch', servings, unit: guess?.unit ?? 'la receta entera', storage: (yieldHint?.storage ?? '').trim() || guess?.storage || 'Se conserva 3–4 días en heladera en recipiente hermético o hasta 2 meses freezada en porciones individuales.' }
+      : individual((yieldHint?.storage ?? '').trim() || undefined);
+  let dividedFrom: number | undefined;
+  if (yieldInfo.yieldType === 'batch' && totalsOf(items).kcal > 900) {
+    dividedFrom = yieldInfo.servings;
+    for (const it of items) {
+      const g = it.grams / yieldInfo.servings;
+      it.grams = unitStep(it.foodId) !== 5 ? snapUnit(it.foodId, g) : Math.max(5, Math.round(g / 5) * 5);
+      Object.assign(it, macrosFor(it.foodId, it.grams));
+      it.household = houseMeasure(it.foodId, it.grams);
+    }
+  }
   const category = catHint ?? suggestCategory(name, items.map((i) => i.foodId));
   const allergens = [...new Set([...items.flatMap((i) => itemAllergens({ foodId: i.foodId, food: i.food })), ...unknown.flatMap((u) => allergenHits(u, Object.keys(ALLERGEN_INFO)) as Allergen[])])].filter((a) => a !== 'veg') as Allergen[];
   const t = totalsOf(items);
-  const finalSteps = steps?.length ? integrateTip(steps, steps.some((s) => s.includes('Tip')) ? '' : (input.tip ?? '')) : localSteps(name, items, seasonings, input.tip ?? '', category);
+  const finalSteps = stepsWithYield(steps?.length ? integrateTip(steps, steps.some((s) => s.includes('Tip')) ? '' : (input.tip ?? '')) : localSteps(name, items, seasonings, input.tip ?? '', category), yieldInfo);
   const r1 = (x: number) => Math.round(x * 10) / 10;
   return {
     name,
@@ -263,6 +290,8 @@ function assemble(input: QuickInput, parsed: ReturnType<typeof parseIngredient>[
     momentos: slotsOf(category, name),
     prepMin: Math.min(60, 5 + finalSteps.length * 4),
     source,
+    yieldInfo,
+    dividedFrom,
   };
 }
 
@@ -272,23 +301,24 @@ export function quickDishLocal(input: QuickInput): QuickDish {
 }
 
 const QUICK_SYSTEM = `Sos chef y nutricionista deportivo en Argentina. Te paso un plato con ingredientes aproximados y un tip.
-Devolvé SOLO un JSON: {"ingredients":[{"name":"huevo","amount":"3 unidades"}],"steps":["..."],"category":"tortilla"}.
+Devolvé SOLO un JSON: {"ingredients":[{"name":"huevo","amount":"3 unidades"}],"steps":["..."],"category":"tortilla","yield":{"type":"individual","servings":1,"storage":"..."}}.
 - ingredients: cada ingrediente real, con nombre simple en castellano rioplatense (huevo, claras, zucchini, berenjena, aceite de oliva, avena, yogur griego…) y cantidad casera o en gramos ("3 unidades", "200 g", "1 cda"). Condimentos (sal, pimienta, ajo, orégano, vainilla, polvo de hornear) como ingredientes con amount "a gusto".
 - steps: 3-6 pasos claros, ordenados y reales de cocina casera (cortar, saltear, batir, cocinar, dar vuelta, servir), integrando el tip del coach donde corresponde. Sin cantidades inventadas distintas de las de los ingredientes.
-- category: una de desayuno, principal, guarnicion, tortilla, ensalada, colacion, postre, licuado.`;
+- category: una de desayuno, principal, guarnicion, tortilla, ensalada, colacion, postre, licuado.
+- yield: "batch" si se cocina en molde o tanda grande (tarta, budín, tortilla grande, pan proteico, guiso, lasaña, pastel, albóndigas, muffins) con servings = cuántas porciones rinde la receta entera (los ingredientes son los del molde entero); "individual" (servings 1) si es una porción lista para esa comida. storage: una frase breve de conservación y freezer (ej. "3–4 días en heladera en recipiente hermético o hasta 2 meses freezada en porciones individuales").`;
 
 /** Con IA (si hay key): la IA ordena y redacta; gramos, macros y alérgenos los calcula la base. Si falla, motor local. */
 export async function quickDish(input: QuickInput, ai?: AiSettings): Promise<QuickDish & { aiError?: string }> {
   if (!ai?.apiKey?.trim()) return quickDishLocal(input);
   try {
     const raw = await aiText(ai, QUICK_SYSTEM, `Plato: ${input.name}\nIngredientes: ${input.ingredients}\nTip del coach: ${input.tip || '(sin tip)'}`);
-    const j = JSON.parse(raw.replace(/```(?:json)?/gi, '').slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { ingredients?: { name: string; amount?: string }[]; steps?: string[]; category?: string };
+    const j = JSON.parse(raw.replace(/```(?:json)?/gi, '').slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { ingredients?: { name: string; amount?: string }[]; steps?: string[]; category?: string; yield?: YieldHint };
     const parsed = (j.ingredients ?? []).map((x) => parseIngredient(/a gusto/i.test(x.amount ?? '') ? x.name : `${x.amount ?? ''} ${x.name}`.trim()));
     if (!parsed.some((x) => 'foodId' in x)) throw new Error('La IA no devolvió ingredientes reconocibles.');
     const cats: BrandCategory[] = ['desayuno', 'principal', 'guarnicion', 'tortilla', 'ensalada', 'colacion', 'postre', 'licuado'];
     const cat = cats.includes(j.category as BrandCategory) ? (j.category as BrandCategory) : null;
     const steps = (j.steps ?? []).filter((s) => typeof s === 'string' && s.trim().length > 8).slice(0, 8);
-    return assemble(input, parsed, steps, cat, 'ia');
+    return assemble(input, parsed, steps, cat, 'ia', j.yield && typeof j.yield === 'object' ? j.yield : null);
   } catch (e) {
     return { ...quickDishLocal(input), aiError: e instanceof Error ? e.message : 'La IA no respondió.' };
   }
@@ -311,5 +341,8 @@ export function quickToBrandFood(d: QuickDish, base: BrandFood, catLabel?: strin
     lactosa: d.allergens.includes('lactose'),
     alergenos: d.allergens,
     momentos: d.momentos,
+    yieldType: d.yieldInfo.yieldType,
+    servings: d.yieldInfo.servings,
+    storage: d.yieldInfo.storage,
   };
 }

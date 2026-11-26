@@ -1,4 +1,5 @@
 import { DISH_STEPS } from './dishSteps';
+import { individual, inferYield, STORAGE_INDIVIDUAL, type YieldInfo, type YieldType } from './yieldInfo';
 import { dishSlots, FOOD_SLOT_LABEL, type FoodSlot } from './mealSlots';
 import type { FoodRef, SwapGroup } from './foods';
 
@@ -112,6 +113,23 @@ export interface BrandFood {
   pasos?: string[];
   /** Momentos del día permitidos (vacío = según la categoría del plato). */
   momentos?: FoodSlot[];
+  /** Rendimiento: 'individual' (porción lista para esa comida) o 'batch' (receta de molde / tanda). */
+  yieldType?: YieldType;
+  /** Porciones que rinde la receta completa (batch). */
+  servings?: number;
+  /** Conservación y freezer. */
+  storage?: string;
+}
+
+/** Rendimiento declarado del plato del coach (o el que se deduce del nombre). */
+export function dishYield(b: Pick<BrandFood, 'nombre' | 'yieldType' | 'servings' | 'storage'> & { porcion_base?: BrandFood['porcion_base'] }): YieldInfo {
+  const named = inferYield(b.nombre);
+  // La porción declarada manda: «1 porción (1/8)» de una tarta = rinde 8.
+  const frac = Number(/\(1\/(\d+)\)/.exec(b.porcion_base?.unidad ?? '')?.[1] ?? 0);
+  const guess = named && frac >= 2 ? { ...named, servings: frac } : named;
+  if (b.yieldType === 'batch') return { yieldType: 'batch', servings: Math.max(2, Math.round(b.servings ?? guess?.servings ?? 4)), unit: guess?.unit ?? 'la receta entera', storage: b.storage?.trim() || guess?.storage || STORAGE_INDIVIDUAL };
+  if (b.yieldType === 'individual') return { ...individual(b.storage?.trim() || undefined) };
+  return guess ?? individual(b.storage?.trim() || undefined);
 }
 
 type Seed = [string, string, BrandCategory, number, string, number, number, number, number, number, number, boolean];
@@ -452,6 +470,9 @@ export function sanitizeBrandFood(raw: unknown): BrandFood | null {
     catLabel: cat === 'custom' && typeof r.catLabel === 'string' && r.catLabel.trim() ? r.catLabel.trim().slice(0, 40) : undefined,
     alergenos: Array.isArray(r.alergenos) ? r.alergenos.filter((x) => typeof x === 'string') : undefined,
     editadoEn: typeof r.editadoEn === 'number' && Number.isFinite(r.editadoEn) ? r.editadoEn : undefined,
+    yieldType: r.yieldType === 'batch' || r.yieldType === 'individual' ? r.yieldType : undefined,
+    servings: typeof r.servings === 'number' && r.servings >= 1 && r.servings <= 48 ? Math.round(r.servings) : undefined,
+    storage: typeof r.storage === 'string' && r.storage.trim() ? r.storage.trim().slice(0, 300) : undefined,
   };
 }
 

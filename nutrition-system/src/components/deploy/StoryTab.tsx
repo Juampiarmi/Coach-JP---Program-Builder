@@ -29,7 +29,11 @@ export function StoryTab() {
     if (!document.fonts) return;
     const redraw = () => canvas.current && drawStoryCard(canvas.current, usePlanStore.getState().plan);
     document.fonts.addEventListener('loadingdone', redraw);
-    return () => document.fonts.removeEventListener('loadingdone', redraw);
+    window.addEventListener('cjp-story-redraw', redraw);
+    return () => {
+      document.fonts.removeEventListener('loadingdone', redraw);
+      window.removeEventListener('cjp-story-redraw', redraw);
+    };
   }, []);
 
   const save = async () => {

@@ -5,6 +5,8 @@ import { Brain, Users, Library, Crosshair, Database, Dna, Globe2, Download, Imag
 import { AthleteSheet } from '@/components/builder/AthleteSheet';
 import { QuickAssignButton } from '@/components/builder/QuickAssign';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
+import { NutrirCeLogo } from '@/components/hud/NutrirCe';
+import { nutriOf } from '@/lib/brand';
 import { GlobalBank } from '@/components/builder/GlobalBank';
 import { IntakeTab } from '@/components/builder/IntakeTab';
 import { TemplateBank } from '@/components/builder/TemplateBank';
@@ -111,6 +113,27 @@ function StatusBar() {
   );
 }
 
+/** Cabecera del Builder: Coach JP × NutrirCe en igualdad de jerarquía (50/50). */
+function CoBrandHeader() {
+  const plan = usePlanStore((st) => st.plan);
+  const n = nutriOf(plan);
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1" data-builder-cobrand>
+      <span className="flex items-center gap-2">
+        <NutritionMark size={34} />
+        <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-ink">COACH JP</span>
+      </span>
+      {n && (
+        <>
+          <span className="text-[15px] text-steel/60">×</span>
+          <NutrirCeLogo size={34} text={17} logo={n.logo} />
+        </>
+      )}
+      <div className="basis-full font-mono text-[10px] tracking-[0.14em] text-mute">{n ? `ENTRENAMIENTO & NUTRICIÓN · ${n.name.toUpperCase()} · ` : '@coachjp.training · '}ARMADOR DE PLANES</div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const builderTab = usePlanStore((s) => s.builderTab);
@@ -138,16 +161,7 @@ export default function Home() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-line bg-carbon/90 backdrop-blur-md">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-          <NutritionMark size={36} />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-ink">COACH JP</span>
-              <span className="rounded border border-cyan-hud/20 bg-cyan-hud/10 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-hud">
-                [ Nutrición de alto rendimiento ]
-              </span>
-            </div>
-            <div className="mt-1.5 font-mono text-[10px] tracking-[0.14em] text-mute">@coachjp.training · ARMADOR DE PLANES</div>
-          </div>
+          <CoBrandHeader />
           <div className="ml-auto flex items-center gap-2">
             <CloudAccount />
             <ProfileBackup />
@@ -236,7 +250,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-line px-6 py-5 font-mono text-[10px] tracking-[0.12em] text-mute">
-        COACH JP NUTRITION · HIGH PERFORMANCE SYSTEM · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
+        COACH JP HIGH PERFORMANCE SYSTEM × NUTRIRCE · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
       </footer>
     </div>
   );

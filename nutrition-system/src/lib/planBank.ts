@@ -1,4 +1,5 @@
 import { DEFAULT_TRAINING, fits, hhmm, isMidday, mainAnchors, r15, snackTries, trainingOf, type MainTimes, type Training } from './agenda';
+import { inferYield, type YieldInfo } from './yieldInfo';
 import { allergiesOf, FOOD_ALLERGENS, safeRecipes, type Allergen } from './allergens';
 import { CITES } from './evidence';
 import { CATALOG, catalogRecipe, type CatCategory } from './catalog';
@@ -130,7 +131,7 @@ export const sexOf = (id: BankPlanId) => id.split('-')[0] as Sex;
 // ---------------------------------------------------------------------------------------------------------
 
 type SlotKind = 'breakfast' | 'mid' | 'lunch' | 'pre' | 'merienda' | 'dinner' | 'dessert' | 'extra';
-type R = Omit<Combo, 'roles'> & { female?: R; catId?: string };
+type R = Omit<Combo, 'roles'> & { female?: R; catId?: string; yieldInfo?: YieldInfo };
 const P = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'p', ...extra });
 const C = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'c', ...extra });
 const F = (id: string, extra: Partial<ComboPart> = {}): ComboPart => ({ id, r: 'f', ...extra });
@@ -314,7 +315,8 @@ export const CATALOG_RECIPES: Record<BankVariant, Record<SlotKind, R[]>> = Objec
       const r = catalogRecipe(d, v);
       if (!r) continue;
       const kinds = [...KINDS_OF[d.category], ...(d.category === 'colacion' && d.peri ? (['pre'] as SlotKind[]) : [])];
-      for (const k of kinds) out[k].push({ ...r, catId: d.id });
+      const yieldInfo: YieldInfo = { yieldType: d.yieldType ?? 'individual', servings: d.servings ?? 1, unit: d.yieldUnit, storage: d.storage ?? '' };
+      for (const k of kinds) out[k].push({ ...r, catId: d.id, yieldInfo });
     }
     return [v, out];
   }),
@@ -937,9 +939,11 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
         if (i > 0) fitAlt(rec, g, kcal, w.slot, { ...ctx, role: w.slot.role }, withDessert ? mealVolumeCap(sex, 'dinner') - solidGrams(dItems) : undefined);
         const items = toItems(g);
         const combo: Combo = { ...rec, roles: [w.slot.role] };
-        const title = titleFor(rec.title, g) + (i === 0 ? suffix : '');
-        if (!withDessert) return { title, items, steps: comboSteps(combo, items) };
-        return { title: `${title} + postre: ${dTitle.charAt(0).toLowerCase()}${dTitle.slice(1)}`, items: [...items, ...dItems.map((it) => ({ ...it, id: uid() }))], steps: [...comboSteps(combo, items), ...dSteps] };
+        const base = titleFor(rec.title, g);
+        const title = base + (i === 0 ? suffix : '');
+        const yieldInfo = recipeYield(rec, base);
+        if (!withDessert) return { title, items, steps: comboSteps(combo, items), yieldInfo };
+        return { title: `${title} + postre: ${dTitle.charAt(0).toLowerCase()}${dTitle.slice(1)}`, items: [...items, ...dItems.map((it) => ({ ...it, id: uid() }))], steps: [...comboSteps(combo, items), ...dSteps], yieldInfo };
       });
       const [first, ...alts] = opts;
       return {
@@ -951,7 +955,8 @@ function buildDay(sel: BankSelection, day: MealDay, tierB: boolean, target: Tot,
         items: first.items,
         title: first.title,
         steps: first.steps,
-        alts: alts.map((a) => ({ title: a.title, items: a.items, steps: a.steps })),
+        yieldInfo: first.yieldInfo,
+        alts: alts.map((a) => ({ title: a.title, items: a.items, steps: a.steps, yieldInfo: a.yieldInfo })),
       } satisfies Meal;
     })
     .sort((a, b) => a.time.localeCompare(b.time));
@@ -1042,12 +1047,18 @@ export const ROLES_OF_CATEGORY: Record<CatCategory, MealRole[]> = { desayuno: ['
  * mujer y gramos escalados a lo que aporta hoy la comida (mismas calorías y macros, dentro de los topes por toma).
  * null si el plato no admite la variante del alumno o no tiene sustituto seguro.
  */
-export function catalogDishForMeal(dishId: string, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[] } | null {
+/** Rendimiento de una receta del banco (el del recetario o el que se deduce del nombre), atado a su título. */
+function recipeYield(rec: R, base: string): YieldInfo | undefined {
+  const y = rec.yieldInfo ?? inferYield(rec.title.replace(/\[([^|\]]*)\|[^\]]*\]/g, '$1').replace(/[[\]]/g, ''));
+  return y ? { ...y, for: base } : undefined;
+}
+
+export function catalogDishForMeal(dishId: string, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[]; yieldInfo?: YieldInfo } | null {
   const d = CATALOG.find((x) => x.id === dishId);
   if (!d) return null;
   const base = catalogRecipe(d, variantFor(plan));
   if (!base) return null;
-  return fitRecipeToMeal(base, meal, plan);
+  return fitRecipeToMeal({ ...base, yieldInfo: { yieldType: d.yieldType ?? 'individual', servings: d.servings ?? 1, unit: d.yieldUnit, storage: d.storage ?? '' } }, meal, plan);
 }
 
 /** Receta del banco (P/C/F/X con pasos {id}) que se puede adaptar a cualquier comida. */
@@ -1057,7 +1068,7 @@ export type BankRecipe = R;
  * Cualquier receta del banco adaptada a una comida del alumno: alérgenos sustituidos, versión sin leche fluida en la
  * mujer y gramos escalados a lo que aporta la comida (topes, pisos de carne, huevos enteros; densidad si falta).
  */
-export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[] } | null {
+export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'anamnesis' | 'profile'>): { title: string; items: FoodItem[]; steps: string[]; yieldInfo?: YieldInfo } | null {
   const variant = variantFor(plan);
   const sex = plan.profile.sex;
   const allergies = allergiesOf(plan);
@@ -1084,5 +1095,6 @@ export function fitRecipeToMeal(base: R, meal: Meal, plan: Pick<AthletePlan, 'an
   const items = toItems(g);
   const recItems = items.filter((i) => !w.added.has(i.foodId ?? ''));
   const extra = items.filter((i) => w.added.has(i.foodId ?? '')).map((i) => `Sumá ${i.grams} g de ${FOOD_BY_ID[i.foodId!].name.split(' (')[0].toLowerCase()} para completar la comida.`);
-  return { title: titleFor(rec.title, g) + [...w.added].map((id) => moduleTitle(id, slot.kind)).join(''), items, steps: [...comboSteps({ ...rec, roles: [meal.role] }, recItems), ...extra] };
+  const baseTitle = titleFor(rec.title, g);
+  return { title: baseTitle + [...w.added].map((id) => moduleTitle(id, slot.kind)).join(''), items, steps: [...comboSteps({ ...rec, roles: [meal.role] }, recItems), ...extra], yieldInfo: recipeYield({ ...rec, yieldInfo: rec.yieldInfo ?? base.yieldInfo }, baseTitle) };
 }
