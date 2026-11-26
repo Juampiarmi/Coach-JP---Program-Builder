@@ -128,5 +128,6 @@ Adaptador `fichaPlan` (runner.html) sobre el Builder real (`CoachMantenimiento`,
 - `v28.bis.01-02` (adaptador `v28`): el registro de carga de un biset / triset va al final del recuadro (`.jp-sb-biset-reg`), con las tarjetas en orden y su letra; un bloque titulado «Biset» sin letras A1/A2 se dibuja como biset y conserva sus claves de registro (`e<idx>`).
 - `v28.cas.01`: el casillero ✓ de la serie es neutro vacío y #EE5A12 completo (`.jp-qc-ok` y `.set-check`).
 - `v28.vid.01`: el video va arriba a la derecha, junto al nombre; los bisets heredados (`.bs-wrap`) usan la misma estética naranja.
+- `v29.vid.02` (v29): la miniatura del video (`.jp-ux-vth`) queda dentro de su botón (≤ 72×48 px) y no se superpone a la barra de dosis, la meta ni «Registrar carga», en la tarjeta simple y en cada estación del biset; el botón es `position:relative` + `contain:paint`, así que aunque otra regla lo deje `static` la miniatura sigue recortada. El disparador de los bisets heredados (`.video-link`) también queda anclado.
 - `v28.pz.01`: la Pizarra del Coach se arma con `buildProgramConfig()` sobre una copia del plan (misma semana proyectada que el alumno, sin bloques que no viajan, plan intacto).
 - `v28.plan.01`: `plan()` completa campos sin pisar el mesociclo, el estado ni agregar días vacíos a un plan guardado.
