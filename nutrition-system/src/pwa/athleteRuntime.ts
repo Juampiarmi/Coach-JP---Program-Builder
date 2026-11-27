@@ -128,6 +128,11 @@ const runtime = String.raw`
     }
     if (!(it.grams > 0)) return null;
     var k = 100 / it.grams, p = it.p * k, c = it.c * k, fa = it.f * k;
+    // Ingrediente cargado con nombre libre («arroz integral», «vacío»): se usa la familia de su alimento base.
+    if (it.baseId && D.foods[it.baseId] && D.anchors[D.foods[it.baseId].group]) {
+      var bg = D.foods[it.baseId].group;
+      return { name: it.food, group: bg, anchor: D.anchors[bg], p: p, c: c, f: fa, groups: [bg], baseId: it.baseId };
+    }
     if (p + c + fa <= 0) return null;
     var mp = it.macroPrincipal;
     var a = mp === 'protein' ? 'p' : mp === 'carbs' ? 'c' : mp === 'fat' ? 'f' : (p * 4 >= c * 4 && p * 4 >= fa * 9 ? 'p' : c * 4 >= fa * 9 ? 'c' : 'f');
@@ -154,73 +159,105 @@ const runtime = String.raw`
     }
     return ITEM_ROLE[id];
   }
-  function capMax(id, role) { var c = D.fridgeCaps && D.fridgeCaps[SLOT[role] || 'main'] && D.fridgeCaps[SLOT[role] || 'main'][id]; return c ? c[1] : 1e9; }
-  function stepOf(id) { return (D.units && D.units[id]) || 5; }
-  // Reemplazo cruzado (otra familia: carne → huevos, claras, atún, tofu, whey; arroz → papa, masa de tarta, pan,
-  // legumbres): gramos para igualar el macro, con unidades enteras y el tope por toma; null si no llega al 90 %.
-  function crossPlan(src, orig, toId, role) {
-    var a = src.anchor, have = src[a] * orig.grams / 100;
-    if (!(have > 0)) return null;
-    var parts = toId === 'combo:claras-ricota' ? [['claras', 0.6], ['ricota', 0.4]] : [[toId, 1]], out = [], got = 0;
-    for (var i = 0; i < parts.length; i++) {
-      var f = D.foods[parts[i][0]];
-      if (!f || !(f[a] > 0)) return null;
-      var st = stepOf(parts[i][0]), mx = capMax(parts[i][0], role);
-      var g = Math.max(st, Math.round((have * parts[i][1] * 100) / f[a] / st) * st);
-      if (g > mx) g = Math.floor(mx / st) * st;
-      if (!(g > 0)) return null;
-      got += f[a] * g / 100;
-      out.push({ id: parts[i][0], g: g });
-    }
-    return got >= have * 0.9 ? out : null;
+  // Tabla de reemplazos cruzados: viaja dentro del runtime (no en el plan publicado), así también los planes
+  // publicados antes de esta versión ofrecen «Otras familias» y «Opción vegetariana» apenas se actualiza la app.
+  var XT = /*CJP_CROSS*/null || { min: 0.85, max: 1.2, meats: [], any: [], p: [], c: [], caps: {} };
+  function capMax(id, role) {
+    var sl = SLOT[role] || 'main';
+    var c = D.fridgeCaps && D.fridgeCaps[sl] && D.fridgeCaps[sl][id];
+    if (c) return c[1];
+    var e = XT.caps && XT.caps[sl] && XT.caps[sl][id];
+    return e ? e : 1e9;
   }
-  function isCross(src, toId) { return toId.indexOf('combo:') === 0 || !!(src.group && D.foods[toId] && D.foods[toId].group !== src.group); }
+  function stepOf(id) { return (D.units && D.units[id]) || (XT.units && XT.units[id]) || 5; }
+  function foodOk(id) { return !!D.foods[id] && !(D.avoid && D.avoid.indexOf(id) >= 0); }
+  function targetOf(anchor, id) { var l = XT[anchor] || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+  // Reemplazo cruzado (otra familia: carne → huevos, claras, ricota, tofu, soja, legumbres, atún, whey; arroz →
+  // fideos, papa, batata, masa de tarta, pan, legumbres): gramos para igualar el macro con unidades enteras y el tope
+  // por toma; si el tope no alcanza se completa con la fuente afín (3 huevos + 3 claras). null fuera de −15 % / +20 %.
+  function crossPlan(src, orig, t, role) {
+    var a = src.anchor, have = src[a] * orig.grams / 100;
+    if (!(have > 0) || !t) return null;
+    var out = [], got = 0;
+    var add = function (id, want, filler) {
+      var f = D.foods[id];
+      if (!f || !(f[a] > 0) || !foodOk(id)) return;
+      var st = stepOf(id), mx = capMax(id, role), prev = null;
+      for (var k = 0; k < out.length; k++) if (out[k].id === id) prev = out[k];
+      var room = mx - (prev ? prev.g : 0);
+      var g = Math.round((want * 100) / f[a] / st) * st;
+      if (g < st) g = filler ? (want >= f[a] * st / 200 ? st : 0) : st;
+      if (g > room) g = Math.floor(room / st) * st;
+      // Un complemento mínimo (15 g de papa) no es una porción real: se deja afuera.
+      if (!(g > 0) || (filler && st === 5 && g < 25)) return;
+      got += f[a] * g / 100;
+      if (prev) prev.g += g; else out.push({ id: id, g: g });
+    };
+    for (var i = 0; i < t.parts.length; i++) { if (!foodOk(t.parts[i][0])) return null; add(t.parts[i][0], have * t.parts[i][1], false); }
+    (t.fill || []).forEach(function (id) { if (got < have * 0.95) add(id, have - got, true); });
+    return out.length && got >= have * XT.min && got <= have * XT.max ? out : null;
+  }
+  function planTotals(pl) { return pl.reduce(function (acc, x) { var r = D.foods[x.id], k = x.g / 100; return { p: acc.p + r.p * k, c: acc.c + r.c * k, f: acc.f + r.f * k }; }, { p: 0, c: 0, f: 0 }); }
   function swapOptions(orig, role) {
     var src = orig && srcOf(orig);
     if (!src) return [];
-    var dens = kcal100(src), slot = SLOT[role];
-    var same = Object.keys(D.foods)
-      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && !(D.avoid && D.avoid.indexOf(id) >= 0) && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && (!slot || !f.slots || f.slots.indexOf(slot) >= 0); })
-      .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens), parts: null }; })
-      .sort(function (a, b) { return a.d - b.d; })
-      .slice(0, 5);
-    var cross = [];
-    var ids = (D.cross && src.group && D.cross[src.anchor]) || [];
-    ids.forEach(function (id) {
-      var f = D.foods[id];
-      if (id === orig.foodId || !f && id.indexOf('combo:') !== 0) return;
-      if (f && (src.groups.indexOf(f.group) >= 0 || (D.avoid && D.avoid.indexOf(id) >= 0))) return;
-      if (f && slot && f.slots && f.slots.indexOf(slot) < 0 && (D.crossAny || []).indexOf(id) < 0) return;
-      if (id === 'avena' && SLOT[role] === 'main') return;
-      var pl = crossPlan(src, orig, id, role);
+    var dens = kcal100(src), slot = SLOT[role], base = orig.p * 4 + orig.c * 4 + orig.f * 9;
+    var slotOk = function (id) { var f = D.foods[id]; return !slot || !f.slots || f.slots.indexOf(slot) >= 0 || (XT.any || []).indexOf(id) >= 0; };
+    var legacy = function (ids) {
+      return ids
+        .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && id !== orig.baseId && foodOk(id) && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && slotOk(id); })
+        .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens), parts: null, sec: 'same' }; })
+        .sort(function (a, b) { return a.d - b.d; });
+    };
+    // Alimento libre (IA) o grasas: equivalencias de su grupo como siempre.
+    var tl = src.group && (src.anchor === 'p' || src.anchor === 'c') ? XT[src.anchor] || [] : [];
+    if (!tl.length) return legacy(Object.keys(D.foods)).slice(0, 6);
+    var oid = orig.foodId || orig.baseId;
+    var meat = (XT.meats || []).indexOf(oid) >= 0, same = [], veg = [], other = [], used = {};
+    tl.forEach(function (t) {
+      var one = t.parts.length === 1 ? t.parts[0][0] : null;
+      if (one === oid) return;
+      if (t.id === 'avena' && slot === 'main') return;
+      // Versión sin TACC sólo para quien la necesita (si la común es apta, no se duplica).
+      if (/-sin-tacc$/.test(t.id) && foodOk(t.id.replace(/-sin-tacc$/, ''))) return;
+      if (!slotOk(t.parts[0][0]) && !(t.veg && meat)) return;
+      var pl = crossPlan(src, orig, t, role);
       if (!pl) return;
-      var t = pl.reduce(function (acc, x) { var r = D.foods[x.id], k = x.g / 100; return { p: acc.p + r.p * k, c: acc.c + r.c * k, f: acc.f + r.f * k }; }, { p: 0, c: 0, f: 0 });
-      cross.push({ id: id, f: f || { name: 'Claras + ricota magra' }, g: pl[0].g, parts: pl, t: t, d: Math.abs(t.p * 4 + t.c * 4 + t.f * 9 - (orig.p * 4 + orig.c * 4 + orig.f * 9)) });
+      var tt = planTotals(pl), o = { id: t.id, label: t.label, parts: pl, t: tt, g: pl[0].g, d: Math.abs(tt.p * 4 + tt.c * 4 + tt.f * 9 - base) };
+      if (one && D.foods[one] && D.foods[one].group === src.group && !(t.veg && meat)) { o.sec = 'same'; same.push(o); used[one] = 1; }
+      else if (t.veg && meat) { o.sec = 'veg'; veg.push(o); }
+      else { o.sec = 'other'; other.push(o); }
     });
-    cross.sort(function (a, b) { return a.d - b.d; });
-    return same.concat(cross.slice(0, 9));
+    var byD = function (a, b) { return a.d - b.d; };
+    same.sort(byD); veg.sort(byD); other.sort(byD);
+    // Misma familia: las fuentes clave (fideos, papa, batata…) y después el resto de su grupo por densidad.
+    var extra = legacy(Object.keys(D.foods)).filter(function (o) { return !used[o.id] && !targetOf(src.anchor, o.id); });
+    return same.concat(extra).slice(0, 8).concat(veg.slice(0, 8), other.slice(0, 8));
   }
 
   function resolveItem(it) {
     var sw = S.swaps[it.id];
-    if (!sw || (!D.foods[sw] && sw.indexOf('combo:') !== 0)) return it;
+    if (!sw) return it;
+    if (sw === 'combo:claras-ricota') sw = 'claras-ricota';
     var src = srcOf(it);
     if (!src) return it;
-    if (isCross(src, sw)) {
-      var pl = crossPlan(src, it, sw, roleOfItem(it.id));
+    var t = src.group && (src.anchor === 'p' || src.anchor === 'c') ? targetOf(src.anchor, sw) : null;
+    if (t) {
+      var pl = crossPlan(src, it, t, roleOfItem(it.id));
       if (!pl) return it;
       var mk = function (x, id) { var r = D.foods[x.id], k = x.g / 100; return { id: id, foodId: x.id, food: r.name, grams: x.g, p: r.p * k, c: r.c * k, f: r.f * k, leucine: r.leucine * k, swappedFrom: src.name }; };
       var main = mk(pl[0], it.id);
-      if (pl[1]) main.plus = mk(pl[1], it.id + '+');
+      if (pl.length > 1) main.plus = pl.slice(1).map(function (x, k) { return mk(x, it.id + '+' + k); });
       return main;
     }
+    if (!D.foods[sw]) return it;
     var to = D.foods[sw];
     var grams = eqGrams(src, it.grams, to);
     var k = grams / 100;
     return { id: it.id, foodId: sw, food: to.name, grams: grams, p: to.p * k, c: to.c * k, f: to.f * k, leucine: to.leucine * k, swappedFrom: src.name };
   }
-  // Un reemplazo combinado (claras + ricota) trae un segundo ingrediente: se suma a la lista justo después.
-  function withPlus(list) { var out = []; list.forEach(function (it) { out.push(it); if (it.plus) out.push(it.plus); }); return out; }
+  // Un reemplazo combinado (huevos + claras, claras + ricota, lentejas + huevo) trae más ingredientes: van justo después.
+  function withPlus(list) { var out = []; list.forEach(function (it) { out.push(it); (it.plus || []).forEach(function (x) { out.push(x); }); }); return out; }
 
   // Día OFF: no hay sesión → los bloques pre / peri-entreno se muestran como merienda de saciedad.
   var PERI_RE = /pre.?entreno|pre.?wod|peri.?wod|peri.?entreno|intra|glucol[ií]tico|para entrenar/i;
@@ -325,7 +362,7 @@ const runtime = String.raw`
     };
     res.forEach(function (it, i) {
       if (!it.swappedFrom) return;
-      var pf = it.plus ? it.plus.f : 0, pc = it.plus ? it.plus.c : 0;
+      var pf = (it.plus || []).reduce(function (a, x) { return a + x.f; }, 0), pc = (it.plus || []).reduce(function (a, x) { return a + x.c; }, 0);
       tweak('f', it.f + pf - orig[i].f, ['fat'], 2, i);
       tweak('c', it.c + pc - orig[i].c, ['starch', 'cereal', 'fruit', 'sport-carb'], 5, i);
     });
@@ -1096,18 +1133,21 @@ const runtime = String.raw`
     h += '<h3>Cambiar ' + esc(src.name) + ' por…</h3>';
     h += '<p class="muted" style="font-size:13px;margin:2px 0 4px">Todas aportan lo mismo en ' + ANCHOR_LABEL[src.anchor] + ' (' + n0(src[src.anchor] * orig.grams / 100) + ' g), así tu día sigue cuadrando. Tocá una para reemplazarlo.</p>';
     h += '<button class="opt' + (!cur ? ' cur' : '') + '" data-pick="__orig"><span class="g">' + n0(orig.grams) + ' g</span><span class="fd">' + esc(orig.food) + ' · el de tu plan<span>' + mshort(orig.p, orig.c, orig.f) + '</span></span></button>';
-    var crossHead = false;
+    var heads = { veg: '<div class="tag xs-head" data-veg-head>[ OPCIÓN VEGETARIANA · MISMA PROTEÍNA ]</div><p class="muted" style="font-size:12px;margin:0 0 4px">Para un día sin carne: huevos, claras, ricota, tofu, soja o legumbres con la misma proteína.</p>', other: '<div class="tag xs-head" data-cross-head>[ OTRAS FAMILIAS · REEMPLAZO CRUZADO ]</div><p class="muted" style="font-size:12px;margin:0 0 4px">Mismo aporte de ' + ANCHOR_LABEL[src.anchor] + ', otro tipo de alimento (por ej. ' + (src.anchor === 'p' ? 'huevos, claras, atún, tofu o whey' : 'papa, fideos, pan, legumbres o masa de tarta') + ').</p>' };
+    var shown = {};
     opts.forEach(function (o) {
-      if (o.parts && !crossHead) { crossHead = true; h += '<div class="tag xs-head" data-cross-head>[ OTRAS FAMILIAS · REEMPLAZO CRUZADO ]</div><p class="muted" style="font-size:12px;margin:0 0 4px">Misma ' + ANCHOR_LABEL[src.anchor] + ', otro tipo de alimento (por ej. ' + (src.anchor === 'p' ? 'huevos, claras, atún, tofu o whey' : 'papa, fideos, pan, legumbres o masa de tarta') + ').</p>'; }
+      if (heads[o.sec] && !shown[o.sec]) { shown[o.sec] = 1; h += heads[o.sec]; }
       if (o.parts) {
         var txt = o.parts.map(function (x) { var hh = unitHintFor(x.id, x.g); return n0(x.g) + ' g ' + esc(D.foods[x.id].name.split(' (')[0].toLowerCase()) + (hh ? ' (' + hh.replace('≈ ', '') + ')' : ''); }).join(' + ');
         var df = o.t.f - orig.f, tart = o.id.indexOf('tapa-tarta') === 0;
-        var warn = (tart ? 'Te queda una tarta con la misma energía de carbos. ' : '') + (Math.abs(df) >= 5 ? (df > 0 ? '+' : '') + n0(df) + ' g de grasa vs el original' + (df > 0 ? ' (la app baja el aceite de esa comida)' : '') : '');
-        h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '" data-cross-pick><span class="g">' + n0(o.parts.reduce(function (a, x) { return a + x.g; }, 0)) + ' g</span><span class="fd">' + esc(o.f.name.split(' (')[0]) + '<span>' + txt + ' · ' + mshort(o.t.p, o.t.c, o.t.f) + '</span>' + (warn ? '<span class="xwarn">⚠ ' + esc(warn) + '</span>' : '') + '</span><span class="go">›</span></button>';
+        var dc = o.t.c - orig.c;
+        var warn = (tart ? 'Te queda una tarta con la misma energía de carbos. ' : '') + (Math.abs(df) >= 5 ? (df > 0 ? '+' : '') + n0(df) + ' g de grasa vs el original' + (df > 0 ? ' (la app baja el aceite de esa comida). ' : '. ') : '') + (src.anchor === 'p' && dc >= 15 ? '+' + n0(dc) + ' g de carbos (la app baja el arroz / papa de esa comida).' : '');
+        var attr = o.sec === 'veg' ? ' data-veg-pick data-cross-pick' : o.sec === 'other' ? ' data-cross-pick' : ' data-same-pick';
+        h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '"' + attr + '><span class="g">' + n0(o.parts.reduce(function (a, x) { return a + x.g; }, 0)) + ' g</span><span class="fd">' + esc(o.label) + '<span>' + txt + ' · ' + mshort(o.t.p, o.t.c, o.t.f) + '</span>' + (warn ? '<span class="xwarn">⚠ ' + esc(warn) + '</span>' : '') + '</span><span class="go">›</span></button>';
         return;
       }
       var hint = unitHintFor(o.id, o.g);
-      h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '"><span class="g">' + n0(o.g) + ' g</span><span class="fd">' + esc(o.f.name) + '<span>' + (hint ? hint + ' · ' : '') + ok(o.f, o.g) + '</span></span><span class="go">›</span></button>';
+      h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '" data-same-pick><span class="g">' + n0(o.g) + ' g</span><span class="fd">' + esc(o.f.name) + '<span>' + (hint ? hint + ' · ' : '') + ok(o.f, o.g) + '</span></span><span class="go">›</span></button>';
     });
     open(bg, sh, h);
   }
@@ -2475,7 +2515,21 @@ const runtime = String.raw`
         .catch(function () {});
     } catch (e) {}
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
+      var swReg = function (url, scope) {
+        // Siempre la última versión de la app: el navegador pide el sw.js sin caché HTTP, busca actualización al abrir
+        // y, si entra un Service Worker nuevo mientras había uno viejo, recarga una sola vez con el runtime nuevo.
+        var had = !!navigator.serviceWorker.controller, done = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!had || done) return;
+          done = true;
+          try { if (sessionStorage.getItem('cjp-sw-reload') === '1') return; sessionStorage.setItem('cjp-sw-reload', '1'); } catch (e) {}
+          location.reload();
+        });
+        var opts = { updateViaCache: 'none' };
+        if (scope) opts.scope = scope;
+        return navigator.serviceWorker.register(url, opts).then(function (r) { try { r.update(); } catch (e) {} return r; });
+      };
+      swReg('sw.js').catch(function () {});
     }
     // Ciclo diario: al abrir en una fecha nueva se archiva la última jornada usada.
     var last = store.get('lastOpen', null);

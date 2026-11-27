@@ -1,4 +1,4 @@
-import runtime from '@/pwa/athleteRuntime';
+import runtimeSrc from '@/pwa/athleteRuntime';
 import { stepsWithYield, yieldLabel, yieldOf, yieldTag, type YieldInfo } from './yieldInfo';
 import cloudBoot from '@/pwa/cloudBoot';
 import styles from '@/pwa/athleteStyles';
@@ -9,7 +9,7 @@ import { NUTRIRCE_LOGO_RATIO } from './nutrirceLogo';
 import { COACH_JP_LOGO } from './coachJpLogo';
 import { BRAND, cobrandHeader, ncLogoSrc, NC_CREASE, NC_FORK, NC_HAND, nutriCredit, nutriOf, nutrirceSvg, nutritionSvg, shieldSvg, storySignature } from './brand';
 import { CITES } from './evidence';
-import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, unitStep, type SwapGroup } from './foods';
+import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, matchFood, unitStep, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
 import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from './menuOptions';
@@ -17,7 +17,7 @@ import { fitsSlot, foodSlots } from './mealSlots';
 import { friendlyMealName, modernizeName, uniqueMealNames } from './foodBrandDb';
 import { portionCap } from './portionCaps';
 import { QUICK_SWAPS } from './quickSwaps';
-import { CROSS_ANY_SLOT, CROSS_TARGETS } from './crossSwaps';
+import { CROSS_ANY_SLOT, CROSS_MAX, CROSS_MEATS, CROSS_MIN, CROSS_TARGETS } from './crossSwaps';
 import { BRAND_TIERS, needsGlutenSeal, SUGGESTED_BRAND, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
 import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
@@ -25,6 +25,24 @@ import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
 
+
+/**
+ * Tabla de reemplazos cruzados embebida en el runtime de la app (no en el plan publicado): los planes ya
+ * publicados ofrecen «Otras familias» y «Opción vegetariana» en cuanto se actualiza la app. El filtro por
+ * alergias / protocolo sale de `avoid` del plan y los topes de `fridgeCaps` (con respaldo conservador acá).
+ */
+const CROSS_IDS = [...new Set([...CROSS_TARGETS.p, ...CROSS_TARGETS.c].flatMap((t) => [...t.parts.map(([id]) => id), ...(t.fill ?? [])]))];
+const CROSS_TABLE = {
+  min: CROSS_MIN,
+  max: CROSS_MAX,
+  meats: CROSS_MEATS,
+  any: CROSS_ANY_SLOT,
+  p: CROSS_TARGETS.p.map(({ id, label, parts, fill, veg }) => ({ id, label, parts, fill: fill ?? [], veg: !!veg })),
+  c: CROSS_TARGETS.c.map(({ id, label, parts, fill, veg }) => ({ id, label, parts, fill: fill ?? [], veg: !!veg })),
+  caps: Object.fromEntries((['main', 'am', 'peri'] as const).map((sl) => [sl, Object.fromEntries(CROSS_IDS.map((id) => [id, portionCap(id, { sex: 'F', role: sl === 'main' ? 'lunch' : sl === 'am' ? 'breakfast' : 'peri' }).max]))])),
+  units: Object.fromEntries(CROSS_IDS.filter((id) => unitStep(id) !== 5).map((id) => [id, unitStep(id)])),
+};
+const runtime = runtimeSrc.replace('/*CJP_CROSS*/null', JSON.stringify(CROSS_TABLE).replace(/</g, '\\u003c'));
 /** Secciones de la lista de compras, en el orden del recorrido: verdulería → carnicería → almacén. */
 export const SHOP_CATEGORY: Record<SwapGroup, string> = {
   fruit: 'Verdulería',
@@ -184,7 +202,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
     // Opciones culinarias: título, técnica y pasos de la Opción 1 (automáticos si el coach no los cargó) y opciones 2 a 5.
     meals: uniqueMealNames([...plan.meals].sort(byTime).map((m) => ({ ...m, name: friendlyMealName(m.name) }))).map((m) => {
-      const c = modernizeMeal(consolidateMeal(m));
+      const c = withBaseIds(modernizeMeal(consolidateMeal(m)));
       return {
         ...c,
         mps: isMpsMeal(m),
@@ -241,12 +259,6 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     coachPhone: coachPhone(),
     groupLabels: GROUP_LABEL,
     swapGroups: usedGroups,
-    // Reemplazos cruzados por macro (otra familia con la misma proteína / carbos), sólo fuentes aptas para el alumno.
-    cross: {
-      p: [...CROSS_TARGETS.p.filter((t) => t.parts.length === 1).map((t) => t.parts[0][0]), 'combo:claras-ricota'].filter((id) => (id.startsWith('combo:') ? ['claras', 'ricota'] : [id]).every((x) => FOOD_BY_ID[x] && foodIsSafe(x, allergies))),
-      c: CROSS_TARGETS.c.map((t) => t.parts[0][0]).filter((id) => FOOD_BY_ID[id] && foodIsSafe(id, allergies) && !(id.endsWith('-sin-tacc') && foodIsSafe(id.replace('-sin-tacc', ''), allergies))),
-    },
-    crossAny: CROSS_ANY_SLOT,
     supplements: plan.supplements.filter((s) => s.enabled),
     protocols,
     citations: [CITES.morton, CITES.aragon, CITES.leucine, CITES.carbs, CITES.ea],
@@ -270,6 +282,16 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     scanPrompt: `${SCAN_PROMPT}\nAgregá a cada item "leucine" (g estimados de leucina para esa porción).`,
     labelPrompt: LABEL_PROMPT,
   };
+}
+
+/**
+ * Ingredientes sin alimento de la base (cargados por IA o con nombre libre: «arroz integral», «vacío», «filet de
+ * salmón»): viajan con el alimento base equivalente para que en la app el «Cambiar» ofrezca su familia y las
+ * otras familias (los macros siguen siendo los del ingrediente).
+ */
+function withBaseIds(m: Meal): Meal {
+  const fix = (items: FoodItem[]) => items.map((i) => (i.foodId || !i.food ? i : { ...i, baseId: matchFood(i.food, { baseOnly: true })?.id }));
+  return { ...m, items: fix(m.items), alts: m.alts?.map((a) => ({ ...a, items: fix(a.items) })) };
 }
 
 /** Nombres profesionales: platos renombrados y comidas con nombre de versiones anteriores. */
@@ -393,13 +415,13 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
-    // En este modo el plan viaja dentro del archivo: se intenta la red (última versión) pero como mucho 1,5 s;
+    // En este modo el plan viaja dentro del archivo: se intenta la red sin caché HTTP (última versión) hasta 3 s;
     // con señal lenta o sin señal abre al instante con la guardada y la nueva queda lista para la próxima apertura.
-    const net = fetch(req).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; });
+    const net = fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' })).then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; });
     e.waitUntil(net.catch(() => {}));
     e.respondWith(caches.match(req).then((cached) => {
       if (!cached) return net.catch(() => caches.match('./index.html'));
-      return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 1500))]);
+      return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 3000))]);
     }));
   } else if (/fonts\\.(googleapis|gstatic)\\.com$/.test(url.hostname)) {
     e.respondWith(caches.match(req).then((r) => r || fetch(req).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; })));
@@ -499,15 +521,19 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (req.mode === 'navigate' && url.href.startsWith(SCOPE)) {
-    // Caché primero (abre al instante, sin pantalla en blanco aunque la señal sea mala) y se actualiza en segundo
-    // plano para la próxima apertura. El plan en sí siempre llega fresco desde la nube (cloudBoot).
-    const net = fetch(req).then((res) => {
-      if (res.ok && url.href.split('?')[0] === SCOPE) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(SCOPE, copy)); }
+    // Red primero (sin la caché HTTP de GitHub Pages): al abrir o recargar el link siempre llega la última versión
+    // de la app. Con señal mala (más de 3 s) o sin señal, abre al instante la guardada. El plan llega desde la nube.
+    // Todas las rutas del link fijo (/plan/, /plan/<slug>, ?a=<slug>) usan el mismo documento: se pide /plan/ fresco.
+    const net = fetch(new Request(SCOPE, { cache: 'no-cache', credentials: 'same-origin' })).then((res) => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(SCOPE, copy));
       return res;
     });
+    e.waitUntil(net.catch(() => {}));
     e.respondWith(caches.match(SCOPE).then((cached) => {
-      if (cached) { e.waitUntil(net.catch(() => {})); return cached; }
-      return net.catch(() => caches.match(SCOPE));
+      if (!cached) return net.catch(() => caches.match(SCOPE));
+      return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 3000))]);
     }));
   } else if (url.origin === location.origin && url.pathname.includes('/icons/')) {
     e.respondWith(caches.match(req).then((r) => r || fetch(req).then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; })));

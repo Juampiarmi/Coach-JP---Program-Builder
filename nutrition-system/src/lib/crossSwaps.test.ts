@@ -2,7 +2,7 @@
 // entrenar»). Uso: npm run test:unit
 import { acceptForPlan, allergiesOf, foodIsSafe, protocolOf } from './allergens';
 import { bankCandidates } from './bankAssign';
-import { crossSwapOptions } from './crossSwaps';
+import { CROSS_MAX, CROSS_MIN, crossSwapOptions } from './crossSwaps';
 import { FOOD_BY_ID } from './foods';
 import { applyBankPlan } from './planBank';
 import { precalc } from './precalc';
@@ -37,7 +37,7 @@ for (const sex of ['F', 'M'] as const) {
         n++;
         const got = o.items.reduce((a, i) => a + i[k], 0);
         const tag = `${sex} ${al.join('+') || 'std'} · ${id} ${g} g → ${o.target.label}`;
-        if (got < it[k] * 0.9 || got > it[k] * 1.15) fails.push(`${tag}: ${got.toFixed(1)} g vs ${it[k].toFixed(1)} g`);
+        if (got < it[k] * CROSS_MIN || got > it[k] * CROSS_MAX) fails.push(`${tag}: ${got.toFixed(1)} g vs ${it[k].toFixed(1)} g`);
         for (const x of o.items) {
           const cap = portionCap(x.foodId, { sex, role, diet }).max;
           if (x.grams > cap) fails.push(`${tag}: ${x.food} ${x.grams} g > tope ${cap} g`);
@@ -51,6 +51,8 @@ for (const sex of ['F', 'M'] as const) {
       if (!al.length && id === 'pollo' && !opts.some((o) => /huevo|claras|atun|tofu|whey/.test(o.target.id))) fails.push(`${sex}: el pollo no ofrece familias cruzadas`);
       if (!al.length && id === 'arroz' && !opts.some((o) => o.target.id === 'tapa-tarta')) fails.push(`${sex}: el arroz no ofrece masa de tarta`);
       if (!al.length && id === 'arroz' && !opts.some((o) => o.target.id === 'papa')) fails.push(`${sex}: el arroz no ofrece papa`);
+      // Omnívoro: al reemplazar carne siempre hay opciones vegetarianas (huevos, claras, tofu, soja, legumbres…).
+      if (['pollo', 'cuadril'].includes(id) && !al.includes('egg') && !al.includes('keto') && opts.filter((o) => o.veg).length < 3) fails.push(`${sex} ${al.join('+') || 'std'}: ${id} con sólo ${opts.filter((o) => o.veg).length} opciones vegetarianas`);
       if (al.includes('keto') && id === 'arroz' && opts.some((o) => o.items.some((x) => (FOOD_BY_ID[x.foodId!]?.c ?? 0) > 15))) fails.push(`${sex} keto: el arroz ofrece carbos densos`);
     }
   }

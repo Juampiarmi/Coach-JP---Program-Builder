@@ -235,7 +235,7 @@ export function CrossSwapButton({ meal, slot, item }: { meal: Meal; slot: number
                   >
                     <div className="flex items-center gap-2">
                       <b className="text-[13px] text-ink">{o.target.label}</b>
-                      <span className="rounded border border-line px-1.5 py-px font-mono text-[9px] text-mute">{o.same ? 'misma familia' : o.target.family}</span>
+                      <span className="rounded border border-line px-1.5 py-px font-mono text-[9px] text-mute">{o.same ? 'misma familia' : o.veg ? 'vegetariana' : o.target.family}</span>
                       <span className="tnum ml-auto font-mono text-[10.5px] text-steel">{fmt0(o.kcal)} kcal</span>
                     </div>
                     <div className="text-[12px] text-steel">{o.text}</div>

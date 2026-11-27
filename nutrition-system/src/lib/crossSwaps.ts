@@ -1,4 +1,4 @@
-import { FOOD_BY_ID, householdHint, snapUnit } from './foods';
+import { FOOD_BY_ID, householdHint, snapUnit, unitStep } from './foods';
 import { fitsSlot } from './mealSlots';
 import { portionCap } from './portionCaps';
 import { itemFromFood, uid } from './seed';
@@ -14,6 +14,9 @@ import type { FoodItem, MealRole, Sex } from './types';
  * (Keto / Low Carb) y alergias vía `accept`. Si la grasa cambia mucho, se avisa (y el Builder la compensa).
  */
 export type CrossMacro = 'p' | 'c';
+/** Tolerancia del macro que define el reemplazo: −15 % / +20 % (porciones reales con topes y unidades enteras). */
+export const CROSS_MIN = 0.85;
+export const CROSS_MAX = 1.2;
 
 export interface CrossTarget {
   id: string;
@@ -23,6 +26,8 @@ export interface CrossTarget {
   parts: [string, number][];
   /** Si el tope por toma no alcanza, se completa con estas fuentes en orden (ej. 3 huevos + 3 claras). */
   fill?: string[];
+  /** Opción vegetariana (se ofrece siempre al reemplazar carne, aunque el alumno sea omnívoro). */
+  veg?: boolean;
 }
 
 export const CROSS_TARGETS: Record<CrossMacro, CrossTarget[]> = {
@@ -32,11 +37,14 @@ export const CROSS_TARGETS: Record<CrossMacro, CrossTarget[]> = {
     { id: 'cerdo', label: 'Cerdo magro', family: 'Carnes', parts: [['cerdo', 1]] },
     { id: 'merluza', label: 'Pescado (merluza)', family: 'Pescado', parts: [['merluza', 1]], fill: ['claras'] },
     { id: 'atun', label: 'Atún al natural', family: 'Pescado', parts: [['atun', 1]], fill: ['huevo', 'claras'] },
-    { id: 'huevo', label: 'Huevos enteros', family: 'Huevos', parts: [['huevo', 1]], fill: ['claras', 'ricota'] },
-    { id: 'claras', label: 'Claras de huevo', family: 'Huevos', parts: [['claras', 1]], fill: ['huevo', 'ricota'] },
-    { id: 'claras-ricota', label: 'Claras + ricota magra', family: 'Huevos y lácteos', parts: [['claras', 0.6], ['ricota', 0.4]], fill: ['huevo'] },
-    { id: 'tofu', label: 'Tofu firme', family: 'Vegetal', parts: [['tofu', 1]], fill: ['soja-texturizada'] },
-    { id: 'soja-texturizada', label: 'Soja texturizada', family: 'Vegetal', parts: [['soja-texturizada', 1]], fill: ['tofu'] },
+    { id: 'huevo', label: 'Huevos enteros', family: 'Huevos', parts: [['huevo', 1]], fill: ['claras', 'ricota'], veg: true },
+    { id: 'claras', label: 'Claras de huevo', family: 'Huevos', parts: [['claras', 1]], fill: ['huevo', 'ricota'], veg: true },
+    { id: 'claras-ricota', label: 'Claras + ricota magra', family: 'Huevos y lácteos', parts: [['claras', 0.6], ['ricota', 0.4]], fill: ['huevo'], veg: true },
+    { id: 'ricota', label: 'Ricota magra + claras', family: 'Lácteos', parts: [['ricota', 1]], fill: ['claras', 'huevo'], veg: true },
+    { id: 'cottage', label: 'Queso cottage + claras', family: 'Lácteos', parts: [['cottage', 1]], fill: ['claras', 'huevo'], veg: true },
+    { id: 'legumbres-huevo', label: 'Lentejas + huevo', family: 'Legumbres', parts: [['lentejas', 0.5], ['huevo', 0.5]], fill: ['claras', 'tofu'], veg: true },
+    { id: 'tofu', label: 'Tofu firme', family: 'Vegetal', parts: [['tofu', 1]], fill: ['soja-texturizada'], veg: true },
+    { id: 'soja-texturizada', label: 'Soja texturizada', family: 'Vegetal', parts: [['soja-texturizada', 1]], fill: ['tofu'], veg: true },
     { id: 'whey', label: 'Proteína en polvo (whey)', family: 'Suplemento', parts: [['whey', 1]], fill: ['claras', 'yogur'] },
     { id: 'whey-isolate', label: 'Whey aislado (sin lactosa)', family: 'Suplemento', parts: [['whey-isolate', 1]], fill: ['claras'] },
     { id: 'proteina-vegetal', label: 'Proteína vegetal en polvo', family: 'Suplemento', parts: [['proteina-vegetal', 1]], fill: ['tofu'] },
@@ -46,6 +54,7 @@ export const CROSS_TARGETS: Record<CrossMacro, CrossTarget[]> = {
     { id: 'yamani', label: 'Arroz yamaní', family: 'Granos', parts: [['yamani', 1]], fill: ['papa'] },
     { id: 'quinoa', label: 'Quinoa', family: 'Granos', parts: [['quinoa', 1]], fill: ['papa'] },
     { id: 'fideos', label: 'Fideos', family: 'Pastas', parts: [['fideos', 1]], fill: ['papa'] },
+    { id: 'fideos-integrales', label: 'Fideos integrales', family: 'Pastas', parts: [['fideos-integrales', 1]], fill: ['papa'] },
     { id: 'fideos-sin-tacc', label: 'Fideos sin TACC', family: 'Pastas', parts: [['fideos-sin-tacc', 1]] },
     { id: 'papa', label: 'Papa', family: 'Tubérculos', parts: [['papa', 1]], fill: ['batata'] },
     { id: 'batata', label: 'Batata', family: 'Tubérculos', parts: [['batata', 1]], fill: ['papa'] },
@@ -61,6 +70,10 @@ export const CROSS_TARGETS: Record<CrossMacro, CrossTarget[]> = {
     { id: 'avena', label: 'Avena', family: 'Cereales', parts: [['avena', 1]], fill: ['banana'] },
   ],
 };
+
+/** Carnes, aves y pescados: al reemplazarlos se ofrecen siempre las opciones vegetarianas. */
+export const CROSS_MEATS = ['pollo', 'cuadril', 'lomo', 'nalga', 'picada', 'cerdo', 'merluza', 'atun', 'jamon', 'salmon'];
+const MEATS = new Set(CROSS_MEATS);
 
 /** Fuentes que sirven en cualquier comida aunque su franja habitual sea otra (huevos, whey, masa de tarta, pan). */
 export const CROSS_ANY_SLOT = ['yogur', 'banana', 'huevo', 'claras', 'ricota', 'whey', 'whey-isolate', 'proteina-vegetal', 'tapa-tarta', 'tapa-tarta-sin-tacc', 'pan', 'pan-sin-tacc'];
@@ -88,6 +101,8 @@ export interface CrossOption {
   warn: string;
   /** Misma familia que el original (aparece primero). */
   same: boolean;
+  /** Alternativa vegetariana a una carne. */
+  veg: boolean;
 }
 
 export interface CrossCtx {
@@ -119,7 +134,8 @@ export function crossSwapItems(item: FoodItem, target: CrossTarget, ctx: CrossCt
     const room = cap.max - (prev?.grams ?? 0);
     let grams = Math.min(room, snapUnit(id, (want * 100) / f[k]));
     if (!prev && !filler && grams < cap.min) grams = want > (cap.min * f[k]) / 200 ? Math.min(room, cap.min) : 0;
-    if (!(grams > 0)) return;
+    // Un complemento mínimo (15 g de papa) no es una porción real: se deja afuera.
+    if (!(grams > 0) || (filler && unitStep(id) === 5 && grams < 25)) return;
     const it = itemFromFood(id, (prev?.grams ?? 0) + grams);
     got += it[k] - (prev?.[k] ?? 0);
     if (prev) Object.assign(prev, it, { id: prev.id });
@@ -128,8 +144,8 @@ export function crossSwapItems(item: FoodItem, target: CrossTarget, ctx: CrossCt
   for (const [id, share] of target.parts) add(id, have * share);
   // Tope por toma: se completa con la fuente complementaria (3 huevos + 3 claras, papa + batata).
   for (const id of target.fill ?? []) if (got < have * 0.95) add(id, have - got, true);
-  // Si ni así llega al 90 % del macro no se ofrece: sería una porción irreal o una comida que no cierra.
-  if (!out.length || got < have * 0.9 || got > have * 1.15) return null;
+  // Fuera de −15 % / +20 % del macro no se ofrece: sería una porción irreal o una comida que no cierra.
+  if (!out.length || got < have * CROSS_MIN || got > have * CROSS_MAX) return null;
   return out;
 }
 
@@ -157,9 +173,9 @@ export function crossSwapOptions(item: FoodItem, ctx: CrossCtx = {}): CrossOptio
     const meat = (ctx.mealFoods ?? []).map((id) => FOOD_BY_ID[id]).find((f) => f && (f.group === 'lean-protein' || f.group === 'eggs'));
     const tart = t.id.startsWith('tapa-tarta') ? `Formato nuevo: ${meat ? `tarta de ${short(meat.id).toLowerCase().replace(/^pechuga de /, '')}` : 'tarta'} con la misma energía de carbos. ` : '';
     const warn = tart + (Math.abs(dFat) >= 5 ? `${dFat > 0 ? '+' : ''}${dFat} g de grasa respecto del original${dFat > 0 ? ' (se compensa bajando aceite / palta de la comida)' : ''}.` : '');
-    opts.push({ target: t, items, text, kcal, dFat, warn: warn.trim(), same: t.family === fam });
+    opts.push({ target: t, items, text, kcal, dFat, warn: warn.trim(), same: t.family === fam, veg: !!t.veg && MEATS.has(item.foodId ?? '') });
   }
-  return opts.sort((a, b) => Number(b.same) - Number(a.same) || Math.abs(a.kcal - base) - Math.abs(b.kcal - base));
+  return opts.sort((a, b) => Number(b.same) - Number(a.same) || Number(b.veg) - Number(a.veg) || Math.abs(a.kcal - base) - Math.abs(b.kcal - base));
 }
 
 /** Todas las fuentes que participan (la app del alumno las recibe para calcular en el teléfono). */

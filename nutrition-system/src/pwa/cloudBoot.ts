@@ -48,6 +48,23 @@ const cloudBoot = String.raw`
   }
   function loading(msg) { screen(msg || 'Cargando tu plan…', 'Un segundo, estamos trayendo tu plan.', '<div class="boot-spin"></div>'); }
 
+  var swReg = function (url, scope) {
+    // Siempre la última versión de la app: el navegador pide el sw.js sin caché HTTP, busca actualización al abrir
+    // y, si entra un Service Worker nuevo mientras había uno viejo, recarga una sola vez con el runtime nuevo.
+    var had = !!navigator.serviceWorker.controller, done = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!had || done) return;
+      done = true;
+      try { if (sessionStorage.getItem('cjp-sw-reload') === '1') return; sessionStorage.setItem('cjp-sw-reload', '1'); } catch (e) {}
+      location.reload();
+    });
+    var opts = { updateViaCache: 'none' };
+    if (scope) opts.scope = scope;
+    return navigator.serviceWorker.register(url, opts).then(function (r) { try { r.update(); } catch (e) {} return r; });
+  };
+  try { sessionStorage.removeItem('cjp-sw-reload'); } catch (e) {}
+  if ('serviceWorker' in navigator) try { swReg(B.base + '/plan/sw.js', B.base + '/plan/').catch(function () {}); } catch (e) {}
+
   if (!slug) return screen('Abrí el link que te mandó tu coach', 'Este es el lugar de tu plan de nutrición, pero falta tu link personal. Buscalo en el mensaje de tu coach y abrilo desde ahí.');
   if (!B.url || !B.key) return screen('Tu plan todavía no está disponible', 'Tu coach está terminando de configurar la app. Probá de nuevo en un rato.');
 
@@ -368,7 +385,6 @@ const cloudBoot = String.raw`
   setInterval(function () { flush(); }, 60000);
   setInterval(function () { checkUpdate(false); }, 5 * 60000);
 
-  if ('serviceWorker' in navigator) try { navigator.serviceWorker.register(B.base + '/plan/sw.js', { scope: B.base + '/plan/' }); } catch (e) {}
 
   // ---------- Arranque ----------
   var cached = lsGet('plan', null);
