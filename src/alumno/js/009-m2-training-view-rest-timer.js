@@ -949,6 +949,70 @@
     return '<div class="jp-qc-plan"><div class="jp-pl-t">' + escSB(jpT('app.plan.t')) + '</div><div class="jp-pl-g" style="--n:' + pl.semanas.length + '">' + cel + '</div></div>';
   }
   window.jpPlanHtml = qrPlanHtml;
+  /* ---------- TABLERO DE SERIES · HOJA RÁPIDA (v30, Opción 4 del Showroom aprobada) ----------
+     Cada ejercicio muestra sus series como fichas: naranja = hecha (con lo registrado), borde cian = la que sigue, punteada = pendiente con la sugerencia tenue
+     («Sug. 80×7»). Al tocar una ficha sube una hoja inferior con ±2,5 kg / ±1 rep y «✓ Registrar» fijo al pie. Es una capa sobre el registro de siempre:
+     la hoja escribe en las MISMAS filas (.jp-qc-r, misma clave getLoadKey) y confirma con qrGuardarSerie / qrFinal, así el guardado, el tonelaje, el
+     historial, el plan de cargas, las series extra y el RIR no cambian, y ningún plan guardado se toca. */
+  function qrTbFmt(v){ return String(v == null ? '' : v).replace('.', ','); }
+  /* v31 · RIR en criollo: el dato técnico se mantiene (RIR 1, RIR 0-1) y se suma una aclaración corta para el alumno («te guardás 1 rep») */
+  function jpRirTexto(rir){
+    var s = String(rir == null ? '' : rir).replace(/^\s*RIR\s*/i, '').trim(); if(!s) return '';
+    var m = /^(\d+)\s*(?:[-–]\s*(\d+))?\s*(\+)?$/.exec(s); if(!m) return '';
+    var a = +m[1], b = m[2] != null ? +m[2] : null, mas = !!m[3];
+    if(b == null && !mas) return a === 0 ? 'al fallo: no te guardás ninguna' : 'te guardás ' + a + (a === 1 ? ' rep' : ' reps');
+    if(mas) return 'te guardás ' + a + ' o más reps';
+    return 'te guardás ' + a + '–' + b + (b === 1 ? ' rep' : ' reps');
+  }
+  window.jpRirTexto = jpRirTexto;
+  /* aplica la aclaración dentro de cada celda de RIR del tablero (idempotente; jpDosisHtml no cambia) */
+  function jpRirAclararSB(root){
+    if(!root || !root.querySelectorAll) return;
+    Array.prototype.forEach.call(root.querySelectorAll('.jp-db-rir'), function(seg){
+      if(seg.querySelector('.jp-rir-tx')) return;
+      var b = seg.querySelector('b'), val = b ? b.textContent : String(seg.textContent || '').replace(/[^0-9\-–+]/g, ''), tx = jpRirTexto(val);
+      if(!tx) return;
+      var em = document.createElement('em'); em.className = 'jp-rir-tx'; em.textContent = tx; seg.appendChild(em);
+    });
+  }
+  window.jpRirAclarar = jpRirAclararSB;
+  /* sugerencia de la serie (índice ix): lo cargado si ya hay dato; si no, la sugerencia de la fila y la HERENCIA de la serie anterior ya hecha hoy */
+  function qrTbSug(c, e, m, ix){
+    var f = m.filas[ix], hay = !f.pre && (f.kg !== '' || f.rp !== '');
+    if(f.done || hay) return { kg: m.sinKg ? '' : f.kg, rp: f.rp, aj: !f.done && hay };
+    var kg = f.kg, rp = f.rp || (f.rpPh !== '—' ? f.rpPh : ''), pv = ix > 0 ? m.filas[ix - 1] : null;
+    if(pv && pv.done && !f.extra){
+      if(pv.kg !== '' && !m.sinKg) kg = pv.kg;
+      if(pv.rp !== '' && !(e.rp && e.rp.length)) rp = pv.rp;                /* con reps distintas por serie (pirámide) se respeta la prescripta */
+    }
+    return { kg: m.sinKg ? '' : kg, rp: rp, aj: false };
+  }
+  function qrTbUnidad(e, m){ return m.modoR === 'tiempo' ? 's' : ((m.modoR === 'solo' && e.u && e.u !== 'reps') ? String(e.u) : 'reps'); }
+  function qrTbTxt(kg, rp, m, un){
+    var hayRp = rp !== '' && rp != null;
+    if(m.sinKg || kg === '' || kg == null) return hayRp ? qrTbFmt(rp) + ' ' + un : '—';     /* sin peso sugerido todavía: solo las reps */
+    return qrTbFmt(kg) + '×' + (hayRp ? qrTbFmt(rp) : '—');
+  }
+  function qrTableroHtml(c, e, i, m){
+    var nx = -1, un = qrTbUnidad(e, m);
+    m.filas.some(function(f, ix){ if(!f.done){ nx = ix; return true; } return false; });
+    /* v31: etiquetas cortas para 4 columnas en el celular. Solo el contexto de HOY: hecha (valor sólido), la que sigue (borde cian) y pendientes (sugerencia tenue);
+       el rango de reps ya está en la dosis de arriba y no se repite en cada ficha */
+    var tiles = m.filas.map(function(f, ix){
+      var s = qrTbSug(c, e, m, ix), txt = qrTbTxt(s.kg, s.rp, m, un), sig = ix === nx;
+      var lab = 'S' + f.j + (f.done ? ' ✓' : (sig ? ' · sigue' : (s.aj ? '' : ' · sug.'))) + (f.extra ? ' +' : '');
+      var body = f.done ? '<span class="jp-tb-v">' + escSB(txt) + '</span>'
+        : (s.aj ? '<span class="jp-tb-v">' + escSB(txt) + '</span><em>sin confirmar</em>'
+        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + (sig ? '<em>tocá para cargar</em>' : ''));
+      return '<button type="button" class="jp-tb-t' + (f.done ? ' on' : (sig ? ' nx' : '')) + '" data-sj="' + f.j + '" aria-label="Serie ' + f.j + (f.done ? ' registrada: ' : (s.aj ? ' sin confirmar: ' : ' sugerida: ')) + escSB(txt) + '"><small>' + lab + '</small>' + body + '</button>';
+    }).join('');
+    if(m.fin){
+      var fs = { kg: m.sinKg ? '' : m.fin.kg, rp: m.fin.rp }, ft = qrTbTxt(fs.kg, fs.rp, m, un), abre = m.baseOk || m.fin.done;
+      tiles += '<button type="button" class="jp-tb-t jp-tb-fin' + (m.fin.done ? ' on' : (abre ? ' nx' : ' lock')) + '" data-sj="f"' + (abre ? '' : ' disabled') + ' aria-label="Serie final ' + escSB(QR_TEC_NOM[m.tec]) + '"><small>⚡ FINAL · ' + escSB(QR_TEC_NOM[m.tec]) + '</small>' +
+        (m.fin.done ? '<span class="jp-tb-v">' + escSB(ft) + '</span>' : '<span class="jp-tb-v jp-tb-sg">' + (abre ? escSB(ft) : 'después de las series') + '</span><em>' + (abre ? 'tocá para cargar' : 'se habilita al terminar') + '</em>') + '</button>';
+    }
+    return '<div class="jp-tb" role="group" aria-label="Series de ' + escSB(regNombreCorto(e.nombre)) + '">' + tiles + '</div>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -957,9 +1021,10 @@
     /* la pastilla dice siempre de QUÉ ejercicio es: orden (01) o letra de la estación (A1/A2) + nombre + estado */
     var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
     var guia = qrGuia(c, e, i);
-    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + ' del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
-      '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
-      '<span class="jp-qc-tg-b">' + (m.saved ? '<span class="jp-qc-tg-s">✓ ' + escSB(m.saved) + '</span>' : (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '<span class="jp-qc-tg-h">Tocar para registrar</span>')) + '</span></button>';
+    /* v30: las series se registran en el tablero de fichas (arriba); la pastilla queda como acceso secundario a RIR, plan de cargas y series extra */
+    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="Más del registro (RIR, plan y series extra) del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
+      '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Más del registro') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
+      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-h">RIR · plan · + serie</span></span></button>';      /* v31: sin la referencia de otra semana: solo el contexto de hoy */
     var inputs = function(kg, rp, pre, rpPh, n){
       return (m.sinKg ? '' : '<input type="text" inputmode="decimal" class="jp-qc-kg' + (pre && kg ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos de la ' + n + '" value="' + escSB(kg) + '" placeholder="—"><b class="jp-qc-x">×</b>') +
         '<input type="text" inputmode="decimal" class="jp-qc-rp' + (pre && rp ? ' pre' : '') + '" autocomplete="off" aria-label="' + ual.charAt(0).toUpperCase() + ual.slice(1) + ' de la ' + n + '" value="' + escSB(rp) + '" placeholder="' + escSB(rpPh) + '">';
@@ -978,7 +1043,7 @@
         inputs(m.fin.kg, m.fin.rp, m.fin.pre, m.rpPh, 'serie final') +
         '<button type="button" class="jp-qc-finok jp-qc-ok' + (m.fin.done ? ' on ok' : '') + '" aria-pressed="' + (m.fin.done ? 'true' : 'false') + '" aria-label="' + (m.fin.done ? 'Desmarcar' : 'Marcar') + ' la serie final como hecha">✓</button></div></div>';
     }
-    return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
+    return '<div class="jp-qc jp-qc-tb' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + qrTableroHtml(c, e, i, m) + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
@@ -1181,6 +1246,8 @@
         }
       }
       jpRegistroAlFinalDelBisetSB(board);
+      jpTbRefrescarRondas(board);
+      jpRirAclararSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
@@ -1205,6 +1272,57 @@
     });
   }
   window.jpRegistroAlFinalDelBiset = jpRegistroAlFinalDelBisetSB;
+  /* v30 · RONDAS DEL BISET / TRISET EN EL TABLERO: una fila ancha por ronda con sus estaciones (A1 + A2 · 3 estaciones), el estado (EN CURSO / PENDIENTE / ✓ HECHA)
+     y el resumen de lo registrado (✓ 26×10 · 12×15) o la sugerencia tenue. Nunca columnas apretadas. Al tocar una ronda, la hoja muestra todas sus estaciones. */
+  function qrTbId(cd, k){ var i = parseInt(cd.getAttribute('data-qi'), 10); return (QR_LBL[cd.getAttribute('data-qk') + '|' + i] || {}).id || regLetra(k.c, i); }
+  function jpTbRondasSB(bis){
+    if(!bis || !bis.querySelector) return;
+    var reg = bis.querySelector(':scope > .jp-sb-biset-reg'); if(!reg) return;
+    /* v31: las pastillas «Más del registro» de cada estación se pliegan en un solo desplegable al pie (no estiran el final del bloque) */
+    var sueltas = reg.querySelectorAll(':scope > .jp-qc');
+    if(sueltas.length > 1){
+      var mas = reg.querySelector(':scope > .jp-tb-mas');
+      if(!mas){
+        mas = document.createElement('details'); mas.className = 'jp-tb-mas';
+        mas.innerHTML = '<summary><span>Más del registro</span><em>RIR · plan · + serie</em></summary><div class="jp-tb-mas-b"></div>';
+        reg.appendChild(mas);
+      }
+      var cont = mas.querySelector(':scope > .jp-tb-mas-b');
+      Array.prototype.forEach.call(sueltas, function(cd){ cont.appendChild(cd); });
+    }
+    var est = Array.prototype.slice.call(reg.querySelectorAll('.jp-qc')).map(function(cd){
+      var k = qrCtx(cd); if(!k) return null; var i = parseInt(cd.getAttribute('data-qi'), 10), m = qrModelo(k.c, k.e, i);
+      return { cd: cd, k: k, i: i, m: m, id: qrTbId(cd, k), un: qrTbUnidad(k.e, m) };
+    }).filter(Boolean);
+    var box = reg.querySelector(':scope > .jp-tb-rondas');
+    if(est.length < 2){ if(box) box.parentNode.removeChild(box); reg.classList.remove('jp-tb-bis'); return; }
+    var nR = Math.max.apply(null, est.map(function(x){ return x.m.nt; })), cur = -1, r, h = '';
+    var hecha = function(rr){ return est.every(function(x){ return !x.m.filas[rr] || x.m.filas[rr].done; }); };
+    for(r = 0; r < nR; r++){ if(!hecha(r)){ cur = r; break; } }
+    for(r = 0; r < nR; r++){
+      var st = est.filter(function(x){ return !!x.m.filas[r]; }), ok = hecha(r), estado = ok ? '✓ HECHA' : (r === cur ? 'EN CURSO' : 'PENDIENTE');
+      /* v31: cuántas estaciones tiene la ronda, explícito (y si tiene menos que el bloque: «2 de 3 estaciones»); cada valor con la letra de su estación */
+      var cuenta = st.length < est.length ? st.length + ' de ' + est.length + ' estaciones' : st.length + ' estaciones';
+      var letras = st.map(function(x){ return x.id; }).join(' + ') + ' · ' + cuenta;
+      var res = st.map(function(x){ var s = qrTbSug(x.k.c, x.k.e, x.m, r); return x.id + ' ' + qrTbTxt(s.kg, s.rp, x.m, x.un); }).join(' · ');
+      var chips = st.map(function(x){
+        var f = x.m.filas[r], s = qrTbSug(x.k.c, x.k.e, x.m, r), sug = !f.done && !s.aj;
+        return '<span class="jp-tb-est' + (sug ? ' jp-tb-est-sg' : '') + '"><b>' + escSB(x.id) + '</b><span class="jp-tb-v' + (sug ? ' jp-tb-sg' : '') + '">' + escSB(qrTbTxt(s.kg, s.rp, x.m, x.un)) + '</span></span>';
+      }).join('');
+      h += '<button type="button" class="jp-tb-rt' + (ok ? ' on' : (r === cur ? ' nx' : '')) + '" data-r="' + (r + 1) + '" data-est="' + st.length + '" aria-label="Ronda ' + (r + 1) + ', ' + estado.replace('✓ ', '') + ', ' + cuenta + ': ' + escSB(res) + '">' +
+        '<span class="jp-tb-rl"><small>RONDA ' + (r + 1) + '</small><b>' + estado + '</b></span>' +
+        '<span class="jp-tb-rv"><em>' + escSB(letras) + '</em><span class="jp-tb-ests">' + chips + '</span>' + (ok ? '' : '<i class="jp-tb-rsg">' + (st.some(function(x){ return qrTbSug(x.k.c, x.k.e, x.m, r).aj; }) ? 'sin confirmar' : 'sugerido') + '</i>') + '</span></button>';
+    }
+    if(!box){
+      box = document.createElement('div'); box.className = 'jp-tb-rondas'; box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Rondas');
+      var tit = reg.querySelector(':scope > .jp-sb-biset-reg-t');
+      if(tit && tit.nextSibling) reg.insertBefore(box, tit.nextSibling); else reg.appendChild(box);
+    }
+    box.innerHTML = h;
+    reg.classList.add('jp-tb-bis');
+  }
+  function jpTbRefrescarRondas(root){ Array.prototype.forEach.call((root || document).querySelectorAll('.jp-sb-biset'), jpTbRondasSB); }
+  window.jpTbRondas = jpTbRondasSB;
 
   function qrCtx(card){
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
@@ -1233,6 +1351,9 @@
     if(tipsAhora && uEx && uEx.querySelector(':scope > .jp-ex-cajas > .jp-ex-tips')) tipsAhora.parentNode.removeChild(tipsAhora);
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
+    var bisR = nuevo.closest ? nuevo.closest('.jp-sb-biset') : null;
+    if(bisR) jpTbRondasSB(bisR);                                   /* v30: las rondas del biset reflejan al instante lo registrado */
+    if(TB && TB.items && !TB.guardando) tbPintar();
     return nuevo;
   }
   /* marca o desmarca UNA serie: guarda KG × REPS de esa serie con su propia clave (nunca se reparten kilos entre series) */
@@ -1360,6 +1481,170 @@
       }
     }
   });
+  /* ---------- v30 · HOJA RÁPIDA (abajo, al alcance del pulgar) ----------
+     Una sola hoja para todo el día. Muestra la serie (o la ronda entera de un biset / triset, estación por estación con aire) con botones ±2,5 kg / ±1 rep.
+     Cada valor dice si es «sugerido» (tenue, cursiva, borde punteado) o «ajustado» por el alumno (blanco sólido). «✓ Registrar» escribe en las filas reales de
+     la tarjeta y confirma con qrGuardarSerie / qrFinal (mismas claves, mismo guardado). Si la serie ya estaba hecha, el botón la desmarca (como el ✓ de siempre). */
+  var TB = { items: null, vals: null, titulo: '', sub: '', que: '', el: null, guardando: false };
+  function tbEl(){
+    if(TB.el && document.body.contains(TB.el)) return TB.el;
+    var d = document.createElement('div'); d.id = 'jpTbSheet'; d.className = 'jp-tbs'; d.hidden = true;
+    document.body.appendChild(d); TB.el = d; return d;
+  }
+  function tbItem(it){
+    var card = null;
+    Array.prototype.some.call(document.querySelectorAll('.jp-qc'), function(cd){ if(cd.getAttribute('data-qk') === it.qk && cd.getAttribute('data-qi') === String(it.qi)){ card = cd; return true; } return false; });
+    if(!card) return null;
+    var k = qrCtx(card); if(!k) return null;
+    var m = qrModelo(k.c, k.e, it.qi), fin = it.j === 'f', f = fin ? m.fin : m.filas[it.j - 1]; if(!f) return null;
+    var row = card.querySelector('.jp-qc-r[data-sj="' + it.j + '"]'); if(!row) return null;
+    return { card: card, k: k, m: m, f: f, fin: fin, row: row, ix: fin ? -1 : it.j - 1, id: qrTbId(card, k), un: qrTbUnidad(k.e, m) };
+  }
+  function tbSugIt(x){
+    if(x.fin){ var hay = !x.f.pre && (x.f.kg !== '' || x.f.rp !== ''); return { kg: x.m.sinKg ? '' : x.f.kg, rp: x.f.rp, aj: hay && !x.f.done }; }
+    return qrTbSug(x.k.c, x.k.e, x.m, x.ix);
+  }
+  function tbStp(n, f, v, s, d, lb){
+    var aj = v !== '';
+    return '<div class="jp-tbs-stp' + (aj ? ' aj' : '') + '" data-n="' + n + '" data-f="' + f + '"><small>' + escSB(lb) + '<i>' + (aj ? 'ajustado' : 'sugerido') + '</i></small><div class="jp-tbs-sp">' +
+      '<button type="button" data-tba="inc" data-n="' + n + '" data-f="' + f + '" data-d="-' + d + '" aria-label="Restar ' + String(d).replace('.', ',') + '">&minus;</button>' +
+      '<input type="text" inputmode="decimal" autocomplete="off" data-n="' + n + '" data-f="' + f + '" value="' + escSB(v) + '" placeholder="' + escSB(s !== '' && s != null ? s : '—') + '" aria-label="' + escSB(lb) + '">' +
+      '<button type="button" data-tba="inc" data-n="' + n + '" data-f="' + f + '" data-d="' + d + '" aria-label="Sumar ' + String(d).replace('.', ',') + '">+</button></div></div>';
+  }
+  function tbPintar(){
+    var el = tbEl(), xs = (TB.items || []).map(tbItem);
+    if(!xs.length || xs.some(function(x){ return !x; })){ tbCerrar(); return; }
+    var multi = xs.length > 1, todos = xs.every(function(x){ return x.f.done; });
+    var h = '<div class="jp-tbs-bg" data-tba="cerrar"></div><div class="jp-tbs-p" role="dialog" aria-modal="true" aria-label="' + escSB(TB.titulo) + '"><i class="jp-tbs-grab" aria-hidden="true"></i>' +
+      '<div class="jp-tbs-h"><div><small>' + escSB(TB.sub) + '</small><b>' + escSB(TB.titulo) + '</b></div><button type="button" class="jp-tbs-x" data-tba="cerrar" aria-label="Cerrar">&times;</button></div>' +
+      '<div class="jp-tbs-ley"><span class="jp-tb-sg">80</span> sugerido · <b>82,5</b> ajustado por vos</div><div class="jp-tbs-body">';
+    xs.forEach(function(x, n){
+      var s = tbSugIt(x), v = TB.vals[n], e = x.k.e, ult = x.fin ? null : regUltRegKey(x.k.c, e, qrIdxClave(e, x.f.j));
+      var ref = [ult ? 'Semana ' + (ult.w + 1) + ': ' + [ult.kg !== '' && ult.kg != null ? qrTbFmt(ult.kg) + ' kg' : '', ult.reps !== '' && ult.reps != null ? '× ' + ult.reps : ''].filter(Boolean).join(' ') : '', e.reps ? 'objetivo ' + e.reps : '', e.rir ? 'RIR ' + e.rir + (jpRirTexto(e.rir) ? ' (' + jpRirTexto(e.rir) + ')' : '') : ''].filter(Boolean).join(' · ');
+      h += '<div class="jp-tbs-e" data-n="' + n + '">' + (multi ? '<div class="jp-tbs-n"><span class="jp-tbs-l">' + escSB(x.id) + '</span>' + escSB(regNombreCorto(e.nombre)) + '</div>' : '') +
+        '<div class="jp-tbs-r' + (x.m.sinKg ? ' uno' : '') + '">' + (x.m.sinKg ? '' : tbStp(n, 'kg', v.kg, s.kg, 2.5, 'KG')) + tbStp(n, 'rp', v.rp, s.rp, 1, x.un.toUpperCase()) + '</div>' +
+        (ref ? '<div class="jp-tbs-a">' + escSB(ref) + '</div>' : '') + '</div>';
+    });
+    h += '</div><div class="jp-tbs-dock"><button type="button" class="jp-tbs-ok' + (todos ? ' on' : '') + '" data-tba="ok">' + (todos ? '✓ Registrada · tocá para desmarcar' : '✓ Registrar ' + escSB(TB.que)) + '</button></div></div>';
+    el.innerHTML = h;
+  }
+  function tbAbrir(items, titulo, sub, que){
+    TB.items = items; TB.titulo = titulo; TB.sub = sub; TB.que = que;
+    TB.vals = items.map(function(it){ var x = tbItem(it); if(!x) return { kg: '', rp: '' }; var s = tbSugIt(x); return (x.f.done || s.aj) ? { kg: x.m.sinKg ? '' : String(x.f.kg || ''), rp: String(x.f.rp || '') } : { kg: '', rp: '' }; });
+    tbPintar();
+    var el = tbEl(); el.hidden = false; document.documentElement.classList.add('jp-tbs-on');
+    setTimeout(function(){ el.classList.add('on'); }, 10);
+  }
+  function tbCerrar(){
+    TB.items = null; TB.vals = null;
+    var el = TB.el; if(!el) return;
+    el.classList.remove('on'); document.documentElement.classList.remove('jp-tbs-on');
+    setTimeout(function(){ if(!TB.items){ el.hidden = true; el.innerHTML = ''; } }, 200);
+  }
+  function tbRegistrar(){
+    var xs = (TB.items || []).map(tbItem);
+    if(!xs.length || xs.some(function(x){ return !x; })){ tbCerrar(); return; }
+    TB.guardando = true;
+    try{
+      if(xs.every(function(x){ return x.f.done; })){                            /* ya registrada: desmarca (como el segundo toque del ✓) */
+        TB.items.forEach(function(it){ var y = tbItem(it); if(!y || !y.f.done) return; if(y.fin) qrFinal(y.card); else qrGuardarSerie(y.card, y.row); });
+        tbCerrar(); return;
+      }
+      var vals = xs.map(function(x, n){ var s = tbSugIt(x), v = TB.vals[n]; return { kg: v.kg !== '' ? v.kg : (s.kg || ''), rp: v.rp !== '' ? v.rp : (s.rp || '') }; });
+      var falta = -1;
+      xs.forEach(function(x, n){
+        if(x.f.done || falta >= 0) return;
+        var sinDato = x.fin ? (!vals[n].kg && !vals[n].rp) : ((!x.m.sinKg && !vals[n].kg) || !vals[n].rp);
+        if(sinDato) falta = n;
+      });
+      if(falta >= 0){
+        var bx = TB.el && TB.el.querySelector('.jp-tbs-e[data-n="' + falta + '"]');
+        if(bx){ bx.classList.add('falta'); setTimeout(function(){ bx.classList.remove('falta'); }, 900); }
+        return;
+      }
+      TB.items.forEach(function(it, n){
+        var y = tbItem(it); if(!y || y.f.done) return;
+        var kgI = y.row.querySelector('.jp-qc-kg'), rpI = y.row.querySelector('.jp-qc-rp');
+        if(kgI) kgI.value = vals[n].kg;
+        if(rpI) rpI.value = vals[n].rp;
+        if(y.fin) qrFinal(y.card); else qrGuardarSerie(y.card, y.row);
+      });
+      tbCerrar();
+    } finally {
+      TB.guardando = false;
+      setTimeout(function(){ jpTbRefrescarRondas(); }, 300);
+    }
+  }
+  window.jpTablero = { abrir: tbAbrir, cerrar: tbCerrar, registrar: tbRegistrar, estado: function(){ return TB; } };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var tt = t.closest('.jp-tb-t');
+    if(tt){
+      ev.preventDefault(); ev.stopPropagation(); if(tt.disabled) return;
+      var cd = tt.closest('.jp-qc'), k = cd && qrCtx(cd); if(!k) return;
+      var i = parseInt(cd.getAttribute('data-qi'), 10), sj = tt.getAttribute('data-sj'), m = qrModelo(k.c, k.e, i), id = qrTbId(cd, k);
+      if(sj === 'f') tbAbrir([{ qk: cd.getAttribute('data-qk'), qi: i, j: 'f' }], regNombreCorto(k.e.nombre), id + ' · ⚡ serie final · ' + QR_TEC_NOM[m.tec], 'serie final');
+      else tbAbrir([{ qk: cd.getAttribute('data-qk'), qi: i, j: parseInt(sj, 10) }], regNombreCorto(k.e.nombre), id + ' · serie ' + sj + ' de ' + m.nt, 'serie ' + sj);
+      return;
+    }
+    var rt = t.closest('.jp-tb-rt');
+    if(rt){
+      ev.preventDefault(); ev.stopPropagation();
+      var reg = rt.closest('.jp-sb-biset-reg'), r = parseInt(rt.getAttribute('data-r'), 10); if(!reg) return;
+      var cards = Array.prototype.slice.call(reg.querySelectorAll('.jp-qc')), items = [], ids = [], nR = 0;
+      cards.forEach(function(cd2){
+        var k2 = qrCtx(cd2); if(!k2) return; var i2 = parseInt(cd2.getAttribute('data-qi'), 10), m2 = qrModelo(k2.c, k2.e, i2);
+        nR = Math.max(nR, m2.nt);
+        if(m2.filas[r - 1]){ items.push({ qk: cd2.getAttribute('data-qk'), qi: i2, j: r }); ids.push(qrTbId(cd2, k2)); }
+      });
+      if(!items.length) return;
+      tbAbrir(items, ids.join(' → ') + (items.length > 1 ? ' sin pausa' : ''), (items.length === 2 ? 'Biset' : (items.length === 3 ? 'Triset' : 'Bloque')) + ' · ronda ' + r + ' de ' + nR, 'ronda ' + r);
+      return;
+    }
+    var a = t.closest('#jpTbSheet [data-tba]'); if(!a) return;
+    ev.preventDefault();
+    var act = a.getAttribute('data-tba');
+    if(act === 'cerrar'){ tbCerrar(); return; }
+    if(act === 'ok'){ tbRegistrar(); return; }
+    if(act === 'inc' && TB.items){
+      var n = parseInt(a.getAttribute('data-n'), 10), f = a.getAttribute('data-f'), d = parseFloat(a.getAttribute('data-d')), x = tbItem(TB.items[n]); if(!x) return;
+      var s = tbSugIt(x), v = TB.vals[n][f], base = qrNum(v !== '' ? v : (f === 'kg' ? s.kg : s.rp));
+      var nv = Math.max(0, base + d);
+      TB.vals[n][f] = f === 'kg' ? String(Math.round(nv * 100) / 100) : String(Math.round(nv));
+      tbPintar();
+    }
+  });
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.closest || !t.closest('#jpTbSheet') || !TB.vals) return;
+    var n = parseInt(t.getAttribute('data-n'), 10), f = t.getAttribute('data-f'); if(isNaN(n) || !f) return;
+    var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+    if(vq !== t.value) t.value = vq;
+    TB.vals[n][f] = vq;
+    var stp = t.closest('.jp-tbs-stp'); if(stp){ stp.classList.toggle('aj', vq !== ''); var tag = stp.querySelector('small i'); if(tag) tag.textContent = vq !== '' ? 'ajustado' : 'sugerido'; }
+  });
+  document.addEventListener('keydown', function(ev){ if(ev.key === 'Escape' && TB.items) tbCerrar(); });
+  /* v31 · BOTÓN FLOTANTE QUE NO TAPA: si el menú flotante (#hdDock) quedaría encima de una ronda, una ficha, «Generar Story Card» o «Finalizar día», se corre hacia
+     afuera del borde y vuelve solo al seguir desplazando. Solo presentación (una clase); el menú abierto nunca se esconde. */
+  var _fabRaf = 0;
+  function jpFabRevisar(){
+    _fabRaf = 0;
+    var dock = document.getElementById('hdDock'), fab = document.getElementById('hddFab'); if(!dock || !fab) return;
+    if(dock.classList.contains('open')){ dock.classList.remove('jp-fab-aparte'); return; }
+    /* la zona se calcula desde su esquina fija (no desde su posición actual, que cambia al correrse) para que no titile */
+    var w = fab.offsetWidth || 46, h = fab.offsetHeight || 46, vw = window.innerWidth, vh = window.innerHeight;
+    if(!fab.offsetParent && !w){ dock.classList.remove('jp-fab-aparte'); return; }
+    var zona = { l: vw - 12 - w - 8, t: vh - 12 - h - 8, rr: vw, b: vh }, choca = false;
+    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok'), function(el){
+      var q = el.getBoundingClientRect();
+      if(q.width && q.right > zona.l && q.left < zona.rr && q.bottom > zona.t && q.top < zona.b){ choca = true; return true; }
+      return false;
+    });
+    dock.classList.toggle('jp-fab-aparte', choca);
+  }
+  function jpFabPedir(){ if(!_fabRaf) _fabRaf = (window.requestAnimationFrame || setTimeout)(jpFabRevisar); }
+  window.addEventListener('scroll', jpFabPedir, { passive: true });
+  window.addEventListener('resize', jpFabPedir);
+  window.jpFabRevisar = jpFabRevisar;
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
   document.addEventListener('focusin', function(ev){
     var t = ev.target; if(t && t.classList && (t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))){ try{ t.select(); }catch(e0){} }

@@ -778,7 +778,7 @@
   window.CoachAjustarTexto = ajustar;
 
   function champion(d){
-    var c = document.getElementById('storyCanvas'), g = c.getContext('2d');
+    var c = document.getElementById('storyCanvas'), g = window.jpStoryCtx ? window.jpStoryCtx(c) : c.getContext('2d');
     g.clearRect(0, 0, W, HH);
     window.__storyLast = { tipo: 'cyber', d: d };
     /* fondo -- foto de la sesión si hay, si no Dark Stealth Tactical, mismo

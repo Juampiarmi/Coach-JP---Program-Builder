@@ -288,7 +288,7 @@
   function pieYMetricas(d, estilo){
     if(typeof window.CoachStoryMarca === 'function' && window.COACH_DISCIPLINA === 'sports') return;   /* el diseno de marca ya dibuja el pie */
     var c = document.getElementById('storyCanvas'); if(!c) return;
-    var g = c.getContext('2d');
+    var g = window.jpStoryCtx ? window.jpStoryCtx(c) : c.getContext('2d');
     var dorado = estilo === 'champ';
     /* 09/09 -- Luxury Stealth: acento único dorado en los dos estilos
        (antes era naranja #D2793F en ambos) */

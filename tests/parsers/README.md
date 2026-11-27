@@ -19,6 +19,8 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-pedagogia.js` | Bodybuilding 3, 4 y 5 días (hombres y mujeres, intermedio y avanzado): series de aproximación, por qué esa cantidad de series, objetivo de carga y criterios de selección de ejercicios (brazos estirados, remo apoyado, deltoide lateral en frecuencia 2, sin curl femoral sentado para ellas, core variado) |
 | `cases-persistencia.js` | Datos reales a salvo: aislamiento de pruebas, fusión segura con la nube y con otras pestañas (borrados, sellos de tiempo, videos), biblioteca oficial y orden A–Z de alumnos |
 | `cases-v28.js` | Bisets con registro al final y marcado por título, casilleros neutros hasta completarlos, video junto al nombre, Pizarra del Coach con la misma fuente que el alumno y plan() que completa sin pisar |
+| `cases-v30.js` | Tablero de series · hoja rápida (fichas, hoja inferior, rondas del biset / triset) y Story Card en HD |
+| `cases-v31.js` | Refinamiento de la vista del alumno: RIR explicado, biset limpio, fichas en 4 columnas, header, botón flotante y cierre |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -131,3 +133,21 @@ Adaptador `fichaPlan` (runner.html) sobre el Builder real (`CoachMantenimiento`,
 - `v29.vid.02` (v29): la miniatura del video (`.jp-ux-vth`) queda dentro de su botón (≤ 72×48 px) y no se superpone a la barra de dosis, la meta ni «Registrar carga», en la tarjeta simple y en cada estación del biset; el botón es `position:relative` + `contain:paint`, así que aunque otra regla lo deje `static` la miniatura sigue recortada. El disparador de los bisets heredados (`.video-link`) también queda anclado.
 - `v28.pz.01`: la Pizarra del Coach se arma con `buildProgramConfig()` sobre una copia del plan (misma semana proyectada que el alumno, sin bloques que no viajan, plan intacto).
 - `v28.plan.01`: `plan()` completa campos sin pisar el mesociclo, el estado ni agregar días vacíos a un plan guardado.
+
+## v30: tablero de series · hoja rápida y Story Card en HD (`cases-v30.js`)
+
+- `v30.tb.01` (adaptador `v30`): una ficha por serie (`.jp-tb-t`), la que sigue con borde cian, las pendientes con «Sug. …» tenue (cursiva, 34 %); las filas de siempre (`.jp-qc-r`, mismas claves) quedan ocultas en la tarjeta y la pastilla pasa a RIR · plan · + serie.
+- `v30.tb.02`: la hoja rápida (`#jpTbSheet`) abre al tocar una ficha, no registra sin peso, marca cada valor «sugerido» → «ajustado», guarda con la MISMA clave de la serie (`getLoad`), deja la ficha naranja, la siguiente hereda la carga y un segundo registro la desmarca.
+- `v30.tb.03`: triset con una fila ancha por ronda (`.jp-tb-rt`: estaciones, EN CURSO / PENDIENTE / ✓ HECHA y resumen); la hoja muestra las tres estaciones y registra las tres series de la ronda.
+- `v30.hd.01`: Story Card a 2160×3840 (escala 2×, suavizado high), espera de fuentes (`jpStoryFuentes`) y foto grande reducida en pasos a la mitad (`__storyFotoCache`).
+
+## v31: refinamiento visual y de usabilidad (`cases-v31.js`, adaptador `v30`)
+
+- `v31.rir.01`: `jpRirTexto` («te guardás 1 rep», «al fallo» para RIR 0) y la aclaración dentro de la celda de RIR de la tarjeta; `jpDosisHtml` no cambia.
+- `v31.bis.01`: cada estación con su dosis propia (sin «3 RONDAS ×»), un solo «sin pausa», rondas con el valor de cada estación y la cantidad de estaciones, «Más del registro» plegado.
+- `v31.tb.01`: fichas en 4 columnas con etiquetas cortas y sin la referencia de otra semana.
+- `v31.hd.01`: el botón del día sin el emoji de calendario y el subtítulo del header con el nivel del alumno.
+- `v31.fab.01`: el botón flotante se corre si taparía una ronda / ficha / cierre y vuelve solo; margen inferior ≥ 100 px.
+- `v31.cierre.01`: cierre de la sesión en la paleta de la Revisión 4 (Finalizar naranja, Story Card cian, resumen con barra).
+
+Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*`) antes y después: el progreso de la app del alumno de prueba persiste entre recargas.

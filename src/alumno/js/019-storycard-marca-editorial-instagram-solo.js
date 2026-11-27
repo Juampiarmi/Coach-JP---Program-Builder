@@ -156,7 +156,7 @@
     var c = document.getElementById('storyCanvas'); if(!c) return;
     d = d || {};
     if(typeof window.CoachStoryDatos === 'function' && d.ejDetalle == null){ try{ d = window.CoachStoryDatos(d); }catch(e){} }
-    var g = c.getContext('2d');
+    var g = window.jpStoryCtx ? window.jpStoryCtx(c) : c.getContext('2d');
     window.__storyLast = { tipo: 'cyber', d: d };
     g.clearRect(0, 0, W, H);
     g.textBaseline = 'alphabetic';
@@ -312,7 +312,7 @@
   function dibujarMarcaCF(d){
     var c = document.getElementById('storyCanvas'); if(!c) return;
     d = d || {};
-    var g = c.getContext('2d');
+    var g = window.jpStoryCtx ? window.jpStoryCtx(c) : c.getContext('2d');
     window.__storyLast = { tipo: 'cf', d: d };
     g.clearRect(0, 0, W, H); g.textBaseline = 'alphabetic';
     window.storyFondoFoto(g, W, H, function(){

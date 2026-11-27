@@ -86,7 +86,8 @@
       var n = 'D\u00cdA ' + (i + 1), l = String(d.label || '').split(' \u00b7 ').join(' - ').trim().toUpperCase();
       return (l && l !== n) ? n + ': ' + l : n;
     };
-    var h = '<span class="jp-day-ic" aria-hidden="true">&#128197;</span><b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
+    /* v31: sin el emoji de calendario (en iPhone se dibuja con un número de fecha que no es la del día): SEM y DÍA quedan parejos */
+    var h = '<b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
     if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
     var hp = DAYS.map(function(d, i){
       var hecho = false; try{ hecho = isDayDone(state.currentWeek, d.id); }catch(e){}
@@ -116,8 +117,8 @@
     var rir = 'RIR OBJ';
     try{ var m = /RIR\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* las 3 métricas están siempre: grilla simétrica de 3 columnas (sin series registradas el tonelaje es 0, nunca un guion ni NaN) */
-    var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
-    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
+    var pildora = function(v, l, x){ return '<span><b>' + v + '</b><small>' + l + '</small>' + (x ? '<em class="jp-rir-hint">' + x + '</em>' : '') + '</span>'; };
+    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO', rir === 'RIR OBJ' ? '' : 'reps en recámara');
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.__h !== h){ hud.__h = h; hud.innerHTML = h; }
