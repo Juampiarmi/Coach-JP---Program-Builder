@@ -28,6 +28,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-v36.js` | RPE en lugar de RIR y registro de cargas plegado |
 | `cases-v37.js` | Cada tip de las pautas plegable por separado; SEM / DÍA y reps centradas |
 | `cases-v38.js` | SEMANA / DÍA centrados con «SEMANA» completo; escudo amarillo en la Story Card |
+| `cases-builder-hud.js` | Builder HUD: test de humo del Builder en sandbox (iframe 1440 × 900) y claridad visual |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -175,3 +176,4 @@ Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*
 - `v37.hdr.01`: SEM y DÍA con letra más grande sin cambiar contorno ni alineado; repeticiones centradas en series rectas y en cada estación del biset / triset.
 - `v38.sem.01`: «SEMANA 1» completo (también en su menú), sin recortes ni solapamientos, contenido de cada botón y barra centrados, alto 40 px y margen del escudo.
 - `v38.esc.01`: el escudo de la Story Card (vista previa y HD usan el mismo dibujo) es amarillo dorado con el rayo oscuro, como el del encabezado.
+- `bld.01`: el Builder carga en sandbox (`?jpSandbox=1`, iframe propio de 1440 × 900) con un alumno de ejemplo; dibujarlo, plegar / desplegar y redibujar no cambia el plan ni llama a `save()`. La pasada asíncrona `prepararBuilder` deja las medidas en `window.__jpBuilderMedidas`.

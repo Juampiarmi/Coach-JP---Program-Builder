@@ -69,6 +69,7 @@
 <script src="cases-v36.js"></script>
 <script src="cases-v37.js"></script>
 <script src="cases-v38.js"></script>
+<script src="cases-builder-hud.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -123,6 +124,7 @@
     alumnoVersion: { run: function(i){ return alumnoVersion(i); }, valor: function(r){ return r; } },
     bancoFemenino: { run: function(i){ return bancoFemenino(i); }, valor: function(r){ return r; } },
     iaMotor:      { run: function(i){ return iaMotor(i); }, valor: function(r){ return r; } },
+    builderHud:   { run: function(i){ return builderHud(i); }, valor: function(r){ return r; } },
     audioSuite:   { run: function(i){ return audioSuite(i); }, valor: function(r){ return r; } },
     fichaPlan:    { run: function(i){ return fichaPlan(i); }, valor: function(r){ return r; } },
     revisadas:    { run: function(){ return auditarRevisadas(); }, valor: function(r){ return r; } },
@@ -2899,6 +2901,92 @@
     })();
   }
   function iaMotor(c){ if(!IA_RES) throw new Error('la pasada de IA no corrió'); return IA_RES; }
+
+  /* ---------- Builder HUD (Fase 0 y 1): test de humo en sandbox ----------
+     Abre OTRO iframe del Builder en tamaño escritorio (1440 × 900, ?jpSandbox=1: memoria aparte, nunca el almacenamiento real), arma un alumno de ejemplo
+     con un básico recto, un biset y un triset, entra al Builder y mide: altura hasta el primer bloque, botones a la vista, emojis de sistema, botones
+     naranjas llenos, resúmenes de bloque y paneles plegados. Comprueba además que dibujar, plegar y desplegar NO cambia el plan ni llama a save(). */
+  var BLD_RES = null;
+  function prepararBuilder(listo){
+    var fr = document.createElement('iframe'), t0 = Date.now(), hecho = false;
+    fr.src = (window.JP_BUILDER_URL || '../../index.html') + '?jpSandbox=1'; fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:absolute;left:-99999px;top:0;width:1440px;height:900px;border:0';
+    var fin = function(r){ if(hecho) return; hecho = true; BLD_RES = r; window.__jpBuilderMedidas = r; try{ fr.parentNode.removeChild(fr); }catch(e){} listo(); };
+    document.body.appendChild(fr);
+    var esperar = function(){
+      var w2 = fr.contentWindow, ok = false;
+      try{ ok = !!(w2 && w2.JPB && typeof w2.renderBuilder === 'function' && typeof w2.newPlan === 'function' && typeof w2.newBlock === 'function' && w2.document.getElementById('v-builder')); }catch(e){}
+      if(!ok){ if(Date.now() - t0 > 40000) return fin({ error: 'el Builder no cargó' }); return setTimeout(esperar, 250); }
+      setTimeout(function(){ try{ medirBuilder(w2, fin); }catch(e){ fin({ error: String(e && e.message || e) }); } }, 1500);
+    };
+    esperar();
+  }
+  function medirBuilder(w2, fin){
+    var S2 = w2.eval('S'), d2 = w2.document, cs2 = function(e){ return w2.getComputedStyle(e); };
+    if(!w2.JP_SANDBOX_OK) return fin({ error: 'el iframe no está en sandbox' });
+    [].forEach.call(d2.querySelectorAll('.modal-bg.on, .jp-modal.on'), function(m){ m.classList.remove('on'); });
+    [].forEach.call(d2.querySelectorAll('button'), function(b){ if(/^CERRAR$/i.test(String(b.textContent).trim()) && b.offsetParent) b.click(); });
+    var a = { id: 'ath_hud_smoke', nombre: 'Alumno', apellido: 'Ejemplo', freq: 4, nivel: 'Intermedio', genero: 'M', createdAt: Date.now(), foco: 'Hipertrofia' };
+    S2.athletes.push(a); var pl = w2.newPlan(a); S2.plans[a.id] = pl;
+    var mk = function(t, items){ var b = w2.newBlock('list'); b.sportsPizarra = true; b.titulo = t; b.category = 'strength'; b.items = items; return b; };
+    pl.dias[0].bloques = [ mk('Fuerza', ['Press de banca plano con barra', '4x5-7 | Tempo 3010 | RIR 1-2', 'Rest 180s']),
+      mk('Hipertrofia – Biset', ['A1. Press inclinado con mancuernas', '3x8-10 | RIR 1', 'A2. Aperturas con mancuernas en banco plano', '3x12-20 | RIR 1', 'Rest 90s']),
+      mk('Hombro y tríceps – Triset', ['D1. Elevaciones laterales con mancuernas', '3x12-15 | RIR 1', 'D2. Extensión de tríceps en polea con soga', '3x10-12 | RIR 1', 'D3. Fondos en banco', '3x12 | RIR 0', 'Rest 75s']) ];
+    S2.activeId = a.id; w2.go('builder');
+    setTimeout(function(){
+      var r = {}, v = d2.getElementById('v-builder');
+      var visible = function(e){ if(!e.offsetParent) return false; if(typeof e.checkVisibility === 'function' && !e.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false; var q = e.getBoundingClientRect(), c = cs2(e); return q.width > 0 && q.height > 0 && c.visibility !== 'hidden' && c.opacity !== '0'; };      /* checkVisibility: lo de un <details> cerrado no cuenta */
+      var b1 = d2.querySelector('#dayPanel .block');
+      r.primerBloqueY = b1 ? Math.round(b1.getBoundingClientRect().top + w2.scrollY) : -1;
+      r.botones = [].filter.call(v.querySelectorAll('button'), visible).length;
+      /* emojis de sistema en lo que se lee del Builder (botones, títulos, rótulos, pastillas); quedan permitidas las flechas y los símbolos de texto */
+      var EP = /\p{Extended_Pictographic}/u, OK = /[\u25B6\u25C0\u2197\u2194\u2640\u2642\u26A7\u2122\u00A9\u00AE]/u, emo = [];
+      [].forEach.call(v.querySelectorAll('button, summary, h2, h3, h4, label, .pill, .tab, .lb'), function(e){ if(!visible(e)) return; var t = String(e.textContent || '').replace(/[\u25B6\u25C0\u2197\u2194\u2640\u2642\u26A7\u2122\u00A9\u00AE]/gu, ''); if(EP.test(t)) emo.push(t.trim().slice(0, 30)); });
+      r.emojis = emo.slice(0, 8);
+      /* acciones con relleno naranja (los estados elegidos —semana, modalidad— no cuentan) */
+      var naranja = function(e){ var c = cs2(e), m = (c.backgroundImage + ' ' + c.backgroundColor).match(/rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/g) || []; return m.some(function(x){ var n = x.match(/[\d.]+/g).map(Number), al = n[3] == null ? 1 : n[3]; return al > .5 && n[0] > 180 && n[0] - n[1] > 50 && n[1] > n[2]; }); };
+      var llenos = function(){ return [].filter.call(v.querySelectorAll('button, .btn'), function(e){ return visible(e) && !e.matches('.on, [aria-current], .cf-wk-activa, [aria-pressed="true"], .s') && naranja(e); }).map(function(e){ return String(e.textContent).replace(/\s+/g, ' ').trim().slice(0, 34); }); };
+      r.naranjasPlegado = llenos();
+      r.resumenes = [].map.call(d2.querySelectorAll('#dayPanel .block > .block-h > .jpb-bres'), function(x){ return x.textContent; });
+      var hb = d2.querySelector('#dayPanel .block.jp-col > .block-h > .icon-btn');
+      r.accionesOcultas = !!hb && cs2(hb).opacity === '0';
+      /* paneles: todos plegados de entrada, con el cuerpo oculto */
+      var pans = [].slice.call(d2.querySelectorAll('.jpb-pleg'));
+      r.paneles = pans.map(function(p){ return p.getAttribute('data-jpb'); }).sort().join(',');
+      r.todosPlegados = pans.length >= 7 && pans.every(function(p){ return p.classList.contains('jpb-cerrado') && [].every.call(p.children, function(ch){ return ch.classList.contains('jpb-head') || ch.classList.contains('jpb-keep') || cs2(ch).display === 'none'; }); });
+      r.alumnoALaVista = !!d2.getElementById('bPick') && visible(d2.getElementById('bPickBtn'));
+      /* el plan no cambia y save() no se llama al plegar / desplegar */
+      var antes = JSON.stringify(S2.plans[a.id]), saves = 0, save0 = w2.save;
+      w2.save = function(){ saves++; return save0.apply(this, arguments); };
+      try{
+        [].forEach.call(d2.querySelectorAll('.jpb-tog'), function(t){ t.click(); });
+        w2.JPB.aplicar();
+        r.seAbren = [].every.call(d2.querySelectorAll('.jpb-pleg'), function(p){ return !p.classList.contains('jpb-cerrado'); });
+        r.naranjasAbierto = llenos();
+        r.sinGuardar = saves === 0;
+      } finally { w2.save = save0; }
+      w2.renderBuilder();
+      setTimeout(function(){
+        w2.JPB.aplicar();
+        r.recuerdaAlRedibujar = [].every.call(d2.querySelectorAll('.jpb-pleg'), function(p){ return !p.classList.contains('jpb-cerrado'); });
+        r.planIntacto = JSON.stringify(S2.plans[a.id]) === antes;
+        w2.JPB.paneles.forEach(function(k){ w2.JPB.cerrar(k); });
+        r.cargo = true;
+        fin(r);
+      }, 400);
+    }, 1500);
+  }
+  function builderHud(c){
+    if(!BLD_RES) throw new Error('la pasada del Builder no corrió');
+    if(BLD_RES.error) return { error: BLD_RES.error };
+    var R = BLD_RES, BASE_Y = 2948, BASE_BT = 65;      /* línea de base: versión anterior a la Fase 1, mismo alumno de ejemplo y misma medición (1440 × 900) */
+    if(c.caso === 'carga') return { cargo: !!R.cargo, planIntacto: R.planIntacto, sinGuardar: R.sinGuardar };
+    if(c.caso === 'medidas') return { primerBloqueCerca: R.primerBloqueY > 0 && R.primerBloqueY <= BASE_Y * .65, menosBotones: R.botones > 0 && R.botones <= BASE_BT - 15, _medidas: 'primer bloque ' + R.primerBloqueY + ' px (antes ' + BASE_Y + ') · ' + R.botones + ' botones (antes ' + BASE_BT + ')' };
+    if(c.caso === 'emojis') return { sinEmojis: R.emojis.length === 0, _quedan: R.emojis.join(' | ') };
+    if(c.caso === 'naranja') return { soloAgregarBloque: R.naranjasPlegado.length === 1 && /AGREGAR BLOQUE/i.test(R.naranjasPlegado[0]), abiertoSoloPrincipales: R.naranjasAbierto.every(function(t){ return /AGREGAR BLOQUE|GENERAR PLAN COMPLETO/i.test(t); }), _llenos: R.naranjasAbierto.join(' | ') };
+    if(c.caso === 'bloque') return { recta: R.resumenes[0] === 'Serie recta \u00b7 4\u00d75-7 \u00b7 3 min \u00b7 RIR 1-2 (RPE 8-9)', biset: R.resumenes[1] === 'Biset \u00b7 3\u00d78-10 / 3\u00d712-20 \u00b7 90 s \u00b7 RIR 1 (RPE 9)', triset: /^Triset \u00b7 3\u00d712-15 \/ 3\u00d710-12 \/ 3\u00d712 \u00b7 75 s/.test(R.resumenes[2] || ''), accionesAlPasar: R.accionesOcultas, _res: R.resumenes.join(' | ') };
+    if(c.caso === 'paneles') return { todosPlegados: R.todosPlegados, seAbren: R.seAbren, recuerdaAlRedibujar: R.recuerdaAlRedibujar, alumnoALaVista: R.alumnoALaVista, _paneles: R.paneles };
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
   /* biset / triset de la app del alumno en naranja de la marca (#EE5A12): recuadro, pastilla, línea guía, letras A1/A2, conector «sin pausa» y aviso de transición; nada en ámbar */
   function bisetNaranja(){
@@ -3263,7 +3351,7 @@
   function esperarBanco(n){
     var ok = false;
     try{ var b = getS().banco || []; ok = b.some(function(r){ return r && r.depDeporte === 'hyx' && (r.dias || []).length; }) && b.some(function(r){ return r && r.std && (r.dias || []).length; }); }catch(e){}
-    if(ok || n > 60) setTimeout(function(){ silenciarAudio(win); prepararAlumno(function(){ silenciarAudio(alumnoWin()); prepararIA(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
+    if(ok || n > 60) setTimeout(function(){ silenciarAudio(win); prepararAlumno(function(){ silenciarAudio(alumnoWin()); prepararIA(function(){ prepararBuilder(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
   }
   function listo(){
     try{ win = frame.contentWindow; return !!(win && win.jpAutoFormat && typeof win.jpDosisCanon === 'function' && typeof win.parsearImportacion === 'function' && typeof win.detectarFormatoCF === 'function' && typeof win.impCampoCoachDeTag === 'function'); }catch(e){ return false; }
