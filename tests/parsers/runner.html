@@ -62,6 +62,7 @@
 <script src="cases-v28.js"></script>
 <script src="cases-v30.js"></script>
 <script src="cases-v31.js"></script>
+<script src="cases-v32.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -573,7 +574,7 @@
       if(c.caso === 'rondas'){
         dibujar('tv30e', 'Hipertrofia – Triset', TRISET);
         var reg = caja.querySelector('.jp-sb-biset-reg'), rt = caja.querySelectorAll('.jp-tb-rt');
-        var r2 = { unaFilaPorRonda: rt.length === 3, estaciones: /D1 \+ D2 \+ D3/.test(rt[0].textContent) && /3 estaciones/.test(rt[0].textContent),
+        var r2 = { unaFilaPorRonda: rt.length === 3, estaciones: [].map.call(rt[0].querySelectorAll('.jp-tb-est b'), function(x){ return x.textContent; }).join(',') === 'D1,D2,D3',
           enCurso: rt[0].classList.contains('nx') && /EN CURSO/.test(rt[0].textContent) && /PENDIENTE/.test(rt[1].textContent),
           sinTablerosRepetidos: reg.querySelectorAll('.jp-qc > .jp-tb').length === 3 && [].every.call(reg.querySelectorAll('.jp-qc > .jp-tb'), function(x){ return cs(x).display === 'none'; }),
           filaAncha: rt[0].getBoundingClientRect().width >= reg.getBoundingClientRect().width * .9 };
@@ -609,9 +610,10 @@
       if(c.caso === 'rir'){
         var R = w.jpRirTexto;
         dibujar('tv30f', 'Fuerza', ['Press de banca plano con barra', '4x5-7 | Tempo 3110 | RIR 1-2', 'Rest 150s']);
-        var celda = caja.querySelector('.jp-db-rir'), tx = celda && celda.querySelector('.jp-rir-tx');
+        var celda = caja.querySelector('.jp-db-rir'), nota = caja.querySelector('.jp-block-details .jp-pauta-ex .jp-pauta-rir');
         return { uno: R('1') === 'te guardás 1 rep', rango: R('1-2') === 'te guardás 1–2 reps', fallo: /al fallo/.test(R('0')), ceroUno: R('0-1') === 'te guardás 0–1 rep', conPrefijo: R('RIR 2') === 'te guardás 2 reps', invalido: R('alto') === '',
-          enLaTarjeta: !!tx && tx.textContent === 'te guardás 1–2 reps' && /1-2/.test((celda.querySelector('b') || {}).textContent || ''),
+          /* v32: el RIR ya no ocupa la tarjeta: va a «Pautas técnicas & tips del bloque», con su aclaración */
+          enLaTarjeta: !!celda && cs(celda).display === 'none' && !!nota && /RIR 1-2/.test(nota.textContent) && /te guardás 1–2 reps/.test(nota.textContent),
           dosisIntacta: /RIR 2$/.test(w.jpDosisHtml(4, '5-7', 'reps', '', '2', 90, '', null, false, '', false).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) };
       }
       if(c.caso === 'bisetLimpio'){
@@ -621,8 +623,26 @@
         return { dosisPropia: !!vn && cs(vn).display === 'none' && !!vr && cs(vr).display !== 'none' && /8-10/.test(vr.textContent),
           unSoloSinPausa: (!np || cs(np).display === 'none') && caja.querySelectorAll('.jp-sb-trans').length === 1,
           valorPorEstacion: rt3.length === 3 && rt3[0].querySelectorAll('.jp-tb-est').length === 2 && /^A1/.test(rt3[0].querySelector('.jp-tb-est').textContent.trim()),
-          cantidadExplicita: /2 estaciones/.test(rt3[0].querySelector('em').textContent),
+          cantidadExplicita: !/estaciones|sugerido|A1 \+ A2/.test(rt3[0].querySelector('.jp-tb-rv').textContent),      /* v32: sin etiquetas repetidas (la cantidad solo aparece si la ronda tiene menos estaciones) */
           masPlegado: !!mas && !mas.open && mas.querySelectorAll('.jp-qc').length === 2 && !caja.querySelector('.jp-sb-biset-reg > .jp-qc') && /Más del registro/.test(mas.querySelector('summary').textContent) };
+      }
+      /* ---- v32: números protagonistas, RIR en las pautas y sin referencias a otras semanas ---- */
+      if(c.caso === 'numeros'){
+        dibujar('tv30i', 'Fuerza', PRESS);
+        var vrS = caja.querySelector('.jp-sb-ex .jp-db-vol b.jp-vr'), vnS = caja.querySelector('.jp-sb-ex .jp-db-vol b.jp-vn'), chip = caja.querySelector('.jp-db-rest b, .jp-db-tempo b');
+        var gS = parseFloat(cs(vrS).fontSize), gN = parseFloat(cs(vnS).fontSize);
+        dibujar('tv30j', 'Hipertrofia – Biset', ['A1. Press inclinado con mancuernas', '3x8-10 | RIR 1', 'A2. Aperturas con mancuernas en banco plano', '3x12-15 | RIR 1', 'Rest 90s']);
+        var vrB = caja.querySelector('.jp-sb-subex-resumen .jp-db-vol b.jp-vr'), gB = parseFloat(cs(vrB).fontSize);
+        return { seriesYRepsGrandes: gS >= 32 && gN >= 32, estacionGrande: gB >= 30, rirFueraDeLaEstacion: [].every.call(caja.querySelectorAll('.jp-sb-subex-resumen .jp-db-rir'), function(x){ return cs(x).display === 'none'; }),
+          rirEnLasPautas: caja.querySelectorAll('.jp-block-details .jp-pauta-rir').length === 2 };
+      }
+      if(c.caso === 'sinSemanas'){
+        dibujar('tv30k', 'Fuerza', PRESS);
+        caja.querySelector('.jp-tb-t').click();
+        var refH = (hoja().querySelector('.jp-tbs-a') || {}).textContent || '';
+        T.cerrar();
+        var cardS = caja.querySelector('.jp-qc');
+        return { hojaSoloHoy: !/Semana|Sem \d/.test(refH) && /objetivo 5-7/.test(refH), pastillaSoloHoy: !/Sem(ana)? \d/.test(cardS.querySelector('.jp-qc-tg').textContent), pistaSinSemana: !/Sem(ana)? \d/.test((cardS.querySelector('.jp-qc-hint') || {}).textContent || '') };
       }
       if(c.caso === 'fichas4'){
         dibujar('tv30h', 'Fuerza', PRESS);

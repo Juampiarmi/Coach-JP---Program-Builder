@@ -21,6 +21,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-v28.js` | Bisets con registro al final y marcado por título, casilleros neutros hasta completarlos, video junto al nombre, Pizarra del Coach con la misma fuente que el alumno y plan() que completa sin pisar |
 | `cases-v30.js` | Tablero de series · hoja rápida (fichas, hoja inferior, rondas del biset / triset) y Story Card en HD |
 | `cases-v31.js` | Refinamiento de la vista del alumno: RIR explicado, biset limpio, fichas en 4 columnas, header, botón flotante y cierre |
+| `cases-v32.js` | Series × reps protagonistas, RIR en las pautas del bloque y sin referencias a otras semanas |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -151,3 +152,9 @@ Adaptador `fichaPlan` (runner.html) sobre el Builder real (`CoachMantenimiento`,
 - `v31.cierre.01`: cierre de la sesión en la paleta de la Revisión 4 (Finalizar naranja, Story Card cian, resumen con barra).
 
 Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*`) antes y después: el progreso de la app del alumno de prueba persiste entre recargas.
+
+## v32: lectura en el gimnasio (`cases-v32.js`, adaptador `v30`)
+
+- `v32.num.01`: series × reps ≥ 32 px (≥ 30 px en estaciones del biset); el RIR sale de la tarjeta y queda en las pautas del bloque (`.jp-pauta-rir`), uno por ejercicio / estación.
+- `v32.sem.01`: ni la hoja rápida, ni la pastilla, ni la pista de carga muestran referencias a otras semanas.
+- Actualizados: `v31.rir.01` (el RIR se verifica en las pautas), `v31.bis.01` y `v30.tb.03` (rondas sin «A1 + A2 · N estaciones»).
