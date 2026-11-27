@@ -67,6 +67,7 @@
 <script src="cases-v34.js"></script>
 <script src="cases-v35.js"></script>
 <script src="cases-v36.js"></script>
+<script src="cases-v37.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -662,10 +663,56 @@
         w.jpPizarraSports(caja.querySelector('.block'), blq, 0, 'dia1');
         var det = caja.querySelector('.jp-block-details'), tx = det ? det.textContent.replace(/\s+/g, ' ') : '';
         var filas = det ? [].slice.call(det.querySelectorAll('.jp-tip-fase, .jp-ex-tip')) : [];
-        var largos = filas.filter(function(r){ var b = r.querySelector('b'); var t = r.textContent.replace(b ? b.textContent : '', '').replace(/\s+/g, ' ').trim(); return t.length > 112; });
-        return { sinPorQue: !/POR QU[ÉE] EST[ÁA] AC[ÁA]/i.test(tx), sinSetUp: !filas.some(function(r){ return /SET-?UP/i.test(r.textContent); }), conservaNotaDelDia: /NOTA DEL D[ÍI]A/i.test(tx) && /priorizá la técnica antes que el peso\./.test(tx) && !/bajá 2,5 kg/.test(tx),
-          conservaAproximacion: /APROXIMACI[ÓO]N/i.test(tx), soloLaUltimaClave: /CUIDADO/i.test(tx) && !/bajá controlado en tres segundos/.test(tx), nadaLargo: filas.length > 0 && largos.length === 0,
+        return { conservaNotaDelDia: /NOTA DEL D[ÍI]A/i.test(tx) && /bajá 2,5 kg y seguí con el mismo tempo\./.test(tx), conservaAproximacion: /APROXIMACI[ÓO]N/i.test(tx) && /antes de la primera serie efectiva/.test(tx),
+          nadaSeSaca: /POR QU[ÉE] EST[ÁA] AC[ÁA]/i.test(tx) && /se puede cargar más/.test(tx) && filas.some(function(r){ return /SET-?UP/i.test(r.textContent); }) && /bajá controlado en tres segundos/.test(tx) && /sobrecarga el hombro/.test(tx),
+          nadaSeRecorta: filas.length > 0 && tx.indexOf('\u2026') < 0,
           planIntacto: blq.tips === TIPS, corto: w.jpCorto('Una frase corta. Y otra más.') === 'Una frase corta. Y otra más.' || w.jpCorto('Una frase bastante larga de prueba. Y otra más.') === 'Una frase bastante larga de prueba.' };
+      }
+      /* ---- v37: cada tip desplegable por separado; SEM / DÍA y reps centradas ---- */
+      if(c.caso === 'tipsPlegables'){
+        var TIPS7 = 'NOTA DEL DÍA: hoy priorizá la técnica antes que el peso. Si la barra se frena a mitad de camino, bajá 2,5 kg y seguí con el mismo tempo.\n' +
+          'SERIES DE APROXIMACIÓN: son tu calentamiento específico: la primera con la mitad del peso de trabajo y 8 repeticiones, la segunda con el 70% y 5, la tercera con el 85% y 2 o 3. No se anotan ni cuentan como volumen.\n' +
+          'POR QUÉ ESTA CANTIDAD DE SERIES: cuatro series pesadas alcanzan para estimular la fuerza sin acumular tanta fatiga que te arruine el resto de la sesión.\n' +
+          'CUIDADO: los omóplatos quedan juntos y abajo durante toda la serie; si se despegan del banco, cortá la serie y bajá el peso.';
+        var blq7 = { id: 'tv30q', title: 'Fuerza', category: 'strength', items: ['Press de banca plano con barra', '4x5-7 | Tempo 3010 | RIR 1', 'Rest 150s'], objective: '', tips: TIPS7 };
+        caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
+        w.jpPizarraSports(caja.querySelector('.block'), blq7, 0, 'dia1');
+        try{ w.jpCajasTarjeta(caja, ''); }catch(eC){}
+        var board7 = caja.querySelector('[data-sportsboard]'); w.jpTipsPlegables(board7); w.jpTipsPlegables(board7);      /* idempotente */
+        var det7 = board7.querySelector(':scope > .jp-block-details'); det7.open = true;
+        var tips7 = [].slice.call(det7.querySelectorAll('details.jp-tip-det')), rot = function(t){ return String(t.querySelector(':scope > summary').textContent).replace(/\s+/g, ' ').trim(); };
+        var buscar = function(rx){ return tips7.filter(function(t){ return rx.test(rot(t)); })[0]; };
+        var nota = buscar(/NOTA DEL D[ÍI]A/i), apr = buscar(/APROXIMACI/i), porq = buscar(/CANTIDAD DE SERIES/i), cuid = buscar(/CUIDADO/i), tmp = det7.querySelector('.jp-pauta-ex > details[data-nota="tempo"]');
+        var r7 = { unoPorTip: !!nota && !!apr && !!porq && !!cuid && !!tmp && tmp.classList.contains('jp-tip-det'),
+          plegadosDeEntrada: tips7.length >= 5 && tips7.every(function(t){ var cn = t.querySelector(':scope > :not(summary)'); return !t.open && (typeof cn.checkVisibility === 'function' ? !cn.checkVisibility() : cn.offsetHeight === 0); }),
+          rotuloALaVista: tips7.every(function(t){ var sm = t.querySelector(':scope > summary'); return cs(sm).display === 'flex' && sm.offsetHeight >= 36; }) && /Tempo\s*3010/i.test(rot(tmp)),
+          idempotente: det7.querySelectorAll('details.jp-tip-det details.jp-tip-det').length === 0 && det7.querySelectorAll('.jp-tip-pleg').length === det7.querySelectorAll('.jp-tip-pleg > details.jp-tip-det').length,
+          planIntacto: blq7.tips === TIPS7 };
+        nota.querySelector(':scope > summary').click();
+        var txN = nota.querySelector('.jp-tip-tx'), ctx7 = cs(txN);
+        r7.seAbreCompleto = nota.open && txN.offsetHeight > 0 && /bajá 2,5 kg y seguí con el mismo tempo\./.test(txN.textContent) && txN.textContent.indexOf('\u2026') < 0 && ctx7.maxHeight === 'none' && ctx7.overflow === 'visible' && parseFloat(ctx7.paddingBottom) >= 10;
+        r7.losDemasSiguenPlegados = !apr.open && !porq.open && !cuid.open && !tmp.open;
+        porq.querySelector(':scope > summary').click(); tmp.querySelector(':scope > summary').click();
+        r7.cadaUnoPorSeparado = porq.open && nota.open && !apr.open && /arruine el resto de la sesión\./.test(porq.textContent) && tmp.open && tmp.querySelector('.jp-ex-box-b').offsetHeight > 0;
+        nota.querySelector(':scope > summary').click();
+        r7.seVuelveAPlegar = !nota.open && porq.open;
+        r7.margenAbajo = parseFloat(cs(det7.querySelector(':scope > .jp-details-content')).paddingBottom) >= 16;
+        return r7;
+      }
+      if(c.caso === 'semDiaReps'){
+        var fila8 = doc.querySelector('.hdc-days-row'), creados8 = [];
+        [['jpWkBtn', 'jp-wk-btn', 'SEM 1'], ['jpDayBtn', 'jp-wk-btn jp-day-btn', 'DÍA 1: EMPUJE']].forEach(function(p){ if(!doc.getElementById(p[0]) && fila8){ var bt = doc.createElement('button'); bt.id = p[0]; bt.className = p[1]; bt.innerHTML = '<b>' + p[2] + '</b><i>\u25BE</i>'; fila8.appendChild(bt); creados8.push(bt); } });
+        try{
+          var wk8 = doc.getElementById('jpWkBtn'), dy8 = doc.getElementById('jpDayBtn'), sh8 = doc.querySelector('.hdc-shield'), mn8 = doc.querySelector('.jp-ux-menu-btn');
+          var fz = function(e){ return parseFloat(cs(e).fontSize); }, bw = wk8.querySelector('b'), bd = dy8.querySelector('b');
+          var r8 = { semMasGrande: fz(bw) >= 15.5 && parseInt(cs(bw).fontWeight, 10) >= 800, diaMasGrande: fz(bd) >= 14 && parseInt(cs(bd).fontWeight, 10) >= 800 && cs(bd).textOverflow === 'ellipsis',
+            mismaLinea: Math.abs(wk8.getBoundingClientRect().top - dy8.getBoundingClientRect().top) <= 1 && Math.abs(wk8.getBoundingClientRect().height - 40) <= 1 && Math.abs(dy8.getBoundingClientRect().height - 40) <= 1 && (!sh8 || Math.abs(wk8.getBoundingClientRect().left - sh8.getBoundingClientRect().left) <= 1),
+            mismoContorno: !mn8 || cs(mn8).borderTopColor === cs(wk8).borderTopColor };
+        } finally { creados8.forEach(function(x){ if(x.parentNode) x.parentNode.removeChild(x); }); }
+        var centrado = function(){ var vs = [].slice.call(caja.querySelectorAll('.jp-db-r1 > .jp-db-vol')); return vs.length > 0 && vs.every(function(v){ var a = v.getBoundingClientRect(), p = v.parentNode.getBoundingClientRect(); return p.width > a.width + 20 && Math.abs((a.left + a.width / 2) - (p.left + p.width / 2)) <= 2; }); };
+        dibujar('tv30r', 'Fuerza', PRESS); r8.repsCentradasRectas = centrado();
+        dibujar('tv30s', 'Hipertrofia – Triset', TRISET); r8.repsCentradasEstaciones = caja.querySelectorAll('.jp-sb-subex-resumen .jp-db-vol').length === 3 && centrado();
+        return r8;
       }
       /* ---- v36: RPE en lugar de RIR y registro de cargas plegado ---- */
       if(c.caso === 'rpePlegado'){

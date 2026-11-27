@@ -929,12 +929,13 @@
       var m = /^(?:([A-F]\d)\s*\u00b7\s*)?([^:]{2,40}):\s*(.+)$/.exec(l); if(!m) return;
       if(multi && (!m[1] || m[1].toUpperCase() !== L)) return;
       var et = m[2].toUpperCase();
-      if(/^SET-?UP/.test(et)){ if(!G.su) G.su = m[3]; }
-      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO)/.test(et)){ if(!G.ej) G.ej = m[3]; }
-      else if(/^(CUIDADO|ERROR|PRECAUCI)/.test(et)){ if(!G.cu) G.cu = m[3]; }
+      var sum = function(k){ G[k] = G[k] ? G[k] + ' ' + m[3] : m[3]; };      /* v37: se suman todas las líneas del rótulo, completas */
+      if(/^SET-?UP/.test(et)) sum('su');
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO)/.test(et)) sum('ej');
+      else if(/^(CUIDADO|ERROR|PRECAUCI)/.test(et)) sum('cu');
     });
     if(!G.su && !G.ej && !G.cu) return '';
-    var fila = function(cls, lb, txt){ return txt ? '<div class="jp-ex-tip ' + cls + '"><b>' + lb + '</b><span>' + escSB(qrCorta(txt, 190)) + '</span></div>' : ''; };
+    var fila = function(cls, lb, txt){ return txt ? '<div class="jp-ex-tip ' + cls + '"><b>' + lb + '</b><span>' + escSB(qrPlano(txt)) + '</span></div>' : ''; };
     return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \u00b7 Ejecuci\u00f3n \u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
       fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
   }
@@ -1146,7 +1147,10 @@
     unidades.forEach(function(u){
       var ya = u.querySelector(':scope > .jp-ex-cajas');
       if(ya && ya.querySelector('.jp-ex-box')) return;
-      if(u.hasAttribute('data-notas-k') && !u.hasAttribute('data-solo-rir')){ objetivoPendiente = false; return; }
+      /* v37: la marca es propia (data-cajas). Antes se salteaba toda unidad con notas agrupadas y, como el registro se acomoda primero,
+         un ejercicio con coaching tips se quedaba sin la caja de tempo / objetivo en sus pautas */
+      if(u.getAttribute('data-cajas') === '1'){ objetivoPendiente = false; return; }
+      u.setAttribute('data-cajas', '1');
       u.removeAttribute('data-solo-rir');      /* sus notas (y el objetivo del bloque) ya están en las pautas del bloque (jpNotasAgrupar) */
       var html = '';
       if(objetivoPendiente){ html += caja('obj', '&#127919; ' + escSB(jpT('app.card.obj.t')), escSB(jpT('app.card.obj.s')), objetivoHtml); objetivoPendiente = false; }
@@ -1163,6 +1167,7 @@
       var det2 = board.querySelector(':scope > .jp-block-details'); if(det2) board.insertBefore(d2, det2); else board.appendChild(d2);
     }
     try{ jpNotasAgrupar(board); }catch(eN){}
+    try{ jpPautasConcisasSB(board); }catch(eP){}      /* v37: el tempo / objetivo recién agrupados también quedan plegados */
   }
   /* NOTAS DEL EJERCICIO DENTRO DE LAS PAUTAS DEL BLOQUE (2026-11, v27): debajo de "Registrar carga" había una fila de pastillas NOTAS · COACHING · OBJETIVO · TEMPO en cada
      tarjeta: un control más por ejercicio que se repetía en todo el día (y el tempo ya está en la barra de dosis). Ahora la tarjeta termina en "Registrar carga" y las notas de cada
@@ -1313,13 +1318,10 @@
     });
   }
   window.jpRirANotas = jpRirANotasSB;
-  /* v33 · PAUTAS CORTAS («MENOS ES MÁS»): en el gimnasio no se leen párrafos. Al MOSTRAR las pautas del bloque y las notas de cada ejercicio
-     (el texto guardado por el coach no se toca) se deja solo lo esencial:
-       · fuera: POR QUÉ ESTÁ ACÁ, PROGRESIÓN, SENSACIÓN OBJETIVO y el SET-UP (explicativos)
-       · se conservan NOTA DEL DÍA, SERIES DE APROXIMACIÓN, TRANSICIÓN y la indicación clave: de EJECUCIÓN / CLAVE / CUIDADO queda solo la última
-       · cada texto que queda se corta a su primera frase (≤ 110 caracteres). Idempotente. */
-  var RX_PAUTA_FUERA_SB = /por\s*qu[eé]\s*est[aá]\s*ac[aá]|progresi[oó]n|sensaci[oó]n\s*objetivo|set[\s-]*up/i;
-  var RX_PAUTA_CLAVE_SB = /ejecuci[oó]n|clave|cuidado|\bcue\b|error|control\s+de\s+la\s+fase|intenci[oó]n/i;
+  /* v37 · CADA TIP DESPLEGABLE POR SEPARADO: en «Pautas técnicas & tips del bloque» y en las notas de cada ejercicio, cada renglón (NOTA DEL DÍA, SERIES DE
+     APROXIMACIÓN, POR QUÉ ESTA CANTIDAD DE SERIES, SET-UP, CUIDADO, OBJETIVO, TEMPO...) queda plegado detrás de su rótulo y al tocarlo muestra el texto COMPLETO.
+     Reemplaza el recorte de v33/v34 (primera frase, tope de 3 renglones, fuera POR QUÉ ESTÁ ACÁ / SET-UP): plegados ya no hacen ruido y no se pierde nada.
+     Solo presentación: el texto guardado por el coach no se toca. Idempotente (data-tipdet). */
   function jpCortoSB(t, max){
     max = max || 110;
     var s0 = String(t || '').replace(/\s+/g, ' ').trim(); if(!s0) return '';
@@ -1328,45 +1330,51 @@
     return s0;
   }
   window.jpCorto = jpCortoSB;
-  function jpRotuloSB(el){ var b = el.querySelector('b'); return b ? String(b.textContent || '').replace(/[^\wÁÉÍÓÚÑáéíóúñ\s\-]/g, ' ').replace(/\s+/g, ' ').trim() : ''; }
-  function jpAcortarFilaSB(row){
-    if(row.getAttribute('data-corto') === '1') return;
-    var b = row.querySelector('b'), txt = '', nodos = [];
-    Array.prototype.forEach.call(row.childNodes, function(n){ if(n !== b && !(n.nodeType === 1 && n.matches && n.matches('button, a, .jp-ux-vid'))){ txt += n.textContent; nodos.push(n); } });
-    var plano = String(txt).replace(/\s+/g, ' ').trim(), corto = jpCortoSB(plano);
-    if(corto && corto !== plano){
-      nodos.forEach(function(n){ n.parentNode.removeChild(n); });
-      var sp = document.createElement('span'); sp.className = 'jp-pauta-corta'; sp.textContent = ' ' + corto;
-      row.appendChild(sp); row.title = plano;
+  function jpTipPlegableSB(row){
+    if(row.getAttribute('data-tipdet') === '1') return;
+    var b = null;
+    Array.prototype.some.call(row.children, function(ch){ if(ch.tagName === 'B'){ b = ch; return true; } return false; });
+    var plano = String(row.textContent || '').replace(b ? b.textContent : '', '').replace(/\s+/g, ' ').trim();
+    row.setAttribute('data-tipdet', '1');
+    if(!plano) return;                                                      /* un rótulo sin texto no tiene nada que desplegar */
+    var det = document.createElement('details'), sum = document.createElement('summary'), tx = document.createElement('div');
+    det.className = 'jp-tip-det'; sum.className = 'jp-tip-sum'; tx.className = 'jp-tip-tx';
+    while(row.firstChild){ var n = row.firstChild; if(n === b) row.removeChild(n); else tx.appendChild(n); }
+    while(tx.firstChild && tx.firstChild.nodeType === 3 && !/\S/.test(tx.firstChild.nodeValue)) tx.removeChild(tx.firstChild);
+    if(tx.firstChild && tx.firstChild.nodeType === 3) tx.firstChild.nodeValue = tx.firstChild.nodeValue.replace(/^\s+/, '');
+    if(b){ sum.appendChild(b); }
+    else {                                                                   /* renglón sin rótulo: «NOTA» y el arranque del texto como pista */
+      var lb = document.createElement('b'); lb.className = 'jp-tip-k'; lb.textContent = 'Nota'; sum.appendChild(lb);
+      var pv = document.createElement('span'); pv.className = 'jp-tip-prev'; pv.textContent = plano; sum.appendChild(pv);
     }
-    row.setAttribute('data-corto', '1');
+    det.appendChild(sum); det.appendChild(tx); row.appendChild(det);
+    row.classList.add('jp-tip-pleg'); if(row.title) row.removeAttribute('title');
   }
   function jpPautasConcisasSB(board){
     if(!board || !board.querySelectorAll) return;
     var cont = board.querySelector(':scope > .jp-block-details > .jp-details-content'); if(!cont) return;
-    /* 1 · pautas del bloque (renglones con rótulo) y 2 · notas de cada ejercicio (COACHING TIPS: SET-UP / EJECUCIÓN / CUIDADO) */
-    Array.prototype.forEach.call(cont.querySelectorAll('.jp-sb-pauta-txt, .jp-tip-ex, .jp-ex-tips-b'), function(g){
-      var filas = g.querySelectorAll(':scope > .jp-tip-fase, :scope > .jp-ex-tip'), claves = [];
-      Array.prototype.forEach.call(filas, function(r){
-        var lb = jpRotuloSB(r);
-        if(lb && RX_PAUTA_FUERA_SB.test(lb)){ r.parentNode.removeChild(r); return; }
-        if(lb && RX_PAUTA_CLAVE_SB.test(lb) && !/nota del d|aproximaci|transici/i.test(lb)) claves.push(r);
-        jpAcortarFilaSB(r);
-      });
-      /* de la indicación clave queda solo la última (la más relevante: suele ser el CUIDADO) */
-      claves.slice(0, -1).forEach(function(r){ if(r.parentNode) r.parentNode.removeChild(r); });
-      /* v34: como mucho 3 renglones por grupo (lo esencial y accionable de la sesión) */
-      Array.prototype.slice.call(g.querySelectorAll(':scope > .jp-tip-fase, :scope > .jp-ex-tip'), 3).forEach(function(r){ r.parentNode.removeChild(r); });
+    /* 1 · renglones con rótulo: pautas del bloque (.jp-tip-fase) y COACHING TIPS del ejercicio (.jp-ex-tip) */
+    Array.prototype.forEach.call(cont.querySelectorAll('.jp-tip-fase:not([data-tipdet]), .jp-ex-tip:not([data-tipdet])'), jpTipPlegableSB);
+    /* 2 · OBJETIVO y TEMPO de cada ejercicio: su caja se pliega detrás del mismo rótulo que tenía arriba («Objetivo», «Tempo 3010») */
+    Array.prototype.forEach.call(cont.querySelectorAll('.jp-pauta-ex > details.jp-pauta-ex-nota:not([data-nota="tips"]):not([data-tipdet])'), function(dn){
+      var k = dn.getAttribute('data-nota') || '', sec = dn.parentNode, lb = sec.querySelector(':scope > .jp-pauta-ex-lb[data-lb="' + k + '"]');
+      var sm = dn.querySelector(':scope > summary'); if(!sm){ sm = document.createElement('summary'); dn.insertBefore(sm, dn.firstChild); }
+      sm.className = 'jp-tip-sum'; sm.innerHTML = '<span class="jp-tip-k">' + (lb ? lb.innerHTML : escSB(k)) + '</span>';
+      if(lb) sec.removeChild(lb);
+      dn.open = false; dn.classList.add('jp-tip-det'); dn.setAttribute('data-tipdet', '1');
     });
-    Array.prototype.forEach.call(cont.querySelectorAll('.jp-ex-box-b, .jp-sb-pauta-txt > p, .jp-sb-pauta-txt > div:not(.jp-tip-fase):not(.jp-tip-ex):not([class*="tempo"])'), function(el){
-      if(el.getAttribute('data-corto') === '1' || el.querySelector('.jp-tempo-row, b + b')) return;
-      var plano = String(el.textContent || '').replace(/\s+/g, ' ').trim(), corto = jpCortoSB(plano);
-      if(corto && corto !== plano && !el.children.length){ el.textContent = corto; el.title = plano; }
-      el.setAttribute('data-corto', '1');
-    });
-    /* renglones sueltos sin rótulo dentro de las pautas: también a una frase */
-    Array.prototype.forEach.call(cont.querySelectorAll('.jp-tip-fase:not([data-corto])'), jpAcortarFilaSB);
   }
+  /* al abrir un tip, si su final queda debajo del botón flotante se desplaza lo justo para leerlo entero */
+  document.addEventListener('toggle', function(ev){
+    var d = ev.target; if(!d || !d.classList || !d.classList.contains('jp-tip-det')) return;
+    try{ jpFabRevisar(); }catch(eF){}
+    if(!d.open) return;
+    (window.requestAnimationFrame || setTimeout)(function(){
+      var r = d.getBoundingClientRect(), lim = window.innerHeight - 96;
+      if(r.bottom > lim && r.top > 80){ try{ window.scrollBy({ top: Math.min(r.bottom - lim, r.top - 80), behavior: 'smooth' }); }catch(eS){ window.scrollBy(0, Math.min(r.bottom - lim, r.top - 80)); } }
+    });
+  }, true);
+  window.jpTipsPlegables = jpPautasConcisasSB;
   window.jpPautasConcisas = jpPautasConcisasSB;
 
   /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
@@ -1772,7 +1780,7 @@
     var w = fab.offsetWidth || 46, h = fab.offsetHeight || 46, vw = window.innerWidth, vh = window.innerHeight;
     if(!fab.offsetParent && !w){ dock.classList.remove('jp-fab-aparte'); return; }
     var zona = { l: vw - 12 - w - 8, t: vh - 12 - h - 8, rr: vw, b: vh }, choca = false;
-    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok, .jp-block-details[open] .jp-details-content > *, .jp-criterio[open] li, .jp-ex-tips[open] .jp-ex-tip'), function(el){
+    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok, .jp-block-details[open] .jp-details-content > *, .jp-criterio[open] li, .jp-ex-tips[open] .jp-ex-tip, .jp-tip-det[open] > .jp-tip-tx'), function(el){
       var q = el.getBoundingClientRect();
       if(q.width && q.right > zona.l && q.left < zona.rr && q.bottom > zona.t && q.top < zona.b){ choca = true; return true; }
       return false;

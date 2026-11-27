@@ -26,6 +26,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-v34.js` | Limpieza «menos es más»: sin agregar serie, descanso claro, unilateral como chip, cierre sin emojis |
 | `cases-v35.js` | Vista para principiantes: panel extra plegado y simple, tempo a las pautas |
 | `cases-v36.js` | RPE en lugar de RIR y registro de cargas plegado |
+| `cases-v37.js` | Cada tip de las pautas plegable por separado; SEM / DÍA y reps centradas |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -169,3 +170,5 @@ Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*
 - `v34.lim.01`: sin «+ AGREGAR SERIE», ficha activa liviana («Serie 1»), botón INICIAR DESCANSO claro (≥ 44 px, ícono vectorial), UNILATERAL como chip y cierre sin emojis de sistema.
 - `v35.pri.01`: el panel «Cómo te fue · reps que te sobraron» no aparece hasta la primera serie, arranca plegado y solo trae el RIR; el tempo sale de la tarjeta y su caja sigue en las pautas; fichas pendientes sin borde punteado.
 - `v36.rpe.01`: RPE = 10 − RIR en lo que ve el alumno (encabezado, pautas, «Cómo te fue» con botones 10 · 9 · 8 · ≤7 que guardan el mismo valor); el registro de cargas arranca plegado detrás de «Registrar cargas» (también las rondas del biset). Los casos que prueban las fichas las abren primero (`abrirRegistro` dentro de `dibujar`).
+- `v37.tips.01`: cada tip de «Pautas técnicas & tips del bloque» y de las notas del ejercicio (NOTA DEL DÍA, SERIES DE APROXIMACIÓN, POR QUÉ ESTA CANTIDAD DE SERIES, CUIDADO, TEMPO…) arranca plegado con su rótulo y se abre solo, con el texto completo. `v33.pau.01` pasó a exigir que nada se recorte ni se saque.
+- `v37.hdr.01`: SEM y DÍA con letra más grande sin cambiar contorno ni alineado; repeticiones centradas en series rectas y en cada estación del biset / triset.

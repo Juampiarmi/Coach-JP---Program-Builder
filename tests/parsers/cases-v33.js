@@ -5,6 +5,6 @@
 window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
 
   { id: 'v33.pau.01', area: 'Pautas · solo lo esencial', fn: 'v30', input: { caso: 'pautasCortas' },
-    expect: { sinPorQue: true, sinSetUp: true, conservaNotaDelDia: true, conservaAproximacion: true, soloLaUltimaClave: true, nadaLargo: true, planIntacto: true, corto: true }, modo: 'subset',
-    nota: 'Al mostrar las pautas del bloque y las notas del ejercicio se deja solo lo esencial: fuera POR QUÉ ESTÁ ACÁ y SET-UP; quedan NOTA DEL DÍA, SERIES DE APROXIMACIÓN y la última indicación clave (CUIDADO), cada una cortada a su primera frase (≤ 110 caracteres). El texto guardado del bloque no cambia' }
+    expect: { conservaNotaDelDia: true, conservaAproximacion: true, nadaSeSaca: true, nadaSeRecorta: true, planIntacto: true, corto: true }, modo: 'subset',
+    nota: 'Actualizado en v37: las pautas ya no se recortan ni se sacan (cada tip va plegado detrás de su rótulo, ver v37.tips.01). NOTA DEL DÍA, SERIES DE APROXIMACIÓN, POR QUÉ ESTÁ ACÁ, SET-UP, CLAVE y CUIDADO se conservan con su texto completo, sin «…». jpCorto sigue disponible. El texto guardado del bloque no cambia' }
 ]);
