@@ -63,6 +63,7 @@
 <script src="cases-v30.js"></script>
 <script src="cases-v31.js"></script>
 <script src="cases-v32.js"></script>
+<script src="cases-v33.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -542,7 +543,7 @@
         dibujar('tv30c', 'Fuerza', PRESS);
         var tiles = caja.querySelectorAll('.jp-tb-t'), card = caja.querySelector('.jp-qc'), sg = tiles[1] && tiles[1].querySelector('.jp-tb-sg'), st = sg && cs(sg);
         return { unaFichaPorSerie: tiles.length === 4, laQueSigue: tiles[0].classList.contains('nx') && /sigue/.test(tiles[0].textContent) && !tiles[1].classList.contains('nx'),
-          sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /sug\./i.test(tiles[1].querySelector('small').textContent),
+          sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /^Serie 2$/.test(tiles[1].querySelector('small').textContent.trim()),
           filasViejasOcultas: cs(card.querySelector('.jp-qc-rows')).display === 'none' && card.querySelectorAll('.jp-qc-r').length === 4,
           pastillaSecundaria: !!card.querySelector(':scope > .jp-qc-tg') && /RIR/.test(card.querySelector('.jp-qc-tg').textContent),
           chakra: /Chakra Petch/.test(cs(tiles[0]).fontFamily) };
@@ -644,11 +645,29 @@
         var cardS = caja.querySelector('.jp-qc');
         return { hojaSoloHoy: !/Semana|Sem \d/.test(refH) && /objetivo 5-7/.test(refH), pastillaSoloHoy: !/Sem(ana)? \d/.test(cardS.querySelector('.jp-qc-tg').textContent), pistaSinSemana: !/Sem(ana)? \d/.test((cardS.querySelector('.jp-qc-hint') || {}).textContent || '') };
       }
+      /* ---- v33: pautas cortas («menos es más») ---- */
+      if(c.caso === 'pautasCortas'){
+        var TIPS = 'POR QUÉ ESTÁ ACÁ: es el básico del día y el que más estímulo mecánico aporta al pectoral, por eso va primero cuando el sistema nervioso está fresco y se puede cargar más.\n' +
+          'NOTA DEL DÍA: hoy priorizá la técnica antes que el peso. Si la barra se frena a mitad de camino, bajá 2,5 kg y seguí con el mismo tempo.\n' +
+          'SERIES DE APROXIMACIÓN: 2 series de 5 con el 50 % y el 70 % de la carga de trabajo antes de la primera serie efectiva.\n' +
+          'SET-UP: escápulas retraídas y deprimidas, pies firmes en el piso y glúteos apoyados durante toda la serie, sin despegarlos.\n' +
+          'CLAVE: bajá controlado en tres segundos hasta tocar el pecho a la altura del esternón y empujá explosivo.\n' +
+          'CUIDADO: no rebotes la barra en el pecho ni despegues la cadera del banco para mover más kilos, porque sobrecarga el hombro.';
+        var blq = { id: 'tv30l', title: 'Fuerza', category: 'strength', items: PRESS, objective: '', tips: TIPS };
+        caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
+        w.jpPizarraSports(caja.querySelector('.block'), blq, 0, 'dia1');
+        var det = caja.querySelector('.jp-block-details'), tx = det ? det.textContent.replace(/\s+/g, ' ') : '';
+        var filas = det ? [].slice.call(det.querySelectorAll('.jp-tip-fase, .jp-ex-tip')) : [];
+        var largos = filas.filter(function(r){ var b = r.querySelector('b'); var t = r.textContent.replace(b ? b.textContent : '', '').replace(/\s+/g, ' ').trim(); return t.length > 112; });
+        return { sinPorQue: !/POR QU[ÉE] EST[ÁA] AC[ÁA]/i.test(tx), sinSetUp: !filas.some(function(r){ return /SET-?UP/i.test(r.textContent); }), conservaNotaDelDia: /NOTA DEL D[ÍI]A/i.test(tx) && /priorizá la técnica antes que el peso\./.test(tx) && !/bajá 2,5 kg/.test(tx),
+          conservaAproximacion: /APROXIMACI[ÓO]N/i.test(tx), soloLaUltimaClave: /CUIDADO/i.test(tx) && !/bajá controlado en tres segundos/.test(tx), nadaLargo: filas.length > 0 && largos.length === 0,
+          planIntacto: blq.tips === TIPS, corto: w.jpCorto('Una frase corta. Y otra más.') === 'Una frase corta. Y otra más.' || w.jpCorto('Una frase bastante larga de prueba. Y otra más.') === 'Una frase bastante larga de prueba.' };
+      }
       if(c.caso === 'fichas4'){
         dibujar('tv30h', 'Fuerza', PRESS);
         var tb = caja.querySelector('.jp-tb'), cols = cs(tb).gridTemplateColumns.split(' ').length, tl = caja.querySelectorAll('.jp-tb-t');
         var largo = [].some.call(tl, function(x){ return /registrada|Sug\.|5-7 reps/.test(x.textContent); });
-        return { cuatroColumnas: cols === 4, etiquetasCortas: !largo && /S2 · sug\./i.test(tl[1].querySelector('small').textContent), soloHoy: !caja.querySelector('.jp-qc-tg .jp-qc-tg-r') };
+        return { cuatroColumnas: cols === 4, etiquetasCortas: !largo && /^Serie 2$/.test(tl[1].querySelector('small').textContent.trim()) && /^Serie 1/.test(tl[0].querySelector('small').textContent.trim()), soloHoy: !caja.querySelector('.jp-qc-tg .jp-qc-tg-r') };
       }
       if(c.caso === 'header'){
         var dy = doc.getElementById('jpDayBtn'), ctx = doc.getElementById('hdcCtx');

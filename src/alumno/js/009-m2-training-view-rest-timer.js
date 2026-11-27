@@ -1000,10 +1000,11 @@
        el rango de reps ya está en la dosis de arriba y no se repite en cada ficha */
     var tiles = m.filas.map(function(f, ix){
       var s = qrTbSug(c, e, m, ix), txt = qrTbTxt(s.kg, s.rp, m, un), sig = ix === nx;
-      var lab = 'S' + f.j + (f.done ? ' ✓' : (sig ? ' · sigue' : (s.aj ? '' : ' · sug.'))) + (f.extra ? ' +' : '');
+      /* v33: «Serie 1 … Serie 4» (no S1–S4); el estado va abajo: «sigue» en la que toca, el valor tenue en las pendientes */
+      var lab = 'Serie ' + f.j + (f.done ? ' ✓' : '') + (f.extra ? ' +' : '');
       var body = f.done ? '<span class="jp-tb-v">' + escSB(txt) + '</span>'
         : (s.aj ? '<span class="jp-tb-v">' + escSB(txt) + '</span><em>sin confirmar</em>'
-        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + (sig ? '<em>tocá para cargar</em>' : ''));
+        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + (sig ? '<em>sigue · tocá</em>' : ''));
       return '<button type="button" class="jp-tb-t' + (f.done ? ' on' : (sig ? ' nx' : '')) + '" data-sj="' + f.j + '" aria-label="Serie ' + f.j + (f.done ? ' registrada: ' : (s.aj ? ' sin confirmar: ' : ' sugerida: ')) + escSB(txt) + '"><small>' + lab + '</small>' + body + '</button>';
     }).join('');
     if(m.fin){
@@ -1252,6 +1253,7 @@
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
       try{ jpRirANotasSB(board); }catch(eR){}
+      try{ jpPautasConcisasSB(board); }catch(eP){}
     });
   }
   /* v32 · EL RIR VA A LAS PAUTAS DEL BLOQUE: la celda de RIR sale de la tarjeta (no ocupa lugar al registrar) y el dato con su aclaración («RIR 1-2 · te guardás 1–2 reps»)
@@ -1283,6 +1285,54 @@
     });
   }
   window.jpRirANotas = jpRirANotasSB;
+  /* v33 · PAUTAS CORTAS («MENOS ES MÁS»): en el gimnasio no se leen párrafos. Al MOSTRAR las pautas del bloque y las notas de cada ejercicio
+     (el texto guardado por el coach no se toca) se deja solo lo esencial:
+       · fuera: POR QUÉ ESTÁ ACÁ, PROGRESIÓN, SENSACIÓN OBJETIVO y el SET-UP (explicativos)
+       · se conservan NOTA DEL DÍA, SERIES DE APROXIMACIÓN, TRANSICIÓN y la indicación clave: de EJECUCIÓN / CLAVE / CUIDADO queda solo la última
+       · cada texto que queda se corta a su primera frase (≤ 110 caracteres). Idempotente. */
+  var RX_PAUTA_FUERA_SB = /por\s*qu[eé]\s*est[aá]\s*ac[aá]|progresi[oó]n|sensaci[oó]n\s*objetivo|set[\s-]*up/i;
+  var RX_PAUTA_CLAVE_SB = /ejecuci[oó]n|clave|cuidado|\bcue\b|error|control\s+de\s+la\s+fase|intenci[oó]n/i;
+  function jpCortoSB(t, max){
+    max = max || 110;
+    var s0 = String(t || '').replace(/\s+/g, ' ').trim(); if(!s0) return '';
+    var m = /^(.{25,}?[.;!?])(\s|$)/.exec(s0); if(m) s0 = m[1];
+    if(s0.length > max){ var c = s0.slice(0, max), sp = c.lastIndexOf(' '); s0 = (sp > 60 ? c.slice(0, sp) : c).replace(/[,;:\s]+$/, '') + '…'; }
+    return s0;
+  }
+  window.jpCorto = jpCortoSB;
+  function jpRotuloSB(el){ var b = el.querySelector('b'); return b ? String(b.textContent || '').replace(/[^\wÁÉÍÓÚÑáéíóúñ\s\-]/g, ' ').replace(/\s+/g, ' ').trim() : ''; }
+  function jpAcortarFilaSB(row){
+    if(row.getAttribute('data-corto') === '1') return;
+    var b = row.querySelector('b'), txt = '', nodos = [];
+    Array.prototype.forEach.call(row.childNodes, function(n){ if(n !== b && !(n.nodeType === 1 && n.matches && n.matches('button, a, .jp-ux-vid'))){ txt += n.textContent; nodos.push(n); } });
+    var plano = String(txt).replace(/\s+/g, ' ').trim(), corto = jpCortoSB(plano);
+    if(corto && corto !== plano){
+      nodos.forEach(function(n){ n.parentNode.removeChild(n); });
+      var sp = document.createElement('span'); sp.className = 'jp-pauta-corta'; sp.textContent = ' ' + corto;
+      row.appendChild(sp); row.title = plano;
+    }
+    row.setAttribute('data-corto', '1');
+  }
+  function jpPautasConcisasSB(board){
+    if(!board || !board.querySelectorAll) return;
+    var cont = board.querySelector(':scope > .jp-block-details > .jp-details-content'); if(!cont) return;
+    /* 1 · pautas del bloque (renglones con rótulo) y 2 · notas de cada ejercicio (COACHING TIPS: SET-UP / EJECUCIÓN / CUIDADO) */
+    Array.prototype.forEach.call(cont.querySelectorAll('.jp-sb-pauta-txt, .jp-tip-ex, .jp-ex-tips-b'), function(g){
+      var filas = g.querySelectorAll(':scope > .jp-tip-fase, :scope > .jp-ex-tip'), claves = [];
+      Array.prototype.forEach.call(filas, function(r){
+        var lb = jpRotuloSB(r);
+        if(lb && RX_PAUTA_FUERA_SB.test(lb)){ r.parentNode.removeChild(r); return; }
+        if(lb && RX_PAUTA_CLAVE_SB.test(lb) && !/nota del d|aproximaci|transici/i.test(lb)) claves.push(r);
+        jpAcortarFilaSB(r);
+      });
+      /* de la indicación clave queda solo la última (la más relevante: suele ser el CUIDADO) */
+      claves.slice(0, -1).forEach(function(r){ if(r.parentNode) r.parentNode.removeChild(r); });
+    });
+    /* renglones sueltos sin rótulo dentro de las pautas: también a una frase */
+    Array.prototype.forEach.call(cont.querySelectorAll('.jp-tip-fase:not([data-corto])'), jpAcortarFilaSB);
+  }
+  window.jpPautasConcisas = jpPautasConcisasSB;
+
   /* REGISTRO DE CARGA AL FINAL DEL BISET / TRISET (v28): las tarjetas «Registrar carga» de A1, A2, A3... ya no quedan intercaladas entre las estaciones
      (cortaban la lectura de la ronda): se juntan al cierre del recuadro del biset, en el mismo orden y con su letra. Antes de moverlas, las notas de cada
      estación pasan a las pautas del bloque (jpNotasAgrupar), así nada se pierde. Idempotente: una tarjeta ya movida no se vuelve a tocar. */
