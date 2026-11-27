@@ -56,5 +56,11 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Revisión «listo para enviar»: al marcar la planificación como COMPLETADA se revisa todo el plan (días vacíos, estaciones incompatibles, descansos, RIR / RPE, videos, tips sin rótulo); si hay algo se muestra la lista por día con «Ir» y se puede marcar igual. Volver a borrador no se revisa' },
   { id: 'bld.17', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'paleta' },
     expect: { abre: true, sinBusquedaGlobal: true, tieneTodo: true, filtra: true, corre: true, planIntacto: true }, modo: 'subset',
-    nota: 'Paleta de comandos: en el Builder Ctrl+K la abre (sin abrir a la vez la búsqueda global, que queda como comando y en las demás vistas); busca días, semanas, alumnos y acciones; Enter corre la elegida. Después de toda la pasada de la Fase 3 el plan queda idéntico' }
+    nota: 'Paleta de comandos: en el Builder Ctrl+K la abre (sin abrir a la vez la búsqueda global, que queda como comando y en las demás vistas); busca días, semanas, alumnos y acciones; Enter corre la elegida. Después de toda la pasada de la Fase 3 el plan queda idéntico' },
+  { id: 'bld.18', area: 'Builder · Fase 3 (presets del coach)', fn: 'builderHud', input: { caso: 'presetsGuardar' },
+    expect: { sandbox: true, sinClaveAntes: true, botonEnElBloque: true, dialogo: true, estructura: true, planIntactoAlGuardar: true, otrasClavesIntactas: true, mismoNombreActualiza: true }, modo: 'subset',
+    nota: 'Presets: «Guardar como preset» debajo del texto del bloque pide el nombre y escribe SOLO la clave aprobada coachjp_presets_v1 = { v: 1, t, presets: [{ id, nombre, tipo, disciplina, bloque (sin id: tipo, sportsPizarra, titulo, category, modalidad, items, tips, objective), creado, usos, ultimoUso }] }. El plan y las demás claves no cambian; mismo nombre = se actualiza. Corre en el almacenamiento en memoria del sandbox' },
+  { id: 'bld.19', area: 'Builder · Fase 3 (presets del coach)', fn: 'builderHud', input: { caso: 'presetsUsar' },
+    expect: { enLaBarra: true, enCtrlK: true, panel: true, usar: true, cuentaUsos: true, borrar: true, planIntacto: true }, modo: 'subset',
+    nota: 'El preset aparece en «/» (junto a las plantillas, con su texto), en Ctrl+K y en el panel «Desde preset»; «Usar» agrega el bloque completo con id nuevo y suma un uso; «Borrar» pide un segundo toque. Al final el plan queda idéntico' }
 ]);

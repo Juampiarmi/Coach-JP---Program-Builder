@@ -2974,6 +2974,7 @@
         /* los íconos los pone jpConsoleHud con una pausa de 90 ms tras cada cambio: si un texto se redibujó justo antes de medir, se cuenta otra vez */
         var seguir = function(){
           medirMesa(w2, S2, a, r).then(function(){ return medirPro(w2, S2, a, r).catch(function(e){ r.proError = String(e && e.message || e); }); }, function(e){ r.mesaError = String(e && e.message || e); })
+            .then(function(){ return medirPresets(w2, S2, a, r).catch(function(e){ r.presetsError = String(e && e.message || e); }); })
             .then(function(){ fin(r); });
         };
         if(!r.emojis.length) return seguir();
@@ -3143,6 +3144,61 @@
     M().querySelector('[data-jpmwk="0"]').click(); await espera(300);
     r.proPlanIntacto = P() === inicio;
   }
+  /* ---------- Fase 3 · presets del coach (clave aprobada coachjp_presets_v1), en el almacenamiento en memoria del sandbox ---------- */
+  async function medirPresets(w2, S2, a, r){
+    var d2 = w2.document, espera = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }, LS = w2.localStorage, CL = 'coachjp_presets_v1';
+    var p = S2.plans[a.id], P = function(){ return JSON.stringify(p, function(k, v){ return k === '_ts' ? undefined : v; }); }, dia = p.dias[0];
+    w2.renderBuilder(); await espera(400);
+    var d1 = d2.querySelector('#jpbMesa [data-jpmdia="0"]'); if(d1) d1.click(); await espera(400);      /* la pasada anterior deja activo otro día */
+    var inicio = P(), biset = dia.bloques[1];
+    r.presets = { sandbox: !!w2.JP_SANDBOX_OK, sinClaveAntes: LS.getItem(CL) === null, otrasClavesIntactas: true };
+    /* 1 · guardar desde el botón del bloque */
+    var bl = d2.querySelector('#dayPanel .block-h [data-b="' + biset.id + '"]').closest('.block');
+    if(bl.classList.contains('jp-col')){ bl.querySelector('.jp-cv').click(); await espera(400); bl = d2.querySelector('#dayPanel .block-h [data-b="' + biset.id + '"]').closest('.block'); }
+    /* foto de las demás claves justo antes de guardar (abrir el bloque ya cambió las de la interfaz): guardar un preset solo escribe la suya */
+    await espera(1500);
+    var otras = {}; for(var i = 0; i < LS.length; i++){ var k = LS.key(i); if(k !== CL) otras[k] = LS.getItem(k); }
+    var bg = bl.querySelector('[data-jps="guardar"]'); r.presets.botonEnElBloque = !!bg; bg.click(); await espera(150);
+    var dg = d2.getElementById('jpsGuardar'), nom = d2.getElementById('jpsNombre');
+    r.presets.dialogo = !!dg && !dg.hidden && nom.value === biset.titulo;
+    nom.value = 'Biset pecho superior'; dg.querySelector('[data-jps="g-ok"]').click(); await espera(200);
+    var o = JSON.parse(LS.getItem(CL) || 'null'), pr = o && o.presets && o.presets[0];
+    r.presets.estructura = !!o && o.v === 1 && typeof o.t === 'number' && Array.isArray(o.presets) && o.presets.length === 1 &&
+      JSON.stringify(Object.keys(pr)) === JSON.stringify(['id', 'nombre', 'tipo', 'disciplina', 'bloque', 'creado', 'usos', 'ultimoUso']) &&
+      pr.tipo === 'bloque' && pr.disciplina === 'sports' && pr.nombre === 'Biset pecho superior' && !('id' in pr.bloque) &&
+      JSON.stringify(Object.keys(pr.bloque)) === JSON.stringify(['tipo', 'sportsPizarra', 'titulo', 'category', 'modalidad', 'items', 'tips', 'objective']) &&
+      JSON.stringify(pr.bloque.items) === JSON.stringify(biset.items);
+    r.presets.planIntactoAlGuardar = P() === inicio;
+    var cambiadas = []; for(var j = 0; j < LS.length; j++){ var k2 = LS.key(j); if(k2 !== CL && otras[k2] !== LS.getItem(k2)) cambiadas.push(k2); }
+    Object.keys(otras).forEach(function(k3){ if(LS.getItem(k3) === null) cambiadas.push(k3 + ' (borrada)'); });
+    r.presets.otrasClavesIntactas = cambiadas.length === 0; r.presets._cambiadas = cambiadas.join(', ');
+    /* mismo nombre = se actualiza (no se duplica) */
+    w2.JPS.guardarPreset(biset.id, 'biset PECHO superior'); await espera(100);
+    r.presets.mismoNombreActualiza = w2.JPS.leer().presets.length === 1;
+    /* 2 · dónde aparece: «/», Ctrl + K y el panel */
+    var ac = w2.jpAutoComp, ent = ac && ac.plantillas.filter(function(x){ return x.jpPreset; })[0];
+    r.presets.enLaBarra = !!ent && ent.k === 'bisetpechosuperior' && ent.lb === 'Preset · Biset pecho superior' && ent.texto === biset.items.join('\n');
+    r.presets.enCtrlK = w2.JPP.comandos().some(function(c){ return c.g === 'Preset' && c.t === 'Biset pecho superior'; }) && w2.JPP.comandos().some(function(c){ return /Mis presets/.test(c.t); });
+    /* 3 · usar desde «Desde preset» */
+    var n0 = dia.bloques.length;
+    d2.querySelector('#dayPanel [data-jps="panel"]').click(); await espera(150);
+    var pn = d2.getElementById('jpsPanel');
+    r.presets.panel = !!pn && !pn.hidden && pn.querySelectorAll('.jps-i').length === 1 && /Biset · 3×8-10/.test(pn.textContent);
+    pn.querySelector('[data-jps="usar"]').click(); await espera(500);
+    var nb = dia.bloques[dia.bloques.length - 1];
+    r.presets.usar = dia.bloques.length === n0 + 1 && nb.id !== biset.id && JSON.stringify(nb.items) === JSON.stringify(biset.items) && nb.tips === (biset.tips || '') && pn.hidden;
+    r.presets.cuentaUsos = w2.JPS.leer().presets[0].usos === 1 && w2.JPS.leer().presets[0].ultimoUso > 0;
+    dia.bloques.pop(); w2.save(); w2.renderBuilder(); await espera(400);
+    /* 4 · borrar (pide confirmar con un segundo toque) */
+    d2.querySelector('#dayPanel [data-jps="panel"]').click(); await espera(150);
+    pn.querySelector('[data-jps="borrar"]').click(); await espera(80);
+    var pide = /¿Borrar\?/.test(pn.querySelector('[data-jps="borrar"]').textContent) && w2.JPS.leer().presets.length === 1;
+    pn.querySelector('[data-jps="borrar"]').click(); await espera(150);
+    r.presets.borrar = pide && w2.JPS.leer().presets.length === 0 && !w2.jpAutoComp.plantillas.some(function(x){ return x.jpPreset; });
+    pn.querySelector('[data-jps="p-x"]').click();
+    LS.removeItem(CL);
+    r.presets.planIntacto = P() === inicio;
+  }
   function builderHud(c){
     if(!BLD_RES) throw new Error('la pasada del Builder no corrió');
     if(BLD_RES.error) return { error: BLD_RES.error };
@@ -3162,6 +3218,12 @@
     if(c.caso === 'dosis') return R.dosis;
     if(c.caso === 'tips') return R.tips;
     if(c.caso === 'bisets') return R.bisets;
+    if(c.caso === 'presetsGuardar' || c.caso === 'presetsUsar'){
+      if(R.presetsError) return { error: R.presetsError };
+      var Q = R.presets || {};
+      if(c.caso === 'presetsGuardar') return { sandbox: Q.sandbox, sinClaveAntes: Q.sinClaveAntes, botonEnElBloque: Q.botonEnElBloque, dialogo: Q.dialogo, estructura: Q.estructura, planIntactoAlGuardar: Q.planIntactoAlGuardar, otrasClavesIntactas: Q.otrasClavesIntactas, mismoNombreActualiza: Q.mismoNombreActualiza, _cambiadas: Q._cambiadas || '' };
+      return { enLaBarra: Q.enLaBarra, enCtrlK: Q.enCtrlK, panel: Q.panel, usar: Q.usar, cuentaUsos: Q.cuentaUsos, borrar: Q.borrar, planIntacto: Q.planIntacto };
+    }
     if(c.caso === 'indicadores' || c.caso === 'vistaFiel' || c.caso === 'variante' || c.caso === 'revision' || c.caso === 'paleta'){
       if(R.proError) return { error: R.proError };
       if(c.caso === 'indicadores') return R.ind;

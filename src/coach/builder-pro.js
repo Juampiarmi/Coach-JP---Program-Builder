@@ -236,7 +236,7 @@
   }, true);
 
   /* ---------- 5 · paleta de comandos (Ctrl + K) ---------- */
-  var CMD = { sel: 0, vis: [] };
+  var CMD = { sel: 0, vis: [] }, EXTRA = [];
   function comandos(){
     var out = [], clickId = function(id){ return function(){ var x = document.getElementById(id); if(x) x.click(); }; };
     [].forEach.call(document.querySelectorAll('#dayTabs .tab[data-day]'), function(t, i){
@@ -254,6 +254,7 @@
       ['Búsqueda global (vistas y acciones de toda la app)', function(){ try{ PASO_K = true; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); }catch(e){} PASO_K = false; }]
     ];
     acciones.forEach(function(a){ out.push({ g: 'Acción', t: a[0], run: a[1] }); });
+    EXTRA.forEach(function(fn){ try{ out = out.concat(fn() || []); }catch(e){} });      /* comandos que suman otras capas (presets del coach) */
     try{
       var lista = (typeof window.jpAthAZ === 'function') ? window.jpAthAZ(S.athletes) : (S.athletes || []).slice();
       lista.forEach(function(a){ var n = plano((a.nombre || '') + ' ' + (a.apellido || '')) || 'Sin nombre'; out.push({ g: 'Alumno', t: n + (a.id === S.activeId ? ' (activo)' : ''), run: function(){ elegirAlumno(a.id); } }); });
@@ -349,5 +350,6 @@
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
   [700, 2200, 6000].forEach(function(ms){ setTimeout(programar, ms); });
   window.JPP = { aplicar: aplicar, revisarPlan: revisarPlan, revisarDia: revisarDia, datosIndicador: datosIndicador, indicador: indicador, duplicarVariante: duplicarVariante,
-    revisar: revisar, paleta: paleta, comandos: comandos, correr: correr, llevarAlDia: llevarAlDia, refrescarVista: refrescarVista };
+    revisar: revisar, paleta: paleta, comandos: comandos, correr: correr, llevarAlDia: llevarAlDia, refrescarVista: refrescarVista,
+    sumarComandos: function(fn){ if(typeof fn === 'function') EXTRA.push(fn); } };
 })();
