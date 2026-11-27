@@ -284,7 +284,7 @@
 
   /* ---------- 6 · atajos ---------- */
   var ATAJOS = [
-    ['?', 'Abre o cierra esta hoja de atajos'], ['Ctrl + S', 'Guarda en el acto'], ['Ctrl + D', 'Duplica el bloque donde está el foco'],
+    ['?', 'Abre o cierra esta hoja de atajos'], ['Ctrl + K', 'Paleta de comandos del Builder: saltar a un día, una semana, un alumno o correr una acción (en las demás vistas sigue siendo la búsqueda global)'], ['Ctrl + S', 'Guarda en el acto'], ['Ctrl + D', 'Duplica el bloque donde está el foco'],
     ['Alt + ↑ / Alt + ↓', 'Sube o baja el bloque donde está el foco'], ['Alt + 1 … 4', 'Cambia a la semana S1 … S4'],
     ['/', 'En el texto de un bloque: plantillas (biset, triset, pirámide, multi-serie, myo-reps)'], ['Ctrl + Enter', 'En el importador rápido: importa directo'], ['Esc', 'Cierra menús y ventanas']
   ];

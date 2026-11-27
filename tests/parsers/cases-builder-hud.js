@@ -1,5 +1,5 @@
 /* ============================================================
-   CASOS · Builder HUD (Fases 0, 1 y 2): test de humo del Builder en sandbox (iframe 1440 × 900, ?jpSandbox=1).
+   CASOS · Builder HUD (Fases 0 a 3): test de humo del Builder en sandbox (iframe 1440 × 900, ?jpSandbox=1).
    Adaptador builderHud (runner.html): una pasada asíncrona (prepararBuilder) arma un alumno de ejemplo, entra al Builder y mide; los casos leen el resultado.
    Línea de base medida con la versión anterior a la Fase 1 (mismo alumno de ejemplo y misma medición, 1440 × 900): primer bloque a 2948 px, 65 botones a la vista,
    23 rótulos con emoji, 7 botones naranjas llenos. Con la Fase 1: 1724 px, 37 botones, 0 emojis, 1 naranja lleno (AGREGAR BLOQUE).
@@ -41,5 +41,20 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Biset / triset en un toque: «Unir con el bloque siguiente» junta dos bloques en D1 / D2 (letra según la posición) y «Separar estaciones» los devuelve tal cual; ambos se pueden deshacer (CoachUndo)' },
   { id: 'bld.12', area: 'Builder · Fase 2 (productividad)', fn: 'builderHud', input: { caso: 'atajos' },
     expect: { hoja: true, cierra: true, baja: true, conservaFoco: true, sube: true, vistaAbre: true, vistaCierra: true, planIntacto: true }, modo: 'subset',
-    nota: 'Atajos a la vista: «?» abre la hoja (Esc la cierra); Alt+↓ / Alt+↑ mueven el bloque con el foco y el foco lo sigue. «Vista alumno» abre y cierra la vista dividida. Después de toda la pasada de la Fase 2 el plan queda idéntico' }
+    nota: 'Atajos a la vista: «?» abre la hoja (Esc la cierra); Alt+↓ / Alt+↑ mueven el bloque con el foco y el foco lo sigue. «Vista alumno» abre y cierra la vista dividida. Después de toda la pasada de la Fase 2 el plan queda idéntico' },
+  { id: 'bld.13', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'indicadores' },
+    expect: { boton: true, rojo: true, popover: true, vuelve: true }, modo: 'subset',
+    nota: 'Indicadores de la sesión en la barra: duración · series del día y un contador de avisos en semáforo. Un biset de dos poleas (Jalón al pecho + Face pull) suma un error y lo pone en rojo; el detalle muestra la duración, las series por grupo y cada aviso con «Ir» al bloque. Al sacar el biset vuelve a los errores de antes' },
+  { id: 'bld.14', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'vistaFiel' },
+    expect: { diaEditado: true, refresca: true, cierra: true }, modo: 'subset',
+    nota: 'Vista previa fiel: la vista dividida (la app real del alumno) abre en el día que se está editando y se vuelve a compilar con cada guardado (no solo al tipear)' },
+  { id: 'bld.15', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'variante' },
+    expect: { creada: true, copiaFiel: true, idsNuevos: true, alFinal: true, enLaBarra: true, seBorra: true }, modo: 'subset',
+    nota: 'Duplicar día como variante B (menú Copiar y Ctrl+K): copia el día al final del mesociclo con ids nuevos y el título «Variante B · …», sin correr los demás días; al borrarla el plan queda idéntico' },
+  { id: 'bld.16', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'revision' },
+    expect: { frena: true, lista: true, marcaIgual: true, volverSinRevisar: true }, modo: 'subset',
+    nota: 'Revisión «listo para enviar»: al marcar la planificación como COMPLETADA se revisa todo el plan (días vacíos, estaciones incompatibles, descansos, RIR / RPE, videos, tips sin rótulo); si hay algo se muestra la lista por día con «Ir» y se puede marcar igual. Volver a borrador no se revisa' },
+  { id: 'bld.17', area: 'Builder · Fase 3 (funciones nuevas)', fn: 'builderHud', input: { caso: 'paleta' },
+    expect: { abre: true, sinBusquedaGlobal: true, tieneTodo: true, filtra: true, corre: true, planIntacto: true }, modo: 'subset',
+    nota: 'Paleta de comandos: en el Builder Ctrl+K la abre (sin abrir a la vez la búsqueda global, que queda como comando y en las demás vistas); busca días, semanas, alumnos y acciones; Enter corre la elegida. Después de toda la pasada de la Fase 3 el plan queda idéntico' }
 ]);

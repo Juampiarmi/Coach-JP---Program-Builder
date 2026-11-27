@@ -2972,7 +2972,10 @@
         w2.JPB.paneles.forEach(function(k){ w2.JPB.cerrar(k); });
         r.cargo = true;
         /* los íconos los pone jpConsoleHud con una pausa de 90 ms tras cada cambio: si un texto se redibujó justo antes de medir, se cuenta otra vez */
-        var seguir = function(){ medirMesa(w2, S2, a, r).then(function(){ fin(r); }, function(e){ r.mesaError = String(e && e.message || e); fin(r); }); };
+        var seguir = function(){
+          medirMesa(w2, S2, a, r).then(function(){ return medirPro(w2, S2, a, r).catch(function(e){ r.proError = String(e && e.message || e); }); }, function(e){ r.mesaError = String(e && e.message || e); })
+            .then(function(){ fin(r); });
+        };
         if(!r.emojis.length) return seguir();
         setTimeout(function(){ r.emojis = emojis(); seguir(); }, 400);
       }, 400);
@@ -3073,6 +3076,73 @@
       cmp(A0, A1, 'plan'); r.mesaDif = dif.join(' | ').slice(0, 600);
     }
   }
+  /* ---------- Fase 3 · funciones nuevas: misma pasada en sandbox; todo lo que edita se deshace y el plan queda igual (sin _ts) ---------- */
+  async function medirPro(w2, S2, a, r){
+    var d2 = w2.document, espera = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
+    var p = S2.plans[a.id], P = function(){ return JSON.stringify(p, function(k, v){ return k === '_ts' ? undefined : v; }); }, M = function(){ return d2.getElementById('jpbMesa'); };
+    var mk = function(t, items){ var b = w2.newBlock('list'); b.sportsPizarra = true; b.titulo = t; b.category = 'strength'; b.items = items; return b; };
+    w2.renderBuilder(); await espera(400);
+    var inicio = P(), estado0 = p.estado;
+    /* 1 · indicadores: un biset de dos poleas enciende el semáforo en rojo */
+    var e0 = w2.JPP.datosIndicador().errores;
+    var X = mk('Poleas', ['C1. Jalón al pecho', '3x10-12 | RIR 1', 'C2. Face pull en polea', '3x12-15 | RIR 1', 'Rest 60s']);
+    p.dias[0].bloques.push(X); w2.renderBuilder(); await espera(500); w2.JPP.aplicar();
+    var ind = M().querySelector('.jpp-ind');
+    r.ind = { boton: !!ind && /min/.test(ind.textContent) && /series/.test(ind.textContent), rojo: !!ind && ind.getAttribute('data-estado') === 'rojo' && w2.JPP.datosIndicador().errores === e0 + 1 };
+    ind.click(); await espera(150);
+    var pop = d2.getElementById('jppIndPop');
+    r.ind.popover = !!pop && !pop.hidden && /Estaciones incompatibles/.test(pop.textContent) && pop.querySelectorAll('.jpp-grupos i').length > 0 && !!pop.querySelector('[data-jpp="ir"]');
+    d2.querySelector('#jppIndPop [data-jpp="ind-x"]').click();
+    p.dias[0].bloques.pop(); w2.renderBuilder(); await espera(500);
+    for(var z = 0; z < 15; z++){ w2.JPP.aplicar(); if(w2.JPP.datosIndicador().errores === e0) break; await espera(200); }      /* el panel de alertas del Builder se actualiza con debounce */
+    r.ind.vuelve = w2.JPP.datosIndicador().errores === e0;
+    /* 2 · vista previa fiel: abre en el día que se edita y se refresca con el guardado */
+    var Y = mk('Pierna', ['Sentadilla con barra', '4x6-8 | RIR 2', 'Rest 150s']);
+    p.dias[1].bloques.push(Y); w2.renderBuilder(); await espera(300);
+    M().querySelector('[data-jpmdia="1"]').click(); await espera(400);
+    M().querySelector('[data-jpm="vista"]').click();
+    var ifr = null, dia = null;
+    for(var i = 0; i < 40; i++){ await espera(250); ifr = d2.getElementById('splitViewFrame'); try{ var tA = ifr && ifr.contentWindow.document.querySelector('.day-tab.active'); dia = tA && tA.getAttribute('data-day'); if(dia === p.dias[1].id) break; }catch(e){} }
+    r.vistaFiel = { diaEditado: dia === p.dias[1].id };
+    var bl = d2.querySelector('#dayPanel .block'); if(bl && bl.classList.contains('jp-col')){ bl.querySelector('.jp-cv').click(); await espera(300); }
+    var mas = d2.querySelector('#dayPanel .jpm-dosis [data-jpmd="s+"]'); if(mas) mas.click();
+    var ok = false; for(var j = 0; j < 20 && !ok; j++){ await espera(200); ifr = d2.getElementById('splitViewFrame'); ok = !!ifr && (ifr.srcdoc || '').indexOf('5x6-8') >= 0; }
+    r.vistaFiel.refresca = ok;
+    var menos = d2.querySelector('#dayPanel .jpm-dosis [data-jpmd="s-"]'); if(menos) menos.click(); await espera(200);
+    M().querySelector('[data-jpm="vista"]').click(); await espera(300);
+    r.vistaFiel.cierra = !d2.body.classList.contains('split-view-on');
+    p.dias[1].bloques.pop(); M().querySelector('[data-jpmdia="0"]').click(); await espera(400);
+    /* 3 · duplicar día como variante B */
+    var n0 = p.dias.length, src = p.dias[0], c = w2.JPP.duplicarVariante(); await espera(400);
+    r.variante = { creada: p.dias.length === n0 + 1 && !!c && /^Variante B · /.test(c.title) && S2.ui.day === n0,
+      copiaFiel: !!c && JSON.stringify(c.bloques.map(function(b){ return b.items; })) === JSON.stringify(src.bloques.map(function(b){ return b.items; })),
+      idsNuevos: !!c && c.id !== src.id && c.bloques.every(function(b, k){ return b.id !== src.bloques[k].id; }), alFinal: p.dias[n0] === c,
+      enLaBarra: M().querySelectorAll('[data-jpmdia]').length === n0 + 1 && !!M().querySelector('.jpm-pop [data-jpp="variante"]') };
+    w2.eliminarDiaActivo(); await espera(400);
+    r.variante.seBorra = P() === inicio;
+    /* 4 · revisión «listo para enviar» */
+    p.estado = 'borrador'; w2.renderBuilder(); await espera(300);
+    d2.getElementById('btnPlanEstado').click(); await espera(200);
+    var rev = d2.getElementById('jppRevision');
+    r.revision = { frena: !!rev && !rev.hidden && p.estado === 'borrador', lista: !!rev && /D[IÍ]A 3/.test(rev.textContent) && /Día sin bloques/.test(rev.textContent) && rev.querySelectorAll('[data-jpp="rev-ir"]').length >= 2 };
+    rev.querySelector('[data-jpp="rev-ok"]').click(); await espera(300);
+    r.revision.marcaIgual = p.estado === 'listo' && rev.hidden;
+    d2.getElementById('btnPlanEstado').click(); await espera(300);
+    r.revision.volverSinRevisar = p.estado === 'borrador' && d2.getElementById('jppRevision').hidden;
+    if(estado0 === undefined) delete p.estado; else p.estado = estado0;
+    w2.renderBuilder(); await espera(300);
+    /* 5 · paleta de comandos (Ctrl + K en el Builder) */
+    d2.dispatchEvent(new w2.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); await espera(100);
+    var cmd = d2.getElementById('jppCmd'), q = cmd && cmd.querySelector('input');
+    r.paleta = { abre: !!cmd && !cmd.hidden && d2.activeElement === q, sinBusquedaGlobal: !d2.getElementById('mSearch') || !d2.getElementById('mSearch').classList.contains('on'),
+      tieneTodo: (function(){ var cs = w2.JPP.comandos(), g = {}; cs.forEach(function(x){ g[x.g] = 1; }); return !!(g['Día'] && g['Semana'] && g['Acción'] && g['Alumno']) && cs.some(function(x){ return /Búsqueda global/.test(x.t); }); })() };
+    q.value = 'semana s3'; q.dispatchEvent(new w2.Event('input'));
+    r.paleta.filtra = /S3/.test((cmd.querySelector('.jpp-cmd-i.on') || {}).textContent || '');
+    q.dispatchEvent(new w2.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await espera(400);
+    r.paleta.corre = (S2.ui.week || 0) === 2 && cmd.hidden && S2.ui.view === 'builder' && S2.activeId === a.id;
+    M().querySelector('[data-jpmwk="0"]').click(); await espera(300);
+    r.proPlanIntacto = P() === inicio;
+  }
   function builderHud(c){
     if(!BLD_RES) throw new Error('la pasada del Builder no corrió');
     if(BLD_RES.error) return { error: BLD_RES.error };
@@ -3092,6 +3162,14 @@
     if(c.caso === 'dosis') return R.dosis;
     if(c.caso === 'tips') return R.tips;
     if(c.caso === 'bisets') return R.bisets;
+    if(c.caso === 'indicadores' || c.caso === 'vistaFiel' || c.caso === 'variante' || c.caso === 'revision' || c.caso === 'paleta'){
+      if(R.proError) return { error: R.proError };
+      if(c.caso === 'indicadores') return R.ind;
+      if(c.caso === 'vistaFiel') return R.vistaFiel;
+      if(c.caso === 'variante') return R.variante;
+      if(c.caso === 'revision') return R.revision;
+      return Object.assign({}, R.paleta, { planIntacto: R.proPlanIntacto });
+    }
     if(c.caso === 'atajos') return { hoja: R.atajos.hoja, cierra: R.atajos.cierra, baja: R.atajos.baja, conservaFoco: R.atajos.foco, sube: R.atajos.sube, vistaAbre: R.vista.abre, vistaCierra: R.vista.cierra, planIntacto: R.mesaPlanIntacto, _dif: R.mesaDif || '' };
     throw new Error('caso desconocido: ' + c.caso);
   }
