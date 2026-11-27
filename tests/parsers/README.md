@@ -24,6 +24,7 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-v32.js` | Series × reps protagonistas, RIR en las pautas del bloque y sin referencias a otras semanas |
 | `cases-v33.js` | Fichas «Serie N» y pautas cortas |
 | `cases-v34.js` | Limpieza «menos es más»: sin agregar serie, descanso claro, unilateral como chip, cierre sin emojis |
+| `cases-v35.js` | Vista para principiantes: panel extra plegado y simple, tempo a las pautas |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -165,3 +166,4 @@ Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*
 
 - `v33.pau.01`: al mostrar las pautas quedan NOTA DEL DÍA, aproximación y la última indicación clave, a una frase; fuera POR QUÉ ESTÁ ACÁ y SET-UP; el texto guardado no cambia.
 - `v34.lim.01`: sin «+ AGREGAR SERIE», ficha activa liviana («Serie 1»), botón INICIAR DESCANSO claro (≥ 44 px, ícono vectorial), UNILATERAL como chip y cierre sin emojis de sistema.
+- `v35.pri.01`: el panel «Cómo te fue · reps que te sobraron» no aparece hasta la primera serie, arranca plegado y solo trae el RIR; el tempo sale de la tarjeta y su caja sigue en las pautas; fichas pendientes sin borde punteado.
