@@ -61,6 +61,7 @@
 <script src="cases-persistencia.js"></script>
 <script src="cases-v28.js"></script>
 <script src="cases-v30.js"></script>
+<script src="cases-v31.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -538,9 +539,9 @@
     try{
       if(c.caso === 'fichas'){
         dibujar('tv30c', 'Fuerza', PRESS);
-        var tiles = caja.querySelectorAll('.jp-tb-t'), card = caja.querySelector('.jp-qc'), sg = caja.querySelector('.jp-tb-t .jp-tb-sg'), st = sg && cs(sg);
+        var tiles = caja.querySelectorAll('.jp-tb-t'), card = caja.querySelector('.jp-qc'), sg = tiles[1] && tiles[1].querySelector('.jp-tb-sg'), st = sg && cs(sg);
         return { unaFichaPorSerie: tiles.length === 4, laQueSigue: tiles[0].classList.contains('nx') && /sigue/.test(tiles[0].textContent) && !tiles[1].classList.contains('nx'),
-          sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /^Sug\./.test(sg.textContent.trim()),
+          sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /sug\./i.test(tiles[1].querySelector('small').textContent),
           filasViejasOcultas: cs(card.querySelector('.jp-qc-rows')).display === 'none' && card.querySelectorAll('.jp-qc-r').length === 4,
           pastillaSecundaria: !!card.querySelector(':scope > .jp-qc-tg') && /RIR/.test(card.querySelector('.jp-qc-tg').textContent),
           chakra: /Chakra Petch/.test(cs(tiles[0]).fontFamily) };
@@ -563,7 +564,7 @@
         var r = { abreHoja: abre, botonFijoAbajo: botonAbajo, sinPesoNoRegistra: pideKg, sugeridoLuegoAjustado: antes === 'sugerido' && despues === 'ajustado' && valor === '82.5',
           guardaEnLaMismaClave: ld.done === true && String(ld.kg) === '82.5' && String(ld.reps) === '5', cierraHoja: !T.estado().items,
           fichaHecha: t[0].classList.contains('on') && /82,5×5/.test(t[0].textContent) && /238, 90, 18/.test(cs(t[0]).borderTopColor),
-          herencia: t[1].classList.contains('nx') && /Sug\. 82,5×5/.test(t[1].textContent) };
+          herencia: t[1].classList.contains('nx') && (t[1].querySelector('.jp-tb-sg') || {}).textContent === '82,5×5' };
         caja.querySelector('.jp-tb-t').click();
         var txtOk = hoja().querySelector('[data-tba="ok"]').textContent; hoja().querySelector('[data-tba="ok"]').click();
         r.desmarca = /desmarcar/.test(txtOk) && w.getLoad(key1).done === false && !caja.querySelector('.jp-tb-t').classList.contains('on');
@@ -574,7 +575,7 @@
         var reg = caja.querySelector('.jp-sb-biset-reg'), rt = caja.querySelectorAll('.jp-tb-rt');
         var r2 = { unaFilaPorRonda: rt.length === 3, estaciones: /D1 \+ D2 \+ D3/.test(rt[0].textContent) && /3 estaciones/.test(rt[0].textContent),
           enCurso: rt[0].classList.contains('nx') && /EN CURSO/.test(rt[0].textContent) && /PENDIENTE/.test(rt[1].textContent),
-          sinTablerosRepetidos: [].every.call(reg.querySelectorAll(':scope > .jp-qc > .jp-tb'), function(x){ return cs(x).display === 'none'; }),
+          sinTablerosRepetidos: reg.querySelectorAll('.jp-qc > .jp-tb').length === 3 && [].every.call(reg.querySelectorAll('.jp-qc > .jp-tb'), function(x){ return cs(x).display === 'none'; }),
           filaAncha: rt[0].getBoundingClientRect().width >= reg.getBoundingClientRect().width * .9 };
         rt[0].click();
         var sh2 = hoja();
@@ -585,7 +586,7 @@
         rt = caja.querySelectorAll('.jp-tb-rt');
         r2.rondaRegistrada = keys.length === 3 && keys.every(function(k){ return w.getLoad(k).done === true; });
         r2.resumen = rt[0].classList.contains('on') && /✓ HECHA/.test(rt[0].textContent) && /8×12/.test(rt[0].textContent) && /25×10/.test(rt[0].textContent);
-        r2.siguienteEnCurso = rt[1].classList.contains('nx') && /Sug\. 8×12/.test(rt[1].textContent);
+        r2.siguienteEnCurso = rt[1].classList.contains('nx') && [].some.call(rt[1].querySelectorAll('.jp-tb-est'), function(x){ return /D1/.test(x.textContent) && /8×12/.test(x.textContent); });
         return r2;
       }
       if(c.caso === 'storyHD'){
@@ -603,6 +604,53 @@
         var ca = w.__storyFotoCache;
         r3.fotoEnPasos = !!ca && ca.r.src !== foto && ca.r.w === 1125 && ca.r.h === 2000 && ca.pw === 1080 && cv.width === 1080;
         return r3;
+      }
+      /* ---- v31: refinamiento visual y de usabilidad ---- */
+      if(c.caso === 'rir'){
+        var R = w.jpRirTexto;
+        dibujar('tv30f', 'Fuerza', ['Press de banca plano con barra', '4x5-7 | Tempo 3110 | RIR 1-2', 'Rest 150s']);
+        var celda = caja.querySelector('.jp-db-rir'), tx = celda && celda.querySelector('.jp-rir-tx');
+        return { uno: R('1') === 'te guardás 1 rep', rango: R('1-2') === 'te guardás 1–2 reps', fallo: /al fallo/.test(R('0')), ceroUno: R('0-1') === 'te guardás 0–1 rep', conPrefijo: R('RIR 2') === 'te guardás 2 reps', invalido: R('alto') === '',
+          enLaTarjeta: !!tx && tx.textContent === 'te guardás 1–2 reps' && /1-2/.test((celda.querySelector('b') || {}).textContent || ''),
+          dosisIntacta: /RIR 2$/.test(w.jpDosisHtml(4, '5-7', 'reps', '', '2', 90, '', null, false, '', false).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) };
+      }
+      if(c.caso === 'bisetLimpio'){
+        dibujar('tv30g', 'Hipertrofia – Biset', ['A1. Press inclinado con mancuernas', '3x8-10 | RIR 1', 'A2. Aperturas con mancuernas en banco plano', '3x12-15 | RIR 1', 'Rest 90s']);
+        var bis = caja.querySelector('.jp-sb-biset'), est = bis.querySelectorAll('.jp-sb-subex-resumen'), vn = est[0].querySelector('.jp-db-vol .jp-vn'), vr = est[0].querySelector('.jp-db-vol .jp-vr');
+        var np = bis.querySelector('.jp-db-nopause'), rt3 = caja.querySelectorAll('.jp-tb-rt'), mas = caja.querySelector('.jp-sb-biset-reg > details.jp-tb-mas');
+        return { dosisPropia: !!vn && cs(vn).display === 'none' && !!vr && cs(vr).display !== 'none' && /8-10/.test(vr.textContent),
+          unSoloSinPausa: (!np || cs(np).display === 'none') && caja.querySelectorAll('.jp-sb-trans').length === 1,
+          valorPorEstacion: rt3.length === 3 && rt3[0].querySelectorAll('.jp-tb-est').length === 2 && /^A1/.test(rt3[0].querySelector('.jp-tb-est').textContent.trim()),
+          cantidadExplicita: /2 estaciones/.test(rt3[0].querySelector('em').textContent),
+          masPlegado: !!mas && !mas.open && mas.querySelectorAll('.jp-qc').length === 2 && !caja.querySelector('.jp-sb-biset-reg > .jp-qc') && /Más del registro/.test(mas.querySelector('summary').textContent) };
+      }
+      if(c.caso === 'fichas4'){
+        dibujar('tv30h', 'Fuerza', PRESS);
+        var tb = caja.querySelector('.jp-tb'), cols = cs(tb).gridTemplateColumns.split(' ').length, tl = caja.querySelectorAll('.jp-tb-t');
+        var largo = [].some.call(tl, function(x){ return /registrada|Sug\.|5-7 reps/.test(x.textContent); });
+        return { cuatroColumnas: cols === 4, etiquetasCortas: !largo && /S2 · sug\./i.test(tl[1].querySelector('small').textContent), soloHoy: !caja.querySelector('.jp-qc-tg .jp-qc-tg-r') };
+      }
+      if(c.caso === 'header'){
+        var dy = doc.getElementById('jpDayBtn'), ctx = doc.getElementById('hdcCtx');
+        if(w.jpHeaderContexto) w.jpHeaderContexto();
+        return { sinCalendario: !!dy && !dy.querySelector('.jp-day-ic') && !/📅/.test(dy.textContent), nivelEnElSubtitulo: !!ctx && / · Intermedio$/.test(ctx.textContent),
+          rirExplicadoEnMetricas: !doc.querySelector('.jp-brief-hud') || !!doc.querySelector('.jp-brief-hud .jp-rir-hint') || /—/.test(doc.querySelector('.jp-brief-hud').textContent) };
+      }
+      if(c.caso === 'fab'){
+        var dock = doc.getElementById('hdDock'), fab = doc.getElementById('hddFab');
+        if(!dock || !fab || !w.jpFabRevisar) return { hayBoton: false };
+        var cl0 = dock.className, st0 = dock.getAttribute('style'); dock.classList.remove('is-away', 'open');
+        var falso = doc.createElement('button'); falso.className = 'jp-tb-rt'; falso.style.cssText = 'position:fixed;right:0;bottom:0;width:200px;height:90px;z-index:1'; doc.body.appendChild(falso);
+        w.jpFabRevisar(); var seCorre = dock.classList.contains('jp-fab-aparte');
+        falso.parentNode.removeChild(falso); w.jpFabRevisar(); var vuelve = !dock.classList.contains('jp-fab-aparte');
+        dock.className = cl0; if(st0 == null) dock.removeAttribute('style'); else dock.setAttribute('style', st0);
+        var mc = doc.getElementById('mainContent');
+        return { hayBoton: true, seCorreSiTapa: seCorre, vuelveSolo: vuelve, margenAbajo: !!mc && parseFloat(cs(mc).paddingBottom) >= 100 };
+      }
+      if(c.caso === 'cierre'){
+        var fin = doc.getElementById('jpCerrarDiaBtn'), sto = doc.getElementById('storyCtaBtn'), rs = doc.querySelector('.jp-resumen-ses');
+        return { finalizarNaranja: !fin || /238, 90, 18|255, 122, 58/.test(cs(fin).backgroundImage), storyCianSobrio: !sto || /92, 225, 255/.test(cs(sto).borderTopColor),
+          resumenConBarra: !rs || /92, 225, 255/.test(cs(rs).borderLeftColor), chakra: !fin || /Chakra Petch/.test(cs(fin).fontFamily) };
       }
       throw new Error('caso desconocido: ' + c.caso);
     } finally {

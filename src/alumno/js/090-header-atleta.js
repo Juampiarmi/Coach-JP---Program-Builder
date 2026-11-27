@@ -9,7 +9,7 @@
     else if(/rugby|mtb|mountain|golf|running|tenis|f[uú]tbol|deport/i.test(nombre)) d = (/(rugby|mtb|mountain bike|golf|running|tenis|f[uú]tbol)/i.exec(nombre) || ['Deportes'])[0];
     else d = 'Bodybuilding';
     d = d.charAt(0).toUpperCase() + d.slice(1);
-    var niv = String(pc.mesoNivel || pc.cfNivel || '').trim().toLowerCase();
+    var niv = String(pc.mesoNivel || pc.cfNivel || pc.athNivel || '').trim().toLowerCase();      /* v31: si el plan no trae nivel, el del alumno */
     var nivTxt = ({ intermedio: 'Intermedio', avanzado: 'Avanzado', principiante: 'Principiante', pro: 'Pro', elite: 'Élite', 'élite': 'Élite' })[niv] || (niv ? niv.charAt(0).toUpperCase() + niv.slice(1) : '');
     return nivTxt ? d + ' · ' + nivTxt : d;
   }

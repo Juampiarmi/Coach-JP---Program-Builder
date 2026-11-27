@@ -18596,6 +18596,27 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      la hoja escribe en las MISMAS filas (.jp-qc-r, misma clave getLoadKey) y confirma con qrGuardarSerie / qrFinal, así el guardado, el tonelaje, el
      historial, el plan de cargas, las series extra y el RIR no cambian, y ningún plan guardado se toca. */
   function qrTbFmt(v){ return String(v == null ? '' : v).replace('.', ','); }
+  /* v31 · RIR en criollo: el dato técnico se mantiene (RIR 1, RIR 0-1) y se suma una aclaración corta para el alumno («te guardás 1 rep») */
+  function jpRirTexto(rir){
+    var s = String(rir == null ? '' : rir).replace(/^\\s*RIR\\s*/i, '').trim(); if(!s) return '';
+    var m = /^(\\d+)\\s*(?:[-–]\\s*(\\d+))?\\s*(\\+)?$/.exec(s); if(!m) return '';
+    var a = +m[1], b = m[2] != null ? +m[2] : null, mas = !!m[3];
+    if(b == null && !mas) return a === 0 ? 'al fallo: no te guardás ninguna' : 'te guardás ' + a + (a === 1 ? ' rep' : ' reps');
+    if(mas) return 'te guardás ' + a + ' o más reps';
+    return 'te guardás ' + a + '–' + b + (b === 1 ? ' rep' : ' reps');
+  }
+  window.jpRirTexto = jpRirTexto;
+  /* aplica la aclaración dentro de cada celda de RIR del tablero (idempotente; jpDosisHtml no cambia) */
+  function jpRirAclararSB(root){
+    if(!root || !root.querySelectorAll) return;
+    Array.prototype.forEach.call(root.querySelectorAll('.jp-db-rir'), function(seg){
+      if(seg.querySelector('.jp-rir-tx')) return;
+      var b = seg.querySelector('b'), val = b ? b.textContent : String(seg.textContent || '').replace(/[^0-9\\-–+]/g, ''), tx = jpRirTexto(val);
+      if(!tx) return;
+      var em = document.createElement('em'); em.className = 'jp-rir-tx'; em.textContent = tx; seg.appendChild(em);
+    });
+  }
+  window.jpRirAclarar = jpRirAclararSB;
   /* sugerencia de la serie (índice ix): lo cargado si ya hay dato; si no, la sugerencia de la fila y la HERENCIA de la serie anterior ya hecha hoy */
   function qrTbSug(c, e, m, ix){
     var f = m.filas[ix], hay = !f.pre && (f.kg !== '' || f.rp !== '');
@@ -18616,18 +18637,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function qrTableroHtml(c, e, i, m){
     var nx = -1, un = qrTbUnidad(e, m);
     m.filas.some(function(f, ix){ if(!f.done){ nx = ix; return true; } return false; });
+    /* v31: etiquetas cortas para 4 columnas en el celular. Solo el contexto de HOY: hecha (valor sólido), la que sigue (borde cian) y pendientes (sugerencia tenue);
+       el rango de reps ya está en la dosis de arriba y no se repite en cada ficha */
     var tiles = m.filas.map(function(f, ix){
       var s = qrTbSug(c, e, m, ix), txt = qrTbTxt(s.kg, s.rp, m, un), sig = ix === nx;
-      var lab = 'S' + f.j + (f.done ? ' ✓' : (sig ? ' · sigue' : '')) + (f.extra ? ' · extra' : '');
-      var body = f.done ? '<span class="jp-tb-v">' + escSB(txt) + '</span><em>registrada</em>'
+      var lab = 'S' + f.j + (f.done ? ' ✓' : (sig ? ' · sigue' : (s.aj ? '' : ' · sug.'))) + (f.extra ? ' +' : '');
+      var body = f.done ? '<span class="jp-tb-v">' + escSB(txt) + '</span>'
         : (s.aj ? '<span class="jp-tb-v">' + escSB(txt) + '</span><em>sin confirmar</em>'
-        : '<span class="jp-tb-v jp-tb-sg">Sug. ' + escSB(txt) + '</span><em>' + (sig ? 'tocá para cargar' : escSB((e.reps || '') + (e.reps ? ' ' + un : ''))) + '</em>');
+        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + (sig ? '<em>tocá para cargar</em>' : ''));
       return '<button type="button" class="jp-tb-t' + (f.done ? ' on' : (sig ? ' nx' : '')) + '" data-sj="' + f.j + '" aria-label="Serie ' + f.j + (f.done ? ' registrada: ' : (s.aj ? ' sin confirmar: ' : ' sugerida: ')) + escSB(txt) + '"><small>' + lab + '</small>' + body + '</button>';
     }).join('');
     if(m.fin){
       var fs = { kg: m.sinKg ? '' : m.fin.kg, rp: m.fin.rp }, ft = qrTbTxt(fs.kg, fs.rp, m, un), abre = m.baseOk || m.fin.done;
       tiles += '<button type="button" class="jp-tb-t jp-tb-fin' + (m.fin.done ? ' on' : (abre ? ' nx' : ' lock')) + '" data-sj="f"' + (abre ? '' : ' disabled') + ' aria-label="Serie final ' + escSB(QR_TEC_NOM[m.tec]) + '"><small>⚡ FINAL · ' + escSB(QR_TEC_NOM[m.tec]) + '</small>' +
-        (m.fin.done ? '<span class="jp-tb-v">' + escSB(ft) + '</span><em>registrada</em>' : '<span class="jp-tb-v jp-tb-sg">' + (abre ? 'Sug. ' + escSB(ft) : 'después de las series') + '</span><em>' + (abre ? 'tocá para cargar' : 'se habilita al terminar') + '</em>') + '</button>';
+        (m.fin.done ? '<span class="jp-tb-v">' + escSB(ft) + '</span>' : '<span class="jp-tb-v jp-tb-sg">' + (abre ? escSB(ft) : 'después de las series') + '</span><em>' + (abre ? 'tocá para cargar' : 'se habilita al terminar') + '</em>') + '</button>';
     }
     return '<div class="jp-tb" role="group" aria-label="Series de ' + escSB(regNombreCorto(e.nombre)) + '">' + tiles + '</div>';
   }
@@ -18642,7 +18665,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     /* v30: las series se registran en el tablero de fichas (arriba); la pastilla queda como acceso secundario a RIR, plan de cargas y series extra */
     var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="Más del registro (RIR, plan y series extra) del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
       '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Más del registro') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
-      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-h">RIR · plan · + serie</span>' + (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '') + '</span></button>';
+      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-h">RIR · plan · + serie</span></span></button>';      /* v31: sin la referencia de otra semana: solo el contexto de hoy */
     var inputs = function(kg, rp, pre, rpPh, n){
       return (m.sinKg ? '' : '<input type="text" inputmode="decimal" class="jp-qc-kg' + (pre && kg ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos de la ' + n + '" value="' + escSB(kg) + '" placeholder="—"><b class="jp-qc-x">×</b>') +
         '<input type="text" inputmode="decimal" class="jp-qc-rp' + (pre && rp ? ' pre' : '') + '" autocomplete="off" aria-label="' + ual.charAt(0).toUpperCase() + ual.slice(1) + ' de la ' + n + '" value="' + escSB(rp) + '" placeholder="' + escSB(rpPh) + '">';
@@ -18865,6 +18888,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       jpRegistroAlFinalDelBisetSB(board);
       jpTbRefrescarRondas(board);
+      jpRirAclararSB(board);
       qrTecAbrir(board);
       try{ jpNotasAgrupar(board); }catch(eN){}
     });
@@ -18895,7 +18919,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpTbRondasSB(bis){
     if(!bis || !bis.querySelector) return;
     var reg = bis.querySelector(':scope > .jp-sb-biset-reg'); if(!reg) return;
-    var est = Array.prototype.slice.call(reg.querySelectorAll(':scope > .jp-qc')).map(function(cd){
+    /* v31: las pastillas «Más del registro» de cada estación se pliegan en un solo desplegable al pie (no estiran el final del bloque) */
+    var sueltas = reg.querySelectorAll(':scope > .jp-qc');
+    if(sueltas.length > 1){
+      var mas = reg.querySelector(':scope > .jp-tb-mas');
+      if(!mas){
+        mas = document.createElement('details'); mas.className = 'jp-tb-mas';
+        mas.innerHTML = '<summary><span>Más del registro</span><em>RIR · plan · + serie</em></summary><div class="jp-tb-mas-b"></div>';
+        reg.appendChild(mas);
+      }
+      var cont = mas.querySelector(':scope > .jp-tb-mas-b');
+      Array.prototype.forEach.call(sueltas, function(cd){ cont.appendChild(cd); });
+    }
+    var est = Array.prototype.slice.call(reg.querySelectorAll('.jp-qc')).map(function(cd){
       var k = qrCtx(cd); if(!k) return null; var i = parseInt(cd.getAttribute('data-qi'), 10), m = qrModelo(k.c, k.e, i);
       return { cd: cd, k: k, i: i, m: m, id: qrTbId(cd, k), un: qrTbUnidad(k.e, m) };
     }).filter(Boolean);
@@ -18906,12 +18942,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     for(r = 0; r < nR; r++){ if(!hecha(r)){ cur = r; break; } }
     for(r = 0; r < nR; r++){
       var st = est.filter(function(x){ return !!x.m.filas[r]; }), ok = hecha(r), estado = ok ? '✓ HECHA' : (r === cur ? 'EN CURSO' : 'PENDIENTE');
-      var letras = st.map(function(x){ return x.id; }).join(' + ') + (st.length > 2 ? ' · ' + st.length + ' estaciones' : '');
-      var res = st.map(function(x){ var s = qrTbSug(x.k.c, x.k.e, x.m, r); return qrTbTxt(s.kg, s.rp, x.m, x.un); }).join(' · ');
-      var algunaAj = st.some(function(x){ return qrTbSug(x.k.c, x.k.e, x.m, r).aj; });
-      h += '<button type="button" class="jp-tb-rt' + (ok ? ' on' : (r === cur ? ' nx' : '')) + '" data-r="' + (r + 1) + '" aria-label="Ronda ' + (r + 1) + ', ' + estado.replace('✓ ', '') + ': ' + escSB(res) + '">' +
+      /* v31: cuántas estaciones tiene la ronda, explícito (y si tiene menos que el bloque: «2 de 3 estaciones»); cada valor con la letra de su estación */
+      var cuenta = st.length < est.length ? st.length + ' de ' + est.length + ' estaciones' : st.length + ' estaciones';
+      var letras = st.map(function(x){ return x.id; }).join(' + ') + ' · ' + cuenta;
+      var res = st.map(function(x){ var s = qrTbSug(x.k.c, x.k.e, x.m, r); return x.id + ' ' + qrTbTxt(s.kg, s.rp, x.m, x.un); }).join(' · ');
+      var chips = st.map(function(x){
+        var f = x.m.filas[r], s = qrTbSug(x.k.c, x.k.e, x.m, r), sug = !f.done && !s.aj;
+        return '<span class="jp-tb-est' + (sug ? ' jp-tb-est-sg' : '') + '"><b>' + escSB(x.id) + '</b><span class="jp-tb-v' + (sug ? ' jp-tb-sg' : '') + '">' + escSB(qrTbTxt(s.kg, s.rp, x.m, x.un)) + '</span></span>';
+      }).join('');
+      h += '<button type="button" class="jp-tb-rt' + (ok ? ' on' : (r === cur ? ' nx' : '')) + '" data-r="' + (r + 1) + '" data-est="' + st.length + '" aria-label="Ronda ' + (r + 1) + ', ' + estado.replace('✓ ', '') + ', ' + cuenta + ': ' + escSB(res) + '">' +
         '<span class="jp-tb-rl"><small>RONDA ' + (r + 1) + '</small><b>' + estado + '</b></span>' +
-        '<span class="jp-tb-rv"><em>' + escSB(letras) + '</em><span class="jp-tb-v' + (ok || algunaAj ? '' : ' jp-tb-sg') + '">' + (ok ? '✓ ' : (algunaAj ? '' : 'Sug. ')) + escSB(res) + '</span></span></button>';
+        '<span class="jp-tb-rv"><em>' + escSB(letras) + '</em><span class="jp-tb-ests">' + chips + '</span>' + (ok ? '' : '<i class="jp-tb-rsg">' + (st.some(function(x){ return qrTbSug(x.k.c, x.k.e, x.m, r).aj; }) ? 'sin confirmar' : 'sugerido') + '</i>') + '</span></button>';
     }
     if(!box){
       box = document.createElement('div'); box.className = 'jp-tb-rondas'; box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Rondas');
@@ -19120,7 +19161,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '<div class="jp-tbs-ley"><span class="jp-tb-sg">80</span> sugerido · <b>82,5</b> ajustado por vos</div><div class="jp-tbs-body">';
     xs.forEach(function(x, n){
       var s = tbSugIt(x), v = TB.vals[n], e = x.k.e, ult = x.fin ? null : regUltRegKey(x.k.c, e, qrIdxClave(e, x.f.j));
-      var ref = [ult ? 'Semana ' + (ult.w + 1) + ': ' + [ult.kg !== '' && ult.kg != null ? qrTbFmt(ult.kg) + ' kg' : '', ult.reps !== '' && ult.reps != null ? '× ' + ult.reps : ''].filter(Boolean).join(' ') : '', e.reps ? 'objetivo ' + e.reps : '', e.rir ? 'RIR ' + e.rir : ''].filter(Boolean).join(' · ');
+      var ref = [ult ? 'Semana ' + (ult.w + 1) + ': ' + [ult.kg !== '' && ult.kg != null ? qrTbFmt(ult.kg) + ' kg' : '', ult.reps !== '' && ult.reps != null ? '× ' + ult.reps : ''].filter(Boolean).join(' ') : '', e.reps ? 'objetivo ' + e.reps : '', e.rir ? 'RIR ' + e.rir + (jpRirTexto(e.rir) ? ' (' + jpRirTexto(e.rir) + ')' : '') : ''].filter(Boolean).join(' · ');
       h += '<div class="jp-tbs-e" data-n="' + n + '">' + (multi ? '<div class="jp-tbs-n"><span class="jp-tbs-l">' + escSB(x.id) + '</span>' + escSB(regNombreCorto(e.nombre)) + '</div>' : '') +
         '<div class="jp-tbs-r' + (x.m.sinKg ? ' uno' : '') + '">' + (x.m.sinKg ? '' : tbStp(n, 'kg', v.kg, s.kg, 2.5, 'KG')) + tbStp(n, 'rp', v.rp, s.rp, 1, x.un.toUpperCase()) + '</div>' +
         (ref ? '<div class="jp-tbs-a">' + escSB(ref) + '</div>' : '') + '</div>';
@@ -19191,7 +19232,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(rt){
       ev.preventDefault(); ev.stopPropagation();
       var reg = rt.closest('.jp-sb-biset-reg'), r = parseInt(rt.getAttribute('data-r'), 10); if(!reg) return;
-      var cards = Array.prototype.slice.call(reg.querySelectorAll(':scope > .jp-qc')), items = [], ids = [], nR = 0;
+      var cards = Array.prototype.slice.call(reg.querySelectorAll('.jp-qc')), items = [], ids = [], nR = 0;
       cards.forEach(function(cd2){
         var k2 = qrCtx(cd2); if(!k2) return; var i2 = parseInt(cd2.getAttribute('data-qi'), 10), m2 = qrModelo(k2.c, k2.e, i2);
         nR = Math.max(nR, m2.nt);
@@ -19223,6 +19264,28 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var stp = t.closest('.jp-tbs-stp'); if(stp){ stp.classList.toggle('aj', vq !== ''); var tag = stp.querySelector('small i'); if(tag) tag.textContent = vq !== '' ? 'ajustado' : 'sugerido'; }
   });
   document.addEventListener('keydown', function(ev){ if(ev.key === 'Escape' && TB.items) tbCerrar(); });
+  /* v31 · BOTÓN FLOTANTE QUE NO TAPA: si el menú flotante (#hdDock) quedaría encima de una ronda, una ficha, «Generar Story Card» o «Finalizar día», se corre hacia
+     afuera del borde y vuelve solo al seguir desplazando. Solo presentación (una clase); el menú abierto nunca se esconde. */
+  var _fabRaf = 0;
+  function jpFabRevisar(){
+    _fabRaf = 0;
+    var dock = document.getElementById('hdDock'), fab = document.getElementById('hddFab'); if(!dock || !fab) return;
+    if(dock.classList.contains('open')){ dock.classList.remove('jp-fab-aparte'); return; }
+    /* la zona se calcula desde su esquina fija (no desde su posición actual, que cambia al correrse) para que no titile */
+    var w = fab.offsetWidth || 46, h = fab.offsetHeight || 46, vw = window.innerWidth, vh = window.innerHeight;
+    if(!fab.offsetParent && !w){ dock.classList.remove('jp-fab-aparte'); return; }
+    var zona = { l: vw - 12 - w - 8, t: vh - 12 - h - 8, rr: vw, b: vh }, choca = false;
+    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok'), function(el){
+      var q = el.getBoundingClientRect();
+      if(q.width && q.right > zona.l && q.left < zona.rr && q.bottom > zona.t && q.top < zona.b){ choca = true; return true; }
+      return false;
+    });
+    dock.classList.toggle('jp-fab-aparte', choca);
+  }
+  function jpFabPedir(){ if(!_fabRaf) _fabRaf = (window.requestAnimationFrame || setTimeout)(jpFabRevisar); }
+  window.addEventListener('scroll', jpFabPedir, { passive: true });
+  window.addEventListener('resize', jpFabPedir);
+  window.jpFabRevisar = jpFabRevisar;
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
   document.addEventListener('focusin', function(ev){
     var t = ev.target; if(t && t.classList && (t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))){ try{ t.select(); }catch(e0){} }
@@ -44803,7 +44866,8 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
       var n = 'D\\u00cdA ' + (i + 1), l = String(d.label || '').split(' \\u00b7 ').join(' - ').trim().toUpperCase();
       return (l && l !== n) ? n + ': ' + l : n;
     };
-    var h = '<span class="jp-day-ic" aria-hidden="true">&#128197;</span><b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
+    /* v31: sin el emoji de calendario (en iPhone se dibuja con un número de fecha que no es la del día): SEM y DÍA quedan parejos */
+    var h = '<b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
     if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
     var hp = DAYS.map(function(d, i){
       var hecho = false; try{ hecho = isDayDone(state.currentWeek, d.id); }catch(e){}
@@ -44833,8 +44897,8 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     var rir = 'RIR OBJ';
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* las 3 métricas están siempre: grilla simétrica de 3 columnas (sin series registradas el tonelaje es 0, nunca un guion ni NaN) */
-    var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
-    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
+    var pildora = function(v, l, x){ return '<span><b>' + v + '</b><small>' + l + '</small>' + (x ? '<em class="jp-rir-hint">' + x + '</em>' : '') + '</span>'; };
+    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO', rir === 'RIR OBJ' ? '' : 'reps en recámara');
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.__h !== h){ hud.__h = h; hud.innerHTML = h; }
@@ -48632,7 +48696,7 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     else if(/rugby|mtb|mountain|golf|running|tenis|f[uú]tbol|deport/i.test(nombre)) d = (/(rugby|mtb|mountain bike|golf|running|tenis|f[uú]tbol)/i.exec(nombre) || ['Deportes'])[0];
     else d = 'Bodybuilding';
     d = d.charAt(0).toUpperCase() + d.slice(1);
-    var niv = String(pc.mesoNivel || pc.cfNivel || '').trim().toLowerCase();
+    var niv = String(pc.mesoNivel || pc.cfNivel || pc.athNivel || '').trim().toLowerCase();      /* v31: si el plan no trae nivel, el del alumno */
     var nivTxt = ({ intermedio: 'Intermedio', avanzado: 'Avanzado', principiante: 'Principiante', pro: 'Pro', elite: 'Élite', 'élite': 'Élite' })[niv] || (niv ? niv.charAt(0).toUpperCase() + niv.slice(1) : '');
     return nivTxt ? d + ' · ' + nivTxt : d;
   }
@@ -50089,6 +50153,145 @@ html body:not(#_):not(#__) .jp-tb-bis > .jp-qc{ margin-top:6px !important; }
 .jp-tbs-ok{ width:100%; height:60px; border:0; border-radius:16px; background:#EEF3FD; color:#0B132B; font:700 .92rem/1 'Chakra Petch',sans-serif; letter-spacing:.14em; text-transform:uppercase; cursor:pointer; box-shadow:0 12px 24px -14px rgba(0,0,0,.9); }
 .jp-tbs-ok.on{ background:#EE5A12; }
 html.jp-tbs-on, html.jp-tbs-on body{ overflow:hidden; }
+/* v31 · REFINAMIENTO «REVISIÓN 4» DE LA VISTA DEL ALUMNO (Sports / Bodybuilding)
+   Va al final de la cascada. Prefijo con una especificidad más que 099 (html body:not(#_):not(#__):not(#___)) para ganarle a las hojas de marca y piel.
+   Solo presentación: el registro, las claves y los datos no cambian.
+     1 header pro y selector SEM / DÍA parejos · 2 transición al día, título hero y métricas con barra lateral nítida
+     3 barra de dosis integrada (sin la franja vieja ni la barra partida) + RIR en criollo · 4 fichas en 4 columnas con etiquetas cortas
+     5 biset / triset: dosis propia por estación, un solo aviso «sin pausa», rondas claras y «Más del registro» plegado
+     6 cierre de la sesión sobrio y margen para el botón flotante */
+html body:not(#_):not(#__):not(#___){ --r4-bg:#030818; --r4-s1:rgba(8,17,46,.96); --r4-s2:rgba(3,7,22,.97); --r4-ln:rgba(100,135,230,.16); --r4-ln2:rgba(100,135,230,.3); --r4-cy:#5CE1FF; --r4-cyt:#8FE6FA; --r4-nar:#EE5A12; --r4-nart:#FF8A4C; --r4-mu:#94A4CB; --r4-mu2:#6576A2; --r4-f:'Chakra Petch','Barlow Condensed',system-ui,sans-serif; }
+
+/* ---------- 1 · header y selector SEM / DÍA ---------- */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .hd-compact{
+  background:linear-gradient(rgba(92,225,255,.035) 1px,transparent 1px) 0 0/24px 24px,linear-gradient(90deg,rgba(92,225,255,.035) 1px,transparent 1px) 0 0/24px 24px,
+             linear-gradient(180deg,#071232,#040A1F) !important;
+  border-bottom:1px solid var(--r4-ln) !important; box-shadow:0 14px 28px -20px #000 !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .hdc-name{ letter-spacing:.03em !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #hdcCtx{ color:var(--r4-mu) !important; letter-spacing:.16em !important; text-transform:uppercase !important; }
+/* ⋯, SEM y DÍA: misma superficie, mismo borde (alto y radio los fija el header oficial: 40 px · 10 px) */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-ux-menu-btn,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #jpWkBtn,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #jpDayBtn{
+  background:linear-gradient(180deg,rgba(16,32,78,.9),rgba(8,17,46,.95)) !important; border-color:var(--r4-ln2) !important; box-shadow:inset 0 1px 0 rgba(150,190,255,.08) !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #jpDayBtn{ justify-content:space-between !important; gap:8px !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #jpDayBtn > b{ flex:1 1 auto !important; min-width:0 !important; text-align:left !important; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #jpDayBtn .jp-day-ic{ display:none !important; }
+
+/* ---------- 2 · transición al día, título hero y métricas ---------- */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .day-header{ margin-top:6px !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-session-pretag{ letter-spacing:.22em !important; margin-bottom:10px !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .day-title.jp-session-main{
+  border-left:3px solid var(--r4-nar) !important; padding:2px 0 2px 14px !important; margin:0 0 14px !important;
+  background:linear-gradient(92deg,#FFFFFF 0%,#DCE7FF 60%,#FFB38A 120%) !important; -webkit-background-clip:text !important; background-clip:text !important; color:transparent !important;
+  box-shadow:none !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud{ display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; gap:8px !important; margin:0 0 14px !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud > span{
+  display:flex !important; flex-direction:column !important; align-items:flex-start !important; justify-content:center !important; gap:3px !important; min-height:66px !important; padding:10px 10px 10px 12px !important;
+  border-radius:3px 12px 12px 3px !important; border:1px solid var(--r4-ln) !important; border-left:3px solid var(--r4-cy) !important; background:linear-gradient(180deg,var(--r4-s1),var(--r4-s2)) !important; box-shadow:none !important; text-align:left !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud > span:first-child{ border-left-color:var(--r4-nar) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud > span b{ font:700 1.3rem/1 var(--r4-f) !important; color:#fff !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud > span small{ font:600 .56rem/1.2 var(--r4-f) !important; letter-spacing:.14em !important; color:var(--r4-mu) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-brief-hud .jp-rir-hint{ font:italic 500 .6rem/1.2 var(--r4-f) !important; color:var(--r4-cyt) !important; letter-spacing:.02em !important; }
+
+/* ---------- 3 · barra de dosis integrada: volumen en una línea y chips (descanso · tempo · RIR) sin la franja vieja ni la barra partida ---------- */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill){
+  display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px !important; padding:10px 0 !important; margin:8px 0 2px !important;
+  background:none !important; border:0 !important; border-top:1px solid var(--r4-ln) !important; border-radius:0 !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill){ flex-direction:row !important; justify-content:flex-start !important; align-items:center !important; text-align:left !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) > .jp-db-r1{ justify-content:flex-start !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) > .jp-db-r1{ flex:1 1 100% !important; margin:0 0 4px !important; padding:0 !important; border:0 !important; background:none !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) > .jp-db-r2,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) > .jp-db-r3,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) > .jp-db-tr{ display:contents !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill)::before,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill)::after,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) .jp-db-row::before,
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) .jp-db-row::after{ display:none !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-db-r1 .jp-db-vol{ display:inline-flex !important; align-items:baseline !important; gap:6px !important; padding:0 !important; border:0 !important; background:none !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-db-vol .jp-vn, html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-db-vol .jp-vr{ font:700 1.5rem/1 var(--r4-f) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-db-vol .jp-vl{ font:600 .6rem/1 var(--r4-f) !important; letter-spacing:.14em !important; color:var(--r4-mu) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar:not(.jp-cont-pill) .jp-db-seg:not(.jp-db-vol){
+  display:inline-flex !important; flex-direction:row !important; align-items:center !important; gap:6px !important; flex:0 0 auto !important; width:auto !important; min-width:0 !important; min-height:34px !important;
+  padding:6px 11px !important; margin:0 !important; border-radius:999px !important; border:1px solid var(--r4-ln2) !important; background:rgba(0,2,10,.4) !important; box-shadow:none !important;
+  font:700 .72rem/1.1 var(--r4-f) !important; letter-spacing:.06em !important; color:#EEF3FD !important; text-align:left !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-seg small{ font:600 .58rem/1 var(--r4-f) !important; letter-spacing:.14em !important; color:var(--r4-mu) !important; margin:0 !important; display:inline !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-seg b{ font-size:.86rem !important; margin:0 !important; display:inline !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-rest{ border-color:rgba(92,225,255,.45) !important; color:var(--r4-cy) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-rir{ flex-wrap:wrap !important; border-radius:12px !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-rir .jp-rir-tx{ flex-basis:100% !important; font:italic 500 .64rem/1.2 var(--r4-f) !important; letter-spacing:.02em !important; color:var(--r4-cyt) !important; text-transform:none !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-sb-board .jp-dose-bar .jp-db-uni{ flex:1 1 100% !important; }
+
+/* ---------- 4 · fichas: 4 columnas en el celular, etiquetas cortas ---------- */
+html body:not(#_):not(#__):not(#___) .jp-tb{ grid-template-columns:repeat(4,minmax(0,1fr)) !important; gap:6px !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-t{ min-height:64px !important; padding:8px 8px !important; gap:3px !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-t small{ font-size:.54rem !important; letter-spacing:.1em !important; text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+html body:not(#_):not(#__):not(#___) .jp-tb-t .jp-tb-v{ font-size:.84rem !important; line-height:1.15 !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-t em{ font-size:.56rem !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-fin{ grid-column:1 / -1 !important; }
+/* «Más del registro» de un ejercicio suelto: una línea discreta, no una segunda tarjeta */
+html body:not(#_):not(#__):not(#___) .jp-qc-tb > .jp-qc-tg{ min-height:36px !important; padding:6px 12px !important; border-radius:10px !important; }
+html body:not(#_):not(#__):not(#___) .jp-qc-tb > .jp-qc-tg .jp-qc-tg-t{ font-size:.66rem !important; }
+html body:not(#_):not(#__):not(#___) .jp-qc-tb > .jp-qc-tg .jp-qc-tg-b{ font-size:.62rem !important; }
+
+/* ---------- 5 · biset / triset ---------- */
+/* cada estación muestra SU prescripción (8-10 REPS · RIR 1): las rondas ya están en el bloque («BISET · 3 RONDAS») */
+html body:not(#_):not(#__):not(#___):not(#____) .jp-sb-board .jp-sb-biset .jp-db-vol .jp-vn,
+html body:not(#_):not(#__):not(#___):not(#____) .jp-sb-board .jp-sb-biset .jp-db-vol .jp-vn + .jp-vl,
+html body:not(#_):not(#__):not(#___):not(#____) .jp-sb-board .jp-sb-biset .jp-db-vol .jp-vx{ display:none !important; }
+/* un solo aviso «sin pausa»: el conector entre estaciones; la celda «⚡ SIN DESCANSO» de cada estación ya no se repite */
+html body:not(#_):not(#__):not(#___):not(#____) .jp-sb-board .jp-sb-biset .jp-db-nopause{ display:none !important; }
+html body:not(#_):not(#__):not(#___):not(#____) .jp-sb-board .jp-sb-biset .jp-db-r2:has(> .jp-db-nopause:only-child){ display:none !important; }
+/* rondas: cada valor con la letra de su estación, cantidad de estaciones explícita */
+html body:not(#_):not(#__):not(#___) .jp-tb-rt{ grid-template-columns:84px minmax(0,1fr) !important; align-items:start !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-rv em{ font-size:.64rem !important; letter-spacing:.06em !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-ests{ display:flex; flex-wrap:wrap; gap:5px; margin-top:2px; }
+html body:not(#_):not(#__):not(#___) .jp-tb-est{ display:inline-flex; align-items:center; gap:5px; padding:3px 8px 3px 4px; border-radius:8px; background:rgba(100,135,230,.1); font:700 .8rem/1.1 var(--r4-f); color:#fff; }
+html body:not(#_):not(#__):not(#___) .jp-tb-est b{ display:inline-grid; place-items:center; min-width:22px; height:18px; padding:0 4px; border-radius:5px; background:var(--r4-nar); color:#0B132B; font:700 .6rem/1 var(--r4-f); }
+html body:not(#_):not(#__):not(#___) .jp-tb-est .jp-tb-v{ font-size:.8rem !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-rt.on .jp-tb-est{ background:rgba(11,19,43,.16); }
+html body:not(#_):not(#__):not(#___) .jp-tb-rt.on .jp-tb-est b{ background:#0B132B; color:#FF8A4C; }
+html body:not(#_):not(#__):not(#___) .jp-tb-rt.on .jp-tb-est .jp-tb-v{ color:#0B132B !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-rsg{ font:italic 500 .58rem/1 var(--r4-f); color:var(--r4-mu2); letter-spacing:.04em; }
+html body:not(#_):not(#__):not(#___) .jp-tb-rt.nx .jp-tb-rsg{ color:var(--r4-cyt); }
+/* «Más del registro» de las estaciones: plegado en un solo desplegable al pie del biset */
+html body:not(#_):not(#__):not(#___) .jp-tb-mas{ margin:6px 0 0; border:1px solid var(--r4-ln); border-radius:10px; background:rgba(0,2,10,.3); }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas > summary{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:36px; padding:6px 12px; list-style:none; cursor:pointer; font:700 .66rem/1 var(--r4-f); letter-spacing:.12em; text-transform:uppercase; color:#C9D4EC; }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas > summary::-webkit-details-marker{ display:none; }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas > summary em{ font-style:normal; font-weight:600; font-size:.6rem; letter-spacing:.04em; text-transform:none; color:var(--r4-cyt); }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas > summary::after{ content:'\\25BE'; color:var(--r4-nart); font-size:.8rem; }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas[open] > summary::after{ transform:rotate(180deg); }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas-b{ display:grid; gap:6px; padding:0 8px 8px; }
+html body:not(#_):not(#__):not(#___) .jp-tb-mas-b > .jp-qc{ margin:0 !important; }
+html body:not(#_):not(#__):not(#___) .jp-tb-bis .jp-qc > .jp-tb{ display:none !important; }
+
+/* ---------- 6 · cierre de la sesión y botón flotante ---------- */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-resumen-ses{
+  background:linear-gradient(180deg,var(--r4-s1),var(--r4-s2)) !important; border:1px solid var(--r4-ln) !important; border-left:3px solid var(--r4-cy) !important; border-radius:14px !important; box-shadow:none !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #storyCtaBtn{
+  background:rgba(92,225,255,.06) !important; border:1px solid rgba(92,225,255,.45) !important; color:var(--r4-cy) !important; border-radius:12px !important; box-shadow:none !important;
+  font-family:var(--r4-f) !important; letter-spacing:.14em !important;
+}
+html body:not(#_):not(#__):not(#___):not(#____):not(.cf-disc) #jpCerrarDiaBtn.jp-close-cta, html body:not(#_):not(#__):not(#___):not(#____):not(.cf-disc) #jpCerrarDiaBtn.jp-close-cta:not(.done){
+  background:linear-gradient(155deg,#FF7A3A,var(--r4-nar)) !important; color:#0B132B !important; border:0 !important; border-radius:14px !important; min-height:56px !important;
+  box-shadow:0 14px 28px -16px rgba(238,90,18,.9) !important; font-family:var(--r4-f) !important; letter-spacing:.14em !important;
+}
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-criterio-dia{ background:linear-gradient(180deg,var(--r4-s1),var(--r4-s2)) !important; border:1px solid var(--r4-ln) !important; border-radius:12px !important; box-shadow:none !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .site-footer{ margin-bottom:calc(88px + env(safe-area-inset-bottom)) !important; }     /* la firma conserva su tarjeta; solo se deja aire para el botón flotante */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) .jp-build{ color:var(--r4-mu2) !important; }
+/* margen inferior: el final del día (RONDA 3, «Finalizar día») siempre puede quedar por encima del botón flotante */
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #mainContent{ padding-bottom:calc(104px + env(safe-area-inset-bottom)) !important; }
+html body:not(#_):not(#__):not(#___):not(.cf-disc) #hdDock{ right:12px !important; bottom:calc(12px + env(safe-area-inset-bottom)) !important; transition:transform .22s ease, opacity .22s ease !important; }
+/* cuando el botón flotante quedaría encima de una ronda, una ficha o el cierre del día, se corre hacia afuera (vuelve solo al seguir desplazando) */
+html body:not(#_):not(#__):not(#___) #hdDock.jp-fab-aparte:not(.open){ transform:translateX(calc(100% + 18px)) !important; opacity:0 !important; pointer-events:none !important; }
+html.jp-tbs-on body:not(#_):not(#__):not(#___) #hdDock{ opacity:0 !important; pointer-events:none !important; }
 </style>
 
 </body>
@@ -50736,6 +50939,7 @@ function buildProgramConfig(ath){
     nota: notaMetodologica(ath),
     mesoName: (p.meta.mesoName || 'Mesociclo'),
     mesoNivel: (p.meta && p.meta.mesoNivel) || '',
+    athNivel: (ath && ath.nivel) || '',      /* v31: nivel del alumno para el subtítulo del header (BODYBUILDING · AVANZADO) cuando el plan no trae mesoNivel; solo lectura */
     disciplina: (p.meta && p.meta.mesoDisc) || '',
     modoSemanal: !!discCF,
     /* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 4 Compacto de élite; el 3 se descartó; el 4 es el estilo por defecto) */
