@@ -3114,7 +3114,7 @@ function renderMain(){
      ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
-  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 GENERAR STORY CARD</button>';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">GENERAR STORY CARD</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -3126,7 +3126,7 @@ function renderMain(){
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
   html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
-    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '\u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE' : '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE') + '</button>';
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '\u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE' : 'FINALIZAR D\u00cdA Y ENVIAR REPORTE') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);

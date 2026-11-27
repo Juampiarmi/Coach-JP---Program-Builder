@@ -899,7 +899,7 @@
     if(!acts || document.getElementById('scStory')) return;
     const b = document.createElement('button');
     b.className = 'sc-story'; b.id = 'scStory'; b.type = 'button';
-    b.textContent = window.COACH_DISCIPLINA === 'sports' ? '📸 GENERAR STORY CARD' : '📸 Generar Story Card';
+    b.textContent = window.COACH_DISCIPLINA === 'sports' ? 'GENERAR STORY CARD' : 'Generar Story Card';
     acts.insertBefore(b, acts.firstChild);
     b.addEventListener('click', function(){
       const day = DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0];

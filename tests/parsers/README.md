@@ -22,6 +22,8 @@ Tabla de casos + runner que prueban **el código real de `index.html`** (se carg
 | `cases-v30.js` | Tablero de series · hoja rápida (fichas, hoja inferior, rondas del biset / triset) y Story Card en HD |
 | `cases-v31.js` | Refinamiento de la vista del alumno: RIR explicado, biset limpio, fichas en 4 columnas, header, botón flotante y cierre |
 | `cases-v32.js` | Series × reps protagonistas, RIR en las pautas del bloque y sin referencias a otras semanas |
+| `cases-v33.js` | Fichas «Serie N» y pautas cortas |
+| `cases-v34.js` | Limpieza «menos es más»: sin agregar serie, descanso claro, unilateral como chip, cierre sin emojis |
 | `runner.html` | Los adaptadores y la pantalla |
 
 ## Correr
@@ -158,3 +160,8 @@ Nota v30/v31: los casos que registran series borran sus claves de prueba (`tv30*
 - `v32.num.01`: series × reps ≥ 32 px (≥ 30 px en estaciones del biset); el RIR sale de la tarjeta y queda en las pautas del bloque (`.jp-pauta-rir`), uno por ejercicio / estación.
 - `v32.sem.01`: ni la hoja rápida, ni la pastilla, ni la pista de carga muestran referencias a otras semanas.
 - Actualizados: `v31.rir.01` (el RIR se verifica en las pautas), `v31.bis.01` y `v30.tb.03` (rondas sin «A1 + A2 · N estaciones»).
+
+## v33 / v34: pautas cortas y limpieza (`cases-v33.js`, `cases-v34.js`, adaptador `v30`)
+
+- `v33.pau.01`: al mostrar las pautas quedan NOTA DEL DÍA, aproximación y la última indicación clave, a una frase; fuera POR QUÉ ESTÁ ACÁ y SET-UP; el texto guardado no cambia.
+- `v34.lim.01`: sin «+ AGREGAR SERIE», ficha activa liviana («Serie 1»), botón INICIAR DESCANSO claro (≥ 44 px, ícono vectorial), UNILATERAL como chip y cierre sin emojis de sistema.

@@ -1004,8 +1004,8 @@
       var lab = 'Serie ' + f.j + (f.done ? ' ✓' : '') + (f.extra ? ' +' : '');
       var body = f.done ? '<span class="jp-tb-v">' + escSB(txt) + '</span>'
         : (s.aj ? '<span class="jp-tb-v">' + escSB(txt) + '</span><em>sin confirmar</em>'
-        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + (sig ? '<em>sigue · tocá</em>' : ''));
-      return '<button type="button" class="jp-tb-t' + (f.done ? ' on' : (sig ? ' nx' : '')) + '" data-sj="' + f.j + '" aria-label="Serie ' + f.j + (f.done ? ' registrada: ' : (s.aj ? ' sin confirmar: ' : ' sugerida: ')) + escSB(txt) + '"><small>' + lab + '</small>' + body + '</button>';
+        : '<span class="jp-tb-v jp-tb-sg">' + escSB(txt) + '</span>' + '');
+      return '<button type="button" class="jp-tb-t' + (f.done ? ' on' : (sig ? ' nx' : '')) + '" data-sj="' + f.j + '" aria-label="Serie ' + f.j + (sig ? ', la que sigue,' : '') + (f.done ? ' registrada: ' : (s.aj ? ' sin confirmar: ' : ' sugerida: ')) + escSB(txt) + '"><small>' + lab + '</small>' + body + '</button>';
     }).join('');
     if(m.fin){
       var fs = { kg: m.sinKg ? '' : m.fin.kg, rp: m.fin.rp }, ft = qrTbTxt(fs.kg, fs.rp, m, un), abre = m.baseOk || m.fin.done;
@@ -1047,7 +1047,7 @@
     return '<div class="jp-qc jp-qc-tb' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + qrTableroHtml(c, e, i, m) + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
-      '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
+      '<div class="jp-qc-acts">' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
       (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
@@ -1327,6 +1327,14 @@
       });
       /* de la indicación clave queda solo la última (la más relevante: suele ser el CUIDADO) */
       claves.slice(0, -1).forEach(function(r){ if(r.parentNode) r.parentNode.removeChild(r); });
+      /* v34: como mucho 3 renglones por grupo (lo esencial y accionable de la sesión) */
+      Array.prototype.slice.call(g.querySelectorAll(':scope > .jp-tip-fase, :scope > .jp-ex-tip'), 3).forEach(function(r){ r.parentNode.removeChild(r); });
+    });
+    Array.prototype.forEach.call(cont.querySelectorAll('.jp-ex-box-b, .jp-sb-pauta-txt > p, .jp-sb-pauta-txt > div:not(.jp-tip-fase):not(.jp-tip-ex):not([class*="tempo"])'), function(el){
+      if(el.getAttribute('data-corto') === '1' || el.querySelector('.jp-tempo-row, b + b')) return;
+      var plano = String(el.textContent || '').replace(/\s+/g, ' ').trim(), corto = jpCortoSB(plano);
+      if(corto && corto !== plano && !el.children.length){ el.textContent = corto; el.title = plano; }
+      el.setAttribute('data-corto', '1');
     });
     /* renglones sueltos sin rótulo dentro de las pautas: también a una frase */
     Array.prototype.forEach.call(cont.querySelectorAll('.jp-tip-fase:not([data-corto])'), jpAcortarFilaSB);
@@ -1716,7 +1724,7 @@
     var w = fab.offsetWidth || 46, h = fab.offsetHeight || 46, vw = window.innerWidth, vh = window.innerHeight;
     if(!fab.offsetParent && !w){ dock.classList.remove('jp-fab-aparte'); return; }
     var zona = { l: vw - 12 - w - 8, t: vh - 12 - h - 8, rr: vw, b: vh }, choca = false;
-    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok'), function(el){
+    Array.prototype.some.call(document.querySelectorAll('.jp-tb-rt, .jp-tb-t, #jpCerrarDiaBtn, #storyCtaBtn, .jp-tbs-ok, .jp-block-details[open] .jp-details-content > *, .jp-criterio[open] li, .jp-ex-tips[open] .jp-ex-tip'), function(el){
       var q = el.getBoundingClientRect();
       if(q.width && q.right > zona.l && q.left < zona.rr && q.bottom > zona.t && q.top < zona.b){ choca = true; return true; }
       return false;
@@ -4350,7 +4358,7 @@
   function restBadgeSB(seg, lbl){
     seg = normRestSB(seg);
     if(seg <= 0) return '';
-    return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\u23f1\ufe0e\u25b6\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
+    return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos"><span class="jp-rest-ic" aria-hidden="true"></span><span class="jp-rest-tx">INICIAR DESCANSO</span><b class="jp-rest-t">' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</b></button>';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
     var r1 = '', r2 = [], r3 = [];
@@ -5564,7 +5572,7 @@
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">' + (SP ? '\ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE' :'\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
+            '<button class="sc-share" id="scShare" type="button">' + (SP ? 'FINALIZAR D\u00cdA Y ENVIAR REPORTE' : 'ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>';

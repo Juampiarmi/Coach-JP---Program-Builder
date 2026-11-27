@@ -125,7 +125,7 @@
     var d = document.createElement('details');
     d.className = 'jp-criterio';
     d.innerHTML =
-      '<summary><span class="cr-ic">🧠</span>' +
+      '<summary><span class="cr-ic" aria-hidden="true"></span>' +
       '<span class="cr-t">' + titulo + '</span>' +
       '<span class="cr-s">' + (sufijo || 'Por qué hacemos esto') + '</span>' +
       '<span class="cr-cv">▾</span></summary>' +

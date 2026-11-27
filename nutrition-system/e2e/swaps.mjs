@@ -117,7 +117,11 @@ for (const [kind, sub, path] of [['App en archivo', 'file', '/file/'], ['Link fi
   const ver = await verOf(page);
   check(ver === 'v2', `${kind}: la primera recarga muestra la versión nueva (${ver})`);
   if (sub === 'plan') {
-    await page.goto(base + '/plan/juan-perez');
+    // La app se recarga sola cuando entra el Service Worker nuevo: si esa recarga cae justo durante esta navegación, Chromium la corta
+    // con net::ERR_ABORTED (carrera de tiempos que hacía fallar el smoke test de Pages a veces). Se tolera igual que en verOf().
+    await page.goto(base + '/plan/juan-perez').catch((e) => {
+      if (!/ERR_ABORTED|interrupted by another navigation|frame was detached/i.test(String(e && e.message))) throw e;
+    });
     await page.waitForTimeout(800);
     check((await verOf(page)) === 'v2', 'Link fijo /plan/<alumno>: abre la app nueva');
   }
