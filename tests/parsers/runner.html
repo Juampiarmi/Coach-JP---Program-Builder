@@ -2939,9 +2939,9 @@
       r.primerBloqueY = b1 ? Math.round(b1.getBoundingClientRect().top + w2.scrollY) : -1;
       r.botones = [].filter.call(v.querySelectorAll('button'), visible).length;
       /* emojis de sistema en lo que se lee del Builder (botones, títulos, rótulos, pastillas); quedan permitidas las flechas y los símbolos de texto */
-      var EP = /\p{Extended_Pictographic}/u, OK = /[\u25B6\u25C0\u2197\u2194\u2640\u2642\u26A7\u2122\u00A9\u00AE]/u, emo = [];
-      [].forEach.call(v.querySelectorAll('button, summary, h2, h3, h4, label, .pill, .tab, .lb'), function(e){ if(!visible(e)) return; var t = String(e.textContent || '').replace(/[\u25B6\u25C0\u2197\u2194\u2640\u2642\u26A7\u2122\u00A9\u00AE]/gu, ''); if(EP.test(t)) emo.push(t.trim().slice(0, 30)); });
-      r.emojis = emo.slice(0, 8);
+      var EP = /\p{Extended_Pictographic}/u;
+      var emojis = function(){ var emo = []; [].forEach.call(v.querySelectorAll('button, summary, h2, h3, h4, label, .pill, .tab, .lb'), function(e){ if(!visible(e)) return; var t = String(e.textContent || '').replace(/[\u25B6\u25C0\u2197\u2194\u2640\u2642\u26A7\u2122\u00A9\u00AE]/gu, ''); if(EP.test(t)) emo.push(t.trim().slice(0, 30)); }); return emo.slice(0, 8); };
+      r.emojis = emojis();
       /* acciones con relleno naranja (los estados elegidos —semana, modalidad— no cuentan) */
       var naranja = function(e){ var c = cs2(e), m = (c.backgroundImage + ' ' + c.backgroundColor).match(/rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/g) || []; return m.some(function(x){ var n = x.match(/[\d.]+/g).map(Number), al = n[3] == null ? 1 : n[3]; return al > .5 && n[0] > 180 && n[0] - n[1] > 50 && n[1] > n[2]; }); };
       var llenos = function(){ return [].filter.call(v.querySelectorAll('button, .btn'), function(e){ return visible(e) && !e.matches('.on, [aria-current], .cf-wk-activa, [aria-pressed="true"], .s') && naranja(e); }).map(function(e){ return String(e.textContent).replace(/\s+/g, ' ').trim().slice(0, 34); }); };
@@ -2971,7 +2971,9 @@
         r.planIntacto = JSON.stringify(S2.plans[a.id]) === antes;
         w2.JPB.paneles.forEach(function(k){ w2.JPB.cerrar(k); });
         r.cargo = true;
-        fin(r);
+        /* los íconos los pone jpConsoleHud con una pausa de 90 ms tras cada cambio: si un texto se redibujó justo antes de medir, se cuenta otra vez */
+        if(!r.emojis.length) return fin(r);
+        setTimeout(function(){ r.emojis = emojis(); fin(r); }, 400);
       }, 400);
     }, 1500);
   }
@@ -2983,7 +2985,7 @@
     if(c.caso === 'medidas') return { primerBloqueCerca: R.primerBloqueY > 0 && R.primerBloqueY <= BASE_Y * .65, menosBotones: R.botones > 0 && R.botones <= BASE_BT - 15, _medidas: 'primer bloque ' + R.primerBloqueY + ' px (antes ' + BASE_Y + ') · ' + R.botones + ' botones (antes ' + BASE_BT + ')' };
     if(c.caso === 'emojis') return { sinEmojis: R.emojis.length === 0, _quedan: R.emojis.join(' | ') };
     if(c.caso === 'naranja') return { soloAgregarBloque: R.naranjasPlegado.length === 1 && /AGREGAR BLOQUE/i.test(R.naranjasPlegado[0]), abiertoSoloPrincipales: R.naranjasAbierto.every(function(t){ return /AGREGAR BLOQUE|GENERAR PLAN COMPLETO/i.test(t); }), _llenos: R.naranjasAbierto.join(' | ') };
-    if(c.caso === 'bloque') return { recta: R.resumenes[0] === 'Serie recta \u00b7 4\u00d75-7 \u00b7 3 min \u00b7 RIR 1-2 (RPE 8-9)', biset: R.resumenes[1] === 'Biset \u00b7 3\u00d78-10 / 3\u00d712-20 \u00b7 90 s \u00b7 RIR 1 (RPE 9)', triset: /^Triset \u00b7 3\u00d712-15 \/ 3\u00d710-12 \/ 3\u00d712 \u00b7 75 s/.test(R.resumenes[2] || ''), accionesAlPasar: R.accionesOcultas, _res: R.resumenes.join(' | ') };
+    if(c.caso === 'bloque') return { recta: R.resumenes[0] === 'Serie recta \u00b7 4\u00d75-7 \u00b7 3 min \u00b7 RIR 1-2 (RPE 8-9)', biset: R.resumenes[1] === 'Biset \u00b7 3\u00d78-10 / 3\u00d712-20 \u00b7 90 s \u00b7 RIR 1 (RPE 9)', triset: R.resumenes[2] === 'Triset \u00b7 3\u00d712-15 / 3\u00d710-12 / 3\u00d712 \u00b7 75 s \u00b7 RIR 0-1 (RPE 9-10)', accionesAlPasar: R.accionesOcultas, _res: R.resumenes.join(' | ') };
     if(c.caso === 'paneles') return { todosPlegados: R.todosPlegados, seAbren: R.seAbren, recuerdaAlRedibujar: R.recuerdaAlRedibujar, alumnoALaVista: R.alumnoALaVista, _paneles: R.paneles };
     throw new Error('caso desconocido: ' + c.caso);
   }
