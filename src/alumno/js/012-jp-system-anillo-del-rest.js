@@ -77,6 +77,48 @@
      __storyLast más abajo, que guarda qué función y con qué datos se
      dibujó por última vez, para poder re-pintar cuando el alumno sube o
      saca la foto sin tener que reabrir el modal. */
+  /* ---------- STORY CARD EN HD (2026-11) ----------
+     Antes el canvas se pintaba a 1080×1920 con el suavizado por defecto ('low'): la foto del alumno (12–48 MP) se achicaba de un
+     solo paso 2–4 veces y salía dentada / pixelada, y si se descargaba antes de que cargara Chakra Petch quedaba la fuente de reserva.
+     Ahora el lienzo LÓGICO sigue siendo 1080×1920 (todas las coordenadas de dibujo no cambian), pero el canvas real se pinta a 2×
+     (2160×3840, mismo 9:16) con suavizado 'high'; la foto se reduce en pasos a la mitad hasta quedar cerca del tamaño final, y las
+     fuentes web se cargan antes de pintar y antes de exportar. La descarga / compartido / copia salen en PNG sin pérdida. */
+  window.JP_STORY_ESCALA = window.JP_STORY_ESCALA || 2;
+  window.jpStoryCtx = function(c){
+    var S = window.JP_STORY_ESCALA || 2, w = 1080 * S, h = 1920 * S;
+    if(c.width !== w || c.height !== h){ c.width = w; c.height = h; }       /* solo cambia (y limpia) la primera vez */
+    var g = c.getContext('2d');
+    g.setTransform(S, 0, 0, S, 0, 0);
+    g.imageSmoothingEnabled = true;
+    try{ g.imageSmoothingQuality = 'high'; }catch(e){}
+    return g;
+  };
+  var _storyFuentes = null;
+  window.jpStoryFuentes = function(){
+    if(_storyFuentes) return _storyFuentes;
+    if(!document.fonts || !document.fonts.load){ window.__jpStoryFuentesOk = true; return (_storyFuentes = Promise.resolve()); }
+    var cargas = ['400 40px "Chakra Petch"', '500 40px "Chakra Petch"', '600 40px "Chakra Petch"', '700 60px "Chakra Petch"',
+                  '500 24px "JetBrains Mono"', '600 24px "JetBrains Mono"', '700 24px "JetBrains Mono"'].map(function(f){ return document.fonts.load(f).catch(function(){ return null; }); });
+    _storyFuentes = Promise.race([Promise.all(cargas), new Promise(function(r){ setTimeout(r, 2500); })]).then(function(){ window.__jpStoryFuentesOk = true; });
+    return _storyFuentes;
+  };
+  /* foto nítida: reduce en pasos a la mitad (cada paso ≤ 16 MP, el tope de canvas de iOS) hasta quedar a menos de 2× del tamaño final */
+  function fotoNitida(img, sx, sy, sw, sh, pw, ph){
+    var cache = window.__storyFotoCache;
+    if(cache && cache.img === img && cache.pw === pw && cache.ph === ph) return cache.r;
+    var src = img, x = sx, y = sy, w = sw, h = sh;
+    try{
+      while(w / 2 >= pw && h / 2 >= ph && (w / 2) * (h / 2) <= 16e6){
+        var k = document.createElement('canvas'); k.width = Math.round(w / 2); k.height = Math.round(h / 2);
+        var kg = k.getContext('2d'); kg.imageSmoothingEnabled = true; try{ kg.imageSmoothingQuality = 'high'; }catch(e){}
+        kg.drawImage(src, x, y, w, h, 0, 0, k.width, k.height);
+        src = k; x = 0; y = 0; w = k.width; h = k.height;
+      }
+    }catch(e){ src = img; x = sx; y = sy; w = sw; h = sh; }
+    var r = { src: src, x: x, y: y, w: w, h: h };
+    window.__storyFotoCache = { img: img, pw: pw, ph: ph, r: r };
+    return r;
+  }
   window.storyFondoFoto = function(g, Wp, Hp, fallback){
     const img = window.__storyFotoImg;
     if(img && img.complete && img.naturalWidth){
@@ -84,7 +126,10 @@
       let sw, sh, sx, sy;
       if(ir > cr){ sh = img.naturalHeight; sw = sh * cr; sx = (img.naturalWidth - sw) / 2; sy = 0; }
       else { sw = img.naturalWidth; sh = sw / cr; sx = 0; sy = (img.naturalHeight - sh) / 2; }
-      g.drawImage(img, sx, sy, sw, sh, 0, 0, Wp, Hp);
+      const esc = (g.getTransform ? g.getTransform().a : 1) || 1;
+      g.imageSmoothingEnabled = true; try{ g.imageSmoothingQuality = 'high'; }catch(e){}
+      const f = fotoNitida(img, sx, sy, sw, sh, Math.round(Wp * esc), Math.round(Hp * esc));
+      g.drawImage(f.src, f.x, f.y, f.w, f.h, 0, 0, Wp, Hp);
       /* overlay oscuro -- garantiza legibilidad del texto sobre CUALQUIER
          foto, sea clara u oscura (directiva pide 0.60-0.75 de opacidad) */
       const ov = g.createLinearGradient(0, Hp, 0, 0);
@@ -98,7 +143,7 @@
   }
   function dibujar(d){
     const c = document.getElementById('storyCanvas');
-    const g = c.getContext('2d');
+    const g = window.jpStoryCtx(c);
     g.clearRect(0, 0, W, H);
     window.__storyLast = { tipo: 'cyber', d: d };
 
@@ -350,7 +395,7 @@
      el score final destacado en Cyan Táctico, en vez de volumen/series. */
   function dibujarCF(d){
     const c = document.getElementById('storyCanvas');
-    const g = c.getContext('2d');
+    const g = window.jpStoryCtx(c);
     g.clearRect(0, 0, W, H);
     window.__storyLast = { tipo: 'cf', d: d };
     /* debug -- geometría real de cada hero card dibujada (no solo
@@ -642,18 +687,14 @@
 
   function abrirStory(d){
     var pintar = function(){ if(typeof window.CoachStoryMarca === 'function' && window.COACH_DISCIPLINA === 'sports') window.CoachStoryMarca(d); else dibujar(d); };
-    if(document.fonts && document.fonts.ready){
-      document.fonts.ready.then(pintar).catch(pintar);
-    }
+    window.jpStoryFuentes().then(pintar);      /* HD: se repinta cuando Chakra Petch / JetBrains Mono están cargadas de verdad */
     pintar();
     document.getElementById('storyWrap').classList.add('on');
     try{ if(navigator.vibrate) navigator.vibrate([40, 40, 80]); }catch(e){}
   }
   function abrirCF(d){
     var pintarCF = function(){ if(typeof window.CoachStoryMarcaCF === 'function' && window.COACH_DISCIPLINA !== 'sports') window.CoachStoryMarcaCF(d); else dibujarCF(d); };
-    if(document.fonts && document.fonts.ready){
-      document.fonts.ready.then(pintarCF).catch(pintarCF);
-    }
+    window.jpStoryFuentes().then(pintarCF);
     pintarCF();
     document.getElementById('storyWrap').classList.add('on');
     try{ if(navigator.vibrate) navigator.vibrate([40, 40, 80]); }catch(e){}
@@ -706,7 +747,9 @@
     const restaurar = function(txt, delay){ setTimeout(function(){ sTx(btn).textContent = txt; }, delay); };
     const c = document.getElementById('storyCanvas');
     btn.disabled = true;
-    c.toBlob(function(blob){
+    /* HD: si las fuentes todavía no terminaron de cargar, se espera (la Story se repinta sola al cargarlas) y recién ahí se exporta */
+    const exportar = function(cb){ if(window.__jpStoryFuentesOk) cb(); else window.jpStoryFuentes().then(function(){ setTimeout(cb, 30); }); };
+    exportar(function(){ c.toBlob(function(blob){
       btn.disabled = false;
       if(!blob){ sTx(btn).textContent = 'No se pudo generar'; restaurar(textoOriginal, 2200); return; }
       const nombreArchivo = 'coach-jp-story.png';
@@ -724,18 +767,19 @@
         return;
       }
       storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar);
-    }, 'image/png');
+    }, 'image/png'); });
   });
   document.getElementById('storyCp').addEventListener('click', function(){
     const b = this, c = document.getElementById('storyCanvas');
     const fallo = function(){ sTx(b).textContent = 'Usá Descargar'; setTimeout(function(){ sTx(b).textContent = 'Copiar'; }, 2600); };
     try{
-      c.toBlob(function(blob){
+      const copiar = function(){ c.toBlob(function(blob){
         if(!blob || !navigator.clipboard || !window.ClipboardItem){ fallo(); return; }
         navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
           .then(function(){ sTx(b).textContent = 'Copiada ✓'; setTimeout(function(){ sTx(b).textContent = 'Copiar'; }, 2200); })
           .catch(fallo);
-      }, 'image/png');
+      }, 'image/png'); };
+      if(window.__jpStoryFuentesOk) copiar(); else window.jpStoryFuentes().then(function(){ setTimeout(copiar, 30); });
     }catch(e){ fallo(); }
   });
 

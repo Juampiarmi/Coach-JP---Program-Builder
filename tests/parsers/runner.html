@@ -60,6 +60,7 @@
 <script src="cases-ficha.js"></script>
 <script src="cases-persistencia.js"></script>
 <script src="cases-v28.js"></script>
+<script src="cases-v30.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -122,6 +123,7 @@
     renombres:    { run: function(i){ return renombresBiblioteca(i); }, valor: function(r){ return r; } },
     persistencia: { run: function(i){ return persistenciaCaso(i); }, valor: function(r){ return r; } },
     v28:          { run: function(i){ return v28Caso(i); }, valor: function(r){ return r; } },
+    v30:          { run: function(i){ return v30Caso(i); }, valor: function(r){ return r; } },
     generoTitulos: { run: function(i){ return generoTitulos(i); }, valor: function(r){ return r; } },
     eliteBB:      { run: function(i){ return eliteCaso(i); }, valor: function(r){ return r; } },
     eliteEd:      { run: function(i){ return eliteEdit(i); }, valor: function(r){ return r; } },
@@ -517,6 +519,97 @@
       try{ w.jpSembrarHuellas(true); }catch(e){}
       w.save = orig.save; w.guardarAhora = orig.ga; w.renderAthletes = orig.ra; w.renderBuilder = orig.rb; w.toast = orig.toast;
       try{ orig.ra.call(w); }catch(e){}
+    }
+  }
+  /* ---------- v30: tablero de series · hoja rápida (Opción 4 del Showroom) y Story Card en HD ---------- */
+  function v30Caso(c){
+    var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('no hay app del alumno');
+    var doc = w.document, cs = function(el){ return w.getComputedStyle(el); }, caja = doc.createElement('div'), T = w.jpTablero;
+    caja.className = 'blocks-stack'; (doc.getElementById('mainContent') || doc.body).appendChild(caja);
+    var dibujar = function(id, titulo, items){ caja.innerHTML = '<div class="block"><div class="block-body"></div></div>'; w.jpPizarraSports(caja.querySelector('.block'), { id: id, title: titulo, category: 'strength', items: items, objective: '', tips: '' }, 0, 'dia1'); };
+    var hoja = function(){ return doc.getElementById('jpTbSheet'); };
+    var poner = function(inp, v){ inp.value = v; inp.dispatchEvent(new w.Event('input', { bubbles: true })); };
+    var PRESS = ['Press de banca plano con barra', '4x5-7 | RIR 1', 'Rest 150s'];
+    var TRISET = ['D1. Elevaciones laterales con mancuernas', '3x12-15 | RIR 1', 'D2. Extensión de tríceps en polea con soga', '3x10-12 | RIR 1', 'D3. Fondos en banco', '3x12 | RIR 0', 'Rest 75s'];
+    var S0 = w.JP_STORY_ESCALA;
+    /* el progreso de la app del alumno de prueba persiste entre recargas: cada caso borra las series de sus bloques de prueba (tv30*) antes y después */
+    var limpiar = function(){ try{ w.eval("Object.keys(state.loads).forEach(function(k){ if(/\\|tv30[a-z]\\|/.test(k)) delete state.loads[k]; }); if(typeof saveProgress === 'function') saveProgress();"); }catch(eL){} };
+    limpiar();
+    try{
+      if(c.caso === 'fichas'){
+        dibujar('tv30c', 'Fuerza', PRESS);
+        var tiles = caja.querySelectorAll('.jp-tb-t'), card = caja.querySelector('.jp-qc'), sg = caja.querySelector('.jp-tb-t .jp-tb-sg'), st = sg && cs(sg);
+        return { unaFichaPorSerie: tiles.length === 4, laQueSigue: tiles[0].classList.contains('nx') && /sigue/.test(tiles[0].textContent) && !tiles[1].classList.contains('nx'),
+          sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /^Sug\./.test(sg.textContent.trim()),
+          filasViejasOcultas: cs(card.querySelector('.jp-qc-rows')).display === 'none' && card.querySelectorAll('.jp-qc-r').length === 4,
+          pastillaSecundaria: !!card.querySelector(':scope > .jp-qc-tg') && /RIR/.test(card.querySelector('.jp-qc-tg').textContent),
+          chakra: /Chakra Petch/.test(cs(tiles[0]).fontFamily) };
+      }
+      if(c.caso === 'hoja'){
+        dibujar('tv30d', 'Fuerza', PRESS);
+        var key1 = caja.querySelector('.jp-qc-r[data-sj="1"]').getAttribute('data-key');
+        caja.querySelector('.jp-tb-t').click();
+        var sh = hoja(), abre = !!sh && !sh.hidden, okB = sh.querySelector('[data-tba="ok"]');
+        var botonAbajo = cs(sh.querySelector('.jp-tbs-dock')).position === 'sticky' && okB.getBoundingClientRect().height >= 56;
+        okB.click();
+        var pideKg = !!hoja().querySelector('.jp-tbs-e.falta') && !w.getLoad(key1).done;
+        var stpKg = function(){ return hoja().querySelector('.jp-tbs-stp[data-f="kg"]'); };
+        var antes = stpKg().querySelector('small i').textContent;
+        poner(stpKg().querySelector('input'), '80');
+        hoja().querySelector('[data-tba="inc"][data-f="kg"][data-d="2.5"]').click();
+        var despues = stpKg().querySelector('small i').textContent, valor = stpKg().querySelector('input').value;
+        hoja().querySelector('[data-tba="ok"]').click();
+        var ld = w.getLoad(key1), t = caja.querySelectorAll('.jp-tb-t');
+        var r = { abreHoja: abre, botonFijoAbajo: botonAbajo, sinPesoNoRegistra: pideKg, sugeridoLuegoAjustado: antes === 'sugerido' && despues === 'ajustado' && valor === '82.5',
+          guardaEnLaMismaClave: ld.done === true && String(ld.kg) === '82.5' && String(ld.reps) === '5', cierraHoja: !T.estado().items,
+          fichaHecha: t[0].classList.contains('on') && /82,5×5/.test(t[0].textContent) && /238, 90, 18/.test(cs(t[0]).borderTopColor),
+          herencia: t[1].classList.contains('nx') && /Sug\. 82,5×5/.test(t[1].textContent) };
+        caja.querySelector('.jp-tb-t').click();
+        var txtOk = hoja().querySelector('[data-tba="ok"]').textContent; hoja().querySelector('[data-tba="ok"]').click();
+        r.desmarca = /desmarcar/.test(txtOk) && w.getLoad(key1).done === false && !caja.querySelector('.jp-tb-t').classList.contains('on');
+        return r;
+      }
+      if(c.caso === 'rondas'){
+        dibujar('tv30e', 'Hipertrofia – Triset', TRISET);
+        var reg = caja.querySelector('.jp-sb-biset-reg'), rt = caja.querySelectorAll('.jp-tb-rt');
+        var r2 = { unaFilaPorRonda: rt.length === 3, estaciones: /D1 \+ D2 \+ D3/.test(rt[0].textContent) && /3 estaciones/.test(rt[0].textContent),
+          enCurso: rt[0].classList.contains('nx') && /EN CURSO/.test(rt[0].textContent) && /PENDIENTE/.test(rt[1].textContent),
+          sinTablerosRepetidos: [].every.call(reg.querySelectorAll(':scope > .jp-qc > .jp-tb'), function(x){ return cs(x).display === 'none'; }),
+          filaAncha: rt[0].getBoundingClientRect().width >= reg.getBoundingClientRect().width * .9 };
+        rt[0].click();
+        var sh2 = hoja();
+        r2.hojaConLasTresEstaciones = sh2.querySelectorAll('.jp-tbs-e').length === 3 && /D1 → D2 → D3/.test(sh2.querySelector('.jp-tbs-h').textContent);
+        [].forEach.call(sh2.querySelectorAll('input[data-f="kg"]'), function(inp, ix){ poner(inp, ['8', '25'][ix] || '10'); });
+        sh2.querySelector('[data-tba="ok"]').click();
+        var keys = [].map.call(reg.querySelectorAll('.jp-qc-r[data-sj="1"]'), function(x){ return x.getAttribute('data-key'); });
+        rt = caja.querySelectorAll('.jp-tb-rt');
+        r2.rondaRegistrada = keys.length === 3 && keys.every(function(k){ return w.getLoad(k).done === true; });
+        r2.resumen = rt[0].classList.contains('on') && /✓ HECHA/.test(rt[0].textContent) && /8×12/.test(rt[0].textContent) && /25×10/.test(rt[0].textContent);
+        r2.siguienteEnCurso = rt[1].classList.contains('nx') && /Sug\. 8×12/.test(rt[1].textContent);
+        return r2;
+      }
+      if(c.caso === 'storyHD'){
+        var cv = doc.getElementById('storyCanvas'), D = { atleta: 'Prueba HD', diaCorto: 'Día 1', semanaN: 1, tituloSesion: 'Push', vol: 1000, series: 10, reps: 80, ejDetalle: [], grupos: [] };
+        w.__storyFotoImg = null; w.__storyFotoCache = null;
+        w.CoachStory.abrir(JSON.parse(JSON.stringify(D)));
+        var g = cv.getContext('2d'), tr = g.getTransform();
+        var r3 = { lienzo2160x3840: cv.width === 2160 && cv.height === 3840, escala2x: tr.a === 2 && tr.d === 2, suavizadoAlto: g.imageSmoothingEnabled === true && g.imageSmoothingQuality === 'high',
+          esperaFuentes: typeof w.jpStoryFuentes === 'function' && typeof w.jpStoryFuentes().then === 'function' };
+        /* foto grande: se reduce en pasos a la mitad hasta quedar a menos de 2× del tamaño final (con escala 1 para que la prueba sea liviana) */
+        w.JP_STORY_ESCALA = 1;
+        var foto = doc.createElement('canvas'); foto.width = 3000; foto.height = 4000; var fg = foto.getContext('2d'); fg.fillStyle = '#345'; fg.fillRect(0, 0, 3000, 4000);
+        Object.defineProperty(foto, 'naturalWidth', { value: 3000 }); Object.defineProperty(foto, 'naturalHeight', { value: 4000 }); Object.defineProperty(foto, 'complete', { value: true });
+        w.__storyFotoImg = foto; w.CoachStory.abrir(JSON.parse(JSON.stringify(D)));
+        var ca = w.__storyFotoCache;
+        r3.fotoEnPasos = !!ca && ca.r.src !== foto && ca.r.w === 1125 && ca.r.h === 2000 && ca.pw === 1080 && cv.width === 1080;
+        return r3;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      try{ if(T) T.cerrar(); }catch(e1){}
+      if(c.caso === 'storyHD'){ w.JP_STORY_ESCALA = S0 || 2; w.__storyFotoImg = null; w.__storyFotoCache = null; try{ w.CoachStory.cerrar(); }catch(e2){} }
+      if(caja.parentNode) caja.parentNode.removeChild(caja);
+      limpiar();
     }
   }
   /* ---------- v28: bisets con registro al final, casilleros, video junto al nombre, Pizarra del Coach = plan del alumno, plan() sin pisar ---------- */
