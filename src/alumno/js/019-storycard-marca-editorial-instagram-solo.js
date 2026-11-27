@@ -105,11 +105,15 @@
     g.restore();
   }
   function escudo(g, x, y, s){
+    /* v38: escudo amarillo, igual al del encabezado (#hdcGold: degradé dorado en diagonal y filete claro); antes iba en naranja plano */
     g.save(); g.translate(x, y); g.scale(s, s);
-    g.fillStyle = OR;
+    var oro = g.createLinearGradient(4, 2, 60, 72);
+    oro.addColorStop(0, '#FFF2A8'); oro.addColorStop(.38, '#F5C518'); oro.addColorStop(.72, '#D6A500'); oro.addColorStop(1, '#8A6B00');
+    g.fillStyle = oro;
     g.beginPath(); g.moveTo(32, 2); g.lineTo(60, 12); g.lineTo(60, 36);
     g.bezierCurveTo(60, 54, 47, 66, 32, 72); g.bezierCurveTo(17, 66, 4, 54, 4, 36);
     g.lineTo(4, 12); g.closePath(); g.fill();
+    g.strokeStyle = '#FFF2A8'; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
     g.fillStyle = INK;
     g.beginPath(); g.moveTo(36, 18); g.lineTo(21, 40); g.lineTo(30, 40);
     g.lineTo(27, 58); g.lineTo(43, 34); g.lineTo(33, 34); g.closePath(); g.fill();
@@ -152,6 +156,7 @@
     return t + '.';
   }
   window.jpTextoEnfasis = textoEnfasis;
+  window.jpStoryEscudo = escudo;      /* v38: para el test del escudo amarillo */
   function dibujarMarca(d){
     var c = document.getElementById('storyCanvas'); if(!c) return;
     d = d || {};

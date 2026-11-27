@@ -41,7 +41,7 @@
         if(p && !p.classList.contains('active')) p.click();
       });
     }
-    var etqSem = function(t){ var m = /(\d+)/.exec(t || ''); return m ? 'SEM ' + m[1] : String(t || '').trim(); };
+    var etqSem = function(t){ var m = /(\d+)/.exec(t || ''); return m ? 'SEMANA ' + m[1] : String(t || '').trim(); };      /* v38: SEMANA completo (antes SEM) */
     var lbl = etqSem((act.textContent || '').trim());
     var h = '<b>' + lbl + '</b><i>&#9662;</i>';
     if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
