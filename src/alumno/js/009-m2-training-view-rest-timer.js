@@ -914,9 +914,11 @@
   function qrRirKey(c, e){ return c.w + '|' + c.d + '|' + c.b + '|' + e.idx; }
   function qrRirHtml(c, e, m){
     var sel = (state.rirEx || {})[qrRirKey(c, e)];
-    return '<div class="jp-qc-rir" role="group" aria-label="RIR del ejercicio (repeticiones que te sobraron)"><span class="jp-qc-rir-lb">RIR</span>' +
-      [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
-      '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
+    /* v36: el alumno ve RPE (esfuerzo del 1 al 10); cada botón guarda el mismo valor de siempre (RIR 0-3 = RPE 10, 9, 8, 7 o menos) */
+    var RPE_BTN = ['10', '9', '8', '\u22647'], RPE_LB = ['al máximo', 'muy duro', 'duro', 'exigente o menos'];
+    return '<div class="jp-qc-rir" role="group" aria-label="Esfuerzo del ejercicio (RPE, del 1 al 10)"><span class="jp-qc-rir-lb">RPE</span>' +
+      [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '" aria-label="RPE ' + RPE_BTN[n] + ': ' + RPE_LB[n] + '">' + RPE_BTN[n] + '</button>'; }).join('') +
+      '<span class="jp-qc-rir-h">esfuerzo del 1 al 10</span></div>';
   }
   /* COACHING TIPS del ejercicio (Set-up · Ejecución · Cuidado): salen de las pautas del bloque; en un biset / triset, solo las líneas de ESTE ejercicio (A1 · ..., A2 · ...) */
   function qrTipsHtml(c, e, i){
@@ -965,6 +967,30 @@
     return 'te guardás ' + a + '–' + b + (b === 1 ? ' rep' : ' reps');
   }
   window.jpRirTexto = jpRirTexto;
+  /* v36 · RPE para el alumno: esfuerzo percibido del 1 al 10. Se deriva del RIR pautado (RPE = 10 − RIR): RIR 1 → RPE 9, RIR 1-2 → RPE 8-9, RIR 3+ → RPE ≤7 */
+  function jpRpeDeRir(rir){
+    var s = String(rir == null ? '' : rir).replace(/^\s*RIR\s*/i, '').trim(); if(!s) return '';
+    var m = /^(\d+)\s*(?:[-–]\s*(\d+))?\s*(\+)?$/.exec(s); if(!m) return '';
+    if(m[3]) return '\u2264' + Math.max(1, 10 - (+m[1]));
+    var a = 10 - (+m[1]), b = m[2] != null ? 10 - (+m[2]) : a, lo = Math.max(1, Math.min(a, b)), hi = Math.min(10, Math.max(a, b));
+    return lo === hi ? String(lo) : lo + '-' + hi;
+  }
+  var RPE_PAL = { 10: 'al máximo', 9: 'muy duro', 8: 'duro', 7: 'exigente', 6: 'moderado' };
+  function jpRpePalabra(n){ n = +n; return n >= 10 ? RPE_PAL[10] : (RPE_PAL[n] || 'liviano'); }
+  function jpRpeTexto(rpe){
+    var s = String(rpe || ''); if(!s) return '';
+    var men = /^\u2264(\d+)$/.exec(s); if(men) return jpRpePalabra(men[1]) + ' o menos (' + men[1] + ' de 10 o menos)';
+    var m = /^(\d+)(?:-(\d+))?$/.exec(s); if(!m) return '';
+    return m[2] ? jpRpePalabra(m[1]) + ' a ' + jpRpePalabra(m[2]) + ' (' + m[1] + ' a ' + m[2] + ' de 10)' : jpRpePalabra(m[1]) + ' (' + m[1] + ' de 10)';
+  }
+  window.jpRpeDeRir = jpRpeDeRir; window.jpRpeTexto = jpRpeTexto;
+  /* v36 · registro de cargas plegado: cada ejercicio (y cada biset) muestra solo series × reps y el descanso; las fichas, «Cómo te fue» y las rondas
+     se abren con «Registrar cargas». Lo abierto se recuerda mientras dure la sesión de la app (no se guarda nada en el plan). */
+  var TB_ABIERTO = {};
+  function qrTbToggleHtml(k, i, m){
+    var kk = k + '|' + i, ab = !!TB_ABIERTO[kk], hechasT = m.filas.filter(function(f){ return f.done; }).length;
+    return '<button type="button" class="jp-tb-abrir" data-tbk="' + escSB(kk) + '" aria-expanded="' + (ab ? 'true' : 'false') + '"><span>Registrar cargas</span><em>' + hechasT + '/' + m.filas.length + ' series</em></button>';
+  }
   /* aplica la aclaración dentro de cada celda de RIR del tablero (idempotente; jpDosisHtml no cambia) */
   function jpRirAclararSB(root){
     if(!root || !root.querySelectorAll) return;
@@ -1023,9 +1049,9 @@
     var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
     var guia = qrGuia(c, e, i);
     /* v30: las series se registran en el tablero de fichas (arriba); la pastilla queda como acceso secundario a RIR, plan de cargas y series extra */
-    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="Cómo te fue (repeticiones que te sobraron) en el ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
+    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="Cómo te fue (esfuerzo del 1 al 10) en el ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
       '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Cómo te fue') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
-      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-h">reps que te sobraron (RIR)</span></span></button>';      /* v31: sin la referencia de otra semana: solo el contexto de hoy */
+      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-h">esfuerzo del 1 al 10 (RPE)</span></span></button>';      /* v31: sin la referencia de otra semana: solo el contexto de hoy */
     var inputs = function(kg, rp, pre, rpPh, n){
       return (m.sinKg ? '' : '<input type="text" inputmode="decimal" class="jp-qc-kg' + (pre && kg ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos de la ' + n + '" value="' + escSB(kg) + '" placeholder="—"><b class="jp-qc-x">×</b>') +
         '<input type="text" inputmode="decimal" class="jp-qc-rp' + (pre && rp ? ' pre' : '') + '" autocomplete="off" aria-label="' + ual.charAt(0).toUpperCase() + ual.slice(1) + ' de la ' + n + '" value="' + escSB(rp) + '" placeholder="' + escSB(rpPh) + '">';
@@ -1044,7 +1070,7 @@
         inputs(m.fin.kg, m.fin.rp, m.fin.pre, m.rpPh, 'serie final') +
         '<button type="button" class="jp-qc-finok jp-qc-ok' + (m.fin.done ? ' on ok' : '') + '" aria-pressed="' + (m.fin.done ? 'true' : 'false') + '" aria-label="' + (m.fin.done ? 'Desmarcar' : 'Marcar') + ' la serie final como hecha">✓</button></div></div>';
     }
-    return '<div class="jp-qc jp-qc-tb' + ((m.nd > 0 || (m.fin && m.fin.done)) ? '' : ' jp-qc-sinreg') + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + qrTableroHtml(c, e, i, m) + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
+    return '<div class="jp-qc jp-qc-tb' + (TB_ABIERTO[k + '|' + i] ? '' : ' jp-tb-cerrado') + ((m.nd > 0 || (m.fin && m.fin.done)) ? '' : ' jp-qc-sinreg') + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + qrTbToggleHtml(k, i, m) + qrTableroHtml(c, e, i, m) + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       qrPlanHtml(c, e) + cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts">' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
@@ -1280,7 +1306,8 @@
       if(sec.querySelector(':scope > .jp-pauta-rir')) return;
       var tx = jpRirTexto(val), d = document.createElement('div');
       d.className = 'jp-pauta-rir'; d.setAttribute('data-nota', 'rir');
-      d.innerHTML = '<b>RIR ' + escSB(val) + '</b>' + (tx ? '<span>' + escSB(tx) + '</span>' : '');
+      var rpe = jpRpeDeRir(val), txr = jpRpeTexto(rpe);      /* v36: RPE (esfuerzo del 1 al 10) en lugar de RIR */
+      d.innerHTML = rpe ? '<b>RPE ' + escSB(rpe) + '</b>' + (txr ? '<span>' + escSB(txr) + '</span>' : '') : '<b>RIR ' + escSB(val) + '</b>' + (tx ? '<span>' + escSB(tx) + '</span>' : '');
       var tit = sec.querySelector(':scope > .jp-pauta-ex-tit');
       if(tit && tit.nextSibling) sec.insertBefore(d, tit.nextSibling); else sec.appendChild(d);
     });
@@ -1374,7 +1401,7 @@
       var mas = reg.querySelector(':scope > .jp-tb-mas');
       if(!mas){
         mas = document.createElement('details'); mas.className = 'jp-tb-mas';
-        mas.innerHTML = '<summary><span>Cómo te fue</span><em>reps que te sobraron (RIR)</em></summary><div class="jp-tb-mas-b"></div>';
+        mas.innerHTML = '<summary><span>Cómo te fue</span><em>esfuerzo del 1 al 10 (RPE)</em></summary><div class="jp-tb-mas-b"></div>';
         reg.appendChild(mas);
       }
       var cont = mas.querySelector(':scope > .jp-tb-mas-b');
@@ -1410,6 +1437,13 @@
       if(tit && tit.nextSibling) reg.insertBefore(box, tit.nextSibling); else reg.appendChild(box);
     }
     box.innerHTML = h;
+    var kb = 'bis|' + est[0].cd.getAttribute('data-qk') + '|' + est[0].i, abB = !!TB_ABIERTO[kb], hechasR = 0, q2;
+    for(q2 = 0; q2 < nR; q2++){ if(hecha(q2)) hechasR++; }
+    var tgB = reg.querySelector(':scope > .jp-tb-abrir');
+    if(!tgB){ tgB = document.createElement('button'); tgB.type = 'button'; tgB.className = 'jp-tb-abrir jp-tb-abrir-bis'; reg.insertBefore(tgB, box); }
+    tgB.setAttribute('data-tbk', kb); tgB.setAttribute('aria-expanded', abB ? 'true' : 'false');
+    tgB.innerHTML = '<span>Registrar cargas</span><em>' + hechasR + '/' + nR + ' rondas</em>';
+    reg.classList.toggle('jp-tb-cerrado', !abB);
     reg.classList.add('jp-tb-bis');
   }
   function jpTbRefrescarRondas(root){ Array.prototype.forEach.call((root || document).querySelectorAll('.jp-sb-biset'), jpTbRondasSB); }
@@ -1671,6 +1705,17 @@
   window.jpTablero = { abrir: tbAbrir, cerrar: tbCerrar, registrar: tbRegistrar, estado: function(){ return TB; } };
   document.addEventListener('click', function(ev){
     var t = ev.target; if(!t || !t.closest) return;
+    var abT = t.closest('.jp-tb-abrir');
+    if(abT){
+      ev.preventDefault(); ev.stopPropagation();
+      var kkT = abT.getAttribute('data-tbk'), abre = !TB_ABIERTO[kkT];
+      if(abre) TB_ABIERTO[kkT] = 1; else delete TB_ABIERTO[kkT];
+      var contT = abT.closest('.jp-qc, .jp-sb-biset-reg'); if(contT) contT.classList.toggle('jp-tb-cerrado', !abre);
+      abT.setAttribute('aria-expanded', abre ? 'true' : 'false');
+      if(!abre && contT){ Array.prototype.forEach.call(contT.querySelectorAll('.jp-qc.jp-open'), function(o){ qrCerrar(o); }); if(contT.classList.contains('jp-open')) qrCerrar(contT); }
+      try{ jpFabRevisar(); }catch(eF){}
+      return;
+    }
     var tt = t.closest('.jp-tb-t');
     if(tt){
       ev.preventDefault(); ev.stopPropagation(); if(tt.disabled) return;

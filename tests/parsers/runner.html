@@ -66,6 +66,7 @@
 <script src="cases-v33.js"></script>
 <script src="cases-v34.js"></script>
 <script src="cases-v35.js"></script>
+<script src="cases-v36.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -531,7 +532,8 @@
     var w = alumnoWin(); if(!w || typeof w.jpPizarraSports !== 'function') throw new Error('no hay app del alumno');
     var doc = w.document, cs = function(el){ return w.getComputedStyle(el); }, caja = doc.createElement('div'), T = w.jpTablero;
     caja.className = 'blocks-stack'; (doc.getElementById('mainContent') || doc.body).appendChild(caja);
-    var dibujar = function(id, titulo, items){ caja.innerHTML = '<div class="block"><div class="block-body"></div></div>'; w.jpPizarraSports(caja.querySelector('.block'), { id: id, title: titulo, category: 'strength', items: items, objective: '', tips: '' }, 0, 'dia1'); };
+    var abrirRegistro = function(){ [].forEach.call(caja.querySelectorAll('.jp-tb-abrir'), function(b){ if(b.getAttribute('aria-expanded') !== 'true') b.click(); }); };
+    var dibujar = function(id, titulo, items){ caja.innerHTML = '<div class="block"><div class="block-body"></div></div>'; w.jpPizarraSports(caja.querySelector('.block'), { id: id, title: titulo, category: 'strength', items: items, objective: '', tips: '' }, 0, 'dia1'); abrirRegistro(); };
     var hoja = function(){ return doc.getElementById('jpTbSheet'); };
     var poner = function(inp, v){ inp.value = v; inp.dispatchEvent(new w.Event('input', { bubbles: true })); };
     var PRESS = ['Press de banca plano con barra', '4x5-7 | RIR 1', 'Rest 150s'];
@@ -547,7 +549,7 @@
         return { unaFichaPorSerie: tiles.length === 4, laQueSigue: tiles[0].classList.contains('nx') && /sigue/.test(tiles[0].getAttribute('aria-label')) && !tiles[1].classList.contains('nx'),
           sugerenciaTenue: !!st && st.fontStyle === 'italic' && /0\.34\)/.test(st.color) && /^Serie 2$/.test(tiles[1].querySelector('small').textContent.trim()),
           filasViejasOcultas: cs(card.querySelector('.jp-qc-rows')).display === 'none' && card.querySelectorAll('.jp-qc-r').length === 4,
-          pastillaSecundaria: !!card.querySelector(':scope > .jp-qc-tg') && /RIR/.test(card.querySelector('.jp-qc-tg').textContent),
+          pastillaSecundaria: !!card.querySelector(':scope > .jp-qc-tg') && /RPE/.test(card.querySelector('.jp-qc-tg').textContent),
           chakra: /Chakra Petch/.test(cs(tiles[0]).fontFamily) };
       }
       if(c.caso === 'hoja'){
@@ -616,7 +618,7 @@
         var celda = caja.querySelector('.jp-db-rir'), nota = caja.querySelector('.jp-block-details .jp-pauta-ex .jp-pauta-rir');
         return { uno: R('1') === 'te guardás 1 rep', rango: R('1-2') === 'te guardás 1–2 reps', fallo: /al fallo/.test(R('0')), ceroUno: R('0-1') === 'te guardás 0–1 rep', conPrefijo: R('RIR 2') === 'te guardás 2 reps', invalido: R('alto') === '',
           /* v32: el RIR ya no ocupa la tarjeta: va a «Pautas técnicas & tips del bloque», con su aclaración */
-          enLaTarjeta: !!celda && cs(celda).display === 'none' && !!nota && /RIR 1-2/.test(nota.textContent) && /te guardás 1–2 reps/.test(nota.textContent),
+          enLaTarjeta: !!celda && cs(celda).display === 'none' && !!nota && /RPE 8-9/.test(nota.textContent) && /duro a muy duro/.test(nota.textContent),
           dosisIntacta: /RIR 2$/.test(w.jpDosisHtml(4, '5-7', 'reps', '', '2', 90, '', null, false, '', false).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) };
       }
       if(c.caso === 'bisetLimpio'){
@@ -665,6 +667,30 @@
           conservaAproximacion: /APROXIMACI[ÓO]N/i.test(tx), soloLaUltimaClave: /CUIDADO/i.test(tx) && !/bajá controlado en tres segundos/.test(tx), nadaLargo: filas.length > 0 && largos.length === 0,
           planIntacto: blq.tips === TIPS, corto: w.jpCorto('Una frase corta. Y otra más.') === 'Una frase corta. Y otra más.' || w.jpCorto('Una frase bastante larga de prueba. Y otra más.') === 'Una frase bastante larga de prueba.' };
       }
+      /* ---- v36: RPE en lugar de RIR y registro de cargas plegado ---- */
+      if(c.caso === 'rpePlegado'){
+        var P = w.jpRpeDeRir;
+        caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
+        w.jpPizarraSports(caja.querySelector('.block'), { id: 'tv30o', title: 'Fuerza', category: 'strength', items: ['Press de banca plano con barra', '4x5-7 | RIR 1-2', 'Rest 150s'], objective: '', tips: '' }, 0, 'dia1');
+        var tb = caja.querySelector('.jp-tb'), tog = caja.querySelector('.jp-qc > .jp-tb-abrir'), vr = caja.querySelector('.jp-db-vol b.jp-vr'), rest = caja.querySelector('.jp-db-rest');
+        var r = { conversion: P('1') === '9' && P('1-2') === '8-9' && P('0') === '10' && P('0-1') === '9-10' && P('3+') === '\u22647' && P('RIR 2') === '8' && P('alto') === '',
+          plegadoDeEntrada: !!tb && cs(tb).display === 'none' && !!tog && tog.getAttribute('aria-expanded') === 'false' && /Registrar cargas/.test(tog.textContent) && /0\/4/.test(tog.textContent),
+          seriesYDescansoALaVista: !!vr && cs(vr).display !== 'none' && !!rest && cs(rest).display !== 'none',
+          rpeEnLasPautas: /RPE 8-9/.test((caja.querySelector('.jp-pauta-rir') || {}).textContent || '') };
+        tog.click();
+        r.seAbre = cs(caja.querySelector('.jp-tb')).display !== 'none' && caja.querySelector('.jp-qc > .jp-tb-abrir').getAttribute('aria-expanded') === 'true';
+        caja.querySelector('.jp-tb-t').click(); poner(hoja().querySelector('.jp-tbs-stp[data-f="kg"] input'), '80'); hoja().querySelector('[data-tba="ok"]').click();
+        var card2 = caja.querySelector('.jp-qc'), btns = [].map.call(card2.querySelectorAll('.jp-qc-rirb'), function(b){ return b.textContent; }).join(',');
+        r.sigueAbiertoYCuenta = cs(caja.querySelector('.jp-tb')).display !== 'none' && /1\/4/.test(caja.querySelector('.jp-qc > .jp-tb-abrir').textContent);
+        r.panelEnRpe = /RPE/.test((card2.querySelector('.jp-qc-rir-lb') || {}).textContent || '') && btns === '10,9,8,\u22647' && /esfuerzo del 1 al 10/.test(card2.querySelector('.jp-qc-rir').textContent) && card2.querySelector('.jp-qc-rirb').getAttribute('data-rirx') === '0';
+        caja.innerHTML = '<div class="block"><div class="block-body"></div></div>';
+        w.jpPizarraSports(caja.querySelector('.block'), { id: 'tv30p', title: 'Hipertrofia – Biset', category: 'strength', items: ['A1. Press inclinado con mancuernas', '3x8-10 | RIR 1', 'A2. Aperturas con mancuernas en banco plano', '3x12-15 | RIR 1', 'Rest 90s'], objective: '', tips: '' }, 0, 'dia1');
+        var regB = caja.querySelector('.jp-sb-biset-reg'), rondasB = caja.querySelector('.jp-tb-rondas'), togB = regB && regB.querySelector(':scope > .jp-tb-abrir');
+        r.bisetPlegado = !!rondasB && cs(rondasB).display === 'none' && !!togB && /0\/3 rondas/.test(togB.textContent);
+        if(togB) togB.click();
+        r.bisetSeAbre = !!rondasB && cs(caja.querySelector('.jp-tb-rondas')).display !== 'none';
+        return r;
+      }
       /* ---- v35: vista para principiantes ---- */
       if(c.caso === 'principiante'){
         dibujar('tv30n', 'Fuerza', ['Press de banca plano con barra', '4x5-7 | Tempo 3010 | RIR 1', 'Rest 180s']);
@@ -676,7 +702,7 @@
           fichaPendienteLimpia: !!pend && !/dashed/.test(cs(pend).borderTopStyle) };
         caja.querySelector('.jp-tb-t').click(); poner(hoja().querySelector('.jp-tbs-stp[data-f="kg"] input'), '80'); hoja().querySelector('[data-tba="ok"]').click();
         var t2 = tg(), body = card().querySelector('.jp-qc-body');
-        r.apareceTrasLaPrimeraSerie = cs(t2).display !== 'none' && /Cómo te fue/.test(t2.textContent) && /sobraron/.test(t2.textContent) && !card().classList.contains('jp-open');
+        r.apareceTrasLaPrimeraSerie = cs(t2).display !== 'none' && /Cómo te fue/.test(t2.textContent) && /esfuerzo/.test(t2.textContent) && !card().classList.contains('jp-open');
         r.soloPreguntaRir = !!card().querySelector('.jp-qc-rir') && ['.jp-qc-guia', '.jp-qc-m', '.jp-qc-plan', '.jp-qc-top'].every(function(sel){ var e = card().querySelector(sel); return !e || cs(e).display === 'none'; });
         r.sinAgregarSerie = !caja.querySelector('.jp-qc-add') && !/AGREGAR SERIE|\+ serie/i.test(caja.textContent);
         return r;

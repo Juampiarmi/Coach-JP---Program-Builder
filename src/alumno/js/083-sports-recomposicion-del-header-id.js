@@ -118,7 +118,13 @@
     try{ var m = /RIR\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* las 3 métricas están siempre: grilla simétrica de 3 columnas (sin series registradas el tonelaje es 0, nunca un guion ni NaN) */
     var pildora = function(v, l, x){ return '<span><b>' + v + '</b><small>' + l + '</small>' + (x ? '<em class="jp-rir-hint">' + x + '</em>' : '') + '</span>'; };
-    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO', rir === 'RIR OBJ' ? '' : 'reps en recámara');
+    /* v36: el alumno ve RPE (esfuerzo del 1 al 10) en lugar de RIR; si la semana ya pauta RPE se muestra tal cual */
+    var rpe = '';
+    try{
+      if(rir !== 'RIR OBJ' && typeof window.jpRpeDeRir === 'function') rpe = window.jpRpeDeRir(rir.replace('RIR ', ''));
+      if(!rpe){ var mR = /RPE\s*([0-9][0-9.,–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(mR) rpe = mR[1]; }
+    }catch(eR){}
+    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rpe ? escHtmlSafe(rpe) : '&mdash;', 'RPE OBJETIVO', rpe ? 'esfuerzo del 1 al 10' : '');
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.__h !== h){ hud.__h = h; hud.innerHTML = h; }
