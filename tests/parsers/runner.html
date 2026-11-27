@@ -2972,10 +2972,106 @@
         w2.JPB.paneles.forEach(function(k){ w2.JPB.cerrar(k); });
         r.cargo = true;
         /* los íconos los pone jpConsoleHud con una pausa de 90 ms tras cada cambio: si un texto se redibujó justo antes de medir, se cuenta otra vez */
-        if(!r.emojis.length) return fin(r);
-        setTimeout(function(){ r.emojis = emojis(); fin(r); }, 400);
+        var seguir = function(){ medirMesa(w2, S2, a, r).then(function(){ fin(r); }, function(e){ r.mesaError = String(e && e.message || e); fin(r); }); };
+        if(!r.emojis.length) return seguir();
+        setTimeout(function(){ r.emojis = emojis(); seguir(); }, 400);
       }, 400);
     }, 1500);
+  }
+  /* ---------- Fase 2 · mesa de trabajo: misma pasada en sandbox, sobre el mismo alumno de ejemplo ----------
+     Cada interacción que edita (chips de dosis, unir / separar, rótulos de tips, mover bloques) se hace y se deshace: al final el plan
+     tiene que quedar IDÉNTICO al de antes. Las que solo navegan (semanas, días, herramientas, copiar, vista, atajos) no lo tocan. */
+  async function medirMesa(w2, S2, a, r){
+    var d2 = w2.document, cs2 = function(e){ return w2.getComputedStyle(e); }, espera = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
+    /* el contenido del plan, sin _ts: el guardado blindado sella la hora de cada edición (acá se edita y se deshace a propósito) */
+    var P = function(){ return JSON.stringify(S2.plans[a.id], function(k, v){ return k === '_ts' ? undefined : v; }); }, dia = S2.plans[a.id].dias[0], M = function(){ return d2.getElementById('jpbMesa'); };
+    var tecla = function(el, k, alt){ el.dispatchEvent(new w2.KeyboardEvent('keydown', { key: k, altKey: !!alt, bubbles: true })); };
+    w2.renderBuilder(); await espera(400); w2.scrollTo(0, 0);
+    var inicio = P(), b1 = d2.querySelector('#dayPanel .block');
+    /* 1 · la barra */
+    var m = M();
+    r.mesa = { existe: !!m, fija: !!m && cs2(m).position === 'sticky', alumno: !!(m && m.querySelector('#bPick #bPickBtn')), semanas: m ? m.querySelectorAll('[data-jpmwk]').length : 0, dias: m ? m.querySelectorAll('[data-jpmdia]').length : 0,
+      acciones: !!(m && ['vista', 'copiar', 'herr', 'ayuda'].every(function(k){ return m.querySelector('[data-jpm="' + k + '"]'); })), guardado: !!(m && m.querySelector('.jpm-guard')), unaLinea: !!m && m.getBoundingClientRect().height <= 60,
+      primerBloqueY: b1 ? Math.round(b1.getBoundingClientRect().top + w2.scrollY) : -1 };
+    /* 2 · herramientas plegadas; un solo «Copiar…» */
+    var gs = d2.getElementById('gsCard'), tb = d2.querySelector('#v-builder > .topbar');
+    r.herr = { ocultas: cs2(gs).display === 'none' && cs2(tb).display === 'none' };
+    m.querySelector('[data-jpm="herr"]').click(); await espera(150);
+    r.herr.seAbren = cs2(gs).display !== 'none' && cs2(tb).display !== 'none';
+    M().querySelector('[data-jpm="herr"]').click(); await espera(150);
+    r.herr.seCierran = cs2(gs).display === 'none';
+    r.copiar = { soloEnLaBarra: ['btnCopiarPlan', 'btnCopiarSemana', 'btnCopiarDia'].every(function(id){ var e = d2.getElementById(id); return !e || !e.checkVisibility || !e.checkVisibility(); }) };
+    M().querySelector('[data-jpm="copiar"]').click();
+    r.copiar.menu = !M().querySelector('.jpm-pop').hidden && M().querySelectorAll('.jpm-pop [data-jpm^="c-"]').length === 3;
+    M().querySelector('[data-jpm="c-dia"]').click(); await espera(300);
+    var modal = d2.querySelector('#mCopiarDiaBg.on, #mCopiarDia.on, .modal-bg.on');
+    r.copiar.abreCopiaDia = !!modal;
+    [].forEach.call(d2.querySelectorAll('.modal-bg.on, #mCopiarDiaBg.on'), function(x){ x.classList.remove('on'); });
+    /* 3 · semanas y días desde la barra (y Alt+2 / Alt+1) */
+    M().querySelector('[data-jpmwk="1"]').click(); await espera(300);
+    var on = M().querySelector('.jpm-s.on');
+    r.nav = { semana: (S2.ui.week === 1 || S2.ui.cfWeek === 1) && !!on && on.textContent === 'S2' };
+    tecla(d2.body, '1', true); await espera(300);
+    r.nav.altSemana = (S2.ui.week || 0) === 0 && (M().querySelector('.jpm-s.on') || {}).textContent === 'S1';
+    M().querySelector('[data-jpmdia="1"]').click(); await espera(300);
+    r.nav.dia = S2.ui.day === 1 && (M().querySelector('.jpm-d.on') || {}).textContent === 'D2';
+    M().querySelector('[data-jpmdia="0"]').click(); await espera(300);
+    /* 4 · chips de dosis: + / − sobre el texto del bloque */
+    var bl = d2.querySelector('#dayPanel .block'); if(bl.classList.contains('jp-col')){ bl.querySelector('.jp-cv').click(); await espera(300); }
+    var chip = function(k){ var x = d2.querySelector('#dayPanel .jpm-dosis [data-jpmd="' + k + '"]'); if(x) x.click(); return !!x; };
+    var box = d2.querySelector('#dayPanel .jpm-dosis'), txt = box ? box.textContent.replace(/\s+/g, ' ') : '';
+    r.dosis = { chips: /4\s*series/.test(txt) && /RIR 1-2/.test(txt) && /RPE 8-9/.test(txt) && /180 s/.test(txt) };
+    chip('s+'); await espera(120); r.dosis.series = dia.bloques[0].items[1] === '5x5-7 | Tempo 3010 | RIR 1-2';
+    chip('s-'); await espera(120); chip('r-'); await espera(120); r.dosis.rir = dia.bloques[0].items[1] === '4x5-7 | Tempo 3010 | RIR 0-1';
+    r.dosis.guardando = (M().querySelector('.jpm-guard') || {}).textContent === 'Guardando…';
+    chip('r+'); await espera(120); chip('d+'); await espera(120); r.dosis.descanso = dia.bloques[0].items[2] === 'Rest 195s';
+    chip('d-'); await espera(120);
+    r.dosis.vuelve = P() === inicio;
+    /* 5 · tips: rótulo y vista del alumno */
+    var acc = d2.querySelector('#dayPanel .block details.cf-acc'); if(acc) acc.open = true;
+    var tt = d2.querySelector('#dayPanel .block textarea[data-bf="tips"]'), tips0 = dia.bloques[0].tips || '';
+    tt.value = 'NOTA DEL DÍA: técnica antes que peso.\nrenglón sin rótulo'; tt.dispatchEvent(new w2.Event('input', { bubbles: true })); await espera(200);
+    var pv = d2.querySelector('#dayPanel .block .jpm-tprev');
+    r.tips = { vista: !!pv && pv.querySelectorAll('details.jpm-tip').length === 2 && pv.querySelectorAll('details.jpm-tip[open]').length === 0 && /1 sin rótulo/.test(pv.textContent), paleta: d2.querySelectorAll('#dayPanel .block .jpm-rot [data-jpmrot]').length >= 7 };
+    d2.querySelector('#dayPanel .block .jpm-rot [data-jpmrot="CUIDADO"]').click(); await espera(150);
+    r.tips.inserta = /\nCUIDADO: $/.test(dia.bloques[0].tips || '');
+    tt = d2.querySelector('#dayPanel .block textarea[data-bf="tips"]'); tt.value = tips0; tt.dispatchEvent(new w2.Event('input', { bubbles: true })); await espera(150);
+    /* 6 · unir / separar (con dos bloques de prueba que después se sacan) */
+    var mk = function(t, items){ var b = w2.newBlock('list'); b.sportsPizarra = true; b.titulo = t; b.category = 'strength'; b.items = items; return b; };
+    var X = mk('Curl', ['Curl con barra', '3x10-12 | RIR 1', 'Rest 60s']), Y = mk('Tríceps', ['Extensión de tríceps en polea con soga', '3x12-15 | RIR 1', 'Rest 60s']);
+    var antesUnir = JSON.stringify([X.items, Y.items]);
+    dia.bloques.push(X, Y); w2.renderBuilder(); await espera(300);
+    var nB = dia.bloques.length, pila0 = w2.CoachUndo && w2.CoachUndo.pila ? w2.CoachUndo.pila() : 0;
+    w2.JPM.unir(X.id); await espera(300);
+    r.bisets = { unir: dia.bloques.length === nB - 1 && JSON.stringify(X.items) === JSON.stringify(['D1. Curl con barra', '3x10-12 | RIR 1', 'D2. Extensión de tríceps en polea con soga', '3x12-15 | RIR 1', 'Rest 60s']) };
+    w2.JPM.separar(X.id); await espera(300);
+    r.bisets.separar = dia.bloques.length === nB && JSON.stringify([dia.bloques[nB - 2].items, dia.bloques[nB - 1].items]) === antesUnir;
+    await espera(1600);      /* CoachUndo registra la foto 1,4 s después de cada acción */
+    r.bisets.deshacer = !!(w2.CoachUndo && w2.CoachUndo.pila && w2.CoachUndo.pila() >= pila0 + 2);
+    dia.bloques.splice(nB - 2, 2); w2.renderBuilder(); await espera(300);
+    /* 7 · atajos */
+    tecla(d2.body, '?'); r.atajos = { hoja: !!d2.getElementById('jpbAtajos') && !d2.getElementById('jpbAtajos').hidden && d2.querySelectorAll('#jpbAtajos kbd').length >= 7 };
+    tecla(d2.body, 'Escape'); r.atajos.cierra = d2.getElementById('jpbAtajos').hidden;
+    var id0 = dia.bloques[0].id, t0 = d2.querySelector('#dayPanel .block-h [data-bf="titulo"][data-b="' + id0 + '"]'); t0.focus();
+    tecla(t0, 'ArrowDown', true); await espera(300);
+    r.atajos.baja = dia.bloques[1].id === id0;
+    var t1 = d2.querySelector('#dayPanel .block-h [data-bf="titulo"][data-b="' + id0 + '"]');
+    r.atajos.foco = d2.activeElement === t1;
+    tecla(t1, 'ArrowUp', true); await espera(300);
+    r.atajos.sube = dia.bloques[0].id === id0;
+    /* 8 · vista del alumno (dividida en pantallas ≥ 1200 px) */
+    M().querySelector('[data-jpm="vista"]').click(); await espera(400);
+    r.vista = { abre: d2.body.classList.contains('split-view-on') };
+    M().querySelector('[data-jpm="vista"]').click(); await espera(300);
+    r.vista.cierra = !d2.body.classList.contains('split-view-on');
+    /* 9 · el plan quedó igual (los bloques de prueba ya no están) */
+    r.mesaPlanIntacto = P() === inicio;
+    if(!r.mesaPlanIntacto){
+      /* diagnóstico: qué parte del plan cambió */
+      var A0 = JSON.parse(inicio), A1 = JSON.parse(P()), dif = [];
+      var cmp = function(x, y, ruta){ if(dif.length > 6) return; if(JSON.stringify(x) === JSON.stringify(y)) return; if(x && y && typeof x === 'object' && typeof y === 'object'){ Object.keys(Object.assign({}, x, y)).forEach(function(k){ cmp(x[k], y[k], ruta + '.' + k); }); } else dif.push(ruta + ': ' + JSON.stringify(x) + ' → ' + JSON.stringify(y)); };
+      cmp(A0, A1, 'plan'); r.mesaDif = dif.join(' | ').slice(0, 600);
+    }
   }
   function builderHud(c){
     if(!BLD_RES) throw new Error('la pasada del Builder no corrió');
@@ -2987,6 +3083,16 @@
     if(c.caso === 'naranja') return { soloAgregarBloque: R.naranjasPlegado.length === 1 && /AGREGAR BLOQUE/i.test(R.naranjasPlegado[0]), abiertoSoloPrincipales: R.naranjasAbierto.every(function(t){ return /AGREGAR BLOQUE|GENERAR PLAN COMPLETO/i.test(t); }), _llenos: R.naranjasAbierto.join(' | ') };
     if(c.caso === 'bloque') return { recta: R.resumenes[0] === 'Serie recta \u00b7 4\u00d75-7 \u00b7 3 min \u00b7 RIR 1-2 (RPE 8-9)', biset: R.resumenes[1] === 'Biset \u00b7 3\u00d78-10 / 3\u00d712-20 \u00b7 90 s \u00b7 RIR 1 (RPE 9)', triset: R.resumenes[2] === 'Triset \u00b7 3\u00d712-15 / 3\u00d710-12 / 3\u00d712 \u00b7 75 s \u00b7 RIR 0-1 (RPE 9-10)', accionesAlPasar: R.accionesOcultas, _res: R.resumenes.join(' | ') };
     if(c.caso === 'paneles') return { todosPlegados: R.todosPlegados, seAbren: R.seAbren, recuerdaAlRedibujar: R.recuerdaAlRedibujar, alumnoALaVista: R.alumnoALaVista, _paneles: R.paneles };
+    /* Fase 2 · mesa de trabajo */
+    if(R.mesaError) return { error: R.mesaError };
+    if(c.caso === 'mesa') return { existe: R.mesa.existe, fija: R.mesa.fija, alumnoEnLaBarra: R.mesa.alumno, cuatroSemanas: R.mesa.semanas === 4, cuatroDias: R.mesa.dias === 4, acciones: R.mesa.acciones, guardado: R.mesa.guardado, unaLinea: R.mesa.unaLinea,
+      sinScroll: R.mesa.primerBloqueY > 0 && R.mesa.primerBloqueY <= 900, _y: R.mesa.primerBloqueY + ' px' };
+    if(c.caso === 'unSoloControl') return { herramientasPlegadas: R.herr.ocultas, herramientasSeAbren: R.herr.seAbren && R.herr.seCierran, copiarSoloEnLaBarra: R.copiar.soloEnLaBarra, menuCopiar: R.copiar.menu, abreCopiaDia: R.copiar.abreCopiaDia,
+      semana: R.nav.semana, altSemana: R.nav.altSemana, dia: R.nav.dia };
+    if(c.caso === 'dosis') return R.dosis;
+    if(c.caso === 'tips') return R.tips;
+    if(c.caso === 'bisets') return R.bisets;
+    if(c.caso === 'atajos') return { hoja: R.atajos.hoja, cierra: R.atajos.cierra, baja: R.atajos.baja, conservaFoco: R.atajos.foco, sube: R.atajos.sube, vistaAbre: R.vista.abre, vistaCierra: R.vista.cierra, planIntacto: R.mesaPlanIntacto, _dif: R.mesaDif || '' };
     throw new Error('caso desconocido: ' + c.caso);
   }
   /* ---------- Body Maintenance, lectura del día (sugerencias de glúteo) y ficha rápida ---------- */
