@@ -12,6 +12,7 @@ import { fixedFromAnamnesis } from '@/lib/agenda';
 import { swapBase } from '@/lib/baseSwap';
 import { setCoachPhone as setCoachContact } from '@/lib/coachContact';
 import { QUICK_SWAPS, quickSwapItems } from '@/lib/quickSwaps';
+import { CROSS_TARGETS, crossSwapItems } from '@/lib/crossSwaps';
 import { mirrorForPartner } from '@/lib/couple';
 import { previewAssign, previewTriple, type AssignPreview, type BankSource } from '@/lib/bankAssign';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
@@ -22,7 +23,7 @@ import { equivalentOptions } from '@/lib/planBuild';
 import { applyBankPlan, BANK_GOALS, goalOf, type BankGoal, type BankSelection } from '@/lib/planBank';
 import { precalc, sessionKcalFor, sportOf } from '@/lib/precalc';
 import { adaptPlan, templateFromPlan, type PlanSource, type PlanTemplate } from '@/lib/planAdapt';
-import { friendlyMealName, modernizeName } from '@/lib/foodBrandDb';
+import { friendlyMealName, modernizeName, uniqueMealNames } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { cloudConfigured } from '@/lib/cloud/config';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
@@ -97,6 +98,10 @@ interface PlanState {
   buildFromBank: () => void;
   /** Un plato del banco como Opción 1 + 2 variantes equivalentes (isocalóricas / isoproteicas) auto-escaladas. */
   assignTriple: (mealId: string, src: BankSource) => boolean;
+  /** Reemplaza la Opción `slot + 1` (0 = Opción 1) por un plato del Banco Global escalado (y a la pareja). */
+  replaceOption: (mealId: string, slot: number, src: BankSource) => boolean;
+  /** Reemplazo cruzado por macro de un ingrediente de la Opción `slot + 1` (0 = Opción 1). */
+  crossSwap: (mealId: string, slot: number, itemId: string, targetId: string) => boolean;
   /** Guarda el plan del atleta activo como plantilla propia. */
   saveTemplate: (name: string) => void;
   deleteTemplate: (id: string) => void;
@@ -206,6 +211,13 @@ export function listAthletes(s: Pick<PlanState, 'plan' | 'roster'>) {
 }
 
 const touch = (plan: AthletePlan): AthletePlan => ({ ...plan, updatedAt: Date.now() });
+
+/** Guarda el plan; si este alumno define el menú del Modo Parejas, la pareja recibe el cambio con sus gramos. */
+function commitWithPartner(set: (p: Partial<PlanState>) => void, s: PlanState, next: AthletePlan) {
+  const partner = next.partnerId ? s.roster[next.partnerId] : undefined;
+  if (partner && partner.partnerId === next.id && !next.partnerSyncAt) set({ plan: touch(next), roster: { ...s.roster, [partner.id]: mirrorForPartner(partner, touch(next)) } });
+  else set({ plan: touch(next) });
+}
 
 function mapMeal(plan: AthletePlan, mealId: string, fn: (m: Meal) => Meal): AthletePlan {
   return touch({ ...plan, meals: plan.meals.map((m) => (m.id === mealId ? fn(m) : m)) });
@@ -370,6 +382,48 @@ export const usePlanStore = create<PlanState>()(
         const partner = next.partnerId ? s.roster[next.partnerId] : undefined;
         if (partner && partner.partnerId === next.id && !next.partnerSyncAt) set({ plan: touch(next), roster: { ...s.roster, [partner.id]: mirrorForPartner(partner, touch(next)) } });
         else set({ plan: touch(next) });
+        return true;
+      },
+      replaceOption: (mealId, slot, src) => {
+        const s = get();
+        const meal = s.plan.meals.find((m) => m.id === mealId);
+        if (!meal) return false;
+        const items = slot === 0 ? meal.items : meal.alts?.[slot - 1]?.items;
+        if (!items) return false;
+        const o = previewAssign(src, { ...meal, items }, s.plan, useFoodDbStore.getState().items);
+        if (!o) return false;
+        const fresh = { title: o.title, items: o.items.map((i) => ({ ...i, id: uid() })), steps: o.steps, yieldInfo: o.yieldInfo };
+        const next = mapMeal(s.plan, mealId, (m) =>
+          slot === 0
+            ? fitAltsToMain({ ...m, items: fresh.items, title: fresh.title, steps: fresh.steps, yieldInfo: fresh.yieldInfo, technique: undefined })
+            : { ...m, alts: (m.alts ?? []).map((a, k) => (k === slot - 1 ? fresh : a)) },
+        );
+        commitWithPartner(set, s, next);
+        return true;
+      },
+      crossSwap: (mealId, slot, itemId, targetId) => {
+        const s = get();
+        const meal = s.plan.meals.find((m) => m.id === mealId);
+        const target = Object.values(CROSS_TARGETS).flat().find((t) => t.id === targetId);
+        if (!meal || !target) return false;
+        const list = slot === 0 ? meal.items : meal.alts?.[slot - 1]?.items;
+        const before = list?.find((i) => i.id === itemId);
+        if (!list || !before) return false;
+        const repl = crossSwapItems(before, target, { sex: s.plan.profile.sex, role: meal.role, diet: protocolOf(allergiesOf(s.plan)) ?? undefined, veg: allergiesOf(s.plan).includes('veg'), accept: acceptForPlan(s.plan) });
+        if (!repl) return false;
+        // Todas las partes nuevas cuentan para compensar la grasa / carbos con el resto de la comida.
+        const extra = repl.slice(1).reduce((a, i) => ({ f: a.f + i.f, c: a.c + i.c }), { f: 0, c: 0 });
+        const merged: FoodItem[] = [];
+        for (const it of list.flatMap((i) => (i.id === itemId ? repl : [i]))) {
+          const dup = merged.find((x) => x.foodId && x.foodId === it.foodId);
+          if (dup) Object.assign(dup, itemFromFood(dup.foodId!, dup.grams + it.grams), { id: dup.id });
+          else merged.push({ ...it });
+        }
+        const items = compensateSwap(merged, itemId, { ...before, f: before.f - extra.f, c: before.c - extra.c }).items;
+        const next = mapMeal(s.plan, mealId, (m) =>
+          slot === 0 ? fitAltsToMain({ ...m, items }) : { ...m, alts: (m.alts ?? []).map((a, k) => (k === slot - 1 ? { ...a, items, steps: refreshSteps(a, items) } : a)) },
+        );
+        commitWithPartner(set, s, next);
         return true;
       },
       saveTemplate: (name) => set((s) => ({ templates: [templateFromPlan(s.plan, name), ...s.templates] })),
@@ -848,7 +902,7 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
     },
     periodization: { ...seed.periodization, ...p.periodization },
     // Ingredientes repetidos en una comida (ej. palta 70 g + 45 g) se fusionan al cargar.
-    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal).map(normalizeMealOptions).map(modernizeMealNames),
+    meals: uniqueMealNames(p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal).map(normalizeMealOptions).map(modernizeMealNames)),
     anamnesis: sanitizeAnamnesis(p.anamnesis),
     nutritionist: sanitizeNutritionist(p.nutritionist),
   };

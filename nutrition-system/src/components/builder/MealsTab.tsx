@@ -4,6 +4,7 @@ import { bestCatalogFor } from '@/lib/bankAssign';
 import { useState } from 'react';
 import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCcw, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { shownDayTotals } from '@/lib/netCarbView';
+import { BankSwapButton, CrossSwapButton } from './OptionTools';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
@@ -31,7 +32,7 @@ import { FoodScanner } from './FoodScanner';
 const ROLE_LABEL: Record<MealRole, string> = {
   breakfast: 'Desayuno',
   lunch: 'Almuerzo',
-  peri: 'Antes de entrenar',
+  peri: 'Merienda · pre-entreno',
   post: 'Después de entrenar',
   snack: 'Colación',
   dinner: 'Cena',
@@ -271,8 +272,9 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
         </button>
         {hint && <span className="whitespace-nowrap text-[11px] text-steel">{hint}</span>}
       </div>
-      <div className="col-span-2 sm:col-span-1">
+      <div className="col-span-2 flex flex-wrap items-center gap-1.5 sm:col-span-1">
         <Equivalences mealId={meal.id} item={item} />
+        <CrossSwapButton meal={meal} slot={0} item={item} />
       </div>
       {technical && (
         <div className="col-span-2 font-mono text-[10.5px] text-steel sm:col-span-4">
@@ -294,7 +296,9 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
   const [view, setView] = useState<'cards' | 'table'>('cards');
   const hasAlts = (meal.alts?.length ?? 0) > 0;
   // Vista compacta: la Opción 1 a la vista y las alternativas plegadas (sin scroll infinito).
-  const [showAlts, setShowAlts] = useState(false);
+  // Plan automático (Opción 1 + 2 variantes): las variantes a la vista; con 4 alternativas, plegadas.
+  const [altsPref, setShowAlts] = useState<boolean | null>(null);
+  const showAlts = altsPref ?? (meal.alts?.length ?? 0) <= 2;
   const [baseOpen, setBaseOpen] = useState(false);
   const assignTriple = usePlanStore((s) => s.assignTriple);
   const plan = usePlanStore((s) => s.plan);
@@ -372,6 +376,9 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
 
       {baseOpen && <BaseSwapper meal={meal} onDone={() => setBaseOpen(false)} />}
       <OptionHeader meal={meal} />
+      <div className="mt-2 flex flex-wrap gap-2">
+        <BankSwapButton meal={meal} slot={0} />
+      </div>
       <div className="mt-3 hidden grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] gap-x-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-steel sm:grid">
         <span>Alimento</span>
         <span>Porción sugerida</span>
@@ -393,7 +400,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <button
           type="button"
           data-show-alts
-          onClick={() => setShowAlts((v) => !v)}
+          onClick={() => setShowAlts(!showAlts)}
           aria-expanded={showAlts}
           className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#34D399]/30 bg-[#34D399]/[0.05] py-2 text-[12.5px] font-semibold text-[#6EE7B7] hover:border-[#34D399]/60"
         >
@@ -730,6 +737,7 @@ function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: numbe
         >
           <RefreshCw className="h-3 w-3" /> OTRA
         </button>
+        <BankSwapButton meal={meal} slot={slot + 1} compact />
         <button type="button" onClick={() => setOpen((v) => !v)} className="rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink" aria-expanded={open}>
           {open ? 'OCULTAR' : 'VER DESGLOSE'}
         </button>
@@ -738,6 +746,14 @@ function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: numbe
         </button>
       </div>
       <OptionBadges items={alt.items} className="mt-1.5" />
+      {!open && (
+        <p data-alt-ingredients className="mt-1 text-[12px] leading-snug text-steel">
+          {alt.items
+            .filter((i) => i.grams > 0)
+            .map((i) => `${fmt0(i.grams)} g ${i.food.replace(/ \(.*\)$/, '').toLowerCase()}`)
+            .join(' · ')}
+        </p>
+      )}
       <div className="tnum mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
         <span className="text-ink">{fmt0(t.kcal)} kcal ({pctTxt(t.kcal, main.kcal)})</span>
         <span className="text-steel">P {fmt0(t.p)} g ({pctTxt(t.p, main.p)})</span>
@@ -755,6 +771,7 @@ function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: numbe
                   <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
                 </div>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{it.food}</span>
+                <CrossSwapButton meal={meal} slot={slot + 1} item={it} />
                 <span className="tnum hidden font-mono text-[10px] text-mute sm:inline">
                   P{fmt0(it.p)} C{fmt0(it.c)} G{fmt0(it.f)}
                 </span>
@@ -950,7 +967,7 @@ function RetimeBar() {
   const seq: [string, number][] = [
     [a.bName, a.B],
     [a.lName, a.L],
-    ['Antes de entrenar', tr.start - 45],
+    ['Merienda', tr.start - 45],
     ['Cena', a.D],
   ];
   return (

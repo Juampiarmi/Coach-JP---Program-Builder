@@ -1,4 +1,4 @@
-import { allergiesOf, foodIsSafe } from './allergens';
+import { allergiesOf, FLUID_MILK, foodIsSafe } from './allergens';
 import { retitleBase } from './baseSwap';
 import { DISH_CATEGORIES, dishYield, type BrandFood } from './foodBrandDb';
 import { stepsWithYield, type YieldInfo } from './yieldInfo';
@@ -125,3 +125,45 @@ export function totalsOf(items: FoodItem[]) {
   return items.reduce((a, i) => ({ g: a.g + i.grams, p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, kcal: a.kcal + i.p * 4 + i.c * 4 + i.f * 9 }), { g: 0, p: 0, c: 0, f: 0, kcal: 0 });
 }
 export { macrosFor };
+
+/** Un candidato del Banco Global para reemplazar una opción de una comida, ya escalado al alumno. */
+export interface BankCandidate {
+  src: BankSource;
+  name: string;
+  origin: 'Recetario' | 'Mis platos';
+  preview: AssignPreview;
+  /** Desvío relativo en kcal y proteína respecto de la opción que se reemplaza. */
+  dk: number;
+  dp: number;
+  score: number;
+}
+
+const DB_ROLES: Partial<Record<string, Meal['role'][]>> = { desayuno: ['breakfast', 'snack'], colacion: ['snack', 'peri', 'post', 'breakfast'], postre: ['snack', 'post'], licuado: ['breakfast', 'snack', 'peri', 'post'] };
+
+/**
+ * «Cambiar por plato del Banco Global» en una comida / opción: sólo platos aptos para el alumno (alergias,
+ * intolerancias, vegetariano, Keto / Low Carb, topes por sexo) y de esa franja del día, con los gramos ya
+ * escalados a lo que aporta la opción, ordenados por cercanía calórica y proteica.
+ */
+export function bankCandidates(meal: Meal, items: FoodItem[], plan: Pick<AthletePlan, 'anamnesis' | 'profile'>, db: BrandFood[] = [], exclude?: string): BankCandidate[] {
+  const target: Meal = { ...meal, items };
+  const t = totalsOf(items);
+  const allergies = allergiesOf(plan);
+  const safe = (p: AssignPreview) => p.items.every((i) => !i.foodId || foodIsSafe(i.foodId, allergies)) && (plan.profile.sex !== 'F' || p.items.every((i) => !i.foodId || !FLUID_MILK.has(i.foodId)));
+  const out: BankCandidate[] = [];
+  const push = (src: BankSource, name: string, origin: BankCandidate['origin']) => {
+    const preview = previewAssign(src, target, plan, db);
+    if (!preview || !preview.items.length || !safe(preview) || preview.title === exclude) return;
+    const u = totalsOf(preview.items);
+    const dk = t.kcal > 0 ? u.kcal / t.kcal - 1 : 0;
+    const dp = t.p > 0 ? u.p / t.p - 1 : 0;
+    out.push({ src, name, origin, preview, dk, dp, score: Math.abs(dk) + Math.abs(dp) * 1.5 });
+  };
+  for (const d of CATALOG) if (ROLES_OF_CATEGORY[d.category].includes(meal.role)) push({ kind: 'catalog', id: d.id }, d.title, 'Recetario');
+  for (const b of db) {
+    if (!DISH_CATEGORIES.includes(b.categoria) || !b.ingredientes?.length) continue;
+    const roles = DB_ROLES[b.categoria] ?? ['lunch', 'dinner'];
+    if (roles.includes(meal.role)) push({ kind: 'dish', id: b.id }, b.nombre, 'Mis platos');
+  }
+  return out.sort((a, b) => a.score - b.score);
+}

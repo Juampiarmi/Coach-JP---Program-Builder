@@ -444,7 +444,7 @@ const SLOT: Record<SlotKind, SlotDef> = {
   breakfast: { kind: 'breakfast', name: 'Desayuno', role: 'breakfast', time: '07:30', w: [1, 1, 1] },
   mid: { kind: 'mid', name: 'Colación de media mañana', role: 'snack', time: '10:30', w: [0.5, 0.5, 0.6] },
   lunch: { kind: 'lunch', name: 'Almuerzo', role: 'lunch', time: '13:00', w: [1.3, 1.2, 1.2] },
-  pre: { kind: 'pre', name: 'Antes de entrenar', role: 'peri', time: '17:15', w: [0.5, 1, 0.2] },
+  pre: { kind: 'pre', name: 'Merienda', role: 'peri', time: '17:15', w: [0.5, 1, 0.2] },
   merienda: { kind: 'merienda', name: 'Merienda', role: 'snack', time: '17:00', w: [0.6, 0.5, 0.7] },
   dinner: { kind: 'dinner', name: 'Cena', role: 'dinner', time: '21:00', w: [1.3, 1.1, 1.1] },
   dessert: { kind: 'dessert', name: 'Postre', role: 'dinner', time: '21:00', w: [0.2, 0.3, 0.2] },
@@ -469,9 +469,9 @@ interface Placed extends SlotDef {
 }
 
 /**
- * Agenda argentina del día (agenda.ts): Desayuno · Colación de media mañana · Almuerzo · Merienda · Antes de
- * entrenar · Cena. La cena siempre cierra el día. A la mañana el desayuno pasa a después de entrenar y la colación
- * queda a media mañana; a la tarde-noche la merienda se refuerza como «antes de entrenar».
+ * Agenda argentina del día (agenda.ts): Desayuno · Colación de media mañana · Almuerzo · Merienda (pre-entreno) ·
+ * Cena. La cena siempre cierra el día. A la mañana el desayuno pasa a después de entrenar y la colación
+ * queda a media mañana; a la tarde-noche la merienda se refuerza como pre-entreno.
  */
 function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, fixed: BankMainTimes = {}): Placed[] {
   const on = day === 'on';
@@ -494,26 +494,39 @@ function daySlots(n: number, day: MealDay, tr: BankTraining = DEFAULT_TRAINING, 
   }
   // Carbos alrededor del entreno: la toma de antes suma carbos y baja grasas (digestión liviana); la de después
   // repone glucógeno. El total del día no cambia, sólo cómo se reparte.
+  // La toma previa al entreno se llama «Merienda» (o «Colación de media mañana» si entrena a la mañana); el
+  // «pre-entreno» queda como dato secundario (rol peri / reparto de carbos), no en el nombre.
+  const preAt = new Set<Placed>();
   const shift = (p: Placed): Placed => {
     if (!on || p.kind === 'pre') return p;
     if (/después de entrenar/.test(p.name)) return { ...p, w: [p.w[0], p.w[1] * 1.3, p.w[2] * 0.8] };
-    if (/antes de entrenar/.test(p.name)) return { ...p, w: [p.w[0] * 0.8, p.w[1] * 1.2, p.w[2] * 0.6] };
+    if (preAt.has(p)) return { ...p, w: [p.w[0] * 0.8, p.w[1] * 1.2, p.w[2] * 0.6] };
     return p;
   };
+  const hasPre = taken.some((x) => x.kind === 'pre');
   return taken
     .map((p) => {
       if (p.kind === 'pre') {
-        const solo = !taken.some((x) => x.kind === 'merienda') && p.at >= 15 * 60 + 30 && p.at <= 19 * 60;
         const morning = !taken.some((x) => x.kind === 'mid') && p.at >= 9 * 60 && p.at < 12 * 60;
-        return { ...p, name: solo ? 'Merienda (antes de entrenar)' : morning ? 'Colación de media mañana (antes de entrenar)' : p.name };
+        return { ...p, name: morning ? 'Colación de media mañana' : 'Merienda' };
       }
+      // Si la merienda pre-entreno existe, la otra toma de la tarde pasa a «Colación de tarde» (sin nombres repetidos).
+      if (p.kind === 'merienda' && hasPre && !(on && p.at >= tr.end && p.at <= tr.end + 120)) return { ...p, name: 'Colación de tarde' };
       if ((p.kind === 'mid' || p.kind === 'merienda') && on) {
         if (p.at >= tr.end && p.at <= tr.end + 120) return { ...p, name: `${p.name} (después de entrenar)` };
-        if (p.at < tr.start && p.at >= tr.start - 120) return { ...p, name: `${p.name} (antes de entrenar)` };
+        if (p.at < tr.start && p.at >= tr.start - 120) {
+          const q = { ...p };
+          preAt.add(q);
+          return q;
+        }
       }
       return p;
     })
-    .map((p) => shift({ ...p, name: p.kind === 'breakfast' ? a.bName : p.kind === 'lunch' ? a.lName : p.name }))
+    .map((p) => {
+      const q = { ...p, name: p.kind === 'breakfast' ? a.bName : p.kind === 'lunch' ? a.lName : p.name };
+      if (preAt.has(p)) preAt.add(q);
+      return shift(q);
+    })
     .sort((x, y) => x.at - y.at);
 }
 

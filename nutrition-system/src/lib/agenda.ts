@@ -3,11 +3,11 @@ import type { MealRole } from './types';
 /**
  * AGENDA ARGENTINA DEL DÍA (única para todo el sistema: banco de planes, botón «Ajustar horarios al entreno»,
  * planes de la IA y anamnesis):
- *   Desayuno · Colación de media mañana · Almuerzo · Merienda · Antes de entrenar · Cena.
+ *   Desayuno · Colación de media mañana · Almuerzo · Merienda (pre-entreno) · Cena.
  * Reglas: la cena cierra siempre el día (21:00, o 45 min después de entrenar si termina tarde, tope 22:30);
  * nunca hay una comida después de la cena («antes de dormir»); ninguna toma cae durante el entreno y entre dos
  * tomas hay al menos 1 h 30. A la mañana el desayuno pasa a después de entrenar; a la tarde-noche la merienda
- * se refuerza como «antes de entrenar».
+ * se refuerza como merienda pre-entreno.
  */
 
 /** Franja de entreno (minutos desde las 00:00). */

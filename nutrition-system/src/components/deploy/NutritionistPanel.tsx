@@ -21,7 +21,7 @@ async function toLogo(file: File): Promise<string | undefined> {
   return safeLogo(c.toDataURL('image/png'));
 }
 
-/** Firma profesional y co-branding 50/50 Coach JP & NutrirCe (app del alumno, storycard y Builder). */
+/** Firma profesional y co-branding 50/50 NutrirCe & Coach JP (app del alumno, storycard y Builder). */
 export function NutritionistPanel() {
   const plan = usePlanStore((s) => s.plan);
   const setNutritionist = usePlanStore((s) => s.setNutritionist);
@@ -38,7 +38,7 @@ export function NutritionistPanel() {
     setMsg('✓ Logo de NutrirCe actualizado.');
   };
   return (
-    <Panel title="FIRMA PROFESIONAL · CO-BRANDING COACH JP & NUTRIRCE" tone="steel" right={<ShieldCheck className="h-4 w-4 text-cyan-hud/80" />}>
+    <Panel title="FIRMA PROFESIONAL · CO-BRANDING NUTRIRCE & COACH JP" tone="steel" right={<ShieldCheck className="h-4 w-4 text-cyan-hud/80" />}>
       <div data-nutri-panel>
         <div className="grid gap-2 sm:grid-cols-3">
           <div>
@@ -73,16 +73,16 @@ export function NutritionistPanel() {
         {n.show && n.name.trim() && (
           <div className="mt-2 space-y-1.5 rounded-lg border border-line bg-carbon/60 p-2.5 text-[12px]" data-nutri-preview>
             <div className="flex flex-wrap items-center gap-2">
+              <span className="-my-1.5"><NutrirCeLogo size={50} logo={n.logo} /></span>
+              <span className="text-steel/60">{'&'}</span>
               <span className="flex items-center gap-1.5">
                 <CoachJpLogo size={38} />
                 <b className="text-[14px] tracking-[0.04em] text-white">COACH <span className="text-fire">JP</span></b>
               </span>
-              <span className="text-steel/60">{'&'}</span>
-              <span className="-my-1.5"><NutrirCeLogo size={50} logo={n.logo} /></span>
             </div>
             <div className="text-[#94C5DE]/80">Cabecera: {cobrandHeader(n)}</div>
             <div className="text-mute">Pie: {nutriCredit(n)}</div>
-            <div className="font-mono text-[11px] tracking-wider text-steel">Storycard: COACH JP & NUTRIRCE · {storySignature(n)}</div>
+            <div className="font-mono text-[11px] tracking-wider text-steel">Storycard: NUTRIRCE & COACH JP · {storySignature(n)}</div>
           </div>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">

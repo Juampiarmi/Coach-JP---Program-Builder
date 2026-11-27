@@ -110,6 +110,25 @@ const YIELD_OVERRIDE: Record<string, YieldInfo> = {
 // =====================================================================================================
 const DESAYUNOS: CatalogDish[] = [
   dish({
+    id: 'des-revuelto-claras-ricota',
+    title: 'Revuelto de claras y ricota magra con tostadas integrales o sin TACC',
+    category: 'desayuno',
+    complexity: 'rapida',
+    variants: ALL,
+    base: ['claras de huevo', 'ricota magra', 'pan integral o sin TACC', 'orégano', 'rocío vegetal'],
+    prep: 'Batí las claras con la ricota, sal, pimienta y orégano; cocinalo en sartén antiadherente con rocío vegetal a fuego medio, revolviendo hasta que quede cremoso. Serví con pan tostado.',
+    adjust: 'Escalá claras (de a una) para la proteína y el pan para los carbohidratos; la ricota queda fija en ~80 g.',
+    std: {
+      title: 'Revuelto de claras y ricota magra con tostadas integrales',
+      parts: [P('claras'), X('ricota', 80), C('pan')],
+      steps: [
+        'Batí {claras} con {ricota} de ricota magra, sal, pimienta y orégano.',
+        'Cocinalo en sartén antiadherente con rocío vegetal a fuego medio 2-3 min, revolviendo hasta que quede cremoso.',
+        'Serví con {pan} de pan integral tostado.',
+      ],
+    },
+  }),
+  dish({
     id: 'des-huevos-revueltos-pan-tomate',
     title: 'Huevos revueltos cremosos con pan integral tostado y tomate',
     category: 'desayuno',
@@ -841,6 +860,25 @@ const PRINCIPALES: CatalogDish[] = [
 // 3 · MERIENDAS
 // =====================================================================================================
 const MERIENDAS: CatalogDish[] = [
+  dish({
+    id: 'mer-claras-ricota-canela',
+    title: 'Panqueque dulce de claras y ricota magra con avena, canela y frutillas',
+    category: 'merienda',
+    complexity: 'rapida',
+    variants: ALL,
+    base: ['claras de huevo', 'ricota magra', 'avena', 'canela', 'edulcorante (stevia)', 'frutillas'],
+    prep: 'Batí claras con ricota magra, avena, canela y stevia. Cociná en sartén antiadherente a fuego medio-bajo 2-3 minutos por lado y serví con frutillas.',
+    adjust: 'Escalá claras (de a una) para la proteína y la avena para los carbohidratos.',
+    std: {
+      title: 'Panqueque dulce de claras y ricota magra con avena, canela y frutillas',
+      parts: [P('claras'), X('ricota', 80), C('avena'), X('frutillas', 100)],
+      steps: [
+        'Batí {claras} con {ricota} de ricota magra, {avena} de avena, canela y edulcorante (stevia) a gusto.',
+        'Cociná en sartén antiadherente a fuego medio-bajo 2-3 min por lado, como un panqueque grueso.',
+        'Serví con {frutillas} de frutillas cortadas.',
+      ],
+    },
+  }),
   dish({
     id: 'mer-tortilla-avena',
     title: 'Tortilla rápida de avena y huevo (dulce o cítrica) con yogur o fruta',

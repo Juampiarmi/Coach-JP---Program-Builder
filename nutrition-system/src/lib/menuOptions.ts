@@ -346,6 +346,19 @@ export const COMBOS: Combo[] = [
     parts: [{ id: 'claras', r: 'p', step: 33, max: 264, min: 66 }, { id: 'avena', r: 'c', max: 90, min: 20 }, { id: 'frutillas', r: 'x', g: 100 }, { id: 'miel', r: 'x', g: 10 }],
     steps: ['Mixeá {avena} de avena arrollada con {claras}, 1 cdita de polvo de hornear y unas gotas de esencia de vainilla hasta que quede una pasta lisa.', 'Dejá reposar 5 min para que la avena se hidrate.', 'En sartén antiadherente a fuego medio-bajo, cociná de a 2-3 cucharadas: cuando aparecen burbujitas, dalos vuelta y 1-2 min más.', 'Serví con {frutillas} de frutillas cortadas y {miel} de miel.'],
   },
+  // Combo proteico claras + ricota magra: salado (revuelto) y dulce (canela / edulcorante). Claras en unidades enteras.
+  {
+    title: 'Revuelto de claras y ricota magra con tostadas integrales',
+    roles: AM,
+    parts: [{ id: 'claras', r: 'p', step: 33, max: 198, min: 66 }, { id: 'ricota', r: 'x', g: 80 }, { id: 'pan', r: 'c', max: 90, min: 25 }, { id: 'oliva', r: 'f', max: 8 }],
+    steps: ['Batí {claras} con {ricota} de ricota magra, sal, pimienta y orégano.', 'Cocinalo en sartén [con {oliva} de aceite de oliva] a fuego medio 2-3 min, revolviendo hasta que quede cremoso.', 'Serví con {pan} de pan integral tostado.'],
+  },
+  {
+    title: 'Panqueque de claras, ricota magra y avena con canela y frutillas',
+    roles: AM,
+    parts: [{ id: 'claras', r: 'p', step: 33, max: 198, min: 66 }, { id: 'ricota', r: 'x', g: 80 }, { id: 'avena', r: 'c', max: 70, min: 20 }, { id: 'frutillas', r: 'x', g: 100 }],
+    steps: ['Batí {claras} con {ricota} de ricota magra, {avena} de avena, canela y edulcorante (stevia) a gusto.', 'Cocinalo en sartén antiadherente a fuego medio-bajo 2-3 min por lado, como un panqueque grueso.', 'Serví con {frutillas} de frutillas cortadas.'],
+  },
   {
     title: 'Ricota magra con tostadas de arroz, miel y nueces',
     roles: AM,

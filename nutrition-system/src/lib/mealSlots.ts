@@ -24,7 +24,7 @@ export const SLOT_OF: Record<MealRole, FoodSlot> = {
 export const FOOD_SLOT_LABEL: Record<FoodSlot, string> = {
   am: 'DESAYUNO / MERIENDA',
   main: 'ALMUERZO / CENA',
-  peri: 'ANTES / DESPUÉS DE ENTRENAR',
+  peri: 'MERIENDA PRE-ENTRENO / POST-ENTRENO',
 };
 
 /** Franjas por grupo de alimento base (los platos traen las suyas desde la Food & Brand DB). */

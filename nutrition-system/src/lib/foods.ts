@@ -352,7 +352,10 @@ export function householdHint(foodId: string | undefined, grams: number) {
   const q = Math.round((grams / ref.unit.grams) * 2) / 2;
   if (q < 0.5) return '';
   const u = ref.unit.label;
-  const label = q > 1 && u.length > 3 ? (u.endsWith('ón') ? `${u.slice(0, -2)}ones` : `${u}s`) : u;
+  // Plural de la primera palabra («porción (¼ tapa)» → «porciones (¼ tapa)»).
+  const [w, ...rest] = u.split(' ');
+  const pl = w.length > 3 ? (w.endsWith('ón') ? `${w.slice(0, -2)}ones` : `${w}s`) : w;
+  const label = q > 1 ? [pl, ...rest].join(' ') : u;
   return `≈ ${String(q).replace('.', ',')} ${label}`;
 }
 

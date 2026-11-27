@@ -351,17 +351,30 @@ export function modernizeName(text: string) {
   return out;
 }
 
-/** Nombres de comida en lenguaje claro: "Pre-WOD" → "Antes de entrenar" (sólo si es el nombre completo de la comida). */
+/**
+ * Nombres de comida en lenguaje claro: la toma previa al entreno se llama «Merienda» (el «pre-entreno» queda como
+ * dato secundario: rol de la comida y sello en la app), "Post-WOD" → "Después de entrenar".
+ */
 const MEAL_NAMES: [RegExp, string][] = [
-  [/^pre[\s-]?(wod|entreno)$/i, 'Antes de entrenar'],
+  [/^pre[\s-]?(wod|entreno)$/i, 'Merienda'],
+  [/^antes de entrenar$/i, 'Merienda'],
   [/^post[\s-]?(wod|entreno)$/i, 'Después de entrenar'],
-  [/^peri[\s-]?(wod|entreno)$/i, 'Antes de entrenar'],
+  [/^peri[\s-]?(wod|entreno)$/i, 'Merienda'],
   [/^intra[\s-]?(wod|entreno)$/i, 'Durante el entreno'],
 ];
 export function friendlyMealName(name: string) {
-  const n = modernizeName(name).trim();
+  const n = modernizeName(name).trim().replace(/\s*\(antes de entrenar\)/i, '');
   for (const [re, to] of MEAL_NAMES) if (re.test(n)) return to;
   return n;
+}
+
+/**
+ * Planes viejos con «Merienda» y «Antes de entrenar» el mismo día: la toma previa al entreno se queda con
+ * «Merienda» y la otra pasa a «Colación de tarde» (nunca dos comidas con el mismo nombre).
+ */
+export function uniqueMealNames<M extends { name: string; day: string; role: string; time: string }>(meals: M[]): M[] {
+  const clash = (a: M, b: M) => a !== b && a.name === b.name && (a.day === b.day || a.day === 'both' || b.day === 'both');
+  return meals.map((m) => (m.name === 'Merienda' && m.role !== 'peri' && meals.some((o) => clash(m, o) && o.role === 'peri') ? { ...m, name: 'Colación de tarde' } : m));
 }
 
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */

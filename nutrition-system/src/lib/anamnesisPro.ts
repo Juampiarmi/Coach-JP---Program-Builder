@@ -27,7 +27,7 @@ export const COOKING_LABEL: Record<CookingLevel, string> = { quick: 'Rápido / 1
 export const SLOT_LABEL: Record<MealSlot, string> = {
   breakfast: 'Desayuno',
   lunch: 'Almuerzo',
-  peri: 'Pre-WOD / Merienda',
+  peri: 'Merienda (pre-entreno)',
   post: 'Post-WOD Inmediato',
   dinner: 'Cena Principal',
 };

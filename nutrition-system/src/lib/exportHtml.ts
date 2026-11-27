@@ -14,9 +14,10 @@ import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
 import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from './menuOptions';
 import { fitsSlot, foodSlots } from './mealSlots';
-import { friendlyMealName, modernizeName } from './foodBrandDb';
+import { friendlyMealName, modernizeName, uniqueMealNames } from './foodBrandDb';
 import { portionCap } from './portionCaps';
 import { QUICK_SWAPS } from './quickSwaps';
+import { CROSS_ANY_SLOT, CROSS_TARGETS } from './crossSwaps';
 import { BRAND_TIERS, needsGlutenSeal, SUGGESTED_BRAND, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
 import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
@@ -170,7 +171,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     },
     coachNote: plan.coachNote,
     // Firma profesional (nutricionista responsable): cabecera, pie y storycard de la app.
-    // Co-branding 50/50 Coach JP & NutrirCe + firma de la nutricionista (cabecera, pie y storycard de la app).
+    // Co-branding 50/50 NutrirCe & Coach JP + firma de la nutricionista (cabecera, pie y storycard de la app).
     nutri: (() => {
       const n = nutriOf(plan);
       return n ? { name: n.name.trim(), header: cobrandHeader(n), credit: nutriCredit(n), story: storySignature(n), logo: ncLogoSrc(n), logoRatio: NUTRIRCE_LOGO_RATIO, cj: COACH_JP_LOGO, mark: nutrirceSvg(28), markSm: nutrirceSvg(24), fork: NC_FORK, hand: NC_HAND, crease: NC_CREASE } : null;
@@ -182,7 +183,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     threshold: LEUCINE_THRESHOLD,
     // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
     // Opciones culinarias: título, técnica y pasos de la Opción 1 (automáticos si el coach no los cargó) y opciones 2 a 5.
-    meals: [...plan.meals].sort(byTime).map((m) => {
+    meals: uniqueMealNames([...plan.meals].sort(byTime).map((m) => ({ ...m, name: friendlyMealName(m.name) }))).map((m) => {
       const c = modernizeMeal(consolidateMeal(m));
       return {
         ...c,
@@ -240,6 +241,12 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     coachPhone: coachPhone(),
     groupLabels: GROUP_LABEL,
     swapGroups: usedGroups,
+    // Reemplazos cruzados por macro (otra familia con la misma proteína / carbos), sólo fuentes aptas para el alumno.
+    cross: {
+      p: [...CROSS_TARGETS.p.filter((t) => t.parts.length === 1).map((t) => t.parts[0][0]), 'combo:claras-ricota'].filter((id) => (id.startsWith('combo:') ? ['claras', 'ricota'] : [id]).every((x) => FOOD_BY_ID[x] && foodIsSafe(x, allergies))),
+      c: CROSS_TARGETS.c.map((t) => t.parts[0][0]).filter((id) => FOOD_BY_ID[id] && foodIsSafe(id, allergies) && !(id.endsWith('-sin-tacc') && foodIsSafe(id.replace('-sin-tacc', ''), allergies))),
+    },
+    crossAny: CROSS_ANY_SLOT,
     supplements: plan.supplements.filter((s) => s.enabled),
     protocols,
     citations: [CITES.morton, CITES.aragon, CITES.leucine, CITES.carbs, CITES.ea],

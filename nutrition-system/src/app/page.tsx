@@ -114,22 +114,23 @@ function StatusBar() {
   );
 }
 
-/** Cabecera del Builder: Coach JP & NutrirCe en igualdad de jerarquía (50/50). */
+/** Cabecera del Builder: NutrirCe & Coach JP en igualdad de jerarquía (50/50). */
 function CoBrandHeader() {
   const plan = usePlanStore((st) => st.plan);
   const n = nutriOf(plan);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1" data-builder-cobrand>
-      <span className="flex items-center gap-2">
+      {/* Orden del co-branding: [NutrirCe] & [Coach JP]. */}
+      {n && (
+        <>
+          <span className="-mb-0.5 -mt-2.5" data-cobrand-first="nutrirce"><NutrirCeLogo size={56} logo={n.logo} /></span>
+          <span className="text-[15px] text-steel/60">{'&'}</span>
+        </>
+      )}
+      <span className="flex items-center gap-2" data-cobrand-coach>
         {n ? <CoachJpLogo size={46} /> : <NutritionMark size={34} />}
         <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-white">COACH <span className="text-fire">JP</span></span>
       </span>
-      {n && (
-        <>
-          <span className="text-[15px] text-steel/60">{'&'}</span>
-          <span className="-mb-0.5 -mt-2.5"><NutrirCeLogo size={56} logo={n.logo} /></span>
-        </>
-      )}
       <div className="basis-full font-mono text-[10px] tracking-[0.14em] text-mute">{n ? `ENTRENAMIENTO & NUTRICIÓN · ${n.name.toUpperCase()} · ` : '@coachjp.training · '}ARMADOR DE PLANES</div>
     </div>
   );

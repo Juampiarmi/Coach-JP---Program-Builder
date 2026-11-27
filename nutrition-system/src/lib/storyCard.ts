@@ -118,10 +118,10 @@ function badge(ctx: Ctx, label: string, x: number, y: number, color: string, siz
   return { w, h };
 }
 
-/** Encabezado 50/50: [ COACH JP & NUTRIRCE ] con el mismo tamaño y peso para las dos marcas. */
+/** Encabezado 50/50: [ NUTRIRCE & COACH JP ] con el mismo tamaño y peso para las dos marcas. */
 function cobrandBadge(ctx: Ctx, x: number, y: number, size = 26) {
   ctx.font = `700 ${size}px ${CHAKRA}`;
-  const segs: [string, string][] = [['[ ', C.cyan], ['COACH ', '#FFFFFF'], ['JP', C.fire], ['  &  ', 'rgba(203,213,225,.6)'], ['NUTRIR', NC.green], ['CE', NC.orange], [' ]', C.cyan]];
+  const segs: [string, string][] = [['[ ', C.cyan], ['NUTRIR', NC.green], ['CE', NC.orange], ['  &  ', 'rgba(203,213,225,.6)'], ['COACH ', '#FFFFFF'], ['JP', C.fire], [' ]', C.cyan]];
   const w = segs.reduce((a, [t]) => a + width(ctx, t, 5), 0) + 44;
   const h = size + 26;
   const g = ctx.createLinearGradient(x, 0, x + w, 0);
@@ -400,7 +400,7 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   ctx.fillStyle = C.mute;
   text(ctx, `[ ${CITES.morton.label} ]`, PAD_X, footerTop + 26, 2);
   if (nutri) {
-    // Bloque de firma 50/50: [Coach JP] & [NutrirCe] con el mismo tamaño y peso, y la firma de la nutricionista.
+    // Bloque de firma 50/50: [NutrirCe] & [Coach JP] con el mismo tamaño y peso, y la firma de la nutricionista.
     const sepY = footerTop + 50;
     const grad = ctx.createLinearGradient(PAD_X, 0, STORY_W - PAD_X, 0);
     grad.addColorStop(0, 'rgba(56,189,248,.45)');
@@ -419,19 +419,20 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
       ctx.font = `500 ${ss}px ${MONO}`;
       while (ss > 12 && width(ctx, t, 2) > max) ctx.font = `500 ${--ss}px ${MONO}`;
     };
-    // Izquierda: escudo oficial de Coach JP (PNG) con la misma altura que el logo de NutrirCe.
+    // Orden: [NutrirCe] & [Coach JP]. Derecha: escudo oficial de Coach JP (PNG) con la misma altura que el logo de NutrirCe.
+    const cL = STORY_W / 2 + 30;
     const LH = IS * 1.1;
     const cj = logoImage(COACH_JP_LOGO);
     if (cj) {
       const cwI = (LH * cj.naturalWidth) / cj.naturalHeight;
-      ctx.drawImage(cj, PAD_X + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH);
+      ctx.drawImage(cj, cL + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH);
     } else {
       const icon = document.createElement('canvas');
       icon.width = icon.height = IS * 2;
       drawNutritionIcon(icon.getContext('2d')!, IS * 2, false);
-      ctx.drawImage(icon, PAD_X - 4, iy, IS, IS);
+      ctx.drawImage(icon, cL - 4, iy, IS, IS);
     }
-    const ax = PAD_X + IS + 20;
+    const ax = cL + IS + 20;
     ctx.font = `700 ${fs}px ${CHAKRA}`;
     ctx.fillStyle = '#FFFFFF';
     text(ctx, 'COACH ', ax, iy + 66, 3);
@@ -440,14 +441,14 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
     subOf('HIGH PERFORMANCE SYSTEM', half - IS - 20);
     ctx.fillStyle = C.steel;
     text(ctx, 'HIGH PERFORMANCE SYSTEM', ax, iy + 100, 2);
-    // Centro: ×.
+    // Centro: &.
     ctx.font = `400 ${fs}px ${CHAKRA}`;
     ctx.fillStyle = 'rgba(203,213,225,.6)';
     ctx.textAlign = 'center';
     text(ctx, '&', STORY_W / 2, iy + 66);
     ctx.textAlign = 'left';
-    // Derecha: NutrirCe (logo oficial si el coach lo subió).
-    const bx = STORY_W / 2 + 30;
+    // Izquierda: NutrirCe (logo oficial si el coach lo subió).
+    const bx = PAD_X;
     const img = logoImage(ncLogoSrc(nutri));
     if (img) {
       // Logo oficial apilado: ocupa el mismo ancho que el bloque de Coach JP, centrado en la fila (sin texto extra).

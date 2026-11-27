@@ -26,6 +26,7 @@ export const QUICK_SWAPS: { k: MacroKey; title: string; ref: string; items: Quic
       { id: 'atun', label: '1 lata de atún al natural', parts: [['atun', 120]] },
       { id: 'whey', label: '1 scoop de whey', parts: [['whey', 30]] },
       { id: 'yogur', label: '200 g de yogur griego + 2 claras', parts: [['yogur', 200], ['claras', 66]] },
+      { id: 'claras-ricota', label: '4 claras + 100 g de ricota magra', parts: [['claras', 132], ['ricota', 100]] },
     ],
   },
   {

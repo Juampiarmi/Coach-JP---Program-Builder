@@ -237,6 +237,8 @@ body.standalone .dock{display:none}
 .cobrand .brand{font-size:14.5px;white-space:nowrap}
 .cbx{color:rgba(148,163,184,.55);font-weight:400;font-size:13px}
 .brand{color:#FFFFFF}.brand .jp{color:#F97316}
+.xs-head{margin-top:12px}.opt .xwarn{display:block;margin-top:2px;color:#FCD34D;font-size:11.5px}
+.pre-tag{display:inline-block;vertical-align:2px;margin-left:6px;padding:1px 6px;border:1px solid rgba(249,115,22,.45);border-radius:6px;font-size:9.5px;font-weight:700;letter-spacing:.06em;color:#FDBA74;text-transform:uppercase}
 .ncw i{font-style:normal;color:var(--nc-green)}.ncw em{font-style:normal;color:var(--nc-orange)}
 .nc-img{height:50px;width:auto;max-width:110px;object-fit:contain;display:block;margin:-11px 0}.nc-img.sm{height:40px;max-width:84px;margin:-5px 0}
 .top.cob .guide-btn{margin-left:auto;flex:none}

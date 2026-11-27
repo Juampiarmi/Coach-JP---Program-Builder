@@ -145,27 +145,82 @@ const runtime = String.raw`
   // Equivalencias calculadas: mismo aporte del macro ancla, ordenadas por densidad calórica más parecida.
   // Franja del día de cada comida: los swaps nunca proponen parrilla en el desayuno ni platos pesados peri-entreno.
   var SLOT = { breakfast: 'am', snack: 'am', lunch: 'main', dinner: 'main', peri: 'peri', post: 'peri' };
+  // Rol de la comida de cada ingrediente (para topes por toma en los reemplazos cruzados).
+  var ITEM_ROLE = null;
+  function roleOfItem(id) {
+    if (!ITEM_ROLE) {
+      ITEM_ROLE = {};
+      D.meals.forEach(function (m) { m.items.forEach(function (i) { ITEM_ROLE[i.id] = m.role; }); mealAlts(m).forEach(function (a) { (a.items || []).forEach(function (i) { ITEM_ROLE[i.id] = m.role; }); }); });
+    }
+    return ITEM_ROLE[id];
+  }
+  function capMax(id, role) { var c = D.fridgeCaps && D.fridgeCaps[SLOT[role] || 'main'] && D.fridgeCaps[SLOT[role] || 'main'][id]; return c ? c[1] : 1e9; }
+  function stepOf(id) { return (D.units && D.units[id]) || 5; }
+  // Reemplazo cruzado (otra familia: carne → huevos, claras, atún, tofu, whey; arroz → papa, masa de tarta, pan,
+  // legumbres): gramos para igualar el macro, con unidades enteras y el tope por toma; null si no llega al 90 %.
+  function crossPlan(src, orig, toId, role) {
+    var a = src.anchor, have = src[a] * orig.grams / 100;
+    if (!(have > 0)) return null;
+    var parts = toId === 'combo:claras-ricota' ? [['claras', 0.6], ['ricota', 0.4]] : [[toId, 1]], out = [], got = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var f = D.foods[parts[i][0]];
+      if (!f || !(f[a] > 0)) return null;
+      var st = stepOf(parts[i][0]), mx = capMax(parts[i][0], role);
+      var g = Math.max(st, Math.round((have * parts[i][1] * 100) / f[a] / st) * st);
+      if (g > mx) g = Math.floor(mx / st) * st;
+      if (!(g > 0)) return null;
+      got += f[a] * g / 100;
+      out.push({ id: parts[i][0], g: g });
+    }
+    return got >= have * 0.9 ? out : null;
+  }
+  function isCross(src, toId) { return toId.indexOf('combo:') === 0 || !!(src.group && D.foods[toId] && D.foods[toId].group !== src.group); }
   function swapOptions(orig, role) {
     var src = orig && srcOf(orig);
     if (!src) return [];
     var dens = kcal100(src), slot = SLOT[role];
-    return Object.keys(D.foods)
+    var same = Object.keys(D.foods)
       .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && !(D.avoid && D.avoid.indexOf(id) >= 0) && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && (!slot || !f.slots || f.slots.indexOf(slot) >= 0); })
-      .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens) }; })
+      .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens), parts: null }; })
       .sort(function (a, b) { return a.d - b.d; })
-      .slice(0, 6);
+      .slice(0, 5);
+    var cross = [];
+    var ids = (D.cross && src.group && D.cross[src.anchor]) || [];
+    ids.forEach(function (id) {
+      var f = D.foods[id];
+      if (id === orig.foodId || !f && id.indexOf('combo:') !== 0) return;
+      if (f && (src.groups.indexOf(f.group) >= 0 || (D.avoid && D.avoid.indexOf(id) >= 0))) return;
+      if (f && slot && f.slots && f.slots.indexOf(slot) < 0 && (D.crossAny || []).indexOf(id) < 0) return;
+      if (id === 'avena' && SLOT[role] === 'main') return;
+      var pl = crossPlan(src, orig, id, role);
+      if (!pl) return;
+      var t = pl.reduce(function (acc, x) { var r = D.foods[x.id], k = x.g / 100; return { p: acc.p + r.p * k, c: acc.c + r.c * k, f: acc.f + r.f * k }; }, { p: 0, c: 0, f: 0 });
+      cross.push({ id: id, f: f || { name: 'Claras + ricota magra' }, g: pl[0].g, parts: pl, t: t, d: Math.abs(t.p * 4 + t.c * 4 + t.f * 9 - (orig.p * 4 + orig.c * 4 + orig.f * 9)) });
+    });
+    cross.sort(function (a, b) { return a.d - b.d; });
+    return same.concat(cross.slice(0, 9));
   }
 
   function resolveItem(it) {
     var sw = S.swaps[it.id];
-    if (!sw || !D.foods[sw]) return it;
+    if (!sw || (!D.foods[sw] && sw.indexOf('combo:') !== 0)) return it;
     var src = srcOf(it);
     if (!src) return it;
+    if (isCross(src, sw)) {
+      var pl = crossPlan(src, it, sw, roleOfItem(it.id));
+      if (!pl) return it;
+      var mk = function (x, id) { var r = D.foods[x.id], k = x.g / 100; return { id: id, foodId: x.id, food: r.name, grams: x.g, p: r.p * k, c: r.c * k, f: r.f * k, leucine: r.leucine * k, swappedFrom: src.name }; };
+      var main = mk(pl[0], it.id);
+      if (pl[1]) main.plus = mk(pl[1], it.id + '+');
+      return main;
+    }
     var to = D.foods[sw];
     var grams = eqGrams(src, it.grams, to);
     var k = grams / 100;
     return { id: it.id, foodId: sw, food: to.name, grams: grams, p: to.p * k, c: to.c * k, f: to.f * k, leucine: to.leucine * k, swappedFrom: src.name };
   }
+  // Un reemplazo combinado (claras + ricota) trae un segundo ingrediente: se suma a la lista justo después.
+  function withPlus(list) { var out = []; list.forEach(function (it) { out.push(it); if (it.plus) out.push(it.plus); }); return out; }
 
   // Día OFF: no hay sesión → los bloques pre / peri-entreno se muestran como merienda de saciedad.
   var PERI_RE = /pre.?entreno|pre.?wod|peri.?wod|peri.?entreno|intra|glucol[ií]tico|para entrenar/i;
@@ -270,8 +325,9 @@ const runtime = String.raw`
     };
     res.forEach(function (it, i) {
       if (!it.swappedFrom) return;
-      tweak('f', it.f - orig[i].f, ['fat'], 2, i);
-      tweak('c', it.c - orig[i].c, ['starch', 'cereal', 'fruit', 'sport-carb'], 5, i);
+      var pf = it.plus ? it.plus.f : 0, pc = it.plus ? it.plus.c : 0;
+      tweak('f', it.f + pf - orig[i].f, ['fat'], 2, i);
+      tweak('c', it.c + pc - orig[i].c, ['starch', 'cereal', 'fruit', 'sport-carb'], 5, i);
     });
     // Lo que quedó en 0 g por compensación se sigue mostrando ("Ajustado por SWAP: 8 → 0 g").
     return out.filter(function (it) { return it.grams > 0 || it.adjusted; });
@@ -297,7 +353,7 @@ const runtime = String.raw`
         var alts = mealAlts(m), on = +opt[m.id] || 1, alt = on > 1 ? alts[on - 2] : null;
         if (!alt || !alt.items || !alt.items.length) { alt = null; on = 1; }
         var src = alt ? alt.items : m.items;
-        var items = fr && typeof fr === 'object' && fr.items ? fr.items : fr ? freeItems(m, fr) : compensateResolved(src, src.map(resolveItem)).concat(extras[m.id] || []);
+        var items = fr && typeof fr === 'object' && fr.items ? fr.items : fr ? freeItems(m, fr) : withPlus(compensateResolved(src, src.map(resolveItem))).concat(extras[m.id] || []);
         if (!fr && rebal[m.id]) items = rebalance(items);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
         return { m: m, items: items, src: src, opt: on, alt: alt, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
@@ -732,7 +788,7 @@ const runtime = String.raw`
     var acc = {};
     var addMeals = function (meals, mlt, resolve) {
       meals.forEach(function (m) {
-        m.items.map(resolve).forEach(function (it) {
+        withPlus(m.items.map(resolve)).forEach(function (it) {
           var rule = (it.foodId && rules[it.foodId]) || {};
           var key = rule.key || it.foodId || 'x:' + it.food;
           if (!acc[key]) acc[key] = { foodId: it.foodId, name: rule.name || it.food, rule: rule, grams: 0 };
@@ -1040,7 +1096,16 @@ const runtime = String.raw`
     h += '<h3>Cambiar ' + esc(src.name) + ' por…</h3>';
     h += '<p class="muted" style="font-size:13px;margin:2px 0 4px">Todas aportan lo mismo en ' + ANCHOR_LABEL[src.anchor] + ' (' + n0(src[src.anchor] * orig.grams / 100) + ' g), así tu día sigue cuadrando. Tocá una para reemplazarlo.</p>';
     h += '<button class="opt' + (!cur ? ' cur' : '') + '" data-pick="__orig"><span class="g">' + n0(orig.grams) + ' g</span><span class="fd">' + esc(orig.food) + ' · el de tu plan<span>' + mshort(orig.p, orig.c, orig.f) + '</span></span></button>';
+    var crossHead = false;
     opts.forEach(function (o) {
+      if (o.parts && !crossHead) { crossHead = true; h += '<div class="tag xs-head" data-cross-head>[ OTRAS FAMILIAS · REEMPLAZO CRUZADO ]</div><p class="muted" style="font-size:12px;margin:0 0 4px">Misma ' + ANCHOR_LABEL[src.anchor] + ', otro tipo de alimento (por ej. ' + (src.anchor === 'p' ? 'huevos, claras, atún, tofu o whey' : 'papa, fideos, pan, legumbres o masa de tarta') + ').</p>'; }
+      if (o.parts) {
+        var txt = o.parts.map(function (x) { var hh = unitHintFor(x.id, x.g); return n0(x.g) + ' g ' + esc(D.foods[x.id].name.split(' (')[0].toLowerCase()) + (hh ? ' (' + hh.replace('≈ ', '') + ')' : ''); }).join(' + ');
+        var df = o.t.f - orig.f, tart = o.id.indexOf('tapa-tarta') === 0;
+        var warn = (tart ? 'Te queda una tarta con la misma energía de carbos. ' : '') + (Math.abs(df) >= 5 ? (df > 0 ? '+' : '') + n0(df) + ' g de grasa vs el original' + (df > 0 ? ' (la app baja el aceite de esa comida)' : '') : '');
+        h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '" data-cross-pick><span class="g">' + n0(o.parts.reduce(function (a, x) { return a + x.g; }, 0)) + ' g</span><span class="fd">' + esc(o.f.name.split(' (')[0]) + '<span>' + txt + ' · ' + mshort(o.t.p, o.t.c, o.t.f) + '</span>' + (warn ? '<span class="xwarn">⚠ ' + esc(warn) + '</span>' : '') + '</span><span class="go">›</span></button>';
+        return;
+      }
       var hint = unitHintFor(o.id, o.g);
       h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '"><span class="g">' + n0(o.g) + ' g</span><span class="fd">' + esc(o.f.name) + '<span>' + (hint ? hint + ' · ' : '') + ok(o.f, o.g) + '</span></span><span class="go">›</span></button>';
     });
@@ -1225,7 +1290,7 @@ const runtime = String.raw`
   }
 
   function fridgeTarget(m) {
-    var t = m.items.map(resolveItem).reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }; }, { p: 0, c: 0, f: 0 });
+    var t = withPlus(m.items.map(resolveItem)).reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }; }, { p: 0, c: 0, f: 0 });
     return t;
   }
 
@@ -1402,7 +1467,7 @@ const runtime = String.raw`
     D.meals.forEach(function (m) {
       var times = mult[m.day];
       if (!times) return;
-      m.items.map(resolveItem).forEach(function (it) {
+      withPlus(m.items.map(resolveItem)).forEach(function (it) {
         if (!it.foodId || !COOK[it.foodId] && it.foodId !== 'huevo') return;
         var a = acc[it.foodId] || (acc[it.foodId] = { grams: 0, times: 0, roles: {} });
         a.grams += it.grams * times;
@@ -1640,17 +1705,17 @@ const runtime = String.raw`
     x.fillStyle = FLUOR; x.fillRect(L, 262, 150, 6);
     var dateTxt = pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear();
     if (D.nutri) {
-      // Encabezado 50/50: COACH JP & NUTRIRCE con el mismo tamaño y peso; la fecha pasa debajo del rótulo.
+      // Encabezado 50/50: NUTRIRCE & COACH JP con el mismo tamaño y peso; la fecha pasa debajo del rótulo.
       font(500, 26); x.fillStyle = GRAY; x.fillText(dateTxt, L + 170, 270);
       font(600, 34); var tagW = x.measureText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]').width, hs = 30; font(700, hs);
-      var cbW = function () { return x.measureText('COACH JP  &  NUTRIRCE').width; };
+      var cbW = function () { return x.measureText('NUTRIRCE  &  COACH JP').width; };
       while (hs > 20 && L + tagW + 40 + cbW() > R) { hs -= 1; font(700, hs); }
       var hx = R - cbW();
-      x.fillStyle = WHITE; x.fillText('COACH ', hx, 236); hx += x.measureText('COACH ').width;
-      x.fillStyle = '#F97316'; x.fillText('JP', hx, 236); hx += x.measureText('JP').width;
-      x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  &  ', hx, 236); hx += x.measureText('  &  ').width;
       x.fillStyle = '#22C55E'; x.fillText('NUTRIR', hx, 236); hx += x.measureText('NUTRIR').width;
-      x.fillStyle = '#F97316'; x.fillText('CE', hx, 236);
+      x.fillStyle = '#F97316'; x.fillText('CE', hx, 236); hx += x.measureText('CE').width;
+      x.fillStyle = 'rgba(203,213,225,.6)'; x.fillText('  &  ', hx, 236); hx += x.measureText('  &  ').width;
+      x.fillStyle = WHITE; x.fillText('COACH ', hx, 236); hx += x.measureText('COACH ').width;
+      x.fillStyle = '#F97316'; x.fillText('JP', hx, 236);
     } else { x.textAlign = 'right'; font(500, 32); x.fillStyle = GRAY; x.fillText(dateTxt, R, 236); x.textAlign = 'left'; }
     // 5 · Atleta: nombre en blanco, apellido en naranja, barra lateral + disciplina.
     var words = String(D.athlete.name || 'ATLETA').toUpperCase().split(/\s+/).filter(Boolean);
@@ -1700,7 +1765,7 @@ const runtime = String.raw`
     });
     if (more) { var mi = grid.length, mx = L + (mi % 2) * (gw + 48), myy = gy0 + Math.floor(mi / 2) * rh + 20; font(700, 30); x.fillStyle = CYAN; x.fillText('+ ' + more + (st.kind === 'day' ? ' COMIDAS' : ' INGREDIENTES') + ' MÁS', mx, myy); }
     if (D.nutri) {
-      // 9 · Bloque de firma 50/50: [escudo] COACH JP  &  [logo] NUTRIRCE, mismo tamaño y peso, dentro de la
+      // 9 · Bloque de firma 50/50: [logo] NUTRIRCE  &  [escudo] COACH JP, mismo tamaño y peso, dentro de la
       // zona segura de Instagram; debajo la firma de la nutricionista y el estado del plan.
       var dv = x.createLinearGradient(L, 0, R, 0); dv.addColorStop(0, 'rgba(56,189,248,.45)'); dv.addColorStop(.5, 'rgba(34,197,94,.45)'); dv.addColorStop(1, 'rgba(249,115,22,.45)');
       x.fillStyle = dv; x.fillRect(L, H - 382, CW, 2);
@@ -1709,21 +1774,21 @@ const runtime = String.raw`
       var wA = x.measureText('COACH JP').width, wB = x.measureText('NUTRIRCE').width;
       while (fsz > 30 && IS * 2 + GAP * 2 + wA + wB + XG * 2 + 30 > CW) { fsz -= 2; font(700, fsz); wA = x.measureText('COACH JP').width; wB = x.measureText('NUTRIRCE').width; }
       var lw = Math.max(IS + GAP + wA, IS + GAP + wB), xw = x.measureText('&').width;
-      var x0 = W / 2 - lw - XG - xw / 2, yb = H - 300, iy = yb - IS + 10;
+      // Orden: [logo] NUTRIRCE  &  [escudo] COACH JP (NutrirCe a la izquierda, Coach JP a la derecha).
+      var nx = W / 2 - lw - XG - xw / 2, yb = H - 300, iy = yb - IS + 10, cx0 = W / 2 + xw / 2 + XG, img = ncImg();
+      if (img) {
+        // Logo oficial apilado (isotipo + NUTRIR Ce.): mismo ancho visual que el bloque de Coach JP, centrado en su mitad.
+        var k = Math.min(lw / img.naturalWidth, (IS * 1.65) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
+        x.drawImage(img, nx + (lw - lwI) / 2, iy + IS / 2 - lhI / 2, lwI, lhI);
+      } else {
+        drawNc(x, nx, iy, IS);
+        x.fillStyle = '#22C55E'; x.fillText('NUTRIR', nx + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('CE', nx + IS + GAP + x.measureText('NUTRIR').width, yb);
+      }
+      x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('&', W / 2 - xw / 2, yb); font(700, fsz);
       // Escudo oficial (PNG) con la misma altura que el logo de NutrirCe; si todavía no cargó, el vector.
       var cjI = cjImg(), LH = IS * 1.3;
-      if (cjI) { var cwI = LH * cjI.naturalWidth / cjI.naturalHeight; x.drawImage(cjI, x0 + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH); } else drawLogo(x, x0 + IS / 2, iy + IS / 2, IS);
-      x.fillStyle = WHITE; x.fillText('COACH ', x0 + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('JP', x0 + IS + GAP + x.measureText('COACH ').width, yb);
-      x.fillStyle = 'rgba(203,213,225,.6)'; font(400, fsz); x.fillText('&', W / 2 - xw / 2, yb); font(700, fsz);
-      var xb = W / 2 + xw / 2 + XG, img = ncImg();
-      if (img) {
-        // Logo oficial apilado (isotipo + NUTRIR Ce.): mismo ancho visual que el bloque de Coach JP, centrado en la fila.
-        var k = Math.min(lw / img.naturalWidth, (IS * 1.65) / img.naturalHeight), lwI = img.naturalWidth * k, lhI = img.naturalHeight * k;
-        x.drawImage(img, xb + (lw - lwI) / 2, iy + IS / 2 - lhI / 2, lwI, lhI);
-      } else {
-        drawNc(x, xb, iy, IS);
-        x.fillStyle = '#22C55E'; x.fillText('NUTRIR', xb + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('CE', xb + IS + GAP + x.measureText('NUTRIR').width, yb);
-      }
+      if (cjI) { var cwI = LH * cjI.naturalWidth / cjI.naturalHeight; x.drawImage(cjI, cx0 + IS / 2 - cwI / 2, iy + IS / 2 - LH / 2, cwI, LH); } else drawLogo(x, cx0 + IS / 2, iy + IS / 2, IS);
+      x.fillStyle = WHITE; x.fillText('COACH ', cx0 + IS + GAP, yb); x.fillStyle = '#F97316'; x.fillText('JP', cx0 + IS + GAP + x.measureText('COACH ').width, yb);
       x.textAlign = 'center'; font(600, 25); x.fillStyle = '#CBD5E1';
       x.fillText(clip(x, D.nutri.story, CW), W / 2, H - 236);
       x.textAlign = 'left'; font(500, 24); x.fillStyle = GRAY; x.fillText(D.handle, L, H - 184);
@@ -1833,7 +1898,7 @@ const runtime = String.raw`
 
     // Fila 1 · HUD: logo + marca + fase + guía.
     // Co-branding 50/50: [Coach JP] & [NutrirCe] con el mismo peso visual (o el logo oficial que subió el coach).
-    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH <span class="jp">JP</span></b></span><span class="cbx">&amp;</span><span class="cb">' + ncLogo() + '</span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
+    if (D.nutri) h += '<header class="top cob"><div class="cobrand" data-cobrand><span class="cb">' + ncLogo() + '</span><span class="cbx">&amp;</span><span class="cb"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img"><b class="brand">COACH <span class="jp">JP</span></b></span></div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">?<span class="gbt"> Ayuda</span></button></header>';
     else h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH <span class="jp">JP</span></div><div class="badge">[ NUTRICIÓN DE ALTO RENDIMIENTO ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Ayuda: cómo usar tu plan">? Ayuda</button></header>';
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + (D.nutri ? ' · ' + esc(D.athlete.phase) : '') + '</span></div>';
@@ -1878,7 +1943,7 @@ const runtime = String.raw`
       var m = x.m;
       var done = !!S.checks[m.id];
       h += '<section class="card meal' + (done ? ' done' : '') + '" id="meal-' + esc(m.id) + '">';
-      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
+      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + (m.role === 'peri' && mode === 'on' ? ' <span class="pre-tag">Pre-entreno</span>' : '') + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
       var malts = mealAlts(m);
       if (m.title || malts.length) {
         if (malts.length) {
@@ -1935,7 +2000,7 @@ const runtime = String.raw`
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
-    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks"><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"><span class="cbx">&amp;</span>' + ncLogo(true) + '</div><div><div class="brand" style="font-size:12.5px">COACH <span class="jp">JP</span> <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span> <span class="cbx">&amp;</span> <span class="ncw"><i>Nutrir</i><em>Ce</em></span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
+    if (D.nutri) h += '<footer class="foot cob" data-cobrand-foot><div class="fmarks">' + ncLogo(true) + '<span class="cbx">&amp;</span><img src="' + esc(D.nutri.cj) + '" alt="Coach JP" class="cj-img sm"></div><div><div class="brand" style="font-size:12.5px"><span class="ncw"><i>Nutrir</i><em>Ce</em></span> <span class="cbx">&amp;</span> COACH <span class="jp">JP</span> <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div><div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div></div></footer>';
     else h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH <span class="jp">JP</span> · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div>' + (D.nutri ? '<div class="credit" data-nutri-credit>' + esc(D.nutri.credit) + '</div>' : '') + '</div></footer>';
 
     if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();

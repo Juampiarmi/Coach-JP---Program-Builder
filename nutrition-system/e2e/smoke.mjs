@@ -57,8 +57,9 @@ try {
   await page.getByText('[ ⚡ COMPLETAR 5 OPCIONES EN TODO EL PLAN ]').click();
   await page.waitForTimeout(300);
   // Vista compacta: las alternativas están plegadas bajo «+ Ver X opciones más».
-  check((await page.getByRole('button', { name: 'Comparar' }).count()) === 0 && (await page.locator('[data-show-alts]').count()) > 0, 'Comidas: alternativas plegadas bajo «+ Ver X opciones»');
-  await page.locator('[data-show-alts]').first().click();
+  // Con 4 alternativas quedan plegadas (con 1-2 variantes de un plan automático, a la vista).
+  check((await page.locator('[data-show-alts][aria-expanded="false"]').count()) > 0, 'Comidas: alternativas plegadas bajo «+ Ver X opciones»');
+  await page.locator('[data-show-alts][aria-expanded="false"]').first().click();
   const cmp = page.getByRole('button', { name: 'Comparar' }).first();
   check(await cmp.isVisible(), 'Opciones generadas: aparece el selector Tarjetas / Comparar');
   await cmp.click();
@@ -73,11 +74,39 @@ try {
   await page.keyboard.press('Control+z');
   await page.waitForTimeout(150);
   check((await meals.count()) === n0, 'Ctrl+Z recupera la comida borrada');
+
   await page.getByRole('button', { name: 'Deshacer' }).click();
   await page.waitForTimeout(150);
   check((await page.locator('[data-show-alts]').count()) === 0, 'Botón Deshacer revierte el autollenado de opciones');
+
   await page.getByRole('button', { name: 'Rehacer' }).click();
   await page.waitForTimeout(150);
+
+  // Banco Global por opción: selector filtrado y ordenado, vista previa con gramos escalados, reemplazo en un clic.
+  {
+    const card = page.locator('[data-bank-swap="0"]').first();
+    await card.click();
+    await page.waitForSelector('[data-bank-swap-modal]');
+    const nCand = await page.locator('[data-bank-cand]').count();
+    check(nCand > 0, `Banco Global por opción: ${nCand} platos aptos ordenados por cercanía`);
+    const firstTitle = (await page.locator('[data-bank-cand] span').first().innerText()).trim();
+    await page.locator('[data-bank-cand]').first().click();
+    check((await page.locator('[data-bank-swap-preview] li').count()) > 0, 'Banco Global por opción: vista previa con los gramos ya escalados');
+    await page.locator('[data-bank-swap-apply]').click();
+    await page.waitForTimeout(250);
+    check((await page.locator('[data-bank-swap-modal]').count()) === 0 && (await page.locator(`input[value="${firstTitle.replace(/"/g, '\\"')}"]`).count()) > 0, `Banco Global por opción: Opción 1 reemplazada por «${firstTitle}»`);
+    // Reemplazo cruzado por macro en un ingrediente.
+    const cs = page.locator('[data-cross-swap]').first();
+    check((await page.locator('[data-cross-swap]').count()) > 0, 'Reemplazo cruzado: botón CRUZADO en los ingredientes');
+    await cs.click();
+    await page.waitForSelector('[data-cross-modal]');
+    const nOpt = await page.locator('[data-cross-opt]').count();
+    check(nOpt > 0, `Reemplazo cruzado: ${nOpt} opciones de otras familias con gramos calculados`);
+    await page.locator('[data-cross-opt]').first().click();
+    await page.waitForTimeout(200);
+    check((await page.locator('[data-cross-modal]').count()) === 0, 'Reemplazo cruzado: se aplica en un clic');
+    check((await page.getByText('Antes de entrenar', { exact: true }).count()) === 0, 'Comidas: «Antes de entrenar» pasó a llamarse «Merienda»');
+  }
 
   // Exportación + indicador de plan desactualizado (con la nube, la descarga manual está en «Opciones avanzadas»).
   const openPublish = async () => {
@@ -363,7 +392,8 @@ try {
   check((await saved.count()) > 0 && /Tortillas de verduras/.test(await saved.first().innerText()), 'Nuevo plato: guardado con su categoría propia');
   check((await page.getByRole('button', { name: /★ Tortillas de verduras/ }).count()) > 0, 'Alimentos y marcas: filtro por la categoría propia');
 
-  check((await page.locator('[data-builder-cobrand] [data-nc-logo]').count()) === 1, 'Builder: cabecera Coach JP & NutrirCe');
+  check((await page.locator('[data-builder-cobrand] [data-nc-logo]').count()) === 1, 'Builder: cabecera NutrirCe & Coach JP');
+  check(await page.locator('[data-builder-cobrand]').evaluate((el) => { const nc = el.querySelector('[data-nc-logo]'), cj = el.querySelector('[data-cobrand-coach]'); return !!nc && !!cj && nc.getBoundingClientRect().left < cj.getBoundingClientRect().left; }), 'Builder: NutrirCe a la izquierda y Coach JP a la derecha');
   // Firma profesional (nutricionista) editable en Publicar, cargada por defecto.
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check((await page.locator('[data-nutri-name]').inputValue()) === 'Lic. María Cecilia Rollán', 'Firma profesional: Lic. María Cecilia Rollán cargada por defecto en el Builder');
@@ -507,7 +537,8 @@ try {
   await pwa.locator('[data-mode="on"]').first().click().catch(() => {});
   const cob = pwa.locator('[data-cobrand]');
   const ncOk = await cob.locator('img.nc-img').evaluate((i) => i.complete && i.naturalWidth > 0 && i.src.startsWith('data:image/png'));
-  check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [Coach JP] & [logo oficial NutrirCe en PNG transparente]');
+  check(/COACH JP/.test(await cob.innerText()) && ncOk, 'App: cabecera 50/50 [logo oficial NutrirCe en PNG transparente] & [Coach JP]');
+  check(await cob.evaluate((el) => { const cbs = el.querySelectorAll('.cb'); return cbs.length === 2 && !cbs[0].querySelector('.cj-img') && !!cbs[1].querySelector('.cj-img') && cbs[0].getBoundingClientRect().left < cbs[1].getBoundingClientRect().left; }), 'App: cabecera [NutrirCe] & [Coach JP] (NutrirCe a la izquierda)');
   const jpColors = await cob.evaluate((el) => {
     const b = el.querySelector('.brand');
     const jp = b && b.querySelector('.jp');
@@ -517,8 +548,26 @@ try {
   const [hA, hB] = await cob.locator('.cb').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
   check(Math.abs(hA - hB) <= 12, `App: los dos sellos con el mismo peso visual (alto ${hA} / ${hB} px)`);
   check(/Entrenamiento & Nutrición · Lic\. María Cecilia Rollán/.test(await pwa.locator('[data-nutri-line]').innerText()), 'App: bajada «Entrenamiento & Nutrición · Lic. María Cecilia Rollán»');
-  check(/Coach JP High Performance System & NutrirCe — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel (Coach JP & NutrirCe) y la Lic. Rollán');
+  check(/NutrirCe & Coach JP High Performance System — Lic\. María Cecilia Rollán \(Nutrición Deportiva y Recomposición Corporal\)/.test(await pwa.locator('[data-nutri-credit]').innerText()), 'App: pie con las dos marcas al mismo nivel (NutrirCe & Coach JP) y la Lic. Rollán');
   check((await pwa.locator('[data-yield]').count()) > 0, 'App: cada plato con su etiqueta de rendimiento');
+  // App: reemplazo cruzado (carne → huevos / claras / atún / tofu / whey · arroz → papa, pan, legumbres, masa de tarta).
+  {
+    const btns = pwa.locator('[data-swap]');
+    let crossOk = false;
+    for (let i = 0; i < Math.min(await btns.count(), 14) && !crossOk; i++) {
+      await btns.nth(i).click();
+      await pwa.waitForTimeout(120);
+      if ((await pwa.locator('[data-cross-head]').count()) && (await pwa.locator('[data-cross-pick]').count())) {
+        const label = (await pwa.locator('[data-cross-pick] .fd').first().innerText()).split('\n')[0];
+        await pwa.locator('[data-cross-pick]').first().click();
+        await pwa.waitForTimeout(150);
+        crossOk = (await pwa.locator('#sheet.open, .sheet.open').count()) === 0;
+        check(crossOk, `App: reemplazo cruzado aplicado («${label}»)`);
+      } else await pwa.locator('[data-close]').first().click().catch(() => {});
+    }
+    check(crossOk, 'App: el cambio de alimento ofrece otras familias (reemplazo cruzado)');
+    check(!/Antes de entrenar/.test(await pwa.locator('body').innerText()), 'App: sin «Antes de entrenar» (la comida se llama Merienda)');
+  }
   for (const w of [360, 375, 390]) {
     await pwa.setViewportSize({ width: w, height: 780 });
     await pwa.waitForTimeout(80);
